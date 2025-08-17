@@ -430,9 +430,6 @@ def main():
     # 初始化会话安全相关数据表，防止首次启动时表缺失
     SessionSecurity.init_session_tables()
 
-    # 设置页面标题
-    st.title("🚚 物流定价系统")
-
     # 检查会话安全性
     if not check_session_security():
         login_or_register_page()

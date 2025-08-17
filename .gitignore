@@ -205,3 +205,4 @@ __pycache__/
 # 系统文件
 .DS_Store
 Thumbs.db
+tests/test_ui_user_blocks.py

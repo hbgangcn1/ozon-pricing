@@ -21,27 +21,29 @@ except ImportError:
     from exchange_service import ExchangeRateService, get_usd_rate
 
 
-def format_logistics_name(name: str, delivery_method: str, include_delivery: bool = True) -> str:
+def format_logistics_name(
+    name: str, delivery_method: str, include_delivery: bool = True
+) -> str:
     """
     格式化物流名称
-    
+
     Args:
         name: 原始物流名称
         delivery_method: 送货方式
         include_delivery: 是否包含送货方式（True用于显示，False用于编辑）
-    
+
     Returns:
         格式化后的物流名称
     """
     if not include_delivery:
         return name
-    
+
     delivery_method_map = {
         "home_delivery": "送货上门",
         "pickup_point": "送货到取货点",
         "unknown": "未知",
     }
-    
+
     delivery_display = delivery_method_map.get(delivery_method, "未知")
     return f"{name} {delivery_display}"
 
@@ -465,8 +467,8 @@ def logistics_page():
                 for i, (_, row) in enumerate(land_df.iterrows()):
                     # 格式化物流名称（显示时包含送货方式）
                     formatted_name = format_logistics_name(
-                        str(row['name']), 
-                        str(row["delivery_method"]), 
+                        str(row['name']),
+                        str(row["delivery_method"]),
                         include_delivery=True
                     )
                     base_fee_str = f"¥{row['base_fee']:.2f}".rstrip(
@@ -527,8 +529,8 @@ def logistics_page():
                 for i, (_, row) in enumerate(air_df.iterrows()):
                     # 格式化物流名称（显示时包含送货方式）
                     formatted_name = format_logistics_name(
-                        str(row['name']), 
-                        str(row["delivery_method"]), 
+                        str(row['name']),
+                        str(row["delivery_method"]),
                         include_delivery=True
                     )
                     base_fee_str = f"¥{row['base_fee']:.2f}".rstrip(

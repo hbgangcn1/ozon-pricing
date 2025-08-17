@@ -24,27 +24,29 @@ except ImportError:
     )
 
 
-def format_logistics_name(name: str, delivery_method: str, include_delivery: bool = True) -> str:
+def format_logistics_name(
+    name: str, delivery_method: str, include_delivery: bool = True
+) -> str:
     """
     格式化物流名称
-    
+
     Args:
         name: 原始物流名称
         delivery_method: 送货方式
         include_delivery: 是否包含送货方式（True用于显示，False用于编辑）
-    
+
     Returns:
         格式化后的物流名称
     """
     if not include_delivery:
         return name
-    
+
     delivery_method_map = {
         "home_delivery": "送货上门",
         "pickup_point": "送货到取货点",
         "unknown": "未知",
     }
-    
+
     delivery_display = delivery_method_map.get(delivery_method, "未知")
     return f"{name} {delivery_display}"
 
@@ -431,7 +433,7 @@ def pricing_calculator_page():
                     best.get("delivery_method", "unknown"),
                     include_delivery=True
                 )
-                
+
                 html = _render_pricing_card(
                     grad_start="#e3f2fd",
                     grad_end="#bbdefb",
@@ -731,7 +733,11 @@ def pricing_calculator_page():
                     grad_end="#e1bee7",
                     border_color="#9c27b0",
                     shadow_rgba="rgba(156,39,176,0.15)",
-                    best_name=format_logistics_name(best.get("name", ""), best.get("delivery_method", "unknown"), include_delivery=True),
+                    best_name=format_logistics_name(
+                        best.get("name", ""),
+                        best.get("delivery_method", "unknown"),
+                        include_delivery=True
+                    ),
                     cost_display=cost_display,
                     time_display=time_display,
                     price=price,
@@ -845,7 +851,11 @@ def pricing_calculator_page():
                     grad_end="#bbdefb",
                     border_color="#2196f3",
                     shadow_rgba="rgba(33,150,243,0.15)",
-                    best_name=format_logistics_name(best.get("name", ""), best.get("delivery_method", "unknown"), include_delivery=True),
+                    best_name=format_logistics_name(
+                        best.get("name", ""),
+                        best.get("delivery_method", "unknown"),
+                        include_delivery=True
+                    ),
                     cost_display=cost_display,
                     time_display=time_display,
                     price=price,
@@ -1040,7 +1050,11 @@ def pricing_calculator_page():
                     grad_end="#ffe0b2",
                     border_color="#ff9800",
                     shadow_rgba="rgba(255,152,0,0.15)",
-                    best_name=format_logistics_name(best.get("name", ""), best.get("delivery_method", "unknown"), include_delivery=True),
+                    best_name=format_logistics_name(
+                        best.get("name", ""),
+                        best.get("delivery_method", "unknown"),
+                        include_delivery=True
+                    ),
                     cost_display=cost_display,
                     time_display=time_display,
                     price=price,
@@ -1129,7 +1143,11 @@ def pricing_calculator_page():
                     grad_end="#e1bee7",
                     border_color="#9c27b0",
                     shadow_rgba="rgba(156,39,176,0.15)",
-                    best_name=format_logistics_name(best.get("name", ""), best.get("delivery_method", "unknown"), include_delivery=True),
+                    best_name=format_logistics_name(
+                        best.get("name", ""),
+                        best.get("delivery_method", "unknown"),
+                        include_delivery=True
+                    ),
                     cost_display=cost_display,
                     time_display=time_display,
                     price=price,
