@@ -93,3 +93,5 @@ test_*.py
 # 项目特定文件
 pyrightconfig.json
 run_tests.py
+requirements_test.txt
+tests/test_ui_user_blocks.py
