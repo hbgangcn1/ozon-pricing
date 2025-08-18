@@ -5,6 +5,7 @@ import hashlib
 import bcrypt
 import threading
 import atexit
+import queue
 from typing import Optional, Tuple
 try:
     from .password_utils import validate_password_strength
@@ -16,18 +17,40 @@ _connection_counter = 0
 _connection_lock = threading.Lock()
 _MAX_CONNECTIONS = 50  # 最大并发连接数阈值
 
+# 连接池配置
+_POOL_SIZE = 10
+_CONNECTION_POOL = queue.Queue(maxsize=_POOL_SIZE)
+_POOL_LOCK = threading.Lock()
+
+# 连接监控配置
+_CONNECTION_WARNINGS = set()  # 记录已发送的警告
+_WARNING_THRESHOLD = 10  # 连接数警告阈值
+_CRITICAL_THRESHOLD = 30  # 连接数严重阈值
+
 
 def _increment_connection_counter():
     """增加连接计数器"""
     global _connection_counter
     with _connection_lock:
         _connection_counter += 1
-        if _connection_counter > _MAX_CONNECTIONS:
-            print(
-                f"⚠️  警告: 当前活跃连接数 {_connection_counter} "
-                f"超过阈值 {_MAX_CONNECTIONS}"
-            )
-        return _connection_counter
+        current_count = _connection_counter
+
+        # 连接数监控和告警
+        if current_count > _CRITICAL_THRESHOLD:
+            if 'critical' not in _CONNECTION_WARNINGS:
+                print(f"🚨 严重警告: 当前活跃连接数 {current_count} "
+                      f"超过严重阈值 {_CRITICAL_THRESHOLD}")
+                _CONNECTION_WARNINGS.add('critical')
+        elif current_count > _WARNING_THRESHOLD:
+            if 'warning' not in _CONNECTION_WARNINGS:
+                print(f"⚠️  警告: 当前活跃连接数 {current_count} "
+                      f"超过警告阈值 {_WARNING_THRESHOLD}")
+                _CONNECTION_WARNINGS.add('warning')
+        else:
+            # 连接数恢复正常，清除警告记录
+            _CONNECTION_WARNINGS.clear()
+
+        return current_count
 
 
 def _decrement_connection_counter():
@@ -35,7 +58,13 @@ def _decrement_connection_counter():
     global _connection_counter
     with _connection_lock:
         _connection_counter = max(0, _connection_counter - 1)
-        return _connection_counter
+        current_count = _connection_counter
+
+        # 如果连接数恢复正常，清除警告记录
+        if current_count <= _WARNING_THRESHOLD:
+            _CONNECTION_WARNINGS.clear()
+
+        return current_count
 
 
 def get_connection_count():
@@ -49,6 +78,21 @@ def reset_connection_counter():
     global _connection_counter
     with _connection_lock:
         _connection_counter = 0
+        _CONNECTION_WARNINGS.clear()
+
+
+def get_connection_stats():
+    """获取连接统计信息"""
+    with _connection_lock:
+        pool_size = _CONNECTION_POOL.qsize()
+        return {
+            'active_connections': _connection_counter,
+            'pool_size': pool_size,
+            'max_connections': _MAX_CONNECTIONS,
+            'warning_threshold': _WARNING_THRESHOLD,
+            'critical_threshold': _CRITICAL_THRESHOLD,
+            'warnings_active': len(_CONNECTION_WARNINGS) > 0
+        }
 
 
 def _check_connections_at_exit():
@@ -57,9 +101,91 @@ def _check_connections_at_exit():
     if count > 0:
         print(f"⚠️  警告: 程序退出时仍有 {count} 个数据库连接未关闭")
 
+        # 尝试清理连接池
+        try:
+            while not _CONNECTION_POOL.empty():
+                conn = _CONNECTION_POOL.get_nowait()
+                conn.close()
+        except Exception as e:
+            print(f"清理连接池时出错: {e}")
+
 
 # 注册退出检查
 atexit.register(_check_connections_at_exit)
+
+
+def monitor_connections():
+    """连接监控函数，可在定时任务中调用"""
+    stats = get_connection_stats()
+
+    if stats['active_connections'] > _CRITICAL_THRESHOLD:
+        print(f"🚨 连接数严重超限: {stats['active_connections']}/"
+              f"{_CRITICAL_THRESHOLD}")
+        # 这里可以添加告警通知逻辑，如发送邮件、短信等
+        return 'critical'
+    elif stats['active_connections'] > _WARNING_THRESHOLD:
+        print(f"⚠️  连接数超限: {stats['active_connections']}/"
+              f"{_WARNING_THRESHOLD}")
+        return 'warning'
+    else:
+        print(f"✅ 连接数正常: {stats['active_connections']}")
+        return 'normal'
+
+
+def _create_db_connection():
+    """创建新的数据库连接"""
+    db_path = os.path.join(os.path.dirname(__file__), "pricing_system.db")
+    conn = sqlite3.connect(
+        db_path,
+        check_same_thread=False,
+        timeout=5.0,
+    )
+    # 并发与锁优化：启用 WAL、设置超时与同步级别
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
+    except sqlite3.Error:
+        pass
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _get_connection_from_pool():
+    """从连接池获取连接"""
+    try:
+        # 非阻塞方式获取连接
+        return _CONNECTION_POOL.get_nowait()
+    except queue.Empty:
+        # 池中没有可用连接，创建新连接
+        return _create_db_connection()
+
+
+def _return_connection_to_pool(conn):
+    """将连接返回池中"""
+    try:
+        # 非阻塞方式返回连接
+        _CONNECTION_POOL.put_nowait(conn)
+    except queue.Full:
+        # 池已满，关闭连接
+        conn.close()
+
+
+def _initialize_connection_pool():
+    """初始化连接池"""
+    with _POOL_LOCK:
+        if _CONNECTION_POOL.empty():
+            for _ in range(_POOL_SIZE):
+                try:
+                    conn = _create_db_connection()
+                    _CONNECTION_POOL.put_nowait(conn)
+                except Exception as e:
+                    print(f"初始化连接池失败: {e}")
+
+
+# 延迟初始化连接池
+_initialize_connection_pool()
 
 
 def hash_password(password: str) -> str:
@@ -189,10 +315,44 @@ class DBConnection:
             _decrement_connection_counter()
 
 
+class PooledDBConnection:
+    """连接池上下文管理器"""
+
+    def __init__(self):
+        self._conn: Optional[sqlite3.Connection] = None
+        self._cursor: Optional[sqlite3.Cursor] = None
+
+    def __enter__(self) -> Tuple[sqlite3.Connection, sqlite3.Cursor]:
+        # 从池中获取连接
+        self._conn = _get_connection_from_pool()
+        self._cursor = self._conn.cursor()
+
+        # 增加连接计数
+        _increment_connection_counter()
+
+        return self._conn, self._cursor
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._conn is not None:
+            # 减少连接计数
+            _decrement_connection_counter()
+
+            # 将连接返回池中
+            _return_connection_to_pool(self._conn)
+
+            self._conn = None
+            self._cursor = None
+
+
 def get_db_connection() -> DBConnection:
     """返回一个可用于 with 语句的数据库连接管理器"""
     db_path = os.path.join(os.path.dirname(__file__), "pricing_system.db")
     return DBConnection(db_path)
+
+
+def get_pooled_db_connection() -> PooledDBConnection:
+    """返回一个使用连接池的数据库连接管理器"""
+    return PooledDBConnection()
 
 
 def current_user_id():
@@ -1292,6 +1452,11 @@ def delete_user(user_id):
             conn.commit()
             return True
 
+        except sqlite3.Error as e:
+            print(f"数据库错误: {e}")
+            conn.rollback()
+            return False
         except Exception as e:
             print(f"删除用户失败: {e}")
+            conn.rollback()
             return False

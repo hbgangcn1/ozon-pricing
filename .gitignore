@@ -116,3 +116,4 @@ improve_test_coverage.py
 validate_tests.py
 TEST_COVERAGE_ANALYSIS_REPORT.md
 COVERAGE_SUMMARY.md
+connection_monitor.py

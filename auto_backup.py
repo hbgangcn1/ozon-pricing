@@ -11,6 +11,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 import logging
+from contextlib import contextmanager
 
 # 配置日志
 
@@ -31,6 +32,19 @@ def _setup_logging():
 
 # 延迟初始化日志
 _setup_logging()
+
+
+@contextmanager
+def backup_db_connection(backup_path):
+    """备份数据库连接上下文管理器"""
+    conn = None
+    try:
+        conn = sqlite3.connect(backup_path)
+        cursor = conn.cursor()
+        yield conn, cursor
+    finally:
+        if conn:
+            conn.close()
 
 
 def _load_schedule_module():
@@ -84,20 +98,15 @@ class AutoBackupSystem:
     def verify_backup(backup_path):
         """验证备份文件是否有效"""
         try:
-            conn = sqlite3.connect(backup_path)
-            try:
-                c = conn.cursor()
-
+            with backup_db_connection(backup_path) as (conn, c):
                 # 检查关键表是否存在
                 tables = ['users', 'products', 'logistics']
-                for table in tables:
-                    c.execute(f"SELECT COUNT(*) FROM {table}")
-                    count = c.fetchone()[0]
-                    logging.info(f"备份验证 - {table}: {count} 条记录")
+                for table_name in tables:
+                    c.execute(f"SELECT COUNT(*) FROM {table_name}")
+                    record_count = c.fetchone()[0]
+                    logging.info(f"备份验证 - {table_name}: {record_count} 条记录")
 
                 return True
-            finally:
-                conn.close()
 
         except (sqlite3.Error, OSError) as e:
             logging.error(f"备份验证失败: {str(e)}")

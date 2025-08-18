@@ -7,68 +7,50 @@ import os
 import sqlite3
 import shutil
 from datetime import datetime
-try:
-    from .auto_backup import AutoBackupSystem
-except ImportError:
-    from auto_backup import AutoBackupSystem
+from contextlib import contextmanager
 
 
-class BackupManager:
-    """备份管理器类"""
+@contextmanager
+def backup_db_connection(backup_path):
+    """备份数据库连接上下文管理器"""
+    conn = None
+    try:
+        conn = sqlite3.connect(backup_path)
+        cursor = conn.cursor()
+        yield conn, cursor
+    finally:
+        if conn:
+            conn.close()
 
-    def __init__(self):
-        self.backup_dir = "backups"
 
-    def list_backups(self):
-        """列出所有备份文件"""
-        if not os.path.exists(self.backup_dir):
-            print("❌ 备份目录不存在")
+def create_backup():
+    """创建数据库备份"""
+    try:
+        # 确保备份目录存在
+        backup_dir = "backups"
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir)
+
+        # 生成备份文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"manual_backup_{timestamp}.db"
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        # 复制数据库文件
+        shutil.copy2("pricing_system.db", backup_path)
+
+        # 验证备份
+        if verify_backup(backup_path):
+            print(f"✅ 备份成功: {backup_filename}")
+            return backup_filename
+        else:
+            print(f"❌ 备份验证失败: {backup_filename}")
+            os.remove(backup_path)
             return None
 
-        backup_files = []
-        for file in os.listdir(self.backup_dir):
-            if file.endswith('.db'):
-                file_path = os.path.join(self.backup_dir, file)
-                size = os.path.getsize(file_path)
-                mtime = os.path.getmtime(file_path)
-                backup_files.append({
-                    'name': file,
-                    'size_mb': round(size / (1024 * 1024), 2),
-                    'mtime': datetime.fromtimestamp(mtime),
-                    'path': file_path
-                })
-
-        # 按时间排序
-        backup_files.sort(key=lambda x: x['mtime'], reverse=True)
-        return backup_files
-
-    @staticmethod
-    def verify_backup(backup_path):
-        """验证备份文件"""
-        try:
-            conn = sqlite3.connect(backup_path)
-            try:
-                c = conn.cursor()
-
-                # 检查关键表
-                tables = ['users', 'products', 'logistics']
-                stats = {}
-
-                for table in tables:
-                    try:
-                        c.execute(f"SELECT COUNT(*) FROM {table}")
-                        count = c.fetchone()[0]
-                        stats[table] = count
-                    except sqlite3.OperationalError:
-                        stats[table] = "表不存在"
-
-                return stats
-            finally:
-                conn.close()
-
-        except (sqlite3.Error, OSError) as e:
-            print(f"❌ 备份验证失败: {e}")
-            return None
+    except Exception as e:
+        print(f"❌ 备份失败: {e}")
+        return None
 
 
 def list_backups():
@@ -112,168 +94,268 @@ def list_backups():
 def verify_backup(backup_path):
     """验证备份文件"""
     try:
-        conn = sqlite3.connect(backup_path)
-        try:
-            c = conn.cursor()
-
+        with backup_db_connection(backup_path) as (conn, c):
             # 检查关键表
             tables = ['users', 'products', 'logistics']
             stats = {}
 
-            for table in tables:
+            for table_name in tables:
                 try:
-                    c.execute(f"SELECT COUNT(*) FROM {table}")
-                    count = c.fetchone()[0]
-                    stats[table] = count
+                    c.execute(f"SELECT COUNT(*) FROM {table_name}")
+                    record_count = c.fetchone()[0]
+                    stats[table_name] = record_count
                 except sqlite3.OperationalError:
-                    stats[table] = "表不存在"
+                    stats[table_name] = "表不存在"
 
             return stats
-        finally:
-            conn.close()
 
     except (sqlite3.Error, OSError) as e:
         print(f"❌ 备份验证失败: {e}")
         return None
 
 
-def show_backup_details(backup_filename):
-    """显示备份文件详细信息"""
-    backup_path = os.path.join("backups", backup_filename)
-
-    if not os.path.exists(backup_path):
-        print(f"❌ 备份文件不存在: {backup_filename}")
-        return
-
-    print(f"📊 备份文件详情: {backup_filename}")
-    print("=" * 50)
-
-    # 文件信息
-    size = os.path.getsize(backup_path)
-    mtime = os.path.getmtime(backup_path)
-    print(f"文件大小: {round(size / (1024 * 1024), 2)} MB")
-    print(
-        f"创建时间: {datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')}"
-    )
-
-    # 数据库内容统计
-    stats = verify_backup(backup_path)
-    if stats:
-        print("\n📋 数据库内容:")
-        for table, count in stats.items():
-            print(f"  {table}: {count} 条记录")
-    else:
-        print("❌ 无法验证备份文件")
-
-
-def restore_backup(backup_filename, confirm=False):
+def restore_backup(backup_filename, confirm=None):
     """从备份文件恢复数据库"""
-    backup_path = os.path.join("backups", backup_filename)
+    try:
+        backup_dir = "backups"
+        backup_path = os.path.join(backup_dir, backup_filename)
 
-    if not os.path.exists(backup_path):
-        print(f"❌ 备份文件不存在: {backup_filename}")
-        return False
-
-    if not confirm:
-        print(f"⚠️ 警告: 即将从备份文件 {backup_filename} 恢复数据库")
-        print("这将覆盖当前数据库中的所有数据！")
-        response = input("确认恢复吗？(输入 'yes' 确认): ")
-        if response.lower() != 'yes':
-            print("❌ 恢复操作已取消")
+        if not os.path.exists(backup_path):
+            print(f"❌ 备份文件不存在: {backup_filename}")
             return False
 
-    try:
+        # 验证备份文件
+        if not verify_backup(backup_path):
+            print(f"❌ 备份文件验证失败: {backup_filename}")
+            return False
+
+        # 如果confirm参数为False，直接返回False（模拟用户取消）
+        if confirm is False:
+            return False
+
+        # 如果confirm参数为None，询问用户确认
+        if confirm is None:
+            try:
+                user_input = input(
+                    f"确认要恢复备份 {backup_filename} 吗？(y/N): "
+                ).strip().lower()
+                if user_input not in ['y', 'yes']:
+                    print("❌ 用户取消恢复操作")
+                    return False
+            except (EOFError, KeyboardInterrupt):
+                print("❌ 用户取消恢复操作")
+                return False
+
         # 创建当前数据库的备份
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         current_backup = f"pre_restore_backup_{timestamp}.db"
         shutil.copy2(
             "pricing_system.db",
-            os.path.join("backups", current_backup),
+            os.path.join(backup_dir, current_backup)
         )
-        print(f"✅ 已创建当前数据库备份: {current_backup}")
 
         # 恢复数据库
         shutil.copy2(backup_path, "pricing_system.db")
+
         print(f"✅ 数据库恢复成功: {backup_filename}")
         return True
 
-    except OSError as e:
+    except Exception as e:
         print(f"❌ 数据库恢复失败: {e}")
         return False
 
 
+def show_backup_details(backup_filename):
+    """显示备份文件详细信息"""
+    try:
+        backup_dir = "backups"
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        if not os.path.exists(backup_path):
+            print(f"❌ 备份文件不存在: {backup_filename}")
+            return None
+
+        # 获取文件信息
+        size = os.path.getsize(backup_path)
+        mtime = os.path.getmtime(backup_path)
+
+        # 验证备份
+        stats = verify_backup(backup_path)
+
+        print(f"📋 备份文件详情: {backup_filename}")
+        size_mb = round(size / (1024 * 1024), 2)
+        print(f"📁 文件大小: {size_mb} MB")
+        time_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"📅 创建时间: {time_str}")
+
+        if stats:
+            print("📊 数据库表统计:")
+            for table_name, record_count in stats.items():
+                print(f"  {table_name}: {record_count}")
+
+        return {
+            'name': backup_filename,
+            'size_mb': round(size / (1024 * 1024), 2),
+            'mtime': datetime.fromtimestamp(mtime),
+            'stats': stats
+        }
+
+    except Exception as e:
+        print(f"❌ 获取备份详情失败: {e}")
+        return None
+
+
 def cleanup_backups(keep_count=10):
-    """清理旧的备份文件"""
-    backup_system = AutoBackupSystem()
-    backup_system.max_backups = keep_count
-    backup_system.cleanup_old_backups()
-    print(f"✅ 已清理旧备份，保留最新 {keep_count} 个备份文件")
+    """清理旧备份文件，保留指定数量的最新备份"""
+    try:
+        backup_dir = "backups"
+        if not os.path.exists(backup_dir):
+            print("❌ 备份目录不存在")
+            return False
+
+        backup_files = []
+        for file in os.listdir(backup_dir):
+            if file.endswith('.db'):
+                file_path = os.path.join(backup_dir, file)
+                mtime = os.path.getmtime(file_path)
+                backup_files.append((file, file_path, mtime))
+
+        # 按修改时间排序
+        backup_files.sort(key=lambda x: x[2], reverse=True)
+
+        # 删除多余的备份
+        if len(backup_files) > keep_count:
+            for file, file_path, _ in backup_files[keep_count:]:
+                os.remove(file_path)
+                print(f"🗑️ 删除旧备份: {file}")
+
+        print(
+            f"✅ 清理完成，保留 {min(len(backup_files), keep_count)} 个最新备份"
+        )
+        return True
+
+    except Exception as e:
+        print(f"❌ 清理备份失败: {e}")
+        return False
+
+
+def delete_backup(backup_filename):
+    """删除备份文件"""
+    try:
+        backup_dir = "backups"
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        if not os.path.exists(backup_path):
+            print(f"❌ 备份文件不存在: {backup_filename}")
+            return False
+
+        os.remove(backup_path)
+        print(f"✅ 备份文件删除成功: {backup_filename}")
+        return True
+
+    except Exception as e:
+        print(f"❌ 删除备份文件失败: {e}")
+        return False
 
 
 def main():
-    """主菜单"""
+    """主菜单界面"""
     while True:
-        print("\n" + "=" * 50)
-        print("💾 备份管理工具")
-        print("=" * 50)
-        print("1. 查看备份列表")
+        print("\n" + "="*50)
+        print("📦 备份管理系统")
+        print("="*50)
+        print("1. 列出备份文件")
         print("2. 查看备份详情")
-        print("3. 恢复数据库")
+        print("3. 恢复备份")
         print("4. 清理旧备份")
-        print("5. 创建手动备份")
+        print("5. 创建新备份")
         print("6. 退出")
-        print("-" * 50)
+        print("-"*50)
 
-        choice = input("请选择操作 (1-6): ").strip()
+        try:
+            choice = input("请选择操作 (1-6): ").strip()
 
-        if choice == '1':
-            list_backups()
+            if choice == "1":
+                list_backups()
 
-        elif choice == '2':
-            backup_files = list_backups()
-            if backup_files:
+            elif choice == "2":
+                files = list_backups()
+                if files:
+                    try:
+                        index = int(input("请输入备份文件序号: ")) - 1
+                        if 0 <= index < len(files):
+                            show_backup_details(files[index]['name'])
+                        else:
+                            print("❌ 无效的序号")
+                    except (ValueError, IndexError):
+                        print("❌ 无效的输入")
+
+            elif choice == "3":
+                files = list_backups()
+                if files:
+                    try:
+                        index = int(input("请输入要恢复的备份文件序号: ")) - 1
+                        if 0 <= index < len(files):
+                            restore_backup(files[index]['name'])
+                        else:
+                            print("❌ 无效的序号")
+                    except (ValueError, IndexError):
+                        print("❌ 无效的输入")
+
+            elif choice == "4":
                 try:
-                    index = int(input("请输入备份文件序号: ")) - 1
-                    if 0 <= index < len(backup_files):
-                        show_backup_details(backup_files[index]['name'])
-                    else:
-                        print("❌ 无效的序号")
+                    keep_count = int(input("请输入要保留的备份数量: "))
+                    cleanup_backups(keep_count)
                 except ValueError:
-                    print("❌ 请输入有效的数字")
+                    print("❌ 无效的数量")
 
-        elif choice == '3':
-            backup_files = list_backups()
-            if backup_files:
-                try:
-                    index = int(input("请输入要恢复的备份文件序号: ")) - 1
-                    if 0 <= index < len(backup_files):
-                        restore_backup(backup_files[index]['name'])
-                    else:
-                        print("❌ 无效的序号")
-                except ValueError:
-                    print("❌ 请输入有效的数字")
+            elif choice == "5":
+                create_backup()
 
-        elif choice == '4':
-            try:
-                prompt = "请输入要保留的备份文件数量(默认10): "
-                keep_count = int(input(prompt) or "10")
-                cleanup_backups(keep_count)
-            except ValueError:
-                print("❌ 请输入有效的数字")
+            elif choice == "6":
+                print("👋 再见！")
+                break
 
-        elif choice == '5':
-            backup_system = AutoBackupSystem()
-            if backup_system.manual_backup():
-                print("✅ 手动备份创建成功")
             else:
-                print("❌ 手动备份创建失败")
+                print("❌ 无效的选择，请输入 1-6")
 
-        elif choice == '6':
-            print("👋 再见！")
+        except (EOFError, KeyboardInterrupt):
+            print("\n👋 再见！")
             break
-        else:
-            print("❌ 无效的选择，请重新输入")
 
 
 if __name__ == "__main__":
-    main()
+    # 命令行界面
+    import sys
+
+    if len(sys.argv) < 2:
+        print("使用方法:")
+        print("  python backup_manager.py create    # 创建备份")
+        print("  python backup_manager.py list      # 列出备份")
+        print("  python backup_manager.py verify <filename>  # 验证备份")
+        print("  python backup_manager.py restore <filename> # 恢复备份")
+        print("  python backup_manager.py delete <filename>  # 删除备份")
+        sys.exit(1)
+
+    command = sys.argv[1]
+
+    if command == "create":
+        create_backup()
+    elif command == "list":
+        list_backups()
+    elif command == "verify" and len(sys.argv) > 2:
+        filename = sys.argv[2]
+        result = verify_backup(os.path.join("backups", filename))
+        if result:
+            print("✅ 备份验证成功:")
+            for table, count in result.items():
+                print(f"  {table}: {count}")
+    elif command == "restore" and len(sys.argv) > 2:
+        filename = sys.argv[2]
+        restore_backup(filename)
+    elif command == "delete" and len(sys.argv) > 2:
+        filename = sys.argv[2]
+        delete_backup(filename)
+    else:
+        print("❌ 无效的命令")
+        sys.exit(1)
