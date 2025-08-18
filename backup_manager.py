@@ -47,22 +47,24 @@ class BackupManager:
         """验证备份文件"""
         try:
             conn = sqlite3.connect(backup_path)
-            c = conn.cursor()
+            try:
+                c = conn.cursor()
 
-            # 检查关键表
-            tables = ['users', 'products', 'logistics']
-            stats = {}
+                # 检查关键表
+                tables = ['users', 'products', 'logistics']
+                stats = {}
 
-            for table in tables:
-                try:
-                    c.execute(f"SELECT COUNT(*) FROM {table}")
-                    count = c.fetchone()[0]
-                    stats[table] = count
-                except sqlite3.OperationalError:
-                    stats[table] = "表不存在"
+                for table in tables:
+                    try:
+                        c.execute(f"SELECT COUNT(*) FROM {table}")
+                        count = c.fetchone()[0]
+                        stats[table] = count
+                    except sqlite3.OperationalError:
+                        stats[table] = "表不存在"
 
-            conn.close()
-            return stats
+                return stats
+            finally:
+                conn.close()
 
         except (sqlite3.Error, OSError) as e:
             print(f"❌ 备份验证失败: {e}")
@@ -111,22 +113,24 @@ def verify_backup(backup_path):
     """验证备份文件"""
     try:
         conn = sqlite3.connect(backup_path)
-        c = conn.cursor()
+        try:
+            c = conn.cursor()
 
-        # 检查关键表
-        tables = ['users', 'products', 'logistics']
-        stats = {}
+            # 检查关键表
+            tables = ['users', 'products', 'logistics']
+            stats = {}
 
-        for table in tables:
-            try:
-                c.execute(f"SELECT COUNT(*) FROM {table}")
-                count = c.fetchone()[0]
-                stats[table] = count
-            except sqlite3.OperationalError:
-                stats[table] = "表不存在"
+            for table in tables:
+                try:
+                    c.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = c.fetchone()[0]
+                    stats[table] = count
+                except sqlite3.OperationalError:
+                    stats[table] = "表不存在"
 
-        conn.close()
-        return stats
+            return stats
+        finally:
+            conn.close()
 
     except (sqlite3.Error, OSError) as e:
         print(f"❌ 备份验证失败: {e}")

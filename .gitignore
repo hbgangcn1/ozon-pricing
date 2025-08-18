@@ -95,3 +95,24 @@ pyrightconfig.json
 run_tests.py
 requirements_test.txt
 tests/test_ui_user_blocks.py
+
+# 临时调试和修复文件
+auto_fix_connections.py
+connection_wrapper.py
+coverage_report.txt
+debug_connection_leaks.py
+enhanced_connection_monitor.py
+final_connection_fix.py
+fix_connection_leaks.py
+fix_leaks.py
+pytest.ini
+run_tests.bat
+safe_db_utils.py
+simple_connection_fix.py
+smart_connection_fix.py
+ui_logistics_backup.py
+ui_logistics_original.py
+improve_test_coverage.py
+validate_tests.py
+TEST_COVERAGE_ANALYSIS_REPORT.md
+COVERAGE_SUMMARY.md

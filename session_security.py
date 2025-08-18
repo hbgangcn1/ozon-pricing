@@ -388,7 +388,8 @@ def secure_login(username_or_email: str, password: str) -> bool:
     user = verify_user(username_or_email, password)
 
     if user:
-        # 登录成功
+        # 登录成功，清除旧的session state
+        SessionSecurity.invalidate_session()
         SessionSecurity.record_login_attempt(username_or_email, True)
 
         # 首次登录后再开始计时：仅对 monthly/enterprise 首次登录生效

@@ -4,6 +4,7 @@ from typing import Optional
 try:
     from .db_utils import (
         init_db, check_user_subscription_status, update_user_password,
+        is_admin,
     )
     from .exchange_service import ExchangeRateService, get_usd_rate
     from .ui_user import user_management_page, login_or_register_page
@@ -22,6 +23,7 @@ try:
 except ImportError:  # Fallback when run as a top-level module
     from db_utils import (
         init_db, check_user_subscription_status, update_user_password,
+        is_admin,
     )
     from exchange_service import ExchangeRateService, get_usd_rate
     from ui_user import user_management_page, login_or_register_page
@@ -242,42 +244,45 @@ def settings_page():
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 备份管理
-    st.markdown('<div class="card-container">', unsafe_allow_html=True)
-    st.markdown(
-        '<h2 style="color: #667eea; margin-bottom: 20px;">'
-        '💾 备份管理</h2>',
-        unsafe_allow_html=True
-    )
+    # 备份管理 - 仅admin用户可见
+    if is_admin():
+        st.markdown('<div class="card-container">', unsafe_allow_html=True)
+        st.markdown(
+            '<h2 style="color: #667eea; margin-bottom: 20px;">'
+            '💾 备份管理</h2>',
+            unsafe_allow_html=True
+        )
 
-    col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-    with col1:
-        if st.button("📦 立即备份", help="手动创建数据库备份"):
-            if create_manual_backup():
-                st.success("✅ 备份创建成功！")
-            else:
-                st.error("❌ 备份创建失败！")
+        with col1:
+            if st.button("📦 立即备份", help="手动创建数据库备份"):
+                if create_manual_backup():
+                    st.success("✅ 备份创建成功！")
+                else:
+                    st.error("❌ 备份创建失败！")
 
-    with col2:
-        if st.button("🔄 刷新状态", help="刷新备份状态信息"):
-            st.rerun()
+        with col2:
+            if st.button("🔄 刷新状态", help="刷新备份状态信息"):
+                st.rerun()
 
-    # 显示备份统计信息
-    backup_stats = get_backup_info()
-    if backup_stats:
-        st.write(f"**备份文件数量：** {backup_stats['count']} 个")
-        st.write(f"**总备份大小：** {backup_stats['total_size_mb']} MB")
+        # 显示备份统计信息
+        backup_stats = get_backup_info()
+        if backup_stats:
+            st.write(f"**备份文件数量：** {backup_stats['count']} 个")
+            st.write(f"**总备份大小：** {backup_stats['total_size_mb']} MB")
 
-        if backup_stats['files']:
-            st.write("**最新备份文件：**")
-            for i, file in enumerate(backup_stats['files'][:3]):
-                st.write(f"  {i+1}. {file['name']} "
-                         f"({file['mtime'].strftime('%Y-%m-%d %H:%M:%S')})")
-    else:
-        st.warning("⚠️ 无法获取备份信息")
+            if backup_stats['files']:
+                st.write("**最新备份文件：**")
+                for i, file in enumerate(backup_stats['files'][:3]):
+                    st.write(
+                        f"  {i+1}. {file['name']} "
+                        f"({file['mtime'].strftime('%Y-%m-%d %H:%M:%S')})"
+                    )
+        else:
+            st.warning("⚠️ 无法获取备份信息")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # 系统信息
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
@@ -350,9 +355,13 @@ def show_main_interface():
 
         # 显示剩余计算次数（如果是按月付费用户）
         if 'remaining_calculations' in subscription_status:
+            # 直接使用数据库中的最新值，避免session state缓存问题
+            remaining_calculations = (
+                subscription_status['remaining_calculations']
+            )
             st.sidebar.info(
                 f"🔢 剩余计算次数："
-                f"{subscription_status['remaining_calculations']}次"
+                f"{remaining_calculations}次"
             )
 
     menu_options = [
@@ -423,20 +432,6 @@ def show_password_change_form():
                 st.success("密码修改成功！")
             else:
                 st.error("当前密码错误")
-
-
-def main():
-    init_db()
-    # 初始化会话安全相关数据表，防止首次启动时表缺失
-    SessionSecurity.init_session_tables()
-
-    # 检查会话安全性
-    if not check_session_security():
-        login_or_register_page()
-        return
-
-    # 如果会话有效，显示主界面
-    show_main_interface()
 
 
 def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
@@ -696,12 +691,28 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
     return None
 
 
+def main():
+    init_db()
+    # 初始化会话安全相关数据表，防止首次启动时表缺失
+    SessionSecurity.init_session_tables()
+
+    # 检查会话安全性
+    if not check_session_security():
+        login_or_register_page()
+        return
+
+    # 如果会话有效，显示主界面
+    show_main_interface()
+
+
 if __name__ == "__main__":
-    # 启动自动备份服务
-    try:
-        start_backup_service()
-        print("🚀 自动备份服务已启动")
-    except (RuntimeError, OSError) as backup_exc:
-        print(f"⚠️ 自动备份服务启动失败: {backup_exc}")
+    # 使用 session_state 确保备份服务只启动一次
+    if not st.session_state.get('backup_service_started', False):
+        try:
+            start_backup_service()
+            print("🚀 自动备份服务已启动")
+            st.session_state.backup_service_started = True
+        except (RuntimeError, OSError) as backup_exc:
+            print(f"⚠️ 自动备份服务启动失败: {backup_exc}")
 
     main()

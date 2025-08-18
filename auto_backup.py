@@ -50,7 +50,7 @@ class AutoBackupSystem:
         self.db_path = db_path
         self.backup_dir = backup_dir
         self.backup_interval_hours = 6  # 每6小时备份一次
-        self.max_backups = 10  # 保留最近10个备份
+        self.max_backups = 28  # 保留最近28个备份（一周：7天 × 4次/天）
         self.backup_thread = None
         self.is_running = False
 
@@ -85,17 +85,19 @@ class AutoBackupSystem:
         """验证备份文件是否有效"""
         try:
             conn = sqlite3.connect(backup_path)
-            c = conn.cursor()
+            try:
+                c = conn.cursor()
 
-            # 检查关键表是否存在
-            tables = ['users', 'products', 'logistics']
-            for table in tables:
-                c.execute(f"SELECT COUNT(*) FROM {table}")
-                count = c.fetchone()[0]
-                logging.info(f"备份验证 - {table}: {count} 条记录")
+                # 检查关键表是否存在
+                tables = ['users', 'products', 'logistics']
+                for table in tables:
+                    c.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = c.fetchone()[0]
+                    logging.info(f"备份验证 - {table}: {count} 条记录")
 
-            conn.close()
-            return True
+                return True
+            finally:
+                conn.close()
 
         except (sqlite3.Error, OSError) as e:
             logging.error(f"备份验证失败: {str(e)}")

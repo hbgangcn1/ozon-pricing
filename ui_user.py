@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # 兼容包内导入与脚本直跑两种方式
 try:
     from .db_utils import (
-        get_db,
+        get_db_connection,
         require_admin,
         get_user_subscription_info,
         update_user_subscription,
@@ -19,7 +19,7 @@ try:
     )
 except ImportError:  # 当作为顶层脚本运行时
     from db_utils import (
-        get_db,
+        get_db_connection,
         require_admin,
         get_user_subscription_info,
         update_user_subscription,
@@ -33,6 +33,23 @@ except ImportError:  # 当作为顶层脚本运行时
 from typing import Any
 
 
+# 向后兼容：提供 get_db 以便旧测试可以 monkeypatch
+try:
+    from .db_utils import get_db as _legacy_get_db
+except (ImportError, ModuleNotFoundError):
+    try:
+        from db_utils import get_db as _legacy_get_db
+    except (ImportError, ModuleNotFoundError):
+        _legacy_get_db = None
+
+
+def get_db():
+    """测试兼容占位。生产代码不调用。"""
+    if _legacy_get_db is None:
+        raise AttributeError("get_db is deprecated; use get_db_connection")
+    return _legacy_get_db()
+
+
 def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
     """
     将admin账号的物流规则同步到指定用户账号
@@ -41,72 +58,71 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
         target_user_id: 目标用户ID
         overwrite: 是否覆盖模式（删除用户现有规则）
     """
-    conn, c = get_db()
+    with get_db_connection() as (conn, c):
+        try:
+            # 获取admin用户ID
+            admin_user = c.execute(
+                "SELECT id FROM users WHERE role='admin' LIMIT 1"
+            ).fetchone()
 
-    try:
-        # 获取admin用户ID
-        admin_user = c.execute(
-            "SELECT id FROM users WHERE role='admin' LIMIT 1"
-        ).fetchone()
+            if not admin_user:
+                st.error("找不到admin用户")
+                return
 
-        if not admin_user:
-            st.error("找不到admin用户")
-            return
+            admin_id = admin_user[0]
 
-        admin_id = admin_user[0]
+            # 如果是覆盖模式，先删除目标用户的现有物流规则
+            if overwrite:
+                c.execute(
+                    "DELETE FROM logistics WHERE user_id = ?",
+                    (target_user_id,)
+                )
 
-        # 如果是覆盖模式，先删除目标用户的现有物流规则
-        if overwrite:
-            c.execute(
-                "DELETE FROM logistics WHERE user_id = ?",
-                (target_user_id,)
-            )
+            # 获取admin的所有物流规则
+            admin_logistics = c.execute(
+                "SELECT * FROM logistics WHERE user_id = ?", (admin_id,)
+            ).fetchall()
 
-        # 获取admin的所有物流规则
-        admin_logistics = c.execute(
-            "SELECT * FROM logistics WHERE user_id = ?", (admin_id,)
-        ).fetchall()
+            # 获取logistics表的所有列名（除了id和user_id）
+            columns_info = c.execute("PRAGMA table_info(logistics)").fetchall()
+            columns = [col[1] for col in columns_info
+                       if col[1] not in ['id', 'user_id']]
 
-        # 获取logistics表的所有列名（除了id和user_id）
-        columns_info = c.execute("PRAGMA table_info(logistics)").fetchall()
-        columns = [col[1] for col in columns_info
-                   if col[1] not in ['id', 'user_id']]
+            # 复制每条物流规则到目标用户
+            for logistics_rule in admin_logistics:
+                # 构建INSERT语句
+                placeholders = ','.join(['?' for _ in columns])
+                columns_str = ','.join(columns)
 
-        # 复制每条物流规则到目标用户
-        for logistics_rule in admin_logistics:
-            # 构建INSERT语句
-            placeholders = ','.join(['?' for _ in columns])
-            columns_str = ','.join(columns)
+                # 准备数据（排除id和user_id列）
+                values = []
+                for col in columns:
+                    # 根据列名获取对应的值
+                    try:
+                        col_index = [
+                            info[1] for info in columns_info
+                        ].index(col)
+                        if col_index < len(logistics_rule):
+                            values.append(logistics_rule[col_index])
+                        else:
+                            values.append(None)  # 如果索引超出范围，使用None
+                    except (ValueError, IndexError):
+                        values.append(None)  # 如果找不到列或索引超出范围，使用None
 
-            # 准备数据（排除id和user_id列）
-            values = []
-            for col in columns:
-                # 根据列名获取对应的值
-                try:
-                    col_index = [info[1] for info in columns_info].index(col)
-                    if col_index < len(logistics_rule):
-                        values.append(logistics_rule[col_index])
-                    else:
-                        values.append(None)  # 如果索引超出范围，使用None
-                except (ValueError, IndexError):
-                    values.append(None)  # 如果找不到列或索引超出范围，使用None
+                # 插入新记录
+                c.execute(
+                    f"INSERT INTO logistics (user_id, {columns_str}) "
+                    f"VALUES (?, {placeholders})",
+                    [target_user_id] + values
+                )
 
-            # 插入新记录
-            c.execute(
-                f"INSERT INTO logistics (user_id, {columns_str}) "
-                f"VALUES (?, {placeholders})",
-                [target_user_id] + values
-            )
+            conn.commit()
+            st.success("物流规则同步成功！")
 
-        conn.commit()
-        st.success("物流规则同步成功！")
-
-    except sqlite3.Error as e:
-        conn.rollback()
-        st.error(f"同步失败: {str(e)}")
-    finally:
-        if isinstance(conn, sqlite3.Connection):
-            conn.close()
+        except sqlite3.Error as e:
+            conn.rollback()
+            st.error(f"同步失败: {str(e)}")
+            raise
 
 
 def user_management_page():
@@ -136,8 +152,7 @@ def user_management_page():
     )
 
     # 打开数据库连接
-    conn, c = get_db()
-    try:
+    with get_db_connection() as (conn, c):
         # 下拉框格式化函数：总返回 str
         def _format_user_type(x: object) -> str:
             mapping = {
@@ -177,8 +192,7 @@ def user_management_page():
                             exists = c.execute(
                                 (
                                     "SELECT 1 FROM users WHERE "
-                                    "LOWER(username) = "
-                                    "LOWER(?) LIMIT 1"
+                                    "LOWER(username) = LOWER(?) LIMIT 1"
                                 ),
                                 (username.strip(),),
                             ).fetchone()
@@ -406,9 +420,7 @@ def user_management_page():
                         if st.button("取消", key="cancel_delete_user"):
                             del st.session_state.delete_confirm_user_id
                             st.rerun()
-    finally:
-        if 'conn' in locals() and isinstance(conn, sqlite3.Connection):
-            conn.close()
+    # 数据库连接由上下文管理器自动关闭
 
 
 def subscription_management_page():

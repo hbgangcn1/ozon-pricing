@@ -3,8 +3,63 @@ import sqlite3
 import streamlit as st
 import hashlib
 import bcrypt
+import threading
+import atexit
 from typing import Optional, Tuple
-from password_utils import validate_password_strength
+try:
+    from .password_utils import validate_password_strength
+except ImportError:  # pragma: no cover - fallback for non-package execution
+    from password_utils import validate_password_strength
+
+# 数据库连接监控
+_connection_counter = 0
+_connection_lock = threading.Lock()
+_MAX_CONNECTIONS = 50  # 最大并发连接数阈值
+
+
+def _increment_connection_counter():
+    """增加连接计数器"""
+    global _connection_counter
+    with _connection_lock:
+        _connection_counter += 1
+        if _connection_counter > _MAX_CONNECTIONS:
+            print(
+                f"⚠️  警告: 当前活跃连接数 {_connection_counter} "
+                f"超过阈值 {_MAX_CONNECTIONS}"
+            )
+        return _connection_counter
+
+
+def _decrement_connection_counter():
+    """减少连接计数器"""
+    global _connection_counter
+    with _connection_lock:
+        _connection_counter = max(0, _connection_counter - 1)
+        return _connection_counter
+
+
+def get_connection_count():
+    """获取当前活跃连接数"""
+    with _connection_lock:
+        return _connection_counter
+
+
+def reset_connection_counter():
+    """重置连接计数器（用于测试）"""
+    global _connection_counter
+    with _connection_lock:
+        _connection_counter = 0
+
+
+def _check_connections_at_exit():
+    """程序退出时检查连接数"""
+    count = get_connection_count()
+    if count > 0:
+        print(f"⚠️  警告: 程序退出时仍有 {count} 个数据库连接未关闭")
+
+
+# 注册退出检查
+atexit.register(_check_connections_at_exit)
 
 
 def hash_password(password: str) -> str:
@@ -91,6 +146,7 @@ def get_db():
     except sqlite3.Error:
         pass
     conn.row_factory = sqlite3.Row
+
     return conn, conn.cursor()
 
 
@@ -120,11 +176,17 @@ class DBConnection:
         cursor = conn.cursor()
         self._conn = conn
         self._cursor = cursor
+
+        # 增加连接计数
+        _increment_connection_counter()
+
         return conn, cursor
 
     def __exit__(self, exc_type, exc, tb) -> None:
         if self._conn is not None:
             self._conn.close()
+            # 减少连接计数
+            _decrement_connection_counter()
 
 
 def get_db_connection() -> DBConnection:
@@ -140,7 +202,7 @@ def current_user_id():
 
 def is_admin():
     """检查当前用户是否为管理员"""
-    if 'user' not in st.session_state or st.session_state.user is None:
+    if not hasattr(st.session_state, 'user') or st.session_state.user is None:
         return False
     return st.session_state.user.get('role') == 'admin'
 
