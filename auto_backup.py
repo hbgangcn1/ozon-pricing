@@ -148,8 +148,10 @@ class AutoBackupSystem:
             total_size = 0
 
             for fname in os.listdir(self.backup_dir):
+                is_auto_backup = fname.startswith("auto_backup_")
+                is_manual_backup = fname.startswith("manual_backup_")
                 if (
-                    fname.startswith("auto_backup_")
+                    (is_auto_backup or is_manual_backup)
                     and fname.endswith(".db")
                 ):
                     file_path = os.path.join(self.backup_dir, fname)
@@ -286,7 +288,25 @@ class AutoBackupSystem:
     def manual_backup(self):
         """手动创建备份"""
         logging.info("📦 开始手动备份...")
-        return self.create_backup()
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"manual_backup_{timestamp}.db"
+            backup_path = os.path.join(self.backup_dir, backup_filename)
+
+            # 复制数据库文件
+            shutil.copy2(self.db_path, backup_path)
+            # 验证备份
+            if self.verify_backup(backup_path):
+                logging.info(f"✅ 手动备份成功: {backup_filename}")
+                return True
+            else:
+                logging.error(f"❌ 手动备份验证失败: {backup_filename}")
+                os.remove(backup_path)
+                return False
+
+        except (OSError, sqlite3.Error) as e:
+            logging.error(f"❌ 手动备份失败: {str(e)}")
+            return False
 
 
 # 全局备份系统实例

@@ -341,7 +341,7 @@ def pricing_calculator_page():
     if should_display_results:
         # 显示成功消息
         st.success("✅ 计算完成！")
-        
+
         # 显示保存的计算结果
         if (hasattr(st.session_state, 'calculation_completed') and
                 st.session_state.calculation_completed):

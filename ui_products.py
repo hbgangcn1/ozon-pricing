@@ -798,7 +798,7 @@ def edit_product_form():
         else:
             with get_db_connection() as (conn, c):
                 c.execute(
-                """UPDATE products SET
+                    """UPDATE products SET
                     name=?, russian_name=?, category=?, model=?,
                     weight_g=?, length_cm=?, width_cm=?, height_cm=?,
                     is_cylinder=?, cylinder_diameter=?, cylinder_length=?,
@@ -810,37 +810,37 @@ def edit_product_form():
                     target_profit_margin=?, commission_rate=?,
                     withdrawal_fee_rate=?, payment_processing_fee=?
                 WHERE id=? AND user_id=?""",
-                (
-                    name,
-                    russian_name,
-                    category,
-                    model,
-                    weight_g,
-                    length_cm,
-                    width_cm,
-                    height_cm,
-                    int(is_cylinder),
-                    cylinder_diameter,
-                    cylinder_length if is_cylinder else 0.0,
-                    int(has_battery),
-                    battery_capacity_wh,
-                    battery_capacity_mah,
-                    battery_voltage,
-                    int(has_msds),
-                    int(has_flammable),
-                    unit_price,
-                    shipping_fee,
-                    labeling_fee,
-                    promotion_discount,
-                    promotion_cost_rate,
-                    target_profit_margin,
-                    commission_rate,
-                    withdrawal_fee_rate,
-                    payment_processing_fee,
-                    pid,
-                    uid,
-                ),
-            )
+                    (
+                        name,
+                        russian_name,
+                        category,
+                        model,
+                        weight_g,
+                        length_cm,
+                        width_cm,
+                        height_cm,
+                        int(is_cylinder),
+                        cylinder_diameter,
+                        cylinder_length if is_cylinder else 0.0,
+                        int(has_battery),
+                        battery_capacity_wh,
+                        battery_capacity_mah,
+                        battery_voltage,
+                        int(has_msds),
+                        int(has_flammable),
+                        unit_price,
+                        shipping_fee,
+                        labeling_fee,
+                        promotion_discount,
+                        promotion_cost_rate,
+                        target_profit_margin,
+                        commission_rate,
+                        withdrawal_fee_rate,
+                        payment_processing_fee,
+                        pid,
+                        uid,
+                    ),
+                )
                 conn.commit()
             st.success("产品修改成功！")
             del st.session_state.edit_product_id

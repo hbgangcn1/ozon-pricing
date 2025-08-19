@@ -317,6 +317,7 @@ def logistics_page():
             allow_flammable = st.checkbox(
                 "允许运输易燃液体", key="add_allow_flammable"
             )
+
             if st.button("添加物流规则", key="add_logistic_button"):
                 # 到期拦截
                 if not subscription_status.get("valid", True):
@@ -438,36 +439,61 @@ def logistics_page():
                     # 重新计算优先级分组
                     calculate_and_update_priority_groups(uid)
 
+                    # 清除物流数据缓存
+                    cache_key = f"logistics_data_{uid}"
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
+
                     st.success("物流规则添加成功！")
                     st.rerun()
         # ------------------------------------------------------------------
         # 物流列表
         # ------------------------------------------------------------------
         st.subheader("物流列表")
-        land_query = (
-            "SELECT * FROM logistics WHERE type='land' " "AND user_id = ?"
-        )
-        # 忽略pandas关于数据库连接类型的警告
-        import warnings
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", category=UserWarning, module="pandas.io.sql"
-            )
-            warnings.filterwarnings(
-                "ignore", message="pandas only supports SQLAlchemy"
-            )
-            land_df = pd.read_sql(land_query, conn, params=(uid,))
+        # 使用session state缓存物流数据，避免重复查询
+        cache_key = f"logistics_data_{uid}"
 
-        air_query = "SELECT * FROM logistics WHERE type='air' AND user_id = ?"
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", category=UserWarning, module="pandas.io.sql"
+        # 检查缓存是否存在且未过期（5分钟过期）
+        if cache_key in st.session_state:
+            cached_data = st.session_state[cache_key]
+            cache_age = pd.Timestamp.now() - cached_data['timestamp']
+            if cache_age.total_seconds() > 300:  # 5分钟过期
+                del st.session_state[cache_key]
+
+        if cache_key not in st.session_state:
+            land_query = (
+                "SELECT * FROM logistics WHERE type='land' "
+                "AND user_id = ?"
             )
-            warnings.filterwarnings(
-                "ignore", message="pandas only supports SQLAlchemy"
+            air_query = (
+                "SELECT * FROM logistics WHERE type='air' AND user_id = ?"
             )
-            air_df = pd.read_sql(air_query, conn, params=(uid,))
+
+            # 忽略pandas关于数据库连接类型的警告
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", category=UserWarning, module="pandas.io.sql"
+                )
+                warnings.filterwarnings(
+                    "ignore", message="pandas only supports SQLAlchemy"
+                )
+                land_df = pd.read_sql(land_query, conn, params=(uid,))
+                air_df = pd.read_sql(air_query, conn, params=(uid,))
+
+            # 缓存查询结果
+            st.session_state[cache_key] = {
+                'land_df': land_df,
+                'air_df': air_df,
+                'timestamp': pd.Timestamp.now()
+            }
+
+        # 使用缓存的数据
+        cached_data = st.session_state[cache_key]
+        land_df = cached_data['land_df']
+        air_df = cached_data['air_df']
 
         left, right = st.columns(2)
         with left:
@@ -635,6 +661,12 @@ def logistics_page():
 
                     # 重新计算优先级分组
                     calculate_and_update_priority_groups(uid)
+
+                    # 清除物流数据缓存
+                    cache_key = f"logistics_data_{uid}"
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
+
                     del st.session_state.delete_confirm_logistic_id
                     st.rerun()
             with col_cancel:
@@ -1044,6 +1076,11 @@ def edit_logistic_form():
 
                 # 重新计算优先级分组
                 calculate_and_update_priority_groups(uid)
+
+                # 清除物流数据缓存
+                cache_key = f"logistics_data_{uid}"
+                if cache_key in st.session_state:
+                    del st.session_state[cache_key]
 
                 st.success("修改成功！")
                 del st.session_state.edit_logistic_id
