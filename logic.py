@@ -611,6 +611,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     commission_rate_input,
                     withdrawal_rate_input,
                     payment_rate_input,
+                    return_rate_input,
                     rate_input,
                     max_iter=5):
                 """计算最终价格的浮动代理费"""
@@ -623,7 +624,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         (1 - promotion_rate_input) *
                         (1 - commission_rate_input) *
                         (1 - withdrawal_rate_input) *
-                        (1 - payment_rate_input)
+                        (1 - payment_rate_input) *
+                        (1 - return_rate_input)
                     )
 
                     price_rub = price / rate_input
@@ -645,12 +647,13 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 "withdrawal_fee_rate", 0.02)
             final_payment_rate = product.get(
                 "payment_processing_fee", 0)
+            final_return_rate = product.get("return_rate", 0)
 
             # 使用浮动代理费计算最终价格
             final_price, actual_commission = calc_final_commission(
                 base_cost_calc, final_target_margin, final_promotion_rate,
                 final_commission_rate, final_withdrawal_rate,
-                final_payment_rate, rate
+                final_payment_rate, final_return_rate, rate
             )
 
             if debug_list is not None:
@@ -733,7 +736,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
             # 根据定价公式计算预期利润（使用浮动代理费）
             # 定价公式：价格 = (总成本 / (1 - 目标利润率)) / 分母
             # 总成本 = 产品成本 + 贴标费 + 运费 + 物流成本 + 浮动代理费
-            # 分母 = (1 - 推广费率) * (1 - 佣金率) * (1 - 提现费率) * (1 - 支付处理费率)
+            # 分母 = (1 - 推广费率) * (1 - 佣金率) * (1 - 提现费率) * \
+            #        (1 - 支付处理费率) * (1 - 历史退货率)
 
             # 实际总成本（不包括各种费率扣除）
             logistics_cost = (land_cost if land_cost is not None
@@ -747,6 +751,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     commission_rate_input,
                     withdrawal_rate_input,
                     payment_rate_input,
+                    return_rate_input,
                     rate_input,
                     max_iter=5):
                 """计算预期利润的浮动代理费"""
@@ -758,7 +763,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         (1 - promotion_rate_input) *
                         (1 - commission_rate_input) *
                         (1 - withdrawal_rate_input) *
-                        (1 - payment_rate_input)
+                        (1 - payment_rate_input) *
+                        (1 - return_rate_input)
                     )
 
                     price_rub = price / rate_input
@@ -772,8 +778,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 return commission_fee / rate_input
 
             # 基础成本（不包含代理费）
-            profit_base_cost = (unit_price + labeling_fee + shipping_fee +
-                                logistics_cost)
+            profit_base_cost = (
+                unit_price + labeling_fee + shipping_fee + logistics_cost
+            )
             profit_target_margin = product.get("target_profit_margin", 0.2)
             profit_promotion_rate = product.get("promotion_cost_rate", 0)
             profit_commission_rate = product.get("commission_rate", 0.08)
@@ -781,12 +788,13 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 "withdrawal_fee_rate", 0.02)
             profit_payment_rate = product.get(
                 "payment_processing_fee", 0)
+            profit_return_rate = product.get("return_rate", 0)
 
             # 计算浮动代理费
             profit_actual_commission = calc_profit_commission(
                 profit_base_cost, profit_target_margin, profit_promotion_rate,
                 profit_commission_rate, profit_withdrawal_rate,
-                profit_payment_rate, rate
+                profit_payment_rate, profit_return_rate, rate
             )
 
             # 包含浮动代理费的总成本

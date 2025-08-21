@@ -45,8 +45,23 @@ st.set_page_config(
     page_title="物流定价系统",
     page_icon="🚚",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
+
+# 设置默认主题为Light
+st.markdown("""
+<script>
+// 设置默认主题为Light
+if (window.localStorage.getItem('theme') === null) {
+    window.localStorage.setItem('theme', 'light');
+}
+</script>
+""", unsafe_allow_html=True)
 
 # 自定义CSS样式
 st.markdown("""

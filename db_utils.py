@@ -691,6 +691,18 @@ def _upgrade_logistics_price_min():
         conn.commit()
 
 
+def _upgrade_products_return_rate():
+    """升级：新增产品历史退货率字段"""
+    with get_db_connection() as (conn, c):
+        cols = [col[1] for col in c.execute(
+            "PRAGMA table_info(products)").fetchall()]
+        if "return_rate" not in cols:
+            c.execute(
+                "ALTER TABLE products ADD COLUMN return_rate REAL DEFAULT 0"
+            )
+        conn.commit()
+
+
 def create_user(username, password, role="user", email=None):
     """创建用户"""
     # 确保数据库已初始化
@@ -837,7 +849,8 @@ def init_db():
                 target_profit_margin   REAL DEFAULT 0.5,
                 commission_rate        REAL DEFAULT 0.17,
                 withdrawal_fee_rate    REAL DEFAULT 0.01,
-                payment_processing_fee REAL DEFAULT 0.01
+                payment_processing_fee REAL DEFAULT 0.01,
+                return_rate            REAL DEFAULT 0
             )
             """
         )
@@ -903,6 +916,7 @@ def init_db():
         _upgrade_products_cylinder_length()
         _upgrade_products_new_fields()
         _upgrade_logistics_price_min()
+        _upgrade_products_return_rate()
         _upgrade_users_subscription_fields()
         # 3. 初始管理员（避免递归调用）
         admin_user = c.execute(
@@ -943,7 +957,7 @@ def add_product(product_data):
             'promotion_discount', 'promotion_cost_rate',
             'target_profit_margin',
             'commission_rate', 'withdrawal_fee_rate',
-            'payment_processing_fee'
+            'payment_processing_fee', 'return_rate'
         ]
 
         # 构建SQL语句

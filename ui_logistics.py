@@ -504,6 +504,7 @@ def logistics_page():
                 land_container = st.container()
                 with land_container:
                     # 为每个物流项显示信息和按钮
+                    selected_land_ids = []
                     for i, (_, row) in enumerate(land_df.iterrows()):
                         # 格式化物流名称（显示时包含送货方式）
                         formatted_name = format_logistics_name(
@@ -538,8 +539,17 @@ def logistics_page():
                             f"{special_items_str}"
                         )
 
-                        # 显示物流信息
-                        st.write(logistics_info)
+                        # 显示复选框和物流信息
+                        col_check, col_info = st.columns([1, 20])
+                        with col_check:
+                            if st.checkbox(
+                                "选择",
+                                key=f"check_land_{row['id']}",
+                                label_visibility="collapsed"
+                            ):
+                                selected_land_ids.append(row['id'])
+                        with col_info:
+                            st.write(logistics_info)
 
                         # 在每条规则后面显示对应的编辑和删除按钮
                         col_edit, col_del = st.columns(2)
@@ -564,6 +574,18 @@ def logistics_page():
 
                         # 添加分隔线
                         st.divider()
+
+                    # 批量删除按钮
+                    if selected_land_ids:
+                        st.info(f"已选择 {len(selected_land_ids)} 个陆运物流规则")
+                        if st.button("批量删除", key="batch_delete_land"):
+                            if not subscription_status.get("valid", True):
+                                st.error("账号到期，请联系客服续费")
+                                return
+                            st.session_state.batch_delete_land_ids = (
+                                selected_land_ids
+                            )
+                            st.rerun()
             else:
                 st.info("暂无陆运数据")
         with right:
@@ -574,6 +596,7 @@ def logistics_page():
                 air_container = st.container()
                 with air_container:
                     # 为每个物流项显示信息和按钮
+                    selected_air_ids = []
                     for i, (_, row) in enumerate(air_df.iterrows()):
                         # 格式化物流名称（显示时包含送货方式）
                         formatted_name = format_logistics_name(
@@ -608,8 +631,17 @@ def logistics_page():
                             f"{special_items_str}"
                         )
 
-                        # 显示物流信息
-                        st.write(logistics_info)
+                        # 显示复选框和物流信息
+                        col_check, col_info = st.columns([1, 20])
+                        with col_check:
+                            if st.checkbox(
+                                "选择",
+                                key=f"check_air_{row['id']}",
+                                label_visibility="collapsed"
+                            ):
+                                selected_air_ids.append(row['id'])
+                        with col_info:
+                            st.write(logistics_info)
 
                         # 在每条规则后面显示对应的编辑和删除按钮
                         col_edit, col_del = st.columns(2)
@@ -634,6 +666,18 @@ def logistics_page():
 
                         # 添加分隔线
                         st.divider()
+
+                    # 批量删除按钮
+                    if selected_air_ids:
+                        st.info(f"已选择 {len(selected_air_ids)} 个空运物流规则")
+                        if st.button("批量删除", key="batch_delete_air"):
+                            if not subscription_status.get("valid", True):
+                                st.error("账号到期，请联系客服续费")
+                                return
+                            st.session_state.batch_delete_air_ids = (
+                                selected_air_ids
+                            )
+                            st.rerun()
             else:
                 st.info("暂无空运数据")
 
@@ -672,6 +716,86 @@ def logistics_page():
             with col_cancel:
                 if st.button("取消", key="cancel_delete_logistic"):
                     del st.session_state.delete_confirm_logistic_id
+                    st.rerun()
+
+        # 批量删除确认对话框
+        if st.session_state.get("batch_delete_land_ids"):
+            # 到期拦截
+            if not subscription_status.get("valid", True):
+                st.error("账号到期，请联系客服续费")
+                del st.session_state.batch_delete_land_ids
+                return
+            st.warning("确定要删除这些陆运物流规则吗？")
+            col_confirm, col_cancel = st.columns(2)
+            with col_confirm:
+                if st.button("确定删除", key="confirm_batch_delete_land"):
+                    # 到期拦截
+                    if not subscription_status.get("valid", True):
+                        st.error("账号到期，请联系客服续费")
+                        st.rerun()
+                    logistic_ids = st.session_state.batch_delete_land_ids
+                    placeholders = ",".join(["?" for _ in logistic_ids])
+                    c.execute(
+                        f"DELETE FROM logistics WHERE id IN ({placeholders}) "
+                        f"AND user_id=?",
+                        (*logistic_ids, uid),
+                    )
+                    conn.commit()
+
+                    # 重新计算优先级分组
+                    calculate_and_update_priority_groups(uid)
+
+                    # 清除物流数据缓存
+                    cache_key = f"logistics_data_{uid}"
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
+
+                    del st.session_state.batch_delete_land_ids
+                    st.success(f"成功删除 {len(logistic_ids)} 个陆运物流规则！")
+                    st.rerun()
+            with col_cancel:
+                if st.button("取消", key="cancel_batch_delete_land"):
+                    del st.session_state.batch_delete_land_ids
+                    st.rerun()
+
+        # 批量删除确认对话框
+        if st.session_state.get("batch_delete_air_ids"):
+            # 到期拦截
+            if not subscription_status.get("valid", True):
+                st.error("账号到期，请联系客服续费")
+                del st.session_state.batch_delete_air_ids
+                return
+            st.warning("确定要删除这些空运物流规则吗？")
+            col_confirm, col_cancel = st.columns(2)
+            with col_confirm:
+                if st.button("确定删除", key="confirm_batch_delete_air"):
+                    # 到期拦截
+                    if not subscription_status.get("valid", True):
+                        st.error("账号到期，请联系客服续费")
+                        st.rerun()
+                    logistic_ids = st.session_state.batch_delete_air_ids
+                    placeholders = ",".join(["?" for _ in logistic_ids])
+                    c.execute(
+                        f"DELETE FROM logistics WHERE id IN ({placeholders}) "
+                        f"AND user_id=?",
+                        (*logistic_ids, uid),
+                    )
+                    conn.commit()
+
+                    # 重新计算优先级分组
+                    calculate_and_update_priority_groups(uid)
+
+                    # 清除物流数据缓存
+                    cache_key = f"logistics_data_{uid}"
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
+
+                    del st.session_state.batch_delete_air_ids
+                    st.success(f"成功删除 {len(logistic_ids)} 个空运物流规则！")
+                    st.rerun()
+            with col_cancel:
+                if st.button("取消", key="cancel_batch_delete_air"):
+                    del st.session_state.batch_delete_air_ids
                     st.rerun()
     # 数据库连接由上下文管理器自动关闭
 

@@ -218,7 +218,7 @@ def products_page():
             )
             withdrawal_fee_rate = (
                 col1.number_input(
-                    "提现费率(%)",
+                    "打款提现费率(%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=1.0,
@@ -229,10 +229,21 @@ def products_page():
             )
             payment_processing_fee = (
                 col2.number_input(
-                    "支付手续费率(%)",
+                    "收单手续费率(%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=1.3,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+            return_rate = (
+                col1.number_input(
+                    "历史退货率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=0.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -318,9 +329,10 @@ def products_page():
                         "shipping_fee, labeling_fee, promotion_discount, "
                         "promotion_cost_rate, target_profit_margin, "
                         "commission_rate, withdrawal_fee_rate, "
-                        "payment_processing_fee, cylinder_length) "
+                        "payment_processing_fee, \"return_rate\", "
+                        "cylinder_length) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-                        "?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             uid,
                             name,
@@ -348,17 +360,19 @@ def products_page():
                             commission_rate,
                             withdrawal_fee_rate,
                             payment_processing_fee,
+                            return_rate,
                             cylinder_length if is_cylinder else 0.0,
                         ),
                     )
                     conn.commit()
                     st.success("产品添加成功！")
-                    st.session_state.products_data = pd.read_sql(
+                    query = (
                         "SELECT id, name, category, weight_g "
                         "FROM products "
-                        "WHERE user_id = ?",
-                        conn,
-                        params=(uid,),
+                        "WHERE user_id = ?"
+                    )
+                    st.session_state.products_data = pd.read_sql(
+                        query, conn, params=(uid,)
                     )
                     st.rerun()
 
@@ -435,12 +449,13 @@ def products_page():
                             (product_id, uid),
                         )
                         conn.commit()
-                        st.session_state.products_data = pd.read_sql(
+                        query = (
                             "SELECT id, name, category, weight_g "
                             "FROM products "
-                            "WHERE user_id = ?",
-                            conn,
-                            params=(uid,),
+                            "WHERE user_id = ?"
+                        )
+                        st.session_state.products_data = pd.read_sql(
+                            query, conn, params=(uid,)
                         )
                         del st.session_state.delete_confirm_product_id
                         st.rerun()
@@ -709,7 +724,7 @@ def edit_product_form():
     )
     withdrawal_fee_rate = (
         col1.number_input(
-            "提现费率(%)",
+            "打款提现费率(%)",
             min_value=0.0,
             max_value=100.0,
             value=max(0.0, float(vals["withdrawal_fee_rate"])) * 100.0,
@@ -720,10 +735,21 @@ def edit_product_form():
     )
     payment_processing_fee = (
         col2.number_input(
-            "支付手续费率(%)",
+            "收单手续费率(%)",
             min_value=0.0,
             max_value=100.0,
             value=max(0.0, float(vals["payment_processing_fee"])) * 100.0,
+            step=0.1,
+            format="%.1f",
+        )
+        / 100.0
+    )
+    return_rate = (
+        col1.number_input(
+            "历史退货率(%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=max(0.0, float(vals.get("return_rate", 0))) * 100.0,
             step=0.1,
             format="%.1f",
         )
@@ -808,8 +834,8 @@ def edit_product_form():
                     unit_price=?, shipping_fee=?, labeling_fee=?,
                     promotion_discount=?, promotion_cost_rate=?,
                     target_profit_margin=?, commission_rate=?,
-                    withdrawal_fee_rate=?, payment_processing_fee=?
-                WHERE id=? AND user_id=?""",
+                    withdrawal_fee_rate=?, payment_processing_fee=?,
+                    "return_rate"=? WHERE id=? AND user_id=?""",
                     (
                         name,
                         russian_name,
@@ -837,6 +863,7 @@ def edit_product_form():
                         commission_rate,
                         withdrawal_fee_rate,
                         payment_processing_fee,
+                        return_rate,
                         pid,
                         uid,
                     ),
@@ -845,9 +872,11 @@ def edit_product_form():
             st.success("产品修改成功！")
             del st.session_state.edit_product_id
             st.rerun()
-        if st.button("取消"):
-            del st.session_state.edit_product_id
-            st.rerun()
+
+    # 取消按钮 - 移到if语句外面，确保始终显示
+    if st.button("取消"):
+        del st.session_state.edit_product_id
+        st.rerun()
 
 
 def batch_edit_pricing_form():
@@ -889,7 +918,8 @@ def batch_edit_pricing_form():
                 AVG(target_profit_margin) as avg_target_profit_margin,
                 AVG(commission_rate) as avg_commission_rate,
                 AVG(withdrawal_fee_rate) as avg_withdrawal_fee_rate,
-                AVG(payment_processing_fee) as avg_payment_processing_fee
+                AVG(payment_processing_fee) as avg_payment_processing_fee,
+                AVG("return_rate") as avg_return_rate
             FROM products
             WHERE id IN ({placeholders}) AND user_id = ?
         """,
@@ -926,10 +956,21 @@ def batch_edit_pricing_form():
 
             withdrawal_fee_rate = (
                 st.number_input(
-                    "提现费率(%)",
+                    "打款提现费率(%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=float(avg_params[4] or 0.0) * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+            return_rate = (
+                st.number_input(
+                    "历史退货率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(avg_params[6] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -963,7 +1004,7 @@ def batch_edit_pricing_form():
 
             payment_processing_fee = (
                 st.number_input(
-                    "支付手续费率(%)",
+                    "收单手续费率(%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=float(avg_params[5] or 0.0) * 100.0,
@@ -991,7 +1032,8 @@ def batch_edit_pricing_form():
                         target_profit_margin = ?,
                         commission_rate = ?,
                         withdrawal_fee_rate = ?,
-                        payment_processing_fee = ?
+                        payment_processing_fee = ?,
+                        "return_rate" = ?
                     WHERE id IN ({placeholders}) AND user_id = ?
                 """
 
@@ -1004,6 +1046,7 @@ def batch_edit_pricing_form():
                         commission_rate,
                         withdrawal_fee_rate,
                         payment_processing_fee,
+                        return_rate,
                         *product_ids,
                         uid,
                     ),
