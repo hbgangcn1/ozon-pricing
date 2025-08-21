@@ -408,14 +408,16 @@ def user_management_page():
                     col_c, col_x = st.columns(2)
                     with col_c:
                         if st.button("确定删除", key="confirm_delete_user"):
-                            c.execute(
-                                "DELETE FROM users WHERE id = ?",
-                                (pending_uid,),
-                            )
-                            conn.commit()
-                            del st.session_state.delete_confirm_user_id
-                            st.success("用户已删除！")
-                            st.rerun()
+                            # 使用专门的删除用户函数，它会处理所有关联数据
+                            from db_utils import delete_user
+                            if delete_user(pending_uid):
+                                del st.session_state.delete_confirm_user_id
+                                st.success("用户已删除！")
+                                st.rerun()
+                            else:
+                                st.error("删除用户失败，可能该用户不存在或为管理员用户")
+                                del st.session_state.delete_confirm_user_id
+                                st.rerun()
                     with col_x:
                         if st.button("取消", key="cancel_delete_user"):
                             del st.session_state.delete_confirm_user_id
