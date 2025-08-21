@@ -1449,7 +1449,7 @@ def delete_user(user_id):
 
             # 3. 删除用户的登录尝试记录
             c.execute(
-                "DELETE FROM login_attempts WHERE user_id = ?", (user_id,)
+                "DELETE FROM login_attempts WHERE identifier = ?", (user[1],)
             )
 
             # 4. 删除用户的锁定记录
