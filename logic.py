@@ -80,46 +80,52 @@ def calculate_logistic_cost(logistic, product, debug=False):
                     f"长度={cylinder_length}cm, "
                     f"2倍直径+长度={cylinder_sum}cm"
                 )
-                max_cylinder_sum = logistic.get("max_cylinder_sum", 0)
-                if 0 < max_cylinder_sum < cylinder_sum:
-                    debug_info.append(
-                        (
-                            "2倍直径与长度之和 "
-                            f"{cylinder_sum}cm 超限 {max_cylinder_sum}cm，"
-                            "返回 None"
+                
+                # 极速模式跳过圆柱形包装尺寸检查
+                is_fast_mode = product.get("name") == "极速模式产品"
+                if is_fast_mode:
+                    debug_info.append("极速模式，跳过圆柱形包装尺寸限制检查")
+                else:
+                    max_cylinder_sum = logistic.get("max_cylinder_sum", 0)
+                    if 0 < max_cylinder_sum < cylinder_sum:
+                        debug_info.append(
+                            (
+                                "2倍直径与长度之和 "
+                                f"{cylinder_sum}cm 超限 {max_cylinder_sum}cm，"
+                                "返回 None"
+                            )
                         )
-                    )
-                    return (None, debug_info) if debug else None
-                min_cylinder_sum = logistic.get("min_cylinder_sum", 0)
-                if min_cylinder_sum > 0 and cylinder_sum < min_cylinder_sum:
-                    debug_info.append(
-                        (
-                            "2倍直径与长度之和 "
-                            f"{cylinder_sum}cm 低于下限 {min_cylinder_sum}cm，"
-                            "返回 None"
+                        return (None, debug_info) if debug else None
+                    min_cylinder_sum = logistic.get("min_cylinder_sum", 0)
+                    if min_cylinder_sum > 0 and cylinder_sum < min_cylinder_sum:
+                        debug_info.append(
+                            (
+                                "2倍直径与长度之和 "
+                                f"{cylinder_sum}cm 低于下限 {min_cylinder_sum}cm，"
+                                "返回 None"
+                            )
                         )
-                    )
-                    return (None, debug_info) if debug else None
-                max_cylinder_length = logistic.get("max_cylinder_length", 0)
-                if 0 < max_cylinder_length < cylinder_length:
-                    debug_info.append(
-                        (
-                            "圆柱长度 "
-                            f"{cylinder_length}cm 超限 {max_cylinder_length}cm，"
-                            "返回 None"
+                        return (None, debug_info) if debug else None
+                    max_cylinder_length = logistic.get("max_cylinder_length", 0)
+                    if 0 < max_cylinder_length < cylinder_length:
+                        debug_info.append(
+                            (
+                                "圆柱长度 "
+                                f"{cylinder_length}cm 超限 {max_cylinder_length}cm，"
+                                "返回 None"
+                            )
                         )
-                    )
-                    return (None, debug_info) if debug else None
-                min_cyl = logistic.get("min_cylinder_length", 0)
-                if min_cyl > 0 and cylinder_length < min_cyl:
-                    debug_info.append(
-                        (
-                            "圆柱长度 "
-                            f"{cylinder_length}cm 低于下限 {min_cyl}cm，"
-                            "返回 None"
+                        return (None, debug_info) if debug else None
+                    min_cyl = logistic.get("min_cylinder_length", 0)
+                    if min_cyl > 0 and cylinder_length < min_cyl:
+                        debug_info.append(
+                            (
+                                "圆柱长度 "
+                                f"{cylinder_length}cm 低于下限 {min_cyl}cm，"
+                                "返回 None"
+                            )
                         )
-                    )
-                    return (None, debug_info) if debug else None
+                        return (None, debug_info) if debug else None
                 # 圆柱形包装检查通过后，仍然需要定义sides用于后续标准包装限制检查
                 sides = [cylinder_diameter, cylinder_diameter, cylinder_length]
             else:
@@ -144,87 +150,97 @@ def calculate_logistic_cost(logistic, product, debug=False):
 
         debug_info.append(f"三边: {sides}, 三边和: {sum(sides)}, 最长边: {max(sides)}")
 
-        # 标准包装限制检查
-        max_sum_of_sides = logistic.get("max_sum_of_sides", 10**9)
-        if 0 < max_sum_of_sides < sum(sides):
-            debug_info.append("三边和超限，返回 None")
-            return (None, debug_info) if debug else None
-        if max(sides) > logistic.get("max_longest_side", 10**9):
-            debug_info.append("最长边超限，返回 None")
-            return (None, debug_info) if debug else None
-        # 第二边长上限检查
-        max_second_side = logistic.get("max_second_side", 0)
-        if max_second_side > 0:
-            sorted_sides = sorted(sides, reverse=True)
-            second_side = sorted_sides[1] if len(sorted_sides) > 1 else 0
-            debug_info.append(
-                f"第二边长: {second_side}cm, 限制: {max_second_side}cm"
-            )
-            if 0 < max_second_side < second_side:
-                debug_info.append(
-                    f"第二边长 {second_side}cm 超限 {max_second_side}cm，返回 None"
-                )
+        # 极速模式跳过所有尺寸检查
+        is_fast_mode = product.get("name") == "极速模式产品"
+        if is_fast_mode:
+            debug_info.append("极速模式，跳过所有尺寸限制检查")
+        else:
+            # 标准包装限制检查
+            max_sum_of_sides = logistic.get("max_sum_of_sides", 10**9)
+            if 0 < max_sum_of_sides < sum(sides):
+                debug_info.append("三边和超限，返回 None")
                 return (None, debug_info) if debug else None
-        # 第二长边下限检查
-        min_second_side = logistic.get("min_second_side", 0)
-        if min_second_side > 0:
-            sorted_sides = sorted(sides, reverse=True)
-            second_side = sorted_sides[1] if len(sorted_sides) > 1 else 0
-            debug_info.append(
-                f"第二边长: {second_side}cm, 下限: {min_second_side}cm"
-            )
-            if second_side < min_second_side:
-                debug_info.append(
-                    f"第二边长 {second_side}cm 低于下限 "
-                    f"{min_second_side}cm，返回 None"
-                )
+            if max(sides) > logistic.get("max_longest_side", 10**9):
+                debug_info.append("最长边超限，返回 None")
                 return (None, debug_info) if debug else None
-        # 最长边下限检查
-        min_len = logistic.get("min_length", 0)
-        if min_len > 0:
-            longest_side = max(sides)
-            debug_info.append(f"最长边: {longest_side}cm, 下限: {min_len}cm")
-            if longest_side < min_len:
+            # 第二边长上限检查
+            max_second_side = logistic.get("max_second_side", 0)
+            if max_second_side > 0:
+                sorted_sides = sorted(sides, reverse=True)
+                second_side = sorted_sides[1] if len(sorted_sides) > 1 else 0
                 debug_info.append(
-                    f"最长边 {longest_side}cm 低于下限 {min_len}cm，返回 None"
+                    f"第二边长: {second_side}cm, 限制: {max_second_side}cm"
                 )
+                if 0 < max_second_side < second_side:
+                    debug_info.append(
+                        f"第二边长 {second_side}cm 超限 {max_second_side}cm，返回 None"
+                    )
+                    return (None, debug_info) if debug else None
+            # 第二长边下限检查
+            min_second_side = logistic.get("min_second_side", 0)
+            if min_second_side > 0:
+                sorted_sides = sorted(sides, reverse=True)
+                second_side = sorted_sides[1] if len(sorted_sides) > 1 else 0
+                debug_info.append(
+                    f"第二边长: {second_side}cm, 下限: {min_second_side}cm"
+                )
+                if second_side < min_second_side:
+                    debug_info.append(
+                        f"第二边长 {second_side}cm 低于下限 "
+                        f"{min_second_side}cm，返回 None"
+                    )
+                    return (None, debug_info) if debug else None
+            # 最长边下限检查
+            min_len = logistic.get("min_length", 0)
+            if min_len > 0:
+                longest_side = max(sides)
+                debug_info.append(f"最长边: {longest_side}cm, 下限: {min_len}cm")
+                if longest_side < min_len:
+                    debug_info.append(
+                        f"最长边 {longest_side}cm 低于下限 {min_len}cm，返回 None"
+                    )
+                    return (None, debug_info) if debug else None
+        # 极速模式跳过所有特殊物品检查
+        is_fast_mode = product.get("name") == "极速模式产品"
+        if is_fast_mode:
+            debug_info.append("极速模式，跳过所有特殊物品检查（电池、易燃液体、MSDS等）")
+        else:
+            if product.get("has_battery") and not logistic.get("allow_battery"):
+                debug_info.append("产品含电池但物流不允许，返回 None")
                 return (None, debug_info) if debug else None
-        if product.get("has_battery") and not logistic.get("allow_battery"):
-            debug_info.append("产品含电池但物流不允许，返回 None")
-            return (None, debug_info) if debug else None
-        if product.get("has_flammable") and not logistic.get(
-                "allow_flammable"):
-            debug_info.append("产品含易燃液体但物流不允许，返回 None")
-            return (None, debug_info) if debug else None
-        # 电池容量 & MSDS
-        if product.get("has_battery"):
-            limit_wh = logistic.get("battery_capacity_limit_wh", 0)
-            if limit_wh > 0:
-                wh = product.get("battery_capacity_wh", 0)
-                if wh == 0:
-                    mah = product.get("battery_capacity_mah", 0)
-                    v = product.get("battery_voltage", 0)
-                    # 如果mAh和V都为0，跳过电池容量限制判断
-                    if mah <= 0 and v <= 0:
-                        debug_info.append("电池容量mAh和V都为0，跳过容量限制判断")
+            if product.get("has_flammable") and not logistic.get(
+                    "allow_flammable"):
+                debug_info.append("产品含易燃液体但物流不允许，返回 None")
+                return (None, debug_info) if debug else None
+            # 电池容量 & MSDS
+            if product.get("has_battery"):
+                limit_wh = logistic.get("battery_capacity_limit_wh", 0)
+                if limit_wh > 0:
+                    wh = product.get("battery_capacity_wh", 0)
+                    if wh == 0:
+                        mah = product.get("battery_capacity_mah", 0)
+                        v = product.get("battery_voltage", 0)
+                        # 如果mAh和V都为0，跳过电池容量限制判断
+                        if mah <= 0 and v <= 0:
+                            debug_info.append("电池容量mAh和V都为0，跳过容量限制判断")
+                        else:
+                            wh = mah * v / 1000.0
+                            debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
+                            if 0 < limit_wh < wh:
+                                debug_info.append("电池容量超限，返回 None")
+                                return (None, debug_info) if debug else None
                     else:
-                        wh = mah * v / 1000.0
-                        debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
-                        if 0 < limit_wh < wh:
-                            debug_info.append("电池容量超限，返回 None")
-                            return (None, debug_info) if debug else None
-                else:
-                    # 如果填写了Wh但值为0，跳过电池容量限制判断
-                    if wh <= 0:
-                        debug_info.append("电池容量Wh为0，跳过容量限制判断")
-                    else:
-                        debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
-                        if 0 < limit_wh < wh:
-                            debug_info.append("电池容量超限，返回 None")
-                            return (None, debug_info) if debug else None
-            if logistic.get("require_msds") and not product.get("has_msds"):
-                debug_info.append("要求 MSDS 但产品未提供，返回 None")
-                return (None, debug_info) if debug else None
+                        # 如果填写了Wh但值为0，跳过电池容量限制判断
+                        if wh <= 0:
+                            debug_info.append("电池容量Wh为0，跳过容量限制判断")
+                        else:
+                            debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
+                            if 0 < limit_wh < wh:
+                                debug_info.append("电池容量超限，返回 None")
+                                return (None, debug_info) if debug else None
+                if logistic.get("require_msds") and not product.get("has_msds"):
+                    debug_info.append("要求 MSDS 但产品未提供，返回 None")
+                    return (None, debug_info) if debug else None
 
         # 计算体积重量（在包装尺寸确定之后）
         if volume_mode == "max_actual_vs_volume":
@@ -473,15 +489,36 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 filter_payment_rate = product_dict.get(
                     "payment_processing_fee", 0)
 
-                # 使用浮动代理费计算价格
+                # 计算浮动代理费
                 rough, actual_commission = calc_floating_price(
                     base_cost_calc, filter_target_margin,
                     filter_promotion_rate, filter_commission_rate,
                     filter_withdrawal_rate, filter_payment_rate, rate
                 )
 
+                # 根据代理费范围决定定价公式
+                if actual_commission <= 15 or actual_commission >= 200:
+                    # 情况1：代理费在分子中，参与利润率计算
+                    filter_total_cost = base_cost_calc + actual_commission * rate
+                    rough = (filter_total_cost / (1 - filter_target_margin)) / (
+                        (1 - filter_promotion_rate) *
+                        (1 - filter_commission_rate) *
+                        (1 - filter_withdrawal_rate) *
+                        (1 - filter_payment_rate)
+                    )
+                    pricing_mode = "代理费在分子中，参与利润率计算"
+                else:
+                    # 情况2：代理费在分母中，不参与利润率计算
+                    denominator = ((1 - filter_promotion_rate) *
+                                  (1 - filter_commission_rate) *
+                                  (1 - filter_withdrawal_rate) *
+                                  (1 - filter_payment_rate)) * 0.98  # 增加2%的代理费扣除
+                    rough = base_cost_calc / (1 - filter_target_margin) / denominator
+                    pricing_mode = "代理费在分母中，不参与利润率计算"
+
                 # 添加调试信息
                 debug_info.append(f"浮动代理费: {actual_commission:.2f} RUB")
+                debug_info.append(f"定价模式: {pricing_mode}")
                 debug_info.append(f"估算价格: {rough:.2f} CNY")
 
                 # 价格限制检查
@@ -649,18 +686,46 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 "payment_processing_fee", 0)
             final_return_rate = product.get("return_rate", 0)
 
-            # 使用浮动代理费计算最终价格
+            # 计算浮动代理费
             final_price, actual_commission = calc_final_commission(
                 base_cost_calc, final_target_margin, final_promotion_rate,
                 final_commission_rate, final_withdrawal_rate,
                 final_payment_rate, final_return_rate, rate
             )
 
+            # 根据代理费范围决定定价公式
+            if actual_commission <= 15 or actual_commission >= 200:
+                # 情况1：代理费在分子中，参与利润率计算
+                final_total_cost = base_cost_calc + actual_commission * rate
+                final_price = (final_total_cost / (1 - final_target_margin)) / (
+                    (1 - final_promotion_rate) *
+                    (1 - final_commission_rate) *
+                    (1 - final_withdrawal_rate) *
+                    (1 - final_payment_rate) *
+                    (1 - final_return_rate)
+                )
+                pricing_mode = "代理费在分子中，参与利润率计算"
+            else:
+                # 情况2：代理费在分母中，不参与利润率计算
+                denominator = ((1 - final_promotion_rate) *
+                              (1 - final_commission_rate) *
+                              (1 - final_withdrawal_rate) *
+                              (1 - final_payment_rate) *
+                              (1 - final_return_rate)) * 0.98  # 增加2%的代理费扣除
+                final_price = base_cost_calc / (1 - final_target_margin) / denominator
+                pricing_mode = "代理费在分母中，不参与利润率计算"
+
             if debug_list is not None:
                 debug_list.append(f"最终浮动代理费: {actual_commission:.2f} RUB")
-                debug_list.append(
-                    "最终定价公式: (基础成本 + 浮动代理费) / (1 - 目标利润率) / 分母"
-                )
+                debug_list.append(f"定价模式: {pricing_mode}")
+                if actual_commission > 15 and actual_commission < 200:
+                    original_denominator = ((1 - final_promotion_rate) *
+                                          (1 - final_commission_rate) *
+                                          (1 - final_withdrawal_rate) *
+                                          (1 - final_payment_rate) *
+                                          (1 - final_return_rate))
+                    debug_list.append(f"原始分母: {original_denominator:.4f}")
+                    debug_list.append(f"新分母: {original_denominator * 0.98:.4f}")
 
             return round(final_price, 2)
         land_debug = []
@@ -732,87 +797,92 @@ def calculate_pricing(product, land_logistics, air_logistics,
 
         # 计算建议售价和利润
         suggested_price = land_price if land_price else air_price
+        
+        # 分别计算陆运和空运的预期利润
+        land_expected_profit = 0
+        air_expected_profit = 0
+        
+        target_margin = product.get("target_profit_margin", 0.2)
+        
+        if land_price and land_cost is not None:
+            # 计算陆运的浮动代理费
+            land_base_cost = unit_price + labeling_fee + shipping_fee + land_cost
+            land_commission_fee = 15 * rate  # 初始代理费
+            land_price_rub = land_price / rate
+            land_actual_commission = max(15, min(200, land_price_rub * 0.02))
+            land_commission_fee = land_actual_commission * rate
+            
+            # 根据定价模式决定预期利润计算方式
+            if land_actual_commission <= 15 or land_actual_commission >= 200:
+                # 代理费在分子中，参与利润率计算
+                land_total_cost = land_base_cost + land_commission_fee
+                land_expected_profit = land_total_cost * target_margin / (1 - target_margin)
+                profit_mode = "代理费在分子中，参与利润率计算"
+            else:
+                # 代理费在分母中，不参与利润率计算
+                land_total_cost = land_base_cost  # 不包含代理费
+                land_expected_profit = land_total_cost * target_margin / (1 - target_margin)
+                profit_mode = "代理费在分母中，不参与利润率计算"
+            
+            # 添加陆运预期利润计算调试信息
+            land_debug.append(f"陆运预期利润计算:")
+            land_debug.append(f"  产品成本: {unit_price}")
+            land_debug.append(f"  贴标费: {labeling_fee}")
+            land_debug.append(f"  运费: {shipping_fee}")
+            land_debug.append(f"  陆运物流成本: {land_cost}")
+            land_debug.append(f"  陆运基础总成本: {land_base_cost}")
+            land_debug.append(f"  陆运代理费: {land_commission_fee:.2f} ({land_actual_commission:.2f} RUB)")
+            land_debug.append(f"  定价模式: {profit_mode}")
+            land_debug.append(f"  陆运总成本(用于利润计算): {land_total_cost}")
+            land_debug.append(f"  目标利润率: {target_margin}")
+            land_debug.append(f"  陆运预期利润 = {land_total_cost} × {target_margin} / (1 - {target_margin}) = {land_expected_profit:.2f}")
+            
+        if air_price and air_cost is not None:
+            # 计算空运的浮动代理费
+            air_base_cost = unit_price + labeling_fee + shipping_fee + air_cost
+            air_commission_fee = 15 * rate  # 初始代理费
+            air_price_rub = air_price / rate
+            air_actual_commission = max(15, min(200, air_price_rub * 0.02))
+            air_commission_fee = air_actual_commission * rate
+            
+            # 根据定价模式决定预期利润计算方式
+            if air_actual_commission <= 15 or air_actual_commission >= 200:
+                # 代理费在分子中，参与利润率计算
+                air_total_cost = air_base_cost + air_commission_fee
+                air_expected_profit = air_total_cost * target_margin / (1 - target_margin)
+                profit_mode = "代理费在分子中，参与利润率计算"
+            else:
+                # 代理费在分母中，不参与利润率计算
+                air_total_cost = air_base_cost  # 不包含代理费
+                air_expected_profit = air_total_cost * target_margin / (1 - target_margin)
+                profit_mode = "代理费在分母中，不参与利润率计算"
+            
+            # 添加空运预期利润计算调试信息
+            air_debug.append(f"空运预期利润计算:")
+            air_debug.append(f"  产品成本: {unit_price}")
+            air_debug.append(f"  贴标费: {labeling_fee}")
+            air_debug.append(f"  运费: {shipping_fee}")
+            air_debug.append(f"  空运物流成本: {air_cost}")
+            air_debug.append(f"  空运基础总成本: {air_base_cost}")
+            air_debug.append(f"  空运代理费: {air_commission_fee:.2f} ({air_actual_commission:.2f} RUB)")
+            air_debug.append(f"  定价模式: {profit_mode}")
+            air_debug.append(f"  空运总成本(用于利润计算): {air_total_cost}")
+            air_debug.append(f"  目标利润率: {target_margin}")
+            air_debug.append(f"  空运预期利润 = {air_total_cost} × {target_margin} / (1 - {target_margin}) = {air_expected_profit:.2f}")
+        
+        # 使用建议售价对应的预期利润
         if suggested_price:
-            # 根据定价公式计算预期利润（使用浮动代理费）
-            # 定价公式：价格 = (总成本 / (1 - 目标利润率)) / 分母
-            # 总成本 = 产品成本 + 贴标费 + 运费 + 物流成本 + 浮动代理费
-            # 分母 = (1 - 推广费率) * (1 - 佣金率) * (1 - 提现费率) * \
-            #        (1 - 支付处理费率) * (1 - 历史退货率)
-
-            # 实际总成本（不包括各种费率扣除）
-            logistics_cost = (land_cost if land_cost is not None
-                              else (air_cost if air_cost is not None else 0))
-
-            # 计算浮动代理费
-            def calc_profit_commission(
-                    cost_input,
-                    target_margin_input,
-                    promotion_rate_input,
-                    commission_rate_input,
-                    withdrawal_rate_input,
-                    payment_rate_input,
-                    return_rate_input,
-                    rate_input,
-                    max_iter=5):
-                """计算预期利润的浮动代理费"""
-                commission_fee = 15 * rate_input
-
-                for _ in range(max_iter):
-                    profit_total_cost = cost_input + commission_fee
-                    price = (profit_total_cost / (1 - target_margin_input)) / (
-                        (1 - promotion_rate_input) *
-                        (1 - commission_rate_input) *
-                        (1 - withdrawal_rate_input) *
-                        (1 - payment_rate_input) *
-                        (1 - return_rate_input)
-                    )
-
-                    price_rub = price / rate_input
-                    new_commission_rub = max(15, min(200, price_rub * 0.02))
-                    new_commission_fee = new_commission_rub * rate_input
-
-                    if abs(new_commission_fee - commission_fee) < 0.01:
-                        break
-                    commission_fee = new_commission_fee
-
-                return commission_fee / rate_input
-
-            # 基础成本（不包含代理费）
-            profit_base_cost = (
-                unit_price + labeling_fee + shipping_fee + logistics_cost
-            )
-            profit_target_margin = product.get("target_profit_margin", 0.2)
-            profit_promotion_rate = product.get("promotion_cost_rate", 0)
-            profit_commission_rate = product.get("commission_rate", 0.08)
-            profit_withdrawal_rate = product.get(
-                "withdrawal_fee_rate", 0.02)
-            profit_payment_rate = product.get(
-                "payment_processing_fee", 0)
-            profit_return_rate = product.get("return_rate", 0)
-
-            # 计算浮动代理费
-            profit_actual_commission = calc_profit_commission(
-                profit_base_cost, profit_target_margin, profit_promotion_rate,
-                profit_commission_rate, profit_withdrawal_rate,
-                profit_payment_rate, profit_return_rate, rate
-            )
-
-            # 包含浮动代理费的总成本
-            total_cost = profit_base_cost + profit_actual_commission * rate
-
-            # 根据定价公式，价格 = (总成本 / (1 - 目标利润率)) / 分母
-            # 所以：总成本 = 价格 * 分母 * (1 - 目标利润率)
-            # 预期利润 = 总成本 * 目标利润率 / (1 - 目标利润率)
-            # 这是基于总成本的利润率计算
-            expected_profit = (total_cost * profit_target_margin /
-                               (1 - profit_target_margin))
-
-            # 利润率 = 预期利润 / 总成本 × 100% = 目标利润率
-            calculated_profit_margin = profit_target_margin * 100
-
+            if land_price and land_price == suggested_price:
+                expected_profit = land_expected_profit
+            elif air_price and air_price == suggested_price:
+                expected_profit = air_expected_profit
+            else:
+                expected_profit = 0
         else:
             expected_profit = 0
-            calculated_profit_margin = 0
+
+        # 利润率就是用户输入的目标利润率，不需要重新计算
+        calculated_profit_margin = product.get("target_profit_margin", 0.2) * 100
 
         return {
             "land_price": land_price,
@@ -823,6 +893,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "best_air": air_log,
             "suggested_price": suggested_price,
             "expected_profit": expected_profit,
+            "land_expected_profit": land_expected_profit,
+            "air_expected_profit": air_expected_profit,
             "profit_margin": calculated_profit_margin,
             "land_stats": land_stats,
             "air_stats": air_stats,
@@ -848,6 +920,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "air_cost": None,
             "suggested_price": None,
             "expected_profit": 0,
+            "land_expected_profit": 0,
+            "air_expected_profit": 0,
             "profit_margin": 0,
             "land_stats": None,
             "air_stats": None,
