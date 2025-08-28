@@ -7,6 +7,7 @@ try:
     from .db_utils import (
         init_db, check_user_subscription_status, update_user_password,
         is_admin, current_user_id, get_db_connection, hash_password, require_admin,
+        get_user_preferred_mode, update_user_preferred_mode, migrate_user_preferences,
     )
     from .exchange_service import ExchangeRateService, get_usd_rate
     from .ui_user import user_management_page, login_or_register_page
@@ -26,6 +27,7 @@ except ImportError:  # Fallback when run as a top-level module
     from db_utils import (
         init_db, check_user_subscription_status, update_user_password,
         is_admin, current_user_id, get_db_connection, hash_password, require_admin,
+        get_user_preferred_mode, update_user_preferred_mode, migrate_user_preferences,
     )
     from exchange_service import ExchangeRateService, get_usd_rate
     from ui_user import user_management_page, login_or_register_page
@@ -320,97 +322,87 @@ st.markdown("""
 
 
 def settings_page():
-    """设置页面"""
+    """设置页面 - 账户管理"""
     st.markdown('<h1 class="custom-title">⚙️ 系统设置</h1>',
                 unsafe_allow_html=True)
 
-    # 创建标签页
-    tab1, tab2 = st.tabs(["🔐 账户管理", "👥 用户管理"])
-    
-    with tab1:
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    st.markdown(
+        '<h2 style="color: #667eea; margin-bottom: 20px;">'
+        '🔐 账户管理</h2>',
+        unsafe_allow_html=True
+    )
+
+    # 修改密码 - 使用show_password_change_form函数
+    show_password_change_form()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 备份管理 - 仅admin用户可见
+    if is_admin():
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
         st.markdown(
             '<h2 style="color: #667eea; margin-bottom: 20px;">'
-            '🔐 账户管理</h2>',
+            '💾 备份管理</h2>',
             unsafe_allow_html=True
         )
 
-        # 修改密码 - 使用show_password_change_form函数
-        show_password_change_form()
+        col1, col2 = st.columns(2)
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        with col1:
+            if st.button("📦 立即备份", help="手动创建数据库备份", key="backup_now"):
+                if create_manual_backup():
+                    st.success("✅ 备份创建成功！")
+                else:
+                    st.error("❌ 备份创建失败！")
 
-        # 备份管理 - 仅admin用户可见
-        if is_admin():
-            st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            st.markdown(
-                '<h2 style="color: #667eea; margin-bottom: 20px;">'
-                '💾 备份管理</h2>',
-                unsafe_allow_html=True
-            )
+        with col2:
+            if st.button("🔄 刷新状态", help="刷新备份状态信息", key="refresh_backup"):
+                st.rerun()
 
-            col1, col2 = st.columns(2)
+        # 显示备份统计信息
+        backup_stats = get_backup_info()
+        if backup_stats:
+            st.write(f"**备份文件数量：** {backup_stats['count']} 个")
+            st.write(f"**总备份大小：** {backup_stats['total_size_mb']} MB")
 
-            with col1:
-                if st.button("📦 立即备份", help="手动创建数据库备份", key="backup_now"):
-                    if create_manual_backup():
-                        st.success("✅ 备份创建成功！")
-                    else:
-                        st.error("❌ 备份创建失败！")
-
-            with col2:
-                if st.button("🔄 刷新状态", help="刷新备份状态信息", key="refresh_backup"):
-                    st.rerun()
-
-            # 显示备份统计信息
-            backup_stats = get_backup_info()
-            if backup_stats:
-                st.write(f"**备份文件数量：** {backup_stats['count']} 个")
-                st.write(f"**总备份大小：** {backup_stats['total_size_mb']} MB")
-
-                if backup_stats['files']:
-                    st.write("**最新备份文件：**")
-                    for i, file in enumerate(backup_stats['files'][:3]):
-                        st.write(
-                            f"  {i+1}. {file['name']} "
-                            f"({file['mtime'].strftime('%Y-%m-%d %H:%M:%S')})"
-                        )
-            else:
-                st.warning("⚠️ 无法获取备份信息")
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # 系统信息
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.markdown(
-            '<h2 style="color: #667eea; margin-bottom: 20px;">'
-            'ℹ️ 系统信息</h2>',
-            unsafe_allow_html=True
-        )
-
-        st.write(f"**当前用户：** {st.session_state.user['username']}")
-        st.write(f"**用户角色：** {st.session_state.user['role']}")
-
-        # 显示会话安全信息
-        session_info = SessionSecurity.get_session_info(
-            st.session_state.get('session_id', '')
-        )
-        if session_info:
-            import time
-            last_activity_str = time.strftime(
-                '%H:%M:%S', time.localtime(session_info['last_activity']))
-            st.write(f"**最后活动：** {last_activity_str}")
-
-            # 简化的会话信息显示
-            st.write(f"**会话ID：** {session_info['session_id'][:8]}...")
-
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with tab2:
-        if is_admin():
-            user_management_page()
+            if backup_stats['files']:
+                st.write("**最新备份文件：**")
+                for i, file in enumerate(backup_stats['files'][:3]):
+                    st.write(
+                        f"  {i+1}. {file['name']} "
+                        f"({file['mtime'].strftime('%Y-%m-%d %H:%M:%S')})"
+                    )
         else:
-            st.warning("您没有权限访问用户管理功能")
+            st.warning("⚠️ 无法获取备份信息")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # 系统信息
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    st.markdown(
+        '<h2 style="color: #667eea; margin-bottom: 20px;">'
+        'ℹ️ 系统信息</h2>',
+        unsafe_allow_html=True
+    )
+
+    st.write(f"**当前用户：** {st.session_state.user['username']}")
+    st.write(f"**用户角色：** {st.session_state.user['role']}")
+
+    # 显示会话安全信息
+    session_info = SessionSecurity.get_session_info(
+        st.session_state.get('session_id', '')
+    )
+    if session_info:
+        import time
+        last_activity_str = time.strftime(
+            '%H:%M:%S', time.localtime(session_info['last_activity']))
+        st.write(f"**最后活动：** {last_activity_str}")
+
+        # 简化的会话信息显示
+        st.write(f"**会话ID：** {session_info['session_id'][:8]}...")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def show_main_interface():
@@ -421,8 +413,12 @@ def show_main_interface():
     # 检查用户订阅状态
     subscription_status = check_user_subscription_status(current_user['id'])
 
-    # 获取当前模式，默认为精准模式
-    current_mode = st.session_state.get('current_mode', 'precise')
+    # 获取当前模式，优先使用session state，否则从数据库获取用户偏好
+    current_mode = st.session_state.get('current_mode')
+    if current_mode is None:
+        # 从数据库获取用户偏好，首次登录默认为极速模式
+        current_mode = get_user_preferred_mode(current_user['id'])
+        st.session_state.current_mode = current_mode
 
     # 顶部信息栏 - 三列布局
     colA, colB, colC = st.columns([2, 2, 2])
@@ -449,10 +445,14 @@ def show_main_interface():
             if current_mode == 'fast':
                 if st.button("切换精准模式", key="switch_to_precise", help="切换到精准模式"):
                     st.session_state.current_mode = 'precise'
+                    # 保存用户偏好到数据库
+                    update_user_preferred_mode(current_user['id'], 'precise')
                     st.rerun()
             else:
                 if st.button("切换极速模式", key="switch_to_fast", help="切换到极速模式"):
                     st.session_state.current_mode = 'fast'
+                    # 保存用户偏好到数据库
+                    update_user_preferred_mode(current_user['id'], 'fast')
                     st.rerun()
         
         with col3:
@@ -501,24 +501,33 @@ def show_fast_mode_interface(current_user):
         unsafe_allow_html=True,
     )
     
-    # 创建4个标签页
-    tab1, tab2, tab3, tab4 = st.tabs(["💰 定价计算", "🚚 物流管理", "⚙️ 系统设置", "👥 用户管理"])
-    
-    with tab1:
-        fast_pricing_calculator()
-    
-    with tab2:
-        fast_logistics_management()
-    
-    with tab3:
-        settings_page()
-    
-    with tab4:
-        if current_user["role"] == "admin":
+    # 根据用户角色创建标签页
+    if current_user["role"] == "admin":
+        tab1, tab2, tab3, tab4 = st.tabs(["💰 定价计算", "🚚 物流管理", "⚙️ 系统设置", "👥 用户管理"])
+        
+        with tab1:
+            fast_pricing_calculator()
+        
+        with tab2:
+            fast_logistics_management()
+        
+        with tab3:
+            settings_page()
+        
+        with tab4:
             # 为极速模式使用不同的key避免冲突
             user_management_page_fast_mode()
-        else:
-            st.warning("您没有权限访问用户管理功能")
+    else:
+        tab1, tab2, tab3 = st.tabs(["💰 定价计算", "🚚 物流管理", "⚙️ 系统设置"])
+        
+        with tab1:
+            fast_pricing_calculator()
+        
+        with tab2:
+            fast_logistics_management()
+        
+        with tab3:
+            settings_page()
 
 
 def show_precise_mode_interface(current_user):
@@ -535,20 +544,38 @@ def show_precise_mode_interface(current_user):
         unsafe_allow_html=True,
     )
     
-    # 创建标签页
-    tab1, tab2, tab3, tab4 = st.tabs(["📦 产品管理", "🚚 物流规则", "💰 定价计算", "⚙️ 系统设置"])
-    
-    with tab1:
-        precise_products_page()
-    
-    with tab2:
-        logistics_page()
-    
-    with tab3:
-        precise_pricing_calculator()
-    
-    with tab4:
-        settings_page()
+    # 根据用户角色创建标签页
+    if current_user["role"] == "admin":
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📦 产品管理", "🚚 物流规则", "💰 定价计算", "⚙️ 系统设置", "👥 用户管理"])
+        
+        with tab1:
+            precise_products_page()
+        
+        with tab2:
+            logistics_page()
+        
+        with tab3:
+            precise_pricing_calculator()
+        
+        with tab4:
+            settings_page()
+        
+        with tab5:
+            user_management_page()
+    else:
+        tab1, tab2, tab3, tab4 = st.tabs(["📦 产品管理", "🚚 物流规则", "💰 定价计算", "⚙️ 系统设置"])
+        
+        with tab1:
+            precise_products_page()
+        
+        with tab2:
+            logistics_page()
+        
+        with tab3:
+            precise_pricing_calculator()
+        
+        with tab4:
+            settings_page()
 
 
 def fast_pricing_calculator():
@@ -1251,9 +1278,10 @@ def calculate_fast_pricing_with_params(unit_price: float, weight_g: float,
     )
     
     # 显示计算结果
-    display_precise_pricing_results(
+    display_fast_pricing_results_precise_style(
         pricing_result_low, pricing_result_fast, 
-        pricing_result_low_home, pricing_result_fast_home
+        pricing_result_low_home, pricing_result_fast_home,
+        virtual_product, effective_weight
     )
 
 
@@ -1448,56 +1476,279 @@ def display_fast_pricing_results_precise_style(pricing_result_low: Dict[str, Any
     )
     
     # 添加调试信息
-    # with st.expander("🔧 计算调试信息", expanded=True):
-    #     st.markdown("### 计算结果调试")
-    #     st.write(f"**pricing_result_low keys:** {list(pricing_result_low.keys())}")
-    #     st.write(f"**land_cost:** {pricing_result_low.get('land_cost')}")
-    #     st.write(f"**air_cost:** {pricing_result_low.get('air_cost')}")
-    #     st.write(f"**best_land:** {pricing_result_low.get('best_land')}")
-    #     st.write(f"**best_air:** {pricing_result_low.get('best_air')}")
-    #     
-    #     # 显示预期利润计算调试信息
-    #     st.markdown("### 预期利润计算调试")
-    #     land_debug = pricing_result_low.get('land_debug', [])
-    #     air_debug = pricing_result_low.get('air_debug', [])
-    #     
-    #     if land_debug:
-    #         st.markdown("#### 陆运预期利润计算")
-    #         for debug_line in land_debug:
-    #             st.write(debug_line)
-    #     
-    #     if air_debug:
-    #         st.markdown("#### 空运预期利润计算")
-    #         for debug_line in air_debug:
-    #             st.write(debug_line)
-    #     
-    #     # 检查all_costs_debug中的详细信息
-    #     all_costs_debug = pricing_result_low.get('all_costs_debug', [])
-    #     st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
-    #     
-    #     # 查找运费为0的物流规则
-    #     zero_cost_rules = []
-    #     for debug_info in all_costs_debug:
-    #         if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
-    #             zero_cost_rules.append(debug_info)
-    #     
-    #     st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
-    #     if zero_cost_rules:
-    #         st.write("**运费为0的物流规则:**")
-    #         for rule in zero_cost_rules[:5]:  # 只显示前5个
-    #             st.write(f"  - {rule.get('name', 'Unknown')}: cost={rule.get('cost')}")
-    #     
-    #     # 查找特定物流规则的运费
-    #     target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
-    #     for debug_info in all_costs_debug:
-    #         if isinstance(debug_info, dict):
-    #             logistic = debug_info.get('logistic', {})
-    #             name = logistic.get('name', 'Unknown')
-    #             if name in target_rules:
-    #                 st.write(f"**{name}:** cost={debug_info.get('cost')}, type={logistic.get('type')}")
+    with st.expander("🔧 计算调试信息", expanded=True):
+        st.markdown("### 计算结果调试")
+        st.write(f"**pricing_result_low keys:** {list(pricing_result_low.keys())}")
+        st.write(f"**land_cost:** {pricing_result_low.get('land_cost')}")
+        st.write(f"**air_cost:** {pricing_result_low.get('air_cost')}")
+        st.write(f"**best_land:** {pricing_result_low.get('best_land')}")
+        st.write(f"**best_air:** {pricing_result_low.get('best_air')}")
+        
+        # 显示预期利润计算调试信息
+        st.markdown("### 预期利润计算调试")
+        land_debug = pricing_result_low.get('land_debug', [])
+        air_debug = pricing_result_low.get('air_debug', [])
+        
+        if land_debug:
+            st.markdown("#### 陆运预期利润计算")
+            for debug_line in land_debug:
+                st.write(debug_line)
+        
+        if air_debug:
+            st.markdown("#### 空运预期利润计算")
+            for debug_line in air_debug:
+                st.write(debug_line)
+        
+        # 检查all_costs_debug中的详细信息
+        all_costs_debug = pricing_result_low.get('all_costs_debug', [])
+        st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
+        
+        # 查找运费为0的物流规则
+        zero_cost_rules = []
+        for debug_info in all_costs_debug:
+            if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
+                zero_cost_rules.append(debug_info)
+        
+        st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
+        if zero_cost_rules:
+            st.write("**运费为0的物流规则:**")
+            for rule in zero_cost_rules[:5]:  # 只显示前5个
+                st.write(f"  - {rule.get('name', 'Unknown')}: cost={rule.get('cost')}")
+        
+        # 查找特定物流规则的运费
+        target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
+        for debug_info in all_costs_debug:
+            if isinstance(debug_info, dict):
+                logistic = debug_info.get('logistic', {})
+                name = logistic.get('name', 'Unknown')
+                if name in target_rules:
+                    st.write(f"**{name}:** cost={debug_info.get('cost')}, type={logistic.get('type')}")
 
     # 获取all_costs_debug用于后续使用
     all_costs_debug = pricing_result_low.get('all_costs_debug', [])
+
+    # =============================
+    # 低价优先
+    # =============================
+    col_land_l, col_air_l = st.columns(2)
+
+    # ------- 陆运（低价优先）：送到取货点 + 送货上门 -------
+    with col_land_l:
+        st.markdown(
+            (
+                '<h4 style="color: #2c3e50; margin-bottom: 10px; '
+                'font-size: 1.2em; font-weight: 600;">🚛 陆运</h4>'
+            ),
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            (
+                '<div style="font-weight:700; margin:6px 0; '
+                'font-size:1.2em; color:#2c3e50;">🏬 送到取货点</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        
+        best_land_low = pricing_result_low.get("best_land")
+        if best_land_low:
+            # 计算时效（取平均值）
+            min_days = best_land_low.get("min_days", 0)
+            max_days = best_land_low.get("max_days", 0)
+            avg_time = (min_days + max_days) / 2 if min_days > 0 and max_days > 0 else 0
+            
+            # 处理时效显示
+            time_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{avg_time:.1f}天"
+            )
+            
+            # 获取统计信息
+            land_stats = pricing_result_low.get("land_stats", {})
+            avg_cost = land_stats.get("avg_cost", 0)
+            cost_saving = land_stats.get("cost_saving", 0)
+            avg_time_stats = land_stats.get("avg_time", 0)
+            time_saving = land_stats.get("time_saving", 0)
+            
+            # 处理节省时效显示
+            time_saving_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
+            )
+            
+            # 获取陆运预期利润
+            land_expected_profit = pricing_result_low.get("land_expected_profit", 0)
+            
+            card_html = _render_pricing_card(
+                "#e3f2fd", "#bbdefb", "#2196f3", "rgba(33,150,243,0.15)",
+                best_land_low["name"], f"¥{pricing_result_low.get('land_cost', 0):.2f}",
+                time_display, pricing_result_low.get("land_price", 0),
+                land_expected_profit, pricing_result_low.get("profit_margin", 0),
+                avg_cost, cost_saving, avg_time_stats, time_saving_display
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
+        else:
+            st.info("暂无可用物流")
+
+        st.markdown(
+            (
+                '<div style="font-weight:700; margin:6px 0; '
+                'font-size:1.2em; color:#2c3e50;">🏠 送货上门</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        
+        best_land_low_home = pricing_result_low_home.get("best_land")
+        if best_land_low_home:
+            # 使用送货上门的物流数据
+            min_days = best_land_low_home.get("min_days", 0)
+            max_days = best_land_low_home.get("max_days", 0)
+            avg_time = (min_days + max_days) / 2 if min_days > 0 and max_days > 0 else 0
+            
+            # 处理时效显示
+            time_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{avg_time:.1f}天"
+            )
+            
+            land_stats = pricing_result_low_home.get("land_stats", {})
+            avg_cost = land_stats.get("avg_cost", 0)
+            cost_saving = land_stats.get("cost_saving", 0)
+            avg_time_stats = land_stats.get("avg_time", 0)
+            time_saving = land_stats.get("time_saving", 0)
+            
+            # 处理节省时效显示
+            time_saving_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
+            )
+            
+            # 获取陆运预期利润
+            land_expected_profit = pricing_result_low_home.get("land_expected_profit", 0)
+            
+            card_html = _render_pricing_card(
+                "#e8f5e8", "#c8e6c9", "#4caf50", "rgba(76,175,80,0.15)",
+                best_land_low_home["name"], f"¥{pricing_result_low_home.get('land_cost', 0):.2f}",
+                time_display, pricing_result_low_home.get("land_price", 0),
+                land_expected_profit, pricing_result_low_home.get("profit_margin", 0),
+                avg_cost, cost_saving, avg_time_stats, time_saving_display
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
+        else:
+            st.info("暂无可用物流")
+
+    # ------- 空运（低价优先）：送到取货点 + 送货上门 -------
+    with col_air_l:
+        st.markdown(
+            (
+                '<h4 style="color: #2c3e50; margin-bottom: 10px; '
+                'font-size: 1.2em; font-weight: 600;">✈️ 空运</h4>'
+            ),
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            (
+                '<div style="font-weight:700; margin:6px 0; '
+                'font-size:1.2em; color:#2c3e50;">🏬 送到取货点</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        
+        best_air_low = pricing_result_low.get("best_air")
+        if best_air_low:
+            # 计算时效（取平均值）
+            min_days = best_air_low.get("min_days", 0)
+            max_days = best_air_low.get("max_days", 0)
+            avg_time = (min_days + max_days) / 2 if min_days > 0 and max_days > 0 else 0
+            
+            # 处理时效显示
+            time_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{avg_time:.1f}天"
+            )
+            
+            # 获取统计信息
+            air_stats = pricing_result_low.get("air_stats", {})
+            avg_cost = air_stats.get("avg_cost", 0)
+            cost_saving = air_stats.get("cost_saving", 0)
+            avg_time_stats = air_stats.get("avg_time", 0)
+            time_saving = air_stats.get("time_saving", 0)
+            
+            # 处理节省时效显示
+            time_saving_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
+            )
+            
+            # 获取空运预期利润
+            air_expected_profit = pricing_result_low.get("air_expected_profit", 0)
+            
+            card_html = _render_pricing_card(
+                "#f3e5f5", "#e1bee7", "#9c27b0", "rgba(156,39,176,0.15)",
+                best_air_low["name"], f"¥{pricing_result_low.get('air_cost', 0):.2f}",
+                time_display, pricing_result_low.get("air_price", 0),
+                air_expected_profit, pricing_result_low.get("profit_margin", 0),
+                avg_cost, cost_saving, avg_time_stats, time_saving_display
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
+        else:
+            st.info("暂无可用物流")
+
+        st.markdown(
+            (
+                '<div style="font-weight:700; margin:6px 0; '
+                'font-size:1.2em; color:#2c3e50;">🏠 送货上门</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        
+        best_air_low_home = pricing_result_low_home.get("best_air")
+        if best_air_low_home:
+            # 使用送货上门的物流数据
+            min_days = best_air_low_home.get("min_days", 0)
+            max_days = best_air_low_home.get("max_days", 0)
+            avg_time = (min_days + max_days) / 2 if min_days > 0 and max_days > 0 else 0
+            
+            # 处理时效显示
+            time_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{avg_time:.1f}天"
+            )
+            
+            air_stats = pricing_result_low_home.get("air_stats", {})
+            avg_cost = air_stats.get("avg_cost", 0)
+            cost_saving = air_stats.get("cost_saving", 0)
+            avg_time_stats = air_stats.get("avg_time", 0)
+            time_saving = air_stats.get("time_saving", 0)
+            
+            # 处理节省时效显示
+            time_saving_display = (
+                "该物流未填写时效"
+                if min_days == 0 and max_days == 0
+                else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
+            )
+            
+            # 获取空运预期利润
+            air_expected_profit = pricing_result_low_home.get("air_expected_profit", 0)
+            
+            card_html = _render_pricing_card(
+                "#fce4ec", "#f8bbd9", "#e91e63", "rgba(233,30,99,0.15)",
+                best_air_low_home["name"], f"¥{pricing_result_low_home.get('air_cost', 0):.2f}",
+                time_display, pricing_result_low_home.get("air_price", 0),
+                air_expected_profit, pricing_result_low_home.get("profit_margin", 0),
+                avg_cost, cost_saving, avg_time_stats, time_saving_display
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
+        else:
+            st.info("暂无可用物流")
 
     # =============================
     # 速度优先
@@ -1756,11 +2007,7 @@ def calculate_precise_pricing_from_form(name, unit_price, weight_g, package_type
                                        promotion_cost_rate, target_profit_margin, commission_rate, 
                                        withdrawal_fee_rate, payment_processing_fee, return_rate):
     """精准模式定价计算（从表单数据）"""
-    # 检查必填字段
-    if not name or name.strip() == "":
-        st.error("请填写产品名称")
-        return
-    
+    # 检查必填字段（不检查产品名称，允许空名称进行计算）
     if weight_g <= 0:
         st.error("请填写产品重量")
         return
@@ -1782,7 +2029,7 @@ def calculate_precise_pricing_from_form(name, unit_price, weight_g, package_type
     
     # 创建产品数据字典
     product_data = {
-        'name': name.strip(),
+        'name': name.strip() if name else "未命名产品",
         'category': '精准模式产品',
         'weight_g': weight_g,
         'unit_price': unit_price,
@@ -2631,6 +2878,86 @@ def display_precise_pricing_results(pricing_result_low, pricing_result_fast, pri
         unsafe_allow_html=True,
     )
 
+    # 产品信息（从第一个计算结果中获取产品信息）
+    product_info = pricing_result_low.get('product_info', {})
+    if product_info:
+        st.markdown(
+            (
+                '<h4 style="color: #34495e; margin-bottom: 15px; '
+                'font-size: 1.2em; font-weight: 600;">📦 产品信息</h4>'
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            (
+                '<div style="background: linear-gradient(135deg, '
+                "#f8f9fa 0%, #e9ecef 100%); border-radius: 12px; "
+                "padding: 20px; margin: 15px 0; "
+                'border-left: 4px solid #28a745;">'
+                '<div style="font-size: 1.1em; color: #2c3e50; '
+                'margin-bottom: 8px;"><strong>产品名称：</strong>'
+                f"{product_info.get('name', '未知产品')}</div>"
+                '<div style="font-size: 1.1em; color: #2c3e50; '
+                'margin-bottom: 8px;"><strong>产品类别：</strong>'
+                f"{product_info.get('category', '未知类别')}</div>"
+                '<div style="font-size: 1.1em; color: #2c3e50; '
+                'margin-bottom: 8px;"><strong>进货单价：</strong>'
+                f"¥{product_info.get('unit_price', 0):.2f}</div>"
+                '<div style="font-size: 1.1em; color: #2c3e50;">'
+                f"<strong>有效重量：</strong>{product_info.get('weight_g', 0):.1f}g</div>"
+                "</div>"
+            ),
+            unsafe_allow_html=True,
+        )
+
+    # 显示物流筛选详情
+    with st.expander("🔍 物流筛选详情", expanded=False):
+        st.markdown("### 物流筛选过程")
+        
+        # 获取物流规则
+        logistics_rules = get_precise_logistics_rules()
+        land_logistics = [rule for rule in logistics_rules if rule.get('type') == 'land']
+        air_logistics = [rule for rule in logistics_rules if rule.get('type') == 'air']
+        
+        st.write(f"**总物流规则数量：** {len(logistics_rules)}")
+        st.write(f"**陆运规则数量：** {len(land_logistics)}")
+        st.write(f"**空运规则数量：** {len(air_logistics)}")
+        
+        # 显示每个物流规则的筛选结果
+        st.markdown("#### 陆运物流筛选结果")
+        for i, rule in enumerate(land_logistics):
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
+                    st.write(f"   重量限制: {rule.get('min_weight', 0)}g - {rule.get('max_weight', '无限制')}g")
+                with col2:
+                    # 检查重量限制
+                    weight_g = product_info.get('weight_g', 0) if product_info else 0
+                    if weight_g < rule.get('min_weight', 0):
+                        st.error("❌ 重量过低")
+                    elif weight_g > rule.get('max_weight', 10**9):
+                        st.error("❌ 重量过高")
+                    else:
+                        st.success("✅ 通过")
+        
+        st.markdown("#### 空运物流筛选结果")
+        for i, rule in enumerate(air_logistics):
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
+                    st.write(f"   重量限制: {rule.get('min_weight', 0)}g - {rule.get('max_weight', '无限制')}g")
+                with col2:
+                    # 检查重量限制
+                    weight_g = product_info.get('weight_g', 0) if product_info else 0
+                    if weight_g < rule.get('min_weight', 0):
+                        st.error("❌ 重量过低")
+                    elif weight_g > rule.get('max_weight', 10**9):
+                        st.error("❌ 重量过高")
+                    else:
+                        st.success("✅ 通过")
+
     # =============================
     # 低价优先
     # =============================
@@ -2643,6 +2970,130 @@ def display_precise_pricing_results(pricing_result_low, pricing_result_fast, pri
         ),
         unsafe_allow_html=True,
     )
+    
+    # 添加调试信息
+    with st.expander("🔧 计算调试信息", expanded=True):
+        st.markdown("### 计算结果调试")
+        st.write(f"**pricing_result_low keys:** {list(pricing_result_low.keys())}")
+        st.write(f"**land_cost:** {pricing_result_low.get('land_cost')}")
+        st.write(f"**air_cost:** {pricing_result_low.get('air_cost')}")
+        st.write(f"**best_land:** {pricing_result_low.get('best_land')}")
+        st.write(f"**best_air:** {pricing_result_low.get('best_air')}")
+        
+        # 显示预期利润计算调试信息
+        st.markdown("### 预期利润计算调试")
+        land_debug = pricing_result_low.get('land_debug', [])
+        air_debug = pricing_result_low.get('air_debug', [])
+        
+        if land_debug:
+            st.markdown("#### 陆运预期利润计算")
+            for debug_line in land_debug:
+                st.write(debug_line)
+        
+        if air_debug:
+            st.markdown("#### 空运预期利润计算")
+            for debug_line in air_debug:
+                st.write(debug_line)
+        
+        # 检查all_costs_debug中的详细信息
+        all_costs_debug = pricing_result_low.get('all_costs_debug', [])
+        st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
+        
+        # 显示物流淘汰过程
+        st.markdown("### 物流淘汰过程")
+        if all_costs_debug:
+            # 统计淘汰原因
+            elimination_reasons = {}
+            total_logistics = len(all_costs_debug)
+            eliminated_count = 0
+            
+            for debug_info in all_costs_debug:
+                if isinstance(debug_info, dict):
+                    logistic_name = debug_info.get("logistic", {}).get("name", "未知物流")
+                    cost = debug_info.get("cost")
+                    debug_list = debug_info.get("debug", [])
+                    
+                    if cost is None:
+                        eliminated_count += 1
+                        # 找到淘汰原因
+                        reason = None
+                        for debug_line in debug_list:
+                            if "返回 None" in debug_line:
+                                reason = debug_line.replace("返回 None", "").strip()
+                                break
+                            elif "跳过" in debug_line:
+                                reason = debug_line.strip()
+                                break
+                        
+                        if reason:
+                            if reason not in elimination_reasons:
+                                elimination_reasons[reason] = []
+                            elimination_reasons[reason].append(logistic_name)
+                        else:
+                            # 如果没有找到明确的原因，使用最后一个调试信息
+                            if debug_list:
+                                reason = debug_list[-1].strip()
+                                if reason not in elimination_reasons:
+                                    elimination_reasons[reason] = []
+                                elimination_reasons[reason].append(logistic_name)
+            
+            st.write(f"**总计物流规则：{total_logistics} 个**")
+            st.write(f"**被淘汰物流：{eliminated_count} 个**")
+            st.write(f"**可用物流：{total_logistics - eliminated_count} 个**")
+            
+            # 显示淘汰原因详情
+            if elimination_reasons:
+                st.markdown("**淘汰原因统计：**")
+                for reason, logistics in elimination_reasons.items():
+                    st.write(f"**原因：**{reason}")
+                    st.write(f"**影响物流：**{len(logistics)} 个")
+                    st.write(f"**物流名称：**{', '.join(logistics)}")
+                    st.markdown("---")
+        
+        # 显示运费计算过程
+        st.markdown("### 运费计算过程")
+        if all_costs_debug:
+            for debug_info in all_costs_debug:
+                if isinstance(debug_info, dict):
+                    logistic_name = debug_info.get("logistic", {}).get("name", "未知物流")
+                    cost = debug_info.get("cost")
+                    debug_list = debug_info.get("debug", [])
+                    
+                    status = "✅ 可用" if cost is not None else "❌ 被淘汰"
+                    cost_display = f"¥{cost:.2f}" if cost is not None else "无法计算"
+                    
+                    st.markdown(f"**{logistic_name}** - {status} - 运费：{cost_display}")
+                    
+                    if debug_list:
+                        for debug_line in debug_list:
+                            st.text(f"  {debug_line}")
+                    
+                    st.markdown("---")
+        
+        # 查找运费为0的物流规则
+        zero_cost_rules = []
+        for debug_info in all_costs_debug:
+            if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
+                zero_cost_rules.append(debug_info)
+        
+        st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
+        if zero_cost_rules:
+            st.write("**运费为0的物流规则:**")
+            for rule in zero_cost_rules[:5]:  # 只显示前5个
+                logistic_name = rule.get('logistic', {}).get('name', 'Unknown')
+                st.write(f"  - {logistic_name}: cost={rule.get('cost')}")
+        
+        # 查找特定物流规则的运费
+        target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
+        for debug_info in all_costs_debug:
+            if isinstance(debug_info, dict):
+                logistic = debug_info.get('logistic', {})
+                name = logistic.get('name', 'Unknown')
+                if name in target_rules:
+                    st.write(f"**{name}:** cost={debug_info.get('cost')}, type={logistic.get('type')}")
+
+    # 获取all_costs_debug用于后续使用
+    all_costs_debug = pricing_result_low.get('all_costs_debug', [])
 
     col_land_l, col_air_l = st.columns(2)
 
@@ -3106,6 +3557,8 @@ def main():
     SessionSecurity.init_session_tables()
     # 初始化极速模式数据表
     init_fast_mode_tables()
+    # 迁移用户偏好设置
+    migrate_user_preferences()
 
     # 检查会话安全性
     if not check_session_security():

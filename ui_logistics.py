@@ -540,7 +540,7 @@ def logistics_page():
                         )
 
                         # 显示复选框和物流信息
-                        col_check, col_info = st.columns([1, 20])
+                        col_check, col_info = st.columns([1, 20], vertical_alignment="bottom")
                         with col_check:
                             if st.checkbox(
                                 "选择",
@@ -552,7 +552,7 @@ def logistics_page():
                             st.write(logistics_info)
 
                         # 在每条规则后面显示对应的编辑和删除按钮
-                        col_edit, col_del = st.columns(2)
+                        col_edit, col_del, col_space = st.columns([3, 3, 14])
                         with col_edit:
                             if st.button("编辑", key=f"edit_land_{row['id']}"):
                                 # 到期拦截
@@ -632,7 +632,7 @@ def logistics_page():
                         )
 
                         # 显示复选框和物流信息
-                        col_check, col_info = st.columns([1, 20])
+                        col_check, col_info = st.columns([1, 20], vertical_alignment="bottom")
                         with col_check:
                             if st.checkbox(
                                 "选择",
@@ -644,7 +644,7 @@ def logistics_page():
                             st.write(logistics_info)
 
                         # 在每条规则后面显示对应的编辑和删除按钮
-                        col_edit, col_del = st.columns(2)
+                        col_edit, col_del, col_space = st.columns([3, 3, 14])
                         with col_edit:
                             if st.button("编辑", key=f"edit_air_{row['id']}"):
                                 # 到期拦截

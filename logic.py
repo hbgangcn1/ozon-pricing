@@ -263,11 +263,10 @@ def calculate_logistic_cost(logistic, product, debug=False):
             if longest_side > longest_side_threshold:
                 volume_weight = (sides[0] * sides[1] *
                                  sides[2]) / volume_coefficient
-                actual_weight_kg = actual_weight / 1000  # 转换为千克
-                # 转换回克
-                calculated_weight = max(actual_weight_kg, volume_weight) * 1000
+                # 当最长边超过阈值时，直接使用体积重量计费
+                calculated_weight = volume_weight * 1000  # 转换回克
                 debug_info.append(
-                    f"最长边超过阈值，启用体积重量计费: "
+                    f"最长边超过阈值，按体积重量计费: "
                     f"实际重量: {actual_weight:.2f}g, "
                     f"体积重量: {volume_weight * 1000:.2f}g, "
                     f"计费重量: {calculated_weight:.2f}g"
@@ -900,7 +899,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "air_stats": air_stats,
             "all_costs_debug": all_costs_debug,
             "land_debug": land_debug,
-            "air_debug": air_debug
+            "air_debug": air_debug,
+            "product_info": product
         }
     except ZeroDivisionError:
         # 重新抛出 ZeroDivisionError
@@ -927,7 +927,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "air_stats": None,
             "all_costs_debug": [],
             "land_debug": [],
-            "air_debug": []
+            "air_debug": [],
+            "product_info": product
         }
 
 
@@ -956,10 +957,8 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:
             volume_weight = (
                 length_cm * width_cm * height_cm
             ) / volume_coefficient
-            actual_weight = product.get("weight_g", 0) / 1000  # 转换为千克
-            calculated_weight = (
-                max(actual_weight, volume_weight) * 1000
-            )  # 转换回克
+            # 当最长边超过阈值时，直接使用体积重量计费
+            calculated_weight = volume_weight * 1000  # 转换回克
         else:
             calculated_weight = product.get("weight_g", 0)
     else:

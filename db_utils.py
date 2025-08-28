@@ -815,7 +815,8 @@ def init_db():
                 username TEXT UNIQUE,
                 password TEXT,
                 role TEXT,
-                email TEXT UNIQUE
+                email TEXT UNIQUE,
+                preferred_mode TEXT DEFAULT 'fast'
             )
             """
         )
@@ -1474,3 +1475,50 @@ def delete_user(user_id):
             print(f"删除用户失败: {e}")
             conn.rollback()
             return False
+
+
+def get_user_preferred_mode(user_id):
+    """获取用户的模式偏好"""
+    with get_db_connection() as (conn, c):
+        result = c.execute(
+            "SELECT preferred_mode FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        
+        if result:
+            return result[0] or 'fast'  # 如果为NULL，返回'fast'
+        return 'fast'  # 默认返回极速模式
+
+
+def update_user_preferred_mode(user_id, mode):
+    """更新用户的模式偏好"""
+    with get_db_connection() as (conn, c):
+        c.execute(
+            "UPDATE users SET preferred_mode = ? WHERE id = ?",
+            (mode, user_id)
+        )
+        conn.commit()
+
+
+def migrate_user_preferences():
+    """迁移现有用户的模式偏好"""
+    with get_db_connection() as (conn, c):
+        try:
+            # 检查preferred_mode列是否存在
+            c.execute("PRAGMA table_info(users)")
+            columns = [column[1] for column in c.fetchall()]
+            
+            if 'preferred_mode' not in columns:
+                # 添加preferred_mode列
+                c.execute("ALTER TABLE users ADD COLUMN preferred_mode TEXT DEFAULT 'fast'")
+                conn.commit()
+                print("已为users表添加preferred_mode列")
+            
+            # 为所有现有用户设置默认偏好为极速模式
+            c.execute("UPDATE users SET preferred_mode = 'fast' WHERE preferred_mode IS NULL")
+            conn.commit()
+            print("已为现有用户设置默认模式偏好")
+            
+        except Exception as e:
+            print(f"迁移用户偏好失败: {e}")
+            conn.rollback()
