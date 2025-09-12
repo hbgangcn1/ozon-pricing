@@ -48,7 +48,7 @@ def create_backup():
             os.remove(backup_path)
             return None
 
-    except Exception as e:
+    except (OSError, IOError, sqlite3.Error, ValueError) as e:
         print(f"❌ 备份失败: {e}")
         return None
 
@@ -160,7 +160,7 @@ def restore_backup(backup_filename, confirm=None):
         print(f"✅ 数据库恢复成功: {backup_filename}")
         return True
 
-    except Exception as e:
+    except (OSError, IOError, sqlite3.Error, ValueError) as e:
         print(f"❌ 数据库恢复失败: {e}")
         return False
 
@@ -200,7 +200,7 @@ def show_backup_details(backup_filename):
             'stats': stats
         }
 
-    except Exception as e:
+    except (OSError, IOError, sqlite3.Error, ValueError) as e:
         print(f"❌ 获取备份详情失败: {e}")
         return None
 
@@ -234,7 +234,7 @@ def cleanup_backups(keep_count=10):
         )
         return True
 
-    except Exception as e:
+    except (OSError, IOError, sqlite3.Error, ValueError) as e:
         print(f"❌ 清理备份失败: {e}")
         return False
 
@@ -253,7 +253,7 @@ def delete_backup(backup_filename):
         print(f"✅ 备份文件删除成功: {backup_filename}")
         return True
 
-    except Exception as e:
+    except (OSError, IOError, sqlite3.Error, ValueError) as e:
         print(f"❌ 删除备份文件失败: {e}")
         return False
 

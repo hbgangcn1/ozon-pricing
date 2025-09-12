@@ -392,15 +392,24 @@ def secure_login(username_or_email: str, password: str) -> bool:
         SessionSecurity.invalidate_session()
         SessionSecurity.record_login_attempt(username_or_email, True)
 
-        # 首次登录后再开始计时：对 monthly/enterprise/test 首次登录生效
+        # 首次登录后再开始计时：
+        # 对 monthly/enterprise/test/efficiency/professional 首次登录生效
         try:
             info = get_user_subscription_info(user['id'])
             if info:
                 user_type = info.get('user_type')
                 first_login = info.get('first_login_date')
-                if (not first_login and
-                        user_type in ('monthly', 'enterprise', 'test')):
-                    if user_type in ('monthly', 'enterprise'):
+                if (
+                    not first_login
+                    and user_type in (
+                        'monthly', 'enterprise', 'test',
+                        'efficiency', 'professional',
+                    )
+                ):
+                    if user_type in (
+                        'monthly', 'enterprise', 'efficiency',
+                        'professional',
+                    ):
                         new_expiry = (
                             datetime.now() + timedelta(days=30)
                         ).isoformat()
@@ -409,12 +418,34 @@ def secure_login(username_or_email: str, password: str) -> bool:
                             'expiry_date': new_expiry
                         })
                     elif user_type == 'test':
-                        # 测试用户只需要设置首次登录时间，不设置过期时间
+                        # 测试用户首次登录自动设置7天有效期
+                        new_expiry = (
+                            datetime.now() + timedelta(days=7)
+                        ).isoformat()
                         update_user_subscription(user['id'], {
-                            'first_login_date': datetime.now().isoformat()
+                            'first_login_date': datetime.now().isoformat(),
+                            'expiry_date': new_expiry
                         })
         except (KeyError, TypeError, ValueError, sqlite3.Error):
             pass
+
+        # 更新最后登录时间
+        try:
+            try:
+                from .db_utils import get_db_connection
+            except ImportError:
+                from db_utils import get_db_connection
+            with get_db_connection() as (conn, c):
+                c.execute(
+                    (
+                        "UPDATE users SET last_login = datetime('now') "
+                        "WHERE id = ?"
+                    ),
+                    (user['id'],),
+                )
+                conn.commit()
+        except (sqlite3.Error, KeyError, TypeError):
+            pass  # 如果更新失败，不影响登录流程
 
         # 创建安全会话
         SessionSecurity.create_session(user['id'], user)

@@ -144,6 +144,10 @@ class ExchangeRateService:
             pass
         return self._rate
 
+    def get_cached_rate(self) -> float:
+        """返回当前缓存的卢布兑人民币汇率，不触发刷新"""
+        return self._rate
+
 
 # ---------- 美元汇率提供者
 class UsdProvider(ExchangeRateProvider):
@@ -262,6 +266,10 @@ class UsdExchangeRateService:
             pass
         return self._rate
 
+    def get_cached_rate(self) -> float:
+        """返回当前缓存的美元兑人民币汇率，不触发刷新"""
+        return self._rate
+
 
 # ---------- 全局单例
 def get_exchange_rate() -> float:
@@ -271,3 +279,14 @@ def get_exchange_rate() -> float:
 def get_usd_rate() -> float:
     """获取美元兑人民币汇率"""
     return UsdExchangeRateService().get_exchange_rate()
+
+
+# ---------- 兜底汇率函数（不进行API调用）
+def get_fallback_exchange_rate() -> float:
+    """获取兜底汇率，不进行API调用，直接返回缓存值"""
+    return ExchangeRateService().get_cached_rate()
+
+
+def get_fallback_usd_rate() -> float:
+    """获取美元兜底汇率，不进行API调用，直接返回缓存值"""
+    return UsdExchangeRateService().get_cached_rate()

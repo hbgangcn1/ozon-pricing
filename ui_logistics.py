@@ -16,9 +16,15 @@ except ImportError:
         check_user_subscription_status,
     )
 try:
-    from .exchange_service import ExchangeRateService, get_usd_rate
+    from .exchange_service import (
+        get_fallback_exchange_rate,
+        get_fallback_usd_rate,
+    )
 except ImportError:
-    from exchange_service import ExchangeRateService, get_usd_rate
+    from exchange_service import (
+        get_fallback_exchange_rate,
+        get_fallback_usd_rate,
+    )
 
 
 # 向后兼容：提供 get_db 以便旧测试可以 monkeypatch
@@ -73,11 +79,10 @@ def logistics_page():
         # 缓存订阅状态，避免在每个按钮中重复查询
         subscription_status = check_user_subscription_status(uid)
 
-        # 美化页面标题
+        # 页面描述
         st.markdown(
             """
             <div style="text-align: center; margin-bottom: 2rem;">
-                <h1 class="main-title">🚚 物流规则管理</h1>
                 <p style="color: #718096; font-size: 1.1rem; margin: 0;">
                     配置物流服务商规则，可灵活更改
                 </p>
@@ -320,9 +325,52 @@ def logistics_page():
 
             if st.button("添加物流规则", key="add_logistic_button"):
                 # 到期拦截
-                if not subscription_status.get("valid", True):
+                # 免费版用户不检查到期时间
+                if (
+                    subscription_status.get("user_type") != "free"
+                    and not subscription_status.get("valid", True)
+                ):
                     st.error("账号到期，请联系客服续费")
                     return
+                # 检查物流模板数量限制
+                # 获取用户物流模板数量和限制
+                with get_db_connection() as (_, cur):
+                    # 获取当前物流模板数量
+                    cur.execute(
+                        "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                        (uid,),
+                    )
+                    current_count = cur.fetchone()[0]
+                    # 获取用户类型和物流模板限制
+                    cur.execute(
+                        "SELECT user_type, "
+                        "logistics_templates_limit "
+                        "FROM users "
+                        "WHERE id = ?",
+                        (uid,),
+                    )
+                    result = cur.fetchone()
+                    if result:
+                        user_type, _db_limit = result
+                        # 依据套餐强制限制：free=1，efficiency=3，其它不限
+                        if user_type == 'free':
+                            effective_limit = 1
+                        elif user_type == 'efficiency':
+                            effective_limit = 3
+                        else:
+                            effective_limit = -1  # 不限
+
+                        # 检查是否达到上限（严格按套餐限制）
+                        if (effective_limit != -1 and
+                                current_count >= effective_limit):
+                            st.error(
+                                "❌ 物流模板数量已达上限"
+                                f"（当前：{current_count}个）"
+                            )
+                            st.info(
+                                "💡 请升级套餐以获得更多物流模板"
+                            )
+                            return
                 # 检查必填字段
                 missing_fields = []
                 if not name:
@@ -333,9 +381,12 @@ def logistics_page():
                         f"请填写以下必填字段：{', '.join(missing_fields)}"
                     )
                 else:
-                    # 货币转换 - 只在需要时获取对应汇率
+                    # 货币转换 - 用户计算时只使用兜底汇率，不调用API
                     if price_currency == "卢布":
-                        rub_rate = ExchangeRateService().get_exchange_rate()
+                        try:
+                            rub_rate = get_fallback_exchange_rate()
+                        except (KeyError, TypeError, ValueError):
+                            rub_rate = 0.0904  # 默认兜底汇率
                         price_limit_cny = (
                             round(price_limit * rub_rate, 4)
                             if price_limit > 0
@@ -344,7 +395,10 @@ def logistics_page():
                         price_limit_rub = price_limit
                         price_min_rub = price_min
                     else:  # 美元
-                        usd_rate = get_usd_rate()
+                        try:
+                            usd_rate = get_fallback_usd_rate()
+                        except (KeyError, TypeError, ValueError):
+                            usd_rate = 7.2  # 默认美元汇率
                         price_limit_cny = (
                             round(price_limit * usd_rate, 4)
                             if price_limit > 0
@@ -495,7 +549,7 @@ def logistics_page():
         land_df = cached_data['land_df']
         air_df = cached_data['air_df']
 
-        left, right = st.columns(2)
+        left, middle, right = st.columns([1, 0.2, 1])
         with left:
             st.write("**陆运**")
 
@@ -540,7 +594,9 @@ def logistics_page():
                         )
 
                         # 显示复选框和物流信息
-                        col_check, col_info = st.columns([1, 20], vertical_alignment="bottom")
+                        col_check, col_info = st.columns(
+                            [1, 20], vertical_alignment="bottom"
+                        )
                         with col_check:
                             if st.checkbox(
                                 "选择",
@@ -588,6 +644,10 @@ def logistics_page():
                             st.rerun()
             else:
                 st.info("暂无陆运数据")
+        with middle:
+            # 空列，用于分隔陆运和空运
+            pass
+
         with right:
             st.write("**空运**")
 
@@ -632,7 +692,9 @@ def logistics_page():
                         )
 
                         # 显示复选框和物流信息
-                        col_check, col_info = st.columns([1, 20], vertical_alignment="bottom")
+                        col_check, col_info = st.columns(
+                            [1, 20], vertical_alignment="bottom"
+                        )
                         with col_check:
                             if st.checkbox(
                                 "选择",
@@ -1094,9 +1156,15 @@ def edit_logistic_form():
         col_save, col_cancel = st.columns(2)
         with col_save:
             if st.button("保存修改", key=f"save_{lid}"):
-                # 货币转换 - 只在需要时获取对应汇率
+                # 货币转换 - 用户计算时只使用兜底汇率，不调用API
                 if price_currency == "卢布":
-                    rub_rate = ExchangeRateService().get_exchange_rate()
+                    try:
+                        from exchange_service import (
+                            get_fallback_exchange_rate,
+                        )
+                        rub_rate = get_fallback_exchange_rate()
+                    except (ImportError, KeyError, TypeError, ValueError):
+                        rub_rate = 0.0904  # 默认兜底汇率
                     price_limit_cny = (
                         round(price_limit * rub_rate, 4)
                         if price_limit > 0
@@ -1105,7 +1173,11 @@ def edit_logistic_form():
                     price_limit_rub = price_limit
                     price_min_rub = price_min
                 else:  # 美元
-                    usd_rate = get_usd_rate()
+                    try:
+                        from exchange_service import get_fallback_usd_rate
+                        usd_rate = get_fallback_usd_rate()
+                    except (ImportError, KeyError, TypeError, ValueError):
+                        usd_rate = 7.2  # 默认美元汇率
                     price_limit_cny = (
                         round(price_limit * usd_rate, 4)
                         if price_limit > 0

@@ -106,7 +106,7 @@ def _check_connections_at_exit():
             while not _CONNECTION_POOL.empty():
                 conn = _CONNECTION_POOL.get_nowait()
                 conn.close()
-        except Exception as e:
+        except (Exception,) as e:
             print(f"清理连接池时出错: {e}")
 
 
@@ -180,7 +180,7 @@ def _initialize_connection_pool():
                 try:
                     conn = _create_db_connection()
                     _CONNECTION_POOL.put_nowait(conn)
-                except Exception as e:
+                except (Exception,) as e:
                     print(f"初始化连接池失败: {e}")
 
 
@@ -371,6 +371,42 @@ def require_admin():
     """要求管理员权限，否则抛出异常"""
     if not is_admin():
         raise PermissionError("此操作需要管理员权限")
+
+
+def get_system_config(
+        config_key: str, default_value: Optional[str] = None
+) -> Optional[str]:
+    """获取系统配置值"""
+    with get_db_connection() as (conn, c):
+        result = c.execute(
+            "SELECT config_value FROM system_config WHERE config_key = ?",
+            (config_key,)
+        ).fetchone()
+        return result[0] if result else default_value
+
+
+def set_system_config(
+        config_key: str, config_value: str, description: Optional[str] = None
+) -> bool:
+    """设置系统配置值"""
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("""
+                INSERT OR REPLACE INTO system_config
+                (config_key, config_value, description, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """, (config_key, config_value, description or ''))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"设置系统配置失败: {e}")
+            return False
+
+
+def is_registration_open() -> bool:
+    """检查是否开放注册"""
+    config_value = get_system_config('open_registration', 'false')
+    return config_value is not None and config_value.lower() == 'true'
 
 # 数据库升级相关函数
 
@@ -907,6 +943,24 @@ def init_db():
             )
             """
         )
+
+        # 创建系统配置表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS system_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_key TEXT UNIQUE NOT NULL,
+                config_value TEXT NOT NULL,
+                description TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # 初始化系统配置
+        c.execute("""
+            INSERT OR IGNORE INTO system_config
+            (config_key, config_value, description)
+            VALUES ('open_registration', 'false', '是否开放用户注册')
+        """)
         conn.commit()
         # 2. 升级旧表（只跑一次）
         _upgrade_table_user_id("products")
@@ -1201,7 +1255,8 @@ def get_user_subscription_info(user_id):
     with get_db_connection() as (conn, c):
         user = c.execute(
             "SELECT id, username, user_type, expiry_date, "
-            "remaining_calculations, first_login_date, test_days_remaining "
+            "remaining_calculations, first_login_date, "
+            "test_days_remaining, role "
             "FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
@@ -1238,17 +1293,31 @@ def check_user_subscription_status(user_id):
     if not user_info:
         return {'valid': False, 'message': '用户不存在'}
 
+    # 检查用户角色，如果是admin用户，直接返回管理员状态
+    user_role = user_info.get('role', 'user')
+    if user_role == 'admin':
+        return {
+            'valid': True,
+            'message': '管理员用户',
+            'user_type': 'admin',
+            'role': 'admin',
+        }
+
     user_type = user_info.get('user_type', 'permanent')
 
     # 永久用户
     if user_type == 'permanent':
-        return {'valid': True, 'message': '永久用户'}
+        return {'valid': True, 'message': '永久用户', 'user_type': user_type}
 
     # 测试用户
     if user_type == 'test':
         first_login = user_info.get('first_login_date')
         if not first_login:
-            return {'valid': True, 'message': '测试用户未开始计时'}
+            return {
+                'valid': True,
+                'message': '测试用户未开始计时',
+                'user_type': user_type,
+            }
 
         try:
             first_login_date = datetime.fromisoformat(first_login)
@@ -1256,17 +1325,26 @@ def check_user_subscription_status(user_id):
             remaining_days = 7 - days_elapsed
 
             if remaining_days <= 0:
-                return {'valid': False, 'message': '测试期已过期'}
+                return {
+                    'valid': False,
+                    'message': '测试期已过期',
+                    'user_type': user_type,
+                }
             else:
                 return {
                     'valid': True,
                     'message': (
                         f'测试用户，剩余{remaining_days}天'
                     ),
-                    'remaining_days': remaining_days
+                    'remaining_days': remaining_days,
+                    'user_type': user_type
                 }
         except (ValueError, TypeError):
-            return {'valid': True, 'message': '测试用户'}
+            return {
+                'valid': True,
+                'message': '测试用户',
+                'user_type': user_type,
+            }
 
     # 按月付费用户
     if user_type == 'monthly':
@@ -1286,27 +1364,43 @@ def check_user_subscription_status(user_id):
                     'valid': False,
                     'message': '订阅已过期',
                     'remaining_days': 0,
-                    'remaining_calculations': remaining_calculations
+                    'remaining_calculations': remaining_calculations,
+                    'user_type': user_type
                 }
+
+            # 格式化计算次数显示
+            if remaining_calculations == -1:
+                calculations_display = "无限次"
+            else:
+                calculations_display = f"{remaining_calculations}次"
 
             return {
                 'valid': True,
                 'message': (
                     f'按月付费用户，剩余{days_remaining}天，'
-                    f'剩余{remaining_calculations}次计算'
+                    f'剩余{calculations_display}计算'
                 ),
                 'remaining_days': days_remaining,
-                'remaining_calculations': remaining_calculations
+                'remaining_calculations': remaining_calculations,
+                'user_type': user_type,
             }
         except (ValueError, TypeError):
-            return {'valid': False, 'message': '订阅信息错误'}
+            return {
+                'valid': False,
+                'message': '订阅信息错误',
+                'user_type': user_type,
+            }
 
     # 企业用户
     if user_type == 'enterprise':
         expiry_date = user_info.get('expiry_date')
 
         if not expiry_date:
-            return {'valid': False, 'message': '订阅信息不完整'}
+            return {
+                'valid': False,
+                'message': '订阅信息不完整',
+                'user_type': user_type,
+            }
 
         try:
             expiry = datetime.fromisoformat(expiry_date)
@@ -1316,17 +1410,99 @@ def check_user_subscription_status(user_id):
                 return {
                     'valid': False,
                     'message': '订阅已过期',
-                    'remaining_days': 0
+                    'remaining_days': 0,
+                    'user_type': user_type
                 }
             return {
                 'valid': True,
-                'message': f'企业用户，剩余{days_remaining}天',
-                'remaining_days': days_remaining
+                'message': f'企业版用户，剩余{days_remaining}天',
+                'remaining_days': days_remaining,
+                'user_type': user_type
             }
         except (ValueError, TypeError):
-            return {'valid': False, 'message': '订阅信息错误'}
+            return {
+                'valid': False,
+                'message': '订阅信息错误',
+                'user_type': user_type,
+            }
 
-    return {'valid': False, 'message': '未知用户类型'}
+    # 处理新的用户类型系统
+    if user_type in [
+        'free', 'efficiency', 'professional', 'enterprise', 'gratitude',
+    ]:
+        remaining_calculations = user_info.get('remaining_calculations', 0)
+
+        # 免费版用户：不检查到期时间，仅依据每日计算次数
+        if user_type == 'free':
+            # 计算次数显示
+            if remaining_calculations == -1:
+                calculations_display = "无限次"
+            else:
+                calculations_display = f"{remaining_calculations}次"
+            return {
+                'valid': True,
+                'message': (
+                    f'免费版用户，剩余{calculations_display}计算'
+                ),
+                'remaining_calculations': remaining_calculations,
+                'user_type': user_type,
+            }
+
+        # 非免费版用户：保留原有到期检查逻辑
+        expiry_date = user_info.get('expiry_date')
+        if not expiry_date:
+            return {
+                'valid': False,
+                'message': '订阅信息不完整',
+                'user_type': user_type,
+            }
+        try:
+            expiry = datetime.fromisoformat(expiry_date)
+            today = date.today()
+            days_remaining = (expiry.date() - today).days
+
+            if days_remaining <= 0:
+                return {
+                    'valid': False,
+                    'message': '订阅到期，请续订',
+                    'remaining_days': 0,
+                    'remaining_calculations': remaining_calculations,
+                    'user_type': user_type
+                }
+            # 使用友好的用户类型名称
+            user_type_display_names = {
+                'free': '免费版用户',
+                'efficiency': '效率版用户',
+                'professional': '专业版用户',
+                'enterprise': '企业版用户',
+                'gratitude': '感谢版用户',
+            }
+            display_name = user_type_display_names.get(
+                user_type,
+                f'{user_type}用户',
+            )
+            # 格式化计算次数显示
+            if remaining_calculations == -1:
+                calculations_display = "无限次"
+            else:
+                calculations_display = f"{remaining_calculations}次"
+            return {
+                'valid': True,
+                'message': (
+                    f'{display_name}，剩余{days_remaining}天，'
+                    f'剩余{calculations_display}计算'
+                ),
+                'remaining_days': days_remaining,
+                'remaining_calculations': remaining_calculations,
+                'user_type': user_type,
+            }
+        except (ValueError, TypeError):
+            return {
+                'valid': False,
+                'message': '订阅信息错误',
+                'user_type': user_type,
+            }
+    return {'valid': False, 'message': '未知用户类型', 'user_type': user_type}
 
 
 def decrement_user_calculations(user_id):
@@ -1347,13 +1523,30 @@ def decrement_user_calculations(user_id):
         user_type = user[0]  # user_type在第一列
         remaining = user[1] if len(user) > 1 else -1
 
-        # 永久用户和企业用户不限制次数
-        if user_type == 'permanent' or user_type == 'enterprise':
+        # admin用户、永久用户、企业用户、感谢版用户、效率版用户、专业版用户不限制次数
+        if user_type in [
+                'admin', 'permanent', 'enterprise', 'gratitude',
+                'efficiency', 'professional']:
             return True
 
         # 测试用户不限制次数
         if user_type == 'test':
             return True
+
+        # 免费版用户：按每日次数扣减
+        if user_type == 'free':
+            if remaining <= 0:
+                return False
+            c.execute(
+                (
+                    "UPDATE users SET remaining_calculations = "
+                    "remaining_calculations - 1 WHERE id = ? "
+                    "AND remaining_calculations > 0"
+                ),
+                (user_id, )
+            )
+            conn.commit()
+            return c.rowcount > 0
 
         # 按月付费用户需要检查次数
         if user_type == 'monthly':
@@ -1471,7 +1664,7 @@ def delete_user(user_id):
             print(f"数据库错误: {e}")
             conn.rollback()
             return False
-        except Exception as e:
+        except (Exception,) as e:
             print(f"删除用户失败: {e}")
             conn.rollback()
             return False
@@ -1484,7 +1677,7 @@ def get_user_preferred_mode(user_id):
             "SELECT preferred_mode FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
-        
+
         if result:
             return result[0] or 'fast'  # 如果为NULL，返回'fast'
         return 'fast'  # 默认返回极速模式
@@ -1507,18 +1700,524 @@ def migrate_user_preferences():
             # 检查preferred_mode列是否存在
             c.execute("PRAGMA table_info(users)")
             columns = [column[1] for column in c.fetchall()]
-            
+
             if 'preferred_mode' not in columns:
                 # 添加preferred_mode列
-                c.execute("ALTER TABLE users ADD COLUMN preferred_mode TEXT DEFAULT 'fast'")
+                c.execute(
+                    (
+                        "ALTER TABLE users ADD COLUMN preferred_mode TEXT "
+                        "DEFAULT 'fast'"
+                    )
+                )
                 conn.commit()
                 print("已为users表添加preferred_mode列")
-            
-            # 为所有现有用户设置默认偏好为极速模式
-            c.execute("UPDATE users SET preferred_mode = 'fast' WHERE preferred_mode IS NULL")
-            conn.commit()
-            print("已为现有用户设置默认模式偏好")
-            
-        except Exception as e:
+
+            # 检查是否还有用户没有设置偏好模式
+            c.execute(
+                "SELECT COUNT(*) FROM users WHERE preferred_mode IS NULL"
+            )
+            null_count = c.fetchone()[0]
+
+            if null_count > 0:
+                # 为所有现有用户设置默认偏好为极速模式
+                c.execute(
+                    "UPDATE users SET preferred_mode = 'fast' "
+                    "WHERE preferred_mode IS NULL"
+                )
+                conn.commit()
+                print(f"已为 {null_count} 个用户设置默认模式偏好")
+            # 如果没有需要设置的用户，则不显示任何信息
+
+        except (Exception,) as e:
             print(f"迁移用户偏好失败: {e}")
             conn.rollback()
+
+# 管理员后台相关函数
+
+
+def authenticate_admin(username, password):
+    """验证管理员登录"""
+    with get_db_connection() as (conn, c):
+        c.execute(
+            (
+                "SELECT id, username, password_hash, role, email "
+                "FROM admin_users "
+                "WHERE username = ? AND is_active = 1"
+            ),
+            (username,),
+        )
+        result = c.fetchone()
+
+        if result:
+            admin_id, username, password_hash, role, email = result
+            import bcrypt
+            if bcrypt.checkpw(
+                password.encode('utf-8'), password_hash.encode('utf-8')
+            ):
+                # 更新最后登录时间
+                c.execute(
+                    (
+                        "UPDATE admin_users SET last_login = datetime('now') "
+                        "WHERE id = ?"
+                    ),
+                    (admin_id,),
+                )
+                conn.commit()
+                return {
+                    'id': admin_id,
+                    'username': username,
+                    'role': role,
+                    'email': email,
+                }
+        return None
+
+
+def get_all_users(
+        page=1,
+        per_page=20,
+        search=None,
+        user_type_filter=None,
+        status_filter=None,
+):
+    """获取所有用户列表（分页）"""
+    with get_db_connection() as (conn, c):
+        # 构建查询条件
+        where_conditions = []
+        params = []
+
+        if search:
+            where_conditions.append("(username LIKE ? OR email LIKE ?)")
+            params.extend([f'%{search}%', f'%{search}%'])
+
+        if user_type_filter and user_type_filter != 'all':
+            where_conditions.append("user_type = ?")
+            params.append(user_type_filter)
+
+        if status_filter:
+            if status_filter == 'expired':
+                where_conditions.append(
+                    "(subscription_end IS NOT NULL AND "
+                    "subscription_end < datetime('now'))"
+                )
+            elif status_filter == 'expiring_soon':
+                where_conditions.append(
+                    "(subscription_end IS NOT NULL AND subscription_end "
+                    "BETWEEN datetime('now') AND datetime('now', '+7 days'))"
+                )
+            elif status_filter == 'active':
+                where_conditions.append(
+                    "(subscription_end IS NULL OR "
+                    "subscription_end >= datetime('now'))"
+                )
+
+        where_clause = (
+            " AND ".join(where_conditions) if where_conditions else "1=1"
+        )
+
+        # 获取总数
+        count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
+        c.execute(count_query, params)
+        total_count = c.fetchone()[0]
+
+        # 获取分页数据
+        offset = (page - 1) * per_page
+        query = f"""
+        SELECT id, username, email, role, user_type,
+               subscription_start, subscription_end,
+               remaining_calculations, logistics_templates_limit,
+               is_auto_renew, created_at, last_login, is_frozen
+        FROM users
+        WHERE {where_clause}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+        """
+        c.execute(query, params + [per_page, offset])
+        users = c.fetchall()
+
+        # 获取每个用户的物流模板数量
+        user_logistics_counts = {}
+        for user in users:
+            user_id = user[0]
+            c.execute(
+                "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                (user_id,),
+            )
+            logistics_count = c.fetchone()[0]
+            user_logistics_counts[user_id] = logistics_count
+
+        # 格式化用户数据
+        formatted_users = []
+        for user in users:
+            (user_id, username, email, role, user_type, subscription_start,
+             subscription_end, remaining_calculations,
+             logistics_templates_limit, is_auto_renew, created_at,
+             last_login, is_frozen) = user
+
+            # 计算剩余天数
+            remaining_days = None
+            if subscription_end:
+                from datetime import datetime, date
+                try:
+                    expiry = datetime.fromisoformat(subscription_end)
+                    today = date.today()
+                    remaining_days = (expiry.date() - today).days
+                except (ValueError, TypeError):
+                    pass
+
+            formatted_users.append({
+                'id': user_id,
+                'username': username,
+                'email': email,
+                'role': role,
+                'user_type': user_type,
+                'subscription_start': subscription_start,
+                'subscription_end': subscription_end,
+                'remaining_days': remaining_days,
+                'remaining_calculations': remaining_calculations,
+                'logistics_templates_limit': logistics_templates_limit,
+                'current_logistics_count': user_logistics_counts.get(
+                    user_id, 0
+                ),
+                'is_auto_renew': is_auto_renew,
+                'created_at': created_at,
+                'last_login': last_login,
+                'is_frozen': is_frozen
+            })
+
+        return {
+            'users': formatted_users,
+            'total_count': total_count,
+            'total_pages': (total_count + per_page - 1) // per_page,
+            'current_page': page
+        }
+
+
+def get_user_detail(user_id):
+    """获取用户详细信息"""
+    with get_db_connection() as (conn, c):
+        c.execute(
+            (
+                "SELECT id, username, email, role, user_type, "
+                "subscription_start, subscription_end, "
+                "remaining_calculations, logistics_templates_limit, "
+                "is_auto_renew, created_at, last_login, "
+                "is_frozen FROM users WHERE id = ?"
+            ),
+            (user_id,),
+        )
+        user = c.fetchone()
+
+        if not user:
+            return None
+
+        (
+            user_id, username, email, role, user_type, subscription_start,
+            subscription_end, remaining_calculations,
+            logistics_templates_limit, is_auto_renew, created_at,
+            last_login, is_frozen,
+        ) = user
+
+        # 获取物流模板数量
+        c.execute(
+            "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+            (user_id,),
+        )
+        logistics_count = c.fetchone()[0]
+
+        # 获取产品数量
+        c.execute(
+            "SELECT COUNT(*) FROM products WHERE user_id = ?",
+            (user_id,),
+        )
+        products_count = c.fetchone()[0]
+
+        # 计算剩余天数
+        remaining_days = None
+        if subscription_end:
+            from datetime import datetime, date
+            try:
+                expiry = datetime.fromisoformat(subscription_end)
+                today = date.today()
+                remaining_days = (expiry.date() - today).days
+            except (ValueError, TypeError):
+                pass
+
+        return {
+            'id': user_id,
+            'username': username,
+            'email': email,
+            'role': role,
+            'user_type': user_type,
+            'subscription_start': subscription_start,
+            'subscription_end': subscription_end,
+            'remaining_days': remaining_days,
+            'remaining_calculations': remaining_calculations,
+            'logistics_templates_limit': logistics_templates_limit,
+            'current_logistics_count': logistics_count,
+            'products_count': products_count,
+            'is_auto_renew': is_auto_renew,
+            'created_at': created_at,
+            'last_login': last_login,
+            'is_frozen': is_frozen
+        }
+
+
+def update_user_subscription_admin(user_id, updates, admin_id):
+    """管理员更新用户订阅信息"""
+    with get_db_connection() as (conn, c):
+        # 构建更新字段
+        set_clauses = []
+        values = []
+
+        for field, value in updates.items():
+            if field in [
+                'user_type', 'subscription_start', 'subscription_end',
+                'remaining_calculations', 'logistics_templates_limit',
+                'is_auto_renew', 'is_frozen',
+            ]:
+                set_clauses.append(f"{field} = ?")
+                values.append(value)
+
+        if not set_clauses:
+            return False
+
+        values.append(user_id)
+
+        # 执行更新
+        query = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = ?"
+        c.execute(query, values)
+
+        if c.rowcount > 0:
+            # 记录审计日志
+            details_pairs = [f"{k}={v}" for k, v in updates.items()]
+            action_details = (
+                "管理员更新用户订阅: " + ", ".join(details_pairs)
+            )
+            c.execute(
+                """
+                INSERT INTO audit_logs (admin_id, user_id, action, details)
+                VALUES (?, ?, ?, ?)
+                """,
+                (admin_id, user_id, 'update_subscription', action_details),
+            )
+
+            conn.commit()
+            return True
+
+        return False
+
+
+def freeze_user(user_id, admin_id):
+    """冻结用户"""
+    with get_db_connection() as (conn, c):
+        c.execute("UPDATE users SET is_frozen = 1 WHERE id = ?", (user_id,))
+
+        if c.rowcount > 0:
+            # 记录审计日志
+            c.execute("""
+            INSERT INTO audit_logs (admin_id, user_id, action, details)
+            VALUES (?, ?, ?, ?)
+            """, (admin_id, user_id, 'freeze_user', '管理员冻结用户'))
+
+            conn.commit()
+            return True
+
+        return False
+
+
+def unfreeze_user(user_id, admin_id):
+    """解冻用户"""
+    with get_db_connection() as (conn, c):
+        c.execute("UPDATE users SET is_frozen = 0 WHERE id = ?", (user_id,))
+
+        if c.rowcount > 0:
+            # 记录审计日志
+            c.execute("""
+            INSERT INTO audit_logs (admin_id, user_id, action, details)
+            VALUES (?, ?, ?, ?, ?)
+            """, (admin_id, user_id, 'unfreeze_user', '管理员解冻用户'))
+
+            conn.commit()
+            return True
+
+        return False
+
+
+def delete_user_admin(user_id, admin_id):
+    """管理员删除用户"""
+    with get_db_connection() as (conn, c):
+        # 先删除用户相关的数据
+        c.execute("DELETE FROM logistics WHERE user_id = ?", (user_id,))
+        c.execute("DELETE FROM products WHERE user_id = ?", (user_id,))
+
+        # 删除用户
+        c.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+        if c.rowcount > 0:
+            # 记录审计日志
+            c.execute("""
+            INSERT INTO audit_logs (admin_id, user_id, action, details)
+            VALUES (?, ?, ?, ?)
+            """, (admin_id, user_id, 'delete_user', '管理员删除用户'))
+
+            conn.commit()
+            return True
+
+        return False
+
+
+def batch_update_users(user_ids, updates, admin_id):
+    """批量更新用户"""
+    with get_db_connection() as (conn, c):
+        success_count = 0
+
+        for user_id in user_ids:
+            # 构建更新字段
+            set_clauses = []
+            values = []
+
+            for field, value in updates.items():
+                if field in [
+                    'user_type', 'subscription_start', 'subscription_end',
+                    'remaining_calculations', 'logistics_templates_limit',
+                    'is_auto_renew', 'is_frozen',
+                ]:
+                    set_clauses.append(f"{field} = ?")
+                    values.append(value)
+
+            if set_clauses:
+                values.append(user_id)
+                query = (
+                    f"UPDATE users SET {', '.join(set_clauses)} WHERE id = ?"
+                )
+                c.execute(query, values)
+
+                if c.rowcount > 0:
+                    success_count += 1
+                    # 记录审计日志
+                    details_pairs = [f"{k}={v}" for k, v in updates.items()]
+                    action_details = "批量更新: " + ", ".join(details_pairs)
+                    c.execute("""
+                    INSERT INTO audit_logs (admin_id, user_id, action, details)
+                    VALUES (?, ?, ?, ?)
+                    """, (admin_id, user_id, 'batch_update', action_details))
+
+        conn.commit()
+        return success_count
+
+
+def get_audit_logs(
+        page=1,
+        per_page=50,
+        admin_id=None,
+        user_id=None,
+        action=None,
+):
+    """获取审计日志"""
+    with get_db_connection() as (conn, c):
+        # 构建查询条件
+        where_conditions = []
+        params = []
+
+        if admin_id:
+            where_conditions.append("audit_logs.admin_id = ?")
+            params.append(admin_id)
+
+        if user_id:
+            where_conditions.append("audit_logs.user_id = ?")
+            params.append(user_id)
+
+        if action:
+            where_conditions.append("audit_logs.action = ?")
+            params.append(action)
+
+        where_clause = (
+            " AND ".join(where_conditions) if where_conditions else "1=1"
+        )
+
+        # 获取总数
+        count_query = f"SELECT COUNT(*) FROM audit_logs WHERE {where_clause}"
+        c.execute(count_query, params)
+        total_count = c.fetchone()[0]
+
+        # 获取分页数据
+        offset = (page - 1) * per_page
+        query = (
+            "SELECT audit_logs.id, audit_logs.admin_id, audit_logs.user_id, "
+            "audit_logs.action, audit_logs.details, audit_logs.timestamp, "
+            "admin_users.username as admin_username, "
+            "users.username as user_username "
+            "FROM audit_logs "
+            "LEFT JOIN admin_users ON audit_logs.admin_id = admin_users.id "
+            "LEFT JOIN users ON audit_logs.user_id = users.id "
+            f"WHERE {where_clause} "
+            "ORDER BY audit_logs.timestamp DESC "
+            "LIMIT ? OFFSET ?"
+        )
+        c.execute(query, params + [per_page, offset])
+        logs = c.fetchall()
+
+        formatted_logs = []
+        for log in logs:
+            (log_id, admin_id, user_id, action, details, timestamp,
+             admin_username, user_username) = log
+            formatted_logs.append({
+                'id': log_id,
+                'admin_id': admin_id,
+                'user_id': user_id,
+                'action': action,
+                'details': details,
+                'timestamp': timestamp,
+                'admin_username': admin_username,
+                'user_username': user_username
+            })
+
+        return {
+            'logs': formatted_logs,
+            'total_count': total_count,
+            'total_pages': (total_count + per_page - 1) // per_page,
+            'current_page': page
+        }
+
+
+def reset_user_password(user_id, admin_id):
+    """重置用户密码"""
+    import secrets
+    import string
+
+    # 生成随机密码
+    alphabet = string.ascii_letters + string.digits
+    new_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+
+    # 加密密码
+    import bcrypt
+    password_hash = bcrypt.hashpw(
+        new_password.encode('utf-8'), bcrypt.gensalt()
+    )
+
+    with get_db_connection() as (conn, c):
+        c.execute(
+            "UPDATE users SET password = ? WHERE id = ?",
+            (password_hash.decode('utf-8'), user_id),
+        )
+
+        if c.rowcount > 0:
+            # 记录审计日志
+            details_text = f'管理员重置密码: {new_password}'
+            c.execute(
+                """
+                INSERT INTO audit_logs (admin_id, user_id, action, details)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    admin_id,
+                    user_id,
+                    'reset_password',
+                    details_text,
+                ),
+            )
+
+            conn.commit()
+            return new_password
+
+        return None

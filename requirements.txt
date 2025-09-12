@@ -1,5 +1,5 @@
 # 核心业务依赖
-streamlit==1.49.0
+streamlit==1.49.1
 pandas==2.3.2
 bcrypt==4.3.0
 requests==2.32.5

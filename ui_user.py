@@ -156,10 +156,12 @@ def user_management_page():
         # 下拉框格式化函数：总返回 str
         def _format_user_type(x: object) -> str:
             mapping = {
-                "permanent": "永久用户",
                 "test": "测试用户",
-                "monthly": "按月付费用户",
-                "enterprise": "企业用户",
+                "gratitude": "感谢版用户",
+                "free": "免费版用户",
+                "efficiency": "效率版用户",
+                "professional": "专业版用户",
+                "enterprise": "企业版用户"
             }
             return mapping.get(str(x), str(x))
 
@@ -174,7 +176,14 @@ def user_management_page():
                 role = st.selectbox("角色*", ["admin", "user"])
                 user_type = st.selectbox(
                     "用户类型*",
-                    ["permanent", "test", "monthly", "enterprise"],
+                    [
+                        "test",
+                        "gratitude",
+                        "free",
+                        "efficiency",
+                        "professional",
+                        "enterprise",
+                    ],
                     format_func=_format_user_type,
                 )
                 submitted = st.form_submit_button("添加用户")
@@ -209,10 +218,14 @@ def user_management_page():
                         if user_type == "test":
                             remaining_calculations = -1
                             test_days_remaining = 7
-                        elif user_type == "permanent":
+                        elif user_type == "gratitude":
                             remaining_calculations = -1
-                        elif user_type == "monthly":
-                            remaining_calculations = 100
+                        elif user_type == "free":
+                            remaining_calculations = 10
+                        elif user_type == "efficiency":
+                            remaining_calculations = -1
+                        elif user_type == "professional":
+                            remaining_calculations = -1
                         elif user_type == "enterprise":
                             remaining_calculations = -1
                         try:
@@ -454,23 +467,51 @@ def subscription_management_page():
     st.subheader("用户信息")
     st.write(f"**用户名称：** {user_info['username']}")
 
-    user_type_names = {
-        "test": "测试用户",
-        "permanent": "永久用户",
-        "monthly": "按月付费用户",
-        "enterprise": "企业用户"
-    }
-    st.write(f"**用户类型：** {user_type_names.get(user_info['user_type'], '未知')}")
+    # 检查是否为admin用户
+    with get_db_connection() as (conn, cursor):
+        cursor.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        result = cursor.fetchone()
+        user_role = result[0] if result else None
+
+    if user_role == 'admin':
+        st.write("**用户类型：** 管理员")
+    else:
+        user_type_names = {
+            "test": "测试用户",
+            "permanent": "永久用户",
+            "monthly": "按月付费用户",
+            "enterprise": "企业用户",
+            "free": "免费版用户",
+            "efficiency": "效率版用户",
+            "professional": "专业版用户",
+            "gratitude": "感谢版用户"
+        }
+        st.write(
+            f"**用户类型：** "
+            f"{user_type_names.get(user_info['user_type'], '未知')}"
+        )
 
     # 显示订阅状态
     subscription_status = check_user_subscription_status(user_id)
-    if subscription_status.get('valid', False):
-        st.success(f"**订阅状态：** {subscription_status.get('message', '有效')}")
+
+    # 如果是admin用户，显示管理员状态，不显示订阅信息
+    if user_role == 'admin':
+        st.success("**用户状态：** 管理员用户")
     else:
-        st.error(f"**订阅状态：** {subscription_status.get('message', '无效')}")
+        if subscription_status.get('valid', False):
+            st.success(
+                f"**订阅状态：** {subscription_status.get('message', '有效')}"
+            )
+        else:
+            st.error(
+                f"**订阅状态：** {subscription_status.get('message', '无效')}"
+            )
 
     # 显示订阅信息
-    if user_info['user_type'] == 'monthly':
+    # 如果是admin用户，不显示订阅信息
+    if user_role == 'admin':
+        st.info("**管理员用户无需订阅**")
+    elif user_info['user_type'] == 'monthly':
         if user_info['expiry_date']:
             expiry = datetime.fromisoformat(user_info['expiry_date'])
             from datetime import date
@@ -487,6 +528,10 @@ def subscription_management_page():
 
     # 订阅管理操作
     st.subheader("订阅管理")
+
+    # 如果是admin用户，显示提示信息
+    if user_role == 'admin':
+        st.info("**管理员用户无需订阅管理，但可以管理其他用户的订阅**")
 
     if user_info['user_type'] == 'test':
         if st.button("转为永久用户"):
@@ -605,6 +650,28 @@ def login_or_register_page():
         """,
         unsafe_allow_html=True
     )
+
+    # 检查是否开放注册
+    try:
+        from .db_utils import is_registration_open
+    except ImportError:
+        from db_utils import is_registration_open
+
+    registration_open = is_registration_open()
+    # 根据开放注册状态决定是否显示标签页
+    if registration_open:
+        tab1, tab2 = st.tabs(["🔐 登录", "📝 用户注册"])
+        with tab1:
+            _show_login_form()
+        with tab2:
+            _show_register_form()
+    else:
+        # 不开放注册时只显示登录表单
+        _show_login_form()
+
+
+def _show_login_form():
+    """显示登录表单"""
     with st.form("login_form"):
         identifier = st.text_input("用户名或邮箱")
         pwd = st.text_input("密码", type="password")
@@ -619,4 +686,59 @@ def login_or_register_page():
                 st.rerun()
             # secure_login函数内部已经处理了错误信息显示
 
+
+def _show_register_form():
+    """显示注册表单"""
+    with st.form("register_form"):
+        st.markdown("### 📝 用户注册")
+        username = st.text_input("用户名", help="请输入用户名")
+        email = st.text_input("邮箱", help="请输入邮箱地址")
+        password = st.text_input("密码", type="password", help="请输入密码")
+        confirm_password = st.text_input(
+            "确认密码", type="password", help="请再次输入密码"
+        )
+        submitted = st.form_submit_button("注册")
+        if submitted:
+            if not username or not email or not password:
+                st.error("❌ 请填写所有必填字段")
+                return
+
+            if password != confirm_password:
+                st.error("❌ 两次输入的密码不一致")
+                return
+            # 验证密码强度
+            try:
+                from .password_utils import validate_password_strength
+            except ImportError:
+                from password_utils import validate_password_strength
+            if not validate_password_strength(password):
+                st.error("❌ 密码强度不够，请使用更复杂的密码")
+                return
+            # 注册用户
+            try:
+                from .db_utils import get_db_connection, hash_password
+            except ImportError:
+                from db_utils import get_db_connection, hash_password
+            with get_db_connection() as (conn, c):
+                try:
+                    # 检查用户名和邮箱是否已存在
+                    existing_user = c.execute(
+                        "SELECT id FROM users WHERE username = ? OR email = ?",
+                        (username, email)
+                    ).fetchone()
+                    if existing_user:
+                        st.error("❌ 用户名或邮箱已存在")
+                        return
+                    # 创建新用户
+                    hashed_pwd = hash_password(password)
+                    c.execute(
+                        "INSERT INTO users (username, email, password_hash, "
+                        "role, user_type) VALUES (?, ?, ?, ?, ?)",
+                        (username, email, hashed_pwd, 'user', 'free')
+                    )
+                    conn.commit()
+                    st.success("✅ 注册成功！请使用新账号登录")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 注册失败: {str(e)}")
     # 数据库连接在get_db_connection上下文管理器中自动关闭

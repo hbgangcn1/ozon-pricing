@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import requests
-import time
 
 try:
     from .logic import calculate_pricing
@@ -106,9 +104,9 @@ def _render_pricing_card(
         "<span style='color:#e74c3c; font-weight:800; ",
         "font-size:1.6em;'>",
         f"¥{price:.2f}</span></div>",
-        "<div>预期利润：<span style='color:#27ae60; font-weight:600;'>",
+        "<div>预期运营利润：<span style='color:#27ae60; font-weight:600;'>",
         f"¥{expected_profit:.2f}</span></div>",
-        "<div>利润率：<span style='color:#27ae60; font-weight:600;'>",
+        "<div>运营利润率：<span style='color:#27ae60; font-weight:600;'>",
         f"{profit_margin:.1f}%</span></div>",
         "<hr style='margin:10px 0; border:none; ",
         "border-top:2px solid rgba(52,73,94,0.2);'>",
@@ -140,11 +138,10 @@ def pricing_calculator_page():
         st.session_state.should_refresh_for_calculation_count = False
         should_display_results = True
 
-    # 美化页面标题
+    # 页面描述
     st.markdown(
         """
         <div style="text-align: center; margin-bottom: 2rem;">
-            <h1 class="main-title">💰 定价计算器</h1>
             <p style="color: #718096; font-size: 1.1rem; margin: 0;">
                 智能计算产品定价，一键筛选最佳物流
             </p>
@@ -153,40 +150,13 @@ def pricing_calculator_page():
         unsafe_allow_html=True,
     )
 
-    # 显示汇率信息
+    # 用户计算时只使用兜底汇率，不调用API
     try:
-        from .exchange_service import ExchangeRateService
-    except ImportError:
-        from exchange_service import ExchangeRateService
-
-    # 初始化汇率变量 - 使用缓存避免重复请求
-    current_rate = 0.0904  # 默认兜底汇率
-
-    # 使用session state缓存汇率，避免重复请求
-    if "cached_exchange_rate" not in st.session_state:
-        try:
-            exchange_service = ExchangeRateService()
-            current_rate = exchange_service.get_exchange_rate()
-            st.session_state.cached_exchange_rate = current_rate
-            st.session_state.cached_exchange_rate_time = time.time()
-        except (requests.RequestException, ValueError) as e:
-            st.sidebar.warning(f"汇率获取失败: {str(e)}")
-            st.session_state.cached_exchange_rate = current_rate
-            st.session_state.cached_exchange_rate_time = time.time()
-    else:
-        # 检查缓存是否过期（5分钟）
-        cache_age = time.time() - st.session_state.cached_exchange_rate_time
-        if cache_age > 300:  # 5分钟过期
-            try:
-                exchange_service = ExchangeRateService()
-                current_rate = exchange_service.get_exchange_rate()
-                st.session_state.cached_exchange_rate = current_rate
-                st.session_state.cached_exchange_rate_time = time.time()
-            except (requests.RequestException, ValueError) as e:
-                st.sidebar.warning(f"汇率更新失败: {str(e)}")
-                current_rate = st.session_state.cached_exchange_rate
-        else:
-            current_rate = st.session_state.cached_exchange_rate
+        from exchange_service import get_fallback_exchange_rate
+        current_rate = get_fallback_exchange_rate()
+    except (KeyError, TypeError, ValueError) as e:
+        st.sidebar.warning(f"汇率获取失败: {str(e)}")
+        current_rate = 0.0904  # 默认兜底汇率
 
     st.sidebar.success(f"当前汇率: 1 CNY = {current_rate:.2f} RUB")
 
@@ -355,7 +325,6 @@ def _display_calculation_results():
     product = st.session_state.product_info
     land_logistics = st.session_state.land_logistics
     air_logistics = st.session_state.air_logistics
-    current_rate = st.session_state.current_rate
 
     # 显示结果
     st.markdown(
@@ -461,19 +430,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                # 预期利润（与logic一致的基于总成本的表达）
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_lp.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"
@@ -566,18 +524,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_lh.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"
@@ -679,18 +627,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_ap.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"
@@ -782,18 +720,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_ah.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"
@@ -906,18 +834,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_lp.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"
@@ -1005,18 +923,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_lh.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"
@@ -1117,18 +1025,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_ap.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"
@@ -1216,18 +1114,8 @@ def _display_calculation_results():
                     product.get("target_profit_margin", 0) * 100
                 )
 
-                total_cost = (
-                    float(product.get("unit_price", 0))
-                    + float(product.get("labeling_fee", 0))
-                    + float(product.get("shipping_fee", 0))
-                    + (cost or 0)
-                    + 15 * current_rate
-                )
-                expected_profit = (
-                    total_cost
-                    * product.get("target_profit_margin", 0.2)
-                    / (1 - product.get("target_profit_margin", 0.2))
-                )
+                # 使用logic.py返回的正确预期利润
+                expected_profit = res_ah.get("expected_profit", 0)
 
                 time_display = (
                     "该物流未填写时效"

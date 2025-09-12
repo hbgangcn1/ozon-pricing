@@ -54,11 +54,10 @@ def products_page():
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
 
-        # 美化页面标题
+        # 页面描述
         st.markdown(
             """
             <div style="text-align: center; margin-bottom: 2rem;">
-                <h1 class="main-title">📦 产品管理中心</h1>
                 <p style="color: #718096; font-size: 1.1rem; margin: 0;">
                     管理您的产品信息，为运费计算提供准确数据
                 </p>
@@ -196,7 +195,7 @@ def products_page():
             )
             target_profit_margin = (
                 col1.number_input(
-                    "目标利润率(%)",
+                    "运营利润率(%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=50.0,
@@ -574,7 +573,6 @@ def edit_product_form():
                 else 0
             )
     st.subheader("编辑产品")
-    
     # 产品名称和进货单价在一行中分两个列显示
     col1, col2 = st.columns(2)
     with col1:
@@ -583,14 +581,17 @@ def edit_product_form():
         # 确保价格不低于最小值
         price_value = max(0.0, float(vals["unit_price"]))
         unit_price = st.number_input(
-            "进货单价（元）*", min_value=0.0, value=price_value, step=0.01
+            "进货单价（元）*",
+            min_value=0.0,
+            value=price_value,
+            step=0.01,
         )
-    
+
     # 初始化已删除的字段变量
     russian_name = ""
     category = ""
     model = ""
-    
+
     st.subheader("物流规格")
     # 使用st.radio显示包装类型选择
     package_type = st.radio(
@@ -610,19 +611,31 @@ def edit_product_form():
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             weight_g = st.number_input(
-                "重量（克）*", min_value=0.0, value=max(0.0, float(vals["weight_g"])), step=0.1
+                "重量（克）*",
+                min_value=0.0,
+                value=max(0.0, float(vals["weight_g"])),
+                step=0.1,
             )
         with col2:
             length_cm = st.number_input(
-                "长度（厘米）*", min_value=0.0, value=max(0.0, float(vals["length_cm"])), step=0.1
+                "长度（厘米）*",
+                min_value=0.0,
+                value=max(0.0, float(vals["length_cm"])),
+                step=0.1,
             )
         with col3:
             width_cm = st.number_input(
-                "宽度（厘米）*", min_value=0.0, value=max(0.0, float(vals["width_cm"])), step=0.1
+                "宽度（厘米）*",
+                min_value=0.0,
+                value=max(0.0, float(vals["width_cm"])),
+                step=0.1,
             )
         with col4:
             height_cm = st.number_input(
-                "高度（厘米）*", min_value=0.0, value=max(0.0, float(vals["height_cm"])), step=0.1
+                "高度（厘米）*",
+                min_value=0.0,
+                value=max(0.0, float(vals["height_cm"])),
+                step=0.1,
             )
         # 初始化圆柱包装的变量
         cylinder_diameter = 0
@@ -631,15 +644,30 @@ def edit_product_form():
         col1, col2, col3 = st.columns(3)
         with col1:
             weight_g = st.number_input(
-                "重量（克）*", min_value=0.0, value=max(0.0, float(vals["weight_g"])), step=0.1
+                "重量（克）*",
+                min_value=0.0,
+                value=max(0.0, float(vals["weight_g"])),
+                step=0.1,
             )
         with col2:
             cylinder_diameter = st.number_input(
-                "圆柱直径（厘米）*", min_value=0.0, value=max(0.0, float(vals["cylinder_diameter"])), step=0.1
+                "圆柱直径（厘米）*",
+                min_value=0.0,
+                value=max(
+                    0.0,
+                    float(vals["cylinder_diameter"]),
+                ),
+                step=0.1,
             )
         with col3:
             cylinder_length = st.number_input(
-                "圆柱长度（厘米）*", min_value=0.0, value=max(0.0, float(vals.get("cylinder_length", 0.0))), step=0.1
+                "圆柱长度（厘米）*",
+                min_value=0.0,
+                value=max(
+                    0.0,
+                    float(vals.get("cylinder_length", 0.0)),
+                ),
+                step=0.1,
             )
         # 初始化常规包装的变量
         length_cm = 0
@@ -647,21 +675,24 @@ def edit_product_form():
         height_cm = 0
     # 电池和液体标题
     st.subheader("电池和液体")
-    
+
     # 包含电池和包含易燃液体复选框放在同一行
     col1, col2 = st.columns(2)
     with col1:
         has_battery = st.checkbox("包含电池", value=bool(vals["has_battery"]))
     with col2:
-        has_flammable = st.checkbox("包含易燃液体", value=bool(vals["has_flammable"]))
-    
+        has_flammable = st.checkbox(
+            "包含易燃液体",
+            value=bool(vals["has_flammable"]),
+        )
+
     # 初始化电池相关变量
     choice = None
     battery_capacity_wh = 0
     battery_capacity_mah = 0
     battery_voltage = 0
     has_msds = False
-    
+
     if has_battery:
         # 电池容量填写方式和MSDS证书在同一行
         col1, col2 = st.columns(2, vertical_alignment="bottom")
@@ -674,10 +705,13 @@ def edit_product_form():
             )
         with col2:
             has_msds = st.checkbox("有 MSDS 证书", value=bool(vals["has_msds"]))
-        
+
         if choice == "填写 Wh（瓦时）":
             battery_capacity_wh = st.number_input(
-                "电池容量（Wh）", min_value=0.0, value=max(0.0, float(vals["battery_capacity_wh"])), step=0.1
+                "电池容量（Wh）",
+                min_value=0.0,
+                value=max(0.0, float(vals["battery_capacity_wh"])),
+                step=0.1,
             )
             battery_capacity_mah = 0
             battery_voltage = 0
@@ -686,29 +720,39 @@ def edit_product_form():
             col1, col2 = st.columns(2)
             with col1:
                 battery_capacity_mah = st.number_input(
-                    "电池容量（mAh）", min_value=0.0, value=max(0.0, float(vals["battery_capacity_mah"])), step=0.1
+                    "电池容量（mAh）",
+                    min_value=0.0,
+                    value=max(0.0, float(vals["battery_capacity_mah"])),
+                    step=0.1,
                 )
             with col2:
                 battery_voltage = st.number_input(
-                    "电池电压（V）", min_value=0.0, value=max(0.0, float(vals["battery_voltage"])), step=0.1
+                    "电池电压（V）",
+                    min_value=0.0,
+                    value=max(0.0, float(vals["battery_voltage"])),
+                    step=0.1,
                 )
             battery_capacity_wh = 0
-    # 删除易燃液体体积控件，直接初始化为0
-    flammable_liquid_volume_ml = 0
-
+    # 删除易燃液体体积控件
     st.subheader("定价参数")
     # 第一行：贴标费用（元）、供货方不包邮运（元）
     col1, col2 = st.columns(2)
     with col1:
         labeling_fee = st.number_input(
-            "贴标费用（元）", min_value=0.0, value=max(0.0, float(vals["labeling_fee"])), step=0.01
+            "贴标费用（元）",
+            min_value=0.0,
+            value=max(0.0, float(vals["labeling_fee"])),
+            step=0.01,
         )
     with col2:
         shipping_fee = st.number_input(
-            "供货方不包邮运（元）", min_value=0.0, value=max(0.0, float(vals["shipping_fee"])), step=0.01
+            "供货方不包邮运（元）",
+            min_value=0.0,
+            value=max(0.0, float(vals["shipping_fee"])),
+            step=0.01,
         )
-    
-    # 第二行：佣金率（%）、目标利润率（%）
+
+    # 第二行：佣金率（%）、运营利润率（%）
     col1, col2 = st.columns(2)
     with col1:
         commission_rate = (
@@ -725,7 +769,7 @@ def edit_product_form():
     with col2:
         target_profit_margin = (
             st.number_input(
-                "目标利润率(%)",
+                "运营利润率(%)",
                 min_value=0.0,
                 max_value=100.0,
                 value=max(0.0, float(vals["target_profit_margin"])) * 100.0,
@@ -734,7 +778,7 @@ def edit_product_form():
             )
             / 100.0
         )
-    
+
     # 第三行：活动折扣率(%)、推广费率（%）
     col1, col2 = st.columns(2)
     with col1:
@@ -787,7 +831,7 @@ def edit_product_form():
             )
             / 100.0
         )
-    
+
     # 第五行：历史退货率(%)
     return_rate = (
         st.number_input(
@@ -800,7 +844,6 @@ def edit_product_form():
         )
         / 100.0
     )
-
 
     # 保存修改和取消按钮横向排列
     col1, col2 = st.columns(2)
@@ -924,7 +967,7 @@ def edit_product_form():
                 # 设置标志，指示应该返回到产品列表页面
                 st.session_state.return_to_product_list = True
                 st.rerun()
-    
+
     with col2:
         if st.button("取消"):
             del st.session_state.edit_product_id
@@ -998,7 +1041,7 @@ def batch_edit_pricing_form():
 
             target_profit_margin = (
                 st.number_input(
-                    "目标利润率(%)",
+                    "运营利润率(%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=float(avg_params[2] or 0.0) * 100.0,
