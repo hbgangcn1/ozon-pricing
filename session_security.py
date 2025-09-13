@@ -284,7 +284,7 @@ class SessionSecurity:
                 conn.commit()
 
         # 清理session_state
-        for key in ['session_id', 'user', 'last_activity']:
+        for key in ['session_id', 'user', 'last_activity', 'current_mode']:
             if key in st.session_state:
                 del st.session_state[key]
 
@@ -446,6 +446,27 @@ def secure_login(username_or_email: str, password: str) -> bool:
                 conn.commit()
         except (sqlite3.Error, KeyError, TypeError):
             pass  # 如果更新失败，不影响登录流程
+
+        # 检查是否为首次登录，如果是，设置默认模式为极速模式
+        try:
+            try:
+                from .db_utils import (
+                    get_user_preferred_mode,
+                    update_user_preferred_mode
+                )
+            except ImportError:
+                from db_utils import (
+                    get_user_preferred_mode,
+                    update_user_preferred_mode
+                )
+
+            # 获取用户当前的模式偏好
+            current_preferred_mode = get_user_preferred_mode(user['id'])
+            if current_preferred_mode is None:
+                # 首次登录用户，设置默认为极速模式
+                update_user_preferred_mode(user['id'], 'fast')
+        except (sqlite3.Error, KeyError, TypeError, ImportError):
+            pass  # 如果设置失败，不影响登录流程
 
         # 创建安全会话
         SessionSecurity.create_session(user['id'], user)

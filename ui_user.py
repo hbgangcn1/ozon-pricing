@@ -534,14 +534,14 @@ def subscription_management_page():
         st.info("**管理员用户无需订阅管理，但可以管理其他用户的订阅**")
 
     if user_info['user_type'] == 'test':
-        if st.button("转为永久用户"):
+        if st.button("转为感谢版用户"):
             update_user_subscription(user_id, {
-                'user_type': 'permanent',
+                'user_type': 'gratitude',
                 'expiry_date': None,
                 'remaining_calculations': -1,
                 'test_days_remaining': 0
             })
-            st.success("用户已转为永久用户！")
+            st.success("用户已转为感谢版用户！")
             st.rerun()
 
     elif user_info['user_type'] == 'monthly':
@@ -692,14 +692,13 @@ def _show_register_form():
     with st.form("register_form"):
         st.markdown("### 📝 用户注册")
         username = st.text_input("用户名", help="请输入用户名")
-        email = st.text_input("邮箱", help="请输入邮箱地址")
         password = st.text_input("密码", type="password", help="请输入密码")
         confirm_password = st.text_input(
             "确认密码", type="password", help="请再次输入密码"
         )
-        submitted = st.form_submit_button("注册")
+        submitted = st.form_submit_button("注册并登录")
         if submitted:
-            if not username or not email or not password:
+            if not username or not password:
                 st.error("❌ 请填写所有必填字段")
                 return
 
@@ -721,24 +720,36 @@ def _show_register_form():
                 from db_utils import get_db_connection, hash_password
             with get_db_connection() as (conn, c):
                 try:
-                    # 检查用户名和邮箱是否已存在
+                    # 检查用户名是否已存在
                     existing_user = c.execute(
-                        "SELECT id FROM users WHERE username = ? OR email = ?",
-                        (username, email)
+                        "SELECT id FROM users WHERE username = ?",
+                        (username,)
                     ).fetchone()
                     if existing_user:
-                        st.error("❌ 用户名或邮箱已存在")
+                        st.error("❌ 用户名已存在")
                         return
                     # 创建新用户
                     hashed_pwd = hash_password(password)
                     c.execute(
-                        "INSERT INTO users (username, email, password_hash, "
-                        "role, user_type) VALUES (?, ?, ?, ?, ?)",
-                        (username, email, hashed_pwd, 'user', 'free')
+                        "INSERT INTO users (username, password, "
+                        "role, user_type, remaining_calculations) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (username, hashed_pwd, 'user', 'free', 10)
                     )
                     conn.commit()
-                    st.success("✅ 注册成功！请使用新账号登录")
-                    st.rerun()
+                    # 注册成功后自动登录
+                    try:
+                        from .session_security import secure_login
+                    except ImportError:
+                        from session_security import secure_login
+
+                    # 自动登录
+                    login_success = secure_login(username, password)
+                    if login_success:
+                        st.success("✅ 注册成功！正在为您自动登录...")
+                        st.rerun()
+                    else:
+                        st.error("❌ 注册成功但自动登录失败，请手动登录")
                 except Exception as e:
                     st.error(f"❌ 注册失败: {str(e)}")
     # 数据库连接在get_db_connection上下文管理器中自动关闭

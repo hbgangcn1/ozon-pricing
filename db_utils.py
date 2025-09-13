@@ -739,7 +739,7 @@ def _upgrade_products_return_rate():
         conn.commit()
 
 
-def create_user(username, password, role="user", email=None):
+def create_user(username, password, role="user", email=None, user_type="free"):
     """创建用户"""
     # 确保数据库已初始化
     init_db()
@@ -777,12 +777,33 @@ def create_user(username, password, role="user", email=None):
         # 使用bcrypt加盐哈希密码
         hashed_password = hash_password(password)
 
+        # 根据用户类型设置计算次数
+        if user_type == "free":
+            remaining_calculations = 10
+        elif user_type in [
+            "test", "gratitude", "efficiency", "professional", "enterprise"
+        ]:
+            remaining_calculations = -1  # 无限次
+        else:
+            remaining_calculations = 10  # 默认为免费版
+
         try:
-            c.execute(
-                "INSERT INTO users (username, password, role, email) "
-                "VALUES (?, ?, ?, ?)",
-                (username, hashed_password, role, email),
-            )
+            if email:
+                c.execute(
+                    "INSERT INTO users (username, password, role, email, "
+                    "user_type, remaining_calculations) VALUES "
+                    "(?, ?, ?, ?, ?, ?)",
+                    (username, hashed_password, role, email, user_type,
+                     remaining_calculations),
+                )
+            else:
+                c.execute(
+                    "INSERT INTO users (username, password, role, "
+                    "user_type, remaining_calculations) VALUES "
+                    "(?, ?, ?, ?, ?)",
+                    (username, hashed_password, role, user_type,
+                     remaining_calculations),
+                )
             conn.commit()
             return True
         except sqlite3.IntegrityError:
@@ -1679,8 +1700,8 @@ def get_user_preferred_mode(user_id):
         ).fetchone()
 
         if result:
-            return result[0] or 'fast'  # 如果为NULL，返回'fast'
-        return 'fast'  # 默认返回极速模式
+            return result[0]  # 返回实际值，可能是None（首次登录）、'fast'或'precise'
+        return None  # 用户不存在时返回None
 
 
 def update_user_preferred_mode(user_id, mode):

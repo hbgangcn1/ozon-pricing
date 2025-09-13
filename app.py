@@ -569,7 +569,30 @@ def settings_page():
 def should_show_subscription_management():
     """检查是否应该显示订阅管理页面"""
     from db_utils import is_registration_open
-    return is_registration_open()
+
+    # 首先检查是否开放注册
+    if not is_registration_open():
+        return False
+
+    # 检查当前用户类型，测试用户和感谢版用户不显示订阅管理
+    current_user = st.session_state.get('user', {})
+    if not current_user or 'id' not in current_user:
+        return True  # 如果没有用户信息，默认显示
+
+    # 获取用户订阅状态以确定用户类型
+    try:
+        subscription_status = check_user_subscription_status(
+            current_user['id']
+        )
+        if subscription_status:
+            user_type = subscription_status.get('user_type', 'free')
+            # 测试用户和感谢版用户不显示订阅管理标签页
+            if user_type in ['test', 'gratitude']:
+                return False
+    except (KeyError, TypeError, AttributeError):
+        pass  # 如果获取失败，默认显示
+
+    return True
 
 
 def _create_main_layout():
@@ -581,13 +604,10 @@ def _validate_user_and_get_mode():
     """验证用户并获取模式，返回 (current_user, current_mode, subscription_status) 或 None"""
     # ✅ 直接取 session_state，不用前置初始化
     current_user = st.session_state.get('user', {}) or {}
-    current_mode = (
-        st.session_state.get('current_mode', 'fast') or 'fast'
-    )
+    current_mode = st.session_state.get('current_mode')  # 不设置默认值
 
     # 明确告知静态分析器：类型已确定
     assert isinstance(current_user, dict)
-    assert isinstance(current_mode, str)
 
     # 验证用户信息
     if not current_user or 'id' not in current_user:
@@ -606,14 +626,17 @@ def _validate_user_and_get_mode():
         st.session_state.current_mode = 'fast'
         current_mode = 'fast'
 
-    # 如果current_mode为None，从数据库获取用户偏好
-    if current_mode == 'fast' and st.session_state.get('current_mode') is None:
+    # 如果session_state中没有current_mode，从数据库获取用户偏好
+    if current_mode is None:
         current_mode = get_user_preferred_mode(current_user['id'])
         if current_mode is None:
-            current_mode = 'fast'  # 设置默认值
+            # 首次登录用户，设置默认为极速模式
+            current_mode = 'fast'
+            update_user_preferred_mode(current_user['id'], 'fast')
         st.session_state.current_mode = current_mode
 
     # 验证current_mode的有效性
+    assert isinstance(current_mode, str)  # 确保类型正确
     if current_mode not in ['fast', 'precise']:
         st.error("无效的模式设置")
         return None
@@ -1430,38 +1453,40 @@ def precise_products_page():
             )
             if not show_list:
                 if user_products.empty:
-                    pass
+                    # 即使没有产品也显示选择框，只有默认选项
+                    product_options = ["选择产品"]
                 else:
                     names = [
                         str(row['name'])
                         for _, row in user_products.iterrows()
                     ]
                     product_options = ["选择产品"] + names
-                    selected_product = st.selectbox(
-                        "选择产品",
-                        product_options,
-                        key="product_selector",
-                        label_visibility="collapsed",
+
+                selected_product = st.selectbox(
+                    "选择产品",
+                    product_options,
+                    key="product_selector",
+                    label_visibility="collapsed",
+                )
+                # 当选择产品时，获取产品数据并填充表单
+                if selected_product != "选择产品" and not user_products.empty:
+                    # 获取选中产品的完整数据
+                    product_data = pd.read_sql(
+                        (
+                            "SELECT * FROM products "
+                            "WHERE name = ? AND user_id = ?"
+                        ),
+                        conn,
+                        params=(selected_product, uid),
+                    ).iloc[0]
+                    # 将产品数据存储到session state中，供表单使用
+                    st.session_state.selected_product_data = (
+                        product_data.to_dict()
                     )
-                    # 当选择产品时，获取产品数据并填充表单
-                    if selected_product != "选择产品":
-                        # 获取选中产品的完整数据
-                        product_data = pd.read_sql(
-                            (
-                                "SELECT * FROM products "
-                                "WHERE name = ? AND user_id = ?"
-                            ),
-                            conn,
-                            params=(selected_product, uid),
-                        ).iloc[0]
-                        # 将产品数据存储到session state中，供表单使用
-                        st.session_state.selected_product_data = (
-                            product_data.to_dict()
-                        )
-                    else:
-                        # 清除之前选择的产品数据
-                        if "selected_product_data" in st.session_state:
-                            del st.session_state.selected_product_data
+                else:
+                    # 清除之前选择的产品数据
+                    if "selected_product_data" in st.session_state:
+                        del st.session_state.selected_product_data
         with col4:
             if not show_list:
                 if st.button("📋 打开产品列表", key="open_product_list"):
@@ -1901,13 +1926,27 @@ def precise_pricing_calculator():
 
     # 选择产品
     products = get_user_products(current_user_id())
+
+    # 创建选项列表，如果没有产品就只有默认选项
     if products:
-        selected_product = st.selectbox(
-            "选择产品",
-            options=products,
-            format_func=lambda x: f"{x['name']} - {x['weight_g']}g",
-            key="precise_product_select"
-        )
+        options = products
+
+        def format_func(x):
+            return f"{x['name']} - {x['weight_g']}g"
+    else:
+        options = [None]
+
+        def format_func(_):
+            return "选择产品"
+
+    selected_product = st.selectbox(
+        "选择产品",
+        options=options,
+        format_func=format_func,
+        key="precise_product_select"
+    )
+
+    if products and selected_product:
         if st.button(
             "🚀 开始计算",
             type="primary",
@@ -1916,8 +1955,8 @@ def precise_pricing_calculator():
         ):
             # 调用现有的定价计算逻辑
             calculate_precise_pricing_with_product(selected_product)
-    else:
-        st.warning("请先添加产品")
+    elif not products:
+        st.warning("请先添加产品后再进行计算")
 
 
 # 极速模式相关函数
@@ -5183,6 +5222,7 @@ def subscription_management_page():
             'calculations': '无限次',
             'logistics_templates': -1,
             'features': ['专业版所有功能', '多人协作子账号', 'API接入', '专属客服'],
+            'development_status': '开发中……',
             'limitations': [],
             'color': '#9C27B0',
             'gradient': 'linear-gradient(135deg, #F3E5F5, #E1BEE7)'
@@ -5336,6 +5376,18 @@ def subscription_management_page():
                 ]
             )
 
+            # 为企业版添加开发状态
+            development_status_html = ''
+            if plan.get('development_status'):
+                development_status_html = (
+                    '<div style="background: rgba(255,255,255,0.8); '
+                    'padding: 10px; border-radius: 10px; margin-bottom: 15px; '
+                    'text-align: center;">'
+                    f'<span style="color: #2196F3; font-weight: bold; '
+                    f'font-size: 14px;">{plan["development_status"]}</span>'
+                    '</div>'
+                )
+
             limitations_html = ''
             if plan.get('limitations'):
                 limitation_items = ''.join(
@@ -5407,6 +5459,7 @@ def subscription_management_page():
                 f'<ul style="margin: 0; padding-left: 20px; '
                 f'color: #555;">{features_html}</ul>'
                 '</div>'
+                f'{development_status_html}'
                 f'{limitations_html}'
                 '</div>'
                 '<div style="text-align: center; margin-top: auto;">'
@@ -5425,7 +5478,7 @@ def subscription_management_page():
                         key=f"upgrade_{plan_key}",
                         help="企业版需要联系客服开通",
                     ):
-                        st.info("请联系客服开通企业版服务")
+                        st.info("企业版功能开发中")
                 else:
                     if st.button(button_text, key=f"action_{plan_key}"):
                         # 模拟支付流程
