@@ -2,6 +2,13 @@
 
 import math
 
+# 为了测试兼容性，导入ExchangeRateService
+try:
+    from exchange_service import ExchangeRateService, get_usd_rate
+except ImportError:
+    ExchangeRateService = None
+    get_usd_rate = None
+
 
 def calculate_logistic_cost(logistic, product, debug=False):
     """计算物流成本"""

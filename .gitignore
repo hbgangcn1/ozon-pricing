@@ -105,6 +105,7 @@ enhanced_connection_monitor.py
 final_connection_fix.py
 fix_connection_leaks.py
 fix_leaks.py
+fix_tests.py
 pytest.ini
 run_tests.bat
 safe_db_utils.py
