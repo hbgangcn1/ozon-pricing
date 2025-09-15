@@ -322,10 +322,10 @@ def user_management_page():
             st.info("暂无用户数据")
             return
 
-        def _format_user_row(row: Any) -> str:
+        def _format_user_row(user_row: Any) -> str:
             return (
-                f"{row.id} - {row.username} "
-                f"({row.role})"
+                f"{user_row.id} - {user_row.username} "
+                f"({user_row.role})"
             )
         choice = st.radio(
             "请选择一名用户",
@@ -333,10 +333,21 @@ def user_management_page():
             format_func=_format_user_row,
         )
         if choice:
-            # itertuples 默认 namedtuple，但静态检查可能视为 tuple
-            uid = int(getattr(choice, "id", choice[0]))
-            uname = str(getattr(choice, "username", choice[1]))
-            urole = str(getattr(choice, "role", choice[2]))
+            # 当使用format_func时，choice是格式化后的字符串，需要从原始数据中查找
+            # 找到对应的原始行数据
+            selected_row = None
+            for row in users.itertuples(index=False):
+                if _format_user_row(row) == choice:
+                    selected_row = row
+                    break
+
+            if selected_row:
+                uid = int(getattr(selected_row, "id", selected_row[0]))
+                uname = str(getattr(selected_row, "username", selected_row[1]))
+                urole = str(getattr(selected_row, "role", selected_row[2]))
+            else:
+                # 如果找不到对应的行，跳过处理
+                return
             st.write("---")
             st.write(f"**已选用户：** {uname}（{urole}）")
 

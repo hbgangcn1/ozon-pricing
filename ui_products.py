@@ -1,7 +1,20 @@
+import warnings
 import streamlit as st
 import pandas as pd
 import sqlite3
-import warnings
+
+# 过滤pandas警告 - 必须在导入pandas之前设置
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="pandas only supports SQLAlchemy connectable*",
+)
+warnings.filterwarnings(
+    "ignore",
+    message="The behavior of DataFrame.insert with a non-unique index is "
+    "deprecated*",
+    module="pandas.core.frame",
+)
 
 try:
     from .db_utils import (
@@ -31,20 +44,6 @@ def get_db():
     if _legacy_get_db is None:
         raise AttributeError("get_db is deprecated; use get_db_connection")
     return _legacy_get_db()
-
-
-# 过滤pandas警告
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    message="pandas only supports SQLAlchemy connectable*",
-)
-warnings.filterwarnings(
-    "ignore",
-    message="The behavior of DataFrame.insert with a non-unique index is "
-    "deprecated*",
-    module="pandas.core.frame",
-)
 
 
 def products_page():

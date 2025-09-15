@@ -91,7 +91,13 @@ def logistics_page():
             unsafe_allow_html=True,
         )
 
-        if st.session_state.get("edit_logistic_id"):
+        # Check if we're in edit mode
+        get_func = (st.session_state.get if hasattr(st.session_state, 'get')
+                    else lambda k, d=None: getattr(st.session_state, k, d))
+        edit_id = (get_func("edit_logistic_id")
+                   if hasattr(st.session_state, 'get')
+                   else getattr(st.session_state, 'edit_logistic_id', None))
+        if edit_id:
             edit_logistic_form()
             return
 
@@ -509,13 +515,20 @@ def logistics_page():
         cache_key = f"logistics_data_{uid}"
 
         # 检查缓存是否存在且未过期（5分钟过期）
-        if cache_key in st.session_state:
-            cached_data = st.session_state[cache_key]
+        has_cache = (hasattr(st.session_state, cache_key)
+                     if not hasattr(st.session_state, '__contains__')
+                     else cache_key in st.session_state)
+        if has_cache:
+            cached_data = (st.session_state[cache_key]
+                           if hasattr(st.session_state, '__getitem__')
+                           else getattr(st.session_state, cache_key))
             cache_age = pd.Timestamp.now() - cached_data['timestamp']
             if cache_age.total_seconds() > 300:  # 5分钟过期
                 del st.session_state[cache_key]
 
-        if cache_key not in st.session_state:
+        if not (hasattr(st.session_state, cache_key)
+                if not hasattr(st.session_state, '__contains__')
+                else cache_key in st.session_state):
             land_query = (
                 "SELECT * FROM logistics WHERE type='land' "
                 "AND user_id = ?"
@@ -538,14 +551,23 @@ def logistics_page():
                 air_df = pd.read_sql(air_query, conn, params=(uid,))
 
             # 缓存查询结果
-            st.session_state[cache_key] = {
+            cache_data = {
                 'land_df': land_df,
                 'air_df': air_df,
                 'timestamp': pd.Timestamp.now()
             }
+            # 测试环境兼容性处理
+            if hasattr(st.session_state, '__setitem__'):
+                st.session_state[cache_key] = cache_data
+            else:
+                setattr(st.session_state, cache_key, cache_data)
 
         # 使用缓存的数据
-        cached_data = st.session_state[cache_key]
+        # 测试环境兼容性处理
+        if hasattr(st.session_state, '__getitem__'):
+            cached_data = st.session_state[cache_key]
+        else:
+            cached_data = getattr(st.session_state, cache_key)
         land_df = cached_data['land_df']
         air_df = cached_data['air_df']
 
@@ -744,7 +766,9 @@ def logistics_page():
                 st.info("暂无空运数据")
 
         # 删除确认对话框
-        if st.session_state.get("delete_confirm_logistic_id"):
+        get_func = (st.session_state.get if hasattr(st.session_state, 'get')
+                    else lambda k, d=None: getattr(st.session_state, k, d))
+        if get_func("delete_confirm_logistic_id"):
             # 到期拦截（不显示二次确认框，直接提示）
             if not subscription_status.get("valid", True):
                 st.error("账号到期，请联系客服续费")
@@ -781,7 +805,7 @@ def logistics_page():
                     st.rerun()
 
         # 批量删除确认对话框
-        if st.session_state.get("batch_delete_land_ids"):
+        if get_func("batch_delete_land_ids"):
             # 到期拦截
             if not subscription_status.get("valid", True):
                 st.error("账号到期，请联系客服续费")
@@ -821,7 +845,7 @@ def logistics_page():
                     st.rerun()
 
         # 批量删除确认对话框
-        if st.session_state.get("batch_delete_air_ids"):
+        if get_func("batch_delete_air_ids"):
             # 到期拦截
             if not subscription_status.get("valid", True):
                 st.error("账号到期，请联系客服续费")
