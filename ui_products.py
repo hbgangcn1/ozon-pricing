@@ -6,8 +6,7 @@ import sqlite3
 # 过滤pandas警告 - 必须在导入pandas之前设置
 warnings.filterwarnings(
     "ignore",
-    category=UserWarning,
-    message="pandas only supports SQLAlchemy connectable*",
+    message="pandas only supports SQLAlchemy connectable.*",
 )
 warnings.filterwarnings(
     "ignore",

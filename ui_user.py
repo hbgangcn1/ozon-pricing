@@ -1,7 +1,15 @@
+import warnings
 import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
+from typing import Any
+
+# 过滤pandas警告 - 必须在导入pandas之后设置
+warnings.filterwarnings(
+    "ignore",
+    message="pandas only supports SQLAlchemy connectable.*",
+)
 
 # 兼容包内导入与脚本直跑两种方式
 try:
@@ -30,7 +38,6 @@ except ImportError:  # 当作为顶层脚本运行时
         validate_password_strength,
         get_password_requirements_text,
     )
-from typing import Any
 
 
 # 向后兼容：提供 get_db 以便旧测试可以 monkeypatch
@@ -679,6 +686,21 @@ def login_or_register_page():
     else:
         # 不开放注册时只显示登录表单
         _show_login_form()
+
+    # 添加ICP备案信息
+    st.markdown(
+        """
+        <div style="text-align: center; margin-top: 3rem; padding: 1rem;
+             color: #718096; font-size: 0.9rem;">
+            <a href="https://beian.miit.gov.cn/#/Integrated/index"
+               target="_blank"
+               style="color: #718096; text-decoration: none;">
+                ICP备案号：粤ICP备2025471825号
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 def _show_login_form():
