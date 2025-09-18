@@ -1424,18 +1424,6 @@ def precise_products_page():
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
 
-        # 美化页面标题
-        st.markdown(
-            """
-            <div style="text-align: center; margin-bottom: 2rem;">
-                <h1 class="main-title">📦 产品管理中心</h1>
-                <p style="color: #718096; font-size: 1.1rem; margin: 0;">
-                    管理您的产品信息，为运费计算提供准确数据
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
         if st.session_state.get("edit_product_id"):
             edit_product_form()
@@ -2430,69 +2418,69 @@ def display_fast_pricing_results_precise_style(
         unsafe_allow_html=True,
     )
 
-    # 显示调试信息
-    with st.expander("🔍 物流筛选详情", expanded=False):
-        st.markdown("### 物流筛选过程")
-
-        # 获取物流规则
-        logistics_rules = get_precise_logistics_rules()
-        land_logistics = [
-            rule for rule in logistics_rules
-            if rule.get('type') == 'land'
-        ]
-        air_logistics = [
-            rule for rule in logistics_rules
-            if rule.get('type') == 'air'
-        ]
-
-        st.write(
-            f"**总物流规则数量：** {len(logistics_rules)}"
-        )
-        st.write(
-            f"**陆运规则数量：** {len(land_logistics)}"
-        )
-        st.write(
-            f"**空运规则数量：** {len(air_logistics)}"
-        )
-        # 显示每个物流规则的筛选结果
-        # 显示每个物流规则的筛选结果
-        st.markdown("#### 陆运物流筛选结果")
-        for i, rule in enumerate(land_logistics):
-            with st.container():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-                    st.write(
-                        f"   重量限制: {rule.get('min_weight', 0)}g - "
-                        f"{rule.get('max_weight', '无限制')}g"
-                    )
-                with col2:
-                    # 检查重量限制
-                    if effective_weight < rule.get('min_weight', 0):
-                        st.error("❌ 重量过低")
-                    elif effective_weight > rule.get('max_weight', 10**9):
-                        st.error("❌ 重量过高")
-                    else:
-                        st.success("✅ 通过")
-
-        st.markdown("#### 空运物流筛选结果")
-        for i, rule in enumerate(air_logistics):
-            with st.container():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-                    st.write(
-                        f"   重量限制: {rule.get('min_weight', 0)}g - "
-                        f"{rule.get('max_weight', '无限制')}g"
-                    )
-                with col2:
-                    # 检查重量限制
-                    if effective_weight < rule.get('min_weight', 0):
-                        st.error("❌ 重量过低")
-                    elif effective_weight > rule.get('max_weight', 10**9):
-                        st.error("❌ 重量过高")
-                    else:
-                        st.success("✅ 通过")
+    # # 显示调试信息
+    # with st.expander("🔍 物流筛选详情", expanded=False):
+    #     st.markdown("### 物流筛选过程")
+    #
+    #     # 获取物流规则
+    #     logistics_rules = get_precise_logistics_rules()
+    #     land_logistics = [
+    #         rule for rule in logistics_rules
+    #         if rule.get('type') == 'land'
+    #     ]
+    #     air_logistics = [
+    #         rule for rule in logistics_rules
+    #         if rule.get('type') == 'air'
+    #     ]
+    #
+    #     st.write(
+    #         f"**总物流规则数量：** {len(logistics_rules)}"
+    #     )
+    #     st.write(
+    #         f"**陆运规则数量：** {len(land_logistics)}"
+    #     )
+    #     st.write(
+    #         f"**空运规则数量：** {len(air_logistics)}"
+    #     )
+    #     # 显示每个物流规则的筛选结果
+    #     # 显示每个物流规则的筛选结果
+    #     st.markdown("#### 陆运物流筛选结果")
+    #     for i, rule in enumerate(land_logistics):
+    #         with st.container():
+    #             col1, col2 = st.columns([3, 1])
+    #             with col1:
+    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
+    #                 st.write(
+    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
+    #                     f"{rule.get('max_weight', '无限制')}g"
+    #                 )
+    #             with col2:
+    #                 # 检查重量限制
+    #                 if effective_weight < rule.get('min_weight', 0):
+    #                     st.error("❌ 重量过低")
+    #                 elif effective_weight > rule.get('max_weight', 10**9):
+    #                     st.error("❌ 重量过高")
+    #                 else:
+    #                     st.success("✅ 通过")
+    #
+    #     st.markdown("#### 空运物流筛选结果")
+    #     for i, rule in enumerate(air_logistics):
+    #         with st.container():
+    #             col1, col2 = st.columns([3, 1])
+    #             with col1:
+    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
+    #                 st.write(
+    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
+    #                     f"{rule.get('max_weight', '无限制')}g"
+    #                 )
+    #             with col2:
+    #                 # 检查重量限制
+    #                 if effective_weight < rule.get('min_weight', 0):
+    #                     st.error("❌ 重量过低")
+    #                 elif effective_weight > rule.get('max_weight', 10**9):
+    #                     st.error("❌ 重量过高")
+    #                 else:
+    #                     st.success("✅ 通过")
 
     # 定价结果 - 低价优先显示
     st.markdown(
@@ -2506,70 +2494,71 @@ def display_fast_pricing_results_precise_style(
     )
 
     # 添加调试信息
-    with st.expander("🔧 计算调试信息", expanded=True):
-        st.markdown("### 计算结果调试")
-        st.write(
-            f"**pricing_result_low keys:** "
-            f"{list(pricing_result_low.keys())}"
-        )
-        st.write(
-            f"**land_cost:** {pricing_result_low.get('land_cost')}"
-        )
-        st.write(
-            f"**air_cost:** {pricing_result_low.get('air_cost')}"
-        )
-        st.write(
-            f"**best_land:** {pricing_result_low.get('best_land')}"
-        )
-        st.write(
-            f"**best_air:** {pricing_result_low.get('best_air')}"
-        )
+    # with st.expander("🔧 计算调试信息", expanded=True):
+    #     st.markdown("### 计算结果调试")
+    #     st.write(
+    #         f"**pricing_result_low keys:** "
+    #         f"{list(pricing_result_low.keys())}"
+    #     )
+    #     st.write(
+    #         f"**land_cost:** {pricing_result_low.get('land_cost')}"
+    #     )
+    #     st.write(
+    #         f"**air_cost:** {pricing_result_low.get('air_cost')}"
+    #     )
+    #     st.write(
+    #         f"**best_land:** {pricing_result_low.get('best_land')}"
+    #     )
+    #     st.write(
+    #         f"**best_air:** {pricing_result_low.get('best_air')}"
+    #     )
+    #
+    #     # 显示预期利润计算调试信息
+    #     st.markdown("### 预期利润计算调试")
+    #     land_debug = pricing_result_low.get('land_debug', [])
+    #     air_debug = pricing_result_low.get('air_debug', [])
+    #
+    #     if land_debug:
+    #         st.markdown("#### 陆运预期利润计算")
+    #         for debug_line in land_debug:
+    #             st.write(debug_line)
+    #
+    #     if air_debug:
+    #         st.markdown("#### 空运预期利润计算")
+    #         for debug_line in air_debug:
+    #             st.write(debug_line)
+    #
+    #     # 检查all_costs_debug中的详细信息
+    #     all_costs_debug = pricing_result_low.get('all_costs_debug', [])
+    #     st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
 
-        # 显示预期利润计算调试信息
-        st.markdown("### 预期利润计算调试")
-        land_debug = pricing_result_low.get('land_debug', [])
-        air_debug = pricing_result_low.get('air_debug', [])
-
-        if land_debug:
-            st.markdown("#### 陆运预期利润计算")
-            for debug_line in land_debug:
-                st.write(debug_line)
-
-        if air_debug:
-            st.markdown("#### 空运预期利润计算")
-            for debug_line in air_debug:
-                st.write(debug_line)
-
-        # 检查all_costs_debug中的详细信息
-        all_costs_debug = pricing_result_low.get('all_costs_debug', [])
-        st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
-
-        # 查找运费为0的物流规则
-        zero_cost_rules = []
-        for debug_info in all_costs_debug:
-            if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
-                zero_cost_rules.append(debug_info)
-
-        st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
-        if zero_cost_rules:
-            st.write("**运费为0的物流规则:**")
-            for rule in zero_cost_rules[:5]:  # 只显示前5个
-                st.write(
-                    f"  - {rule.get('name', 'Unknown')}: "
-                    f"cost={rule.get('cost')}"
-                )
-
-        # 查找特定物流规则的运费
-        target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
-        for debug_info in all_costs_debug:
-            if isinstance(debug_info, dict):
-                logistic = debug_info.get('logistic', {})
-                name = logistic.get('name', 'Unknown')
-                if name in target_rules:
-                    st.write(
-                        f"**{name}:** cost={debug_info.get('cost')}, "
-                        f"type={logistic.get('type')}"
-                    )
+        # # 查找运费为0的物流规则
+        # zero_cost_rules = []
+        # for debug_info in all_costs_debug:
+        #     if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
+        #         zero_cost_rules.append(debug_info)
+        #
+        # st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
+        # if zero_cost_rules:
+        #     st.write("**运费为0的物流规则:**")
+        #     for rule in zero_cost_rules[:5]:  # 只显示前5个
+        #         st.write(
+        #             f"  - {rule.get('name', 'Unknown')}: "
+        #             f"cost={rule.get('cost')}"
+        #         )
+        #
+        # # 查找特定物流规则的运费
+        # target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
+        # for debug_info in all_costs_debug:
+        #     if isinstance(debug_info, dict):
+        #         logistic = debug_info.get('logistic', {})
+        #         name = logistic.get('name', 'Unknown')
+        #         if name in target_rules:
+        #             st.write(
+        #                 f"**{name}:** cost={debug_info.get('cost')}, "
+        #                 f"type={logistic.get('type')}"
+        #             )
+    pass
 
     # =============================
     # 低价优先
@@ -3170,6 +3159,24 @@ def display_fast_pricing_results_precise_style(
             st.markdown(card_html, unsafe_allow_html=True)
         else:
             st.info("暂无可用物流")
+
+    # 极速模式提示信息
+    st.markdown(
+        """
+        <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    border-radius: 12px; padding: 20px; margin: 20px 0; 
+                    border-left: 4px solid #f39c12; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 1.2em; margin-right: 8px;">⚡</span>
+                <strong style="color: #d68910; font-size: 1.1em;">极速模式说明</strong>
+            </div>
+            <div style="color: #8d4e00; font-size: 1.0em; line-height: 1.5;">
+                极速模式不考虑产品尺寸、计泡、是否含电池、液体。上述内容仅限专业版精准模式
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def get_user_products(user_id: int) -> List[Dict[str, Any]]:
@@ -4446,74 +4453,74 @@ def display_precise_pricing_results(
             unsafe_allow_html=True,
         )
 
-    # 显示物流筛选详情
-    with st.expander("🔍 物流筛选详情", expanded=False):
-        st.markdown("### 物流筛选过程")
-
-        # 获取物流规则
-        logistics_rules = get_precise_logistics_rules()
-        land_logistics = [
-            rule for rule in logistics_rules if rule.get('type') == 'land'
-        ]
-        air_logistics = [
-            rule for rule in logistics_rules if rule.get('type') == 'air'
-        ]
-
-        st.write(
-            f"**总物流规则数量：** {len(logistics_rules)}"
-        )
-        st.write(
-            f"**陆运规则数量：** {len(land_logistics)}"
-        )
-        st.write(
-            f"**空运规则数量：** {len(air_logistics)}"
-        )
-        # 显示每个物流规则的筛选结果
-        st.markdown("#### 陆运物流筛选结果")
-        for i, rule in enumerate(land_logistics):
-            with st.container():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-                    st.write(
-                        f"   重量限制: {rule.get('min_weight', 0)}g - "
-                        f"{rule.get('max_weight', '无限制')}g"
-                    )
-                with col2:
-                    # 检查重量限制
-                    weight_g = (
-                        product_info.get('weight_g', 0)
-                        if product_info else 0
-                    )
-                    if weight_g < rule.get('min_weight', 0):
-                        st.error("❌ 重量过低")
-                    elif weight_g > rule.get('max_weight', 10**9):
-                        st.error("❌ 重量过高")
-                    else:
-                        st.success("✅ 通过")
-
-        st.markdown("#### 空运物流筛选结果")
-        for i, rule in enumerate(air_logistics):
-            with st.container():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-                    st.write(
-                        f"   重量限制: {rule.get('min_weight', 0)}g - "
-                        f"{rule.get('max_weight', '无限制')}g"
-                    )
-                with col2:
-                    # 检查重量限制
-                    weight_g = (
-                        product_info.get('weight_g', 0)
-                        if product_info else 0
-                    )
-                    if weight_g < rule.get('min_weight', 0):
-                        st.error("❌ 重量过低")
-                    elif weight_g > rule.get('max_weight', 10**9):
-                        st.error("❌ 重量过高")
-                    else:
-                        st.success("✅ 通过")
+    # # 显示物流筛选详情
+    # with st.expander("🔍 物流筛选详情", expanded=False):
+    #     st.markdown("### 物流筛选过程")
+    #
+    #     # 获取物流规则
+    #     logistics_rules = get_precise_logistics_rules()
+    #     land_logistics = [
+    #         rule for rule in logistics_rules if rule.get('type') == 'land'
+    #     ]
+    #     air_logistics = [
+    #         rule for rule in logistics_rules if rule.get('type') == 'air'
+    #     ]
+    #
+    #     st.write(
+    #         f"**总物流规则数量：** {len(logistics_rules)}"
+    #     )
+    #     st.write(
+    #         f"**陆运规则数量：** {len(land_logistics)}"
+    #     )
+    #     st.write(
+    #         f"**空运规则数量：** {len(air_logistics)}"
+    #     )
+    #     # 显示每个物流规则的筛选结果
+    #     st.markdown("#### 陆运物流筛选结果")
+    #     for i, rule in enumerate(land_logistics):
+    #         with st.container():
+    #             col1, col2 = st.columns([3, 1])
+    #             with col1:
+    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
+    #                 st.write(
+    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
+    #                     f"{rule.get('max_weight', '无限制')}g"
+    #                 )
+    #             with col2:
+    #                 # 检查重量限制
+    #                 weight_g = (
+    #                     product_info.get('weight_g', 0)
+    #                     if product_info else 0
+    #                 )
+    #                 if weight_g < rule.get('min_weight', 0):
+    #                     st.error("❌ 重量过低")
+    #                 elif weight_g > rule.get('max_weight', 10**9):
+    #                     st.error("❌ 重量过高")
+    #                 else:
+    #                     st.success("✅ 通过")
+    #
+    #     st.markdown("#### 空运物流筛选结果")
+    #     for i, rule in enumerate(air_logistics):
+    #         with st.container():
+    #             col1, col2 = st.columns([3, 1])
+    #             with col1:
+    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
+    #                 st.write(
+    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
+    #                     f"{rule.get('max_weight', '无限制')}g"
+    #                 )
+    #             with col2:
+    #                 # 检查重量限制
+    #                 weight_g = (
+    #                     product_info.get('weight_g', 0)
+    #                     if product_info else 0
+    #                 )
+    #                 if weight_g < rule.get('min_weight', 0):
+    #                     st.error("❌ 重量过低")
+    #                 elif weight_g > rule.get('max_weight', 10**9):
+    #                     st.error("❌ 重量过高")
+    #                 else:
+    #                     st.success("✅ 通过")
 
     # =============================
     # 低价优先
@@ -4529,145 +4536,147 @@ def display_precise_pricing_results(
     )
 
     # 添加调试信息
-    with st.expander("🔧 计算调试信息", expanded=True):
-        st.markdown("### 计算结果调试")
-        st.write(
-            f"**pricing_result_low keys:** "
-            f"{list(pricing_result_low.keys())}"
-        )
-        st.write(f"**land_cost:** {pricing_result_low.get('land_cost')}")
-        st.write(f"**air_cost:** {pricing_result_low.get('air_cost')}")
-        st.write(f"**best_land:** {pricing_result_low.get('best_land')}")
-        st.write(f"**best_air:** {pricing_result_low.get('best_air')}")
+    # with st.expander("🔧 计算调试信息", expanded=True):
+    #     st.markdown("### 计算结果调试")
+    #     st.write(
+    #         f"**pricing_result_low keys:** "
+    #         f"{list(pricing_result_low.keys())}"
+    #     )
+    #     st.write(f"**land_cost:** {pricing_result_low.get('land_cost')}")
+    #     st.write(f"**air_cost:** {pricing_result_low.get('air_cost')}")
+    #     st.write(f"**best_land:** {pricing_result_low.get('best_land')}")
+    #     st.write(f"**best_air:** {pricing_result_low.get('best_air')}")
+    #
+    #     # 显示预期利润计算调试信息
+    #     st.markdown("### 预期利润计算调试")
+    #     land_debug = pricing_result_low.get('land_debug', [])
+    #     air_debug = pricing_result_low.get('air_debug', [])
+    #
+    #     if land_debug:
+    #         st.markdown("#### 陆运预期利润计算")
+    #         for debug_line in land_debug:
+    #             st.write(debug_line)
+    #
+    #     if air_debug:
+    #         st.markdown("#### 空运预期利润计算")
+    #         for debug_line in air_debug:
+    #             st.write(debug_line)
+    #
+    #     # 检查all_costs_debug中的详细信息
+    #     all_costs_debug = pricing_result_low.get('all_costs_debug', [])
+    #     st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
 
-        # 显示预期利润计算调试信息
-        st.markdown("### 预期利润计算调试")
-        land_debug = pricing_result_low.get('land_debug', [])
-        air_debug = pricing_result_low.get('air_debug', [])
+        # # 显示物流淘汰过程
+        # st.markdown("### 物流淘汰过程")
+        # if all_costs_debug:
+        #     # 统计淘汰原因
+        #     elimination_reasons = {}
+        #     total_logistics = len(all_costs_debug)
+        #     eliminated_count = 0
+        #
+        #     for debug_info in all_costs_debug:
+        #         if isinstance(debug_info, dict):
+        #             logistic_name = debug_info.get("logistic", {}).get(
+        #                 "name", "未知物流"
+        #             )
+        #             cost = debug_info.get("cost")
+        #             debug_list = debug_info.get("debug", [])
+        #
+        #             if cost is None:
+        #                 eliminated_count += 1
+        #                 # 找到淘汰原因
+        #                 reason = None
+        #                 for debug_line in debug_list:
+        #                     if "返回 None" in debug_line:
+        #                         reason = debug_line.replace(
+        #                             "返回 None", ""
+        #                         ).strip()
+        #                         break
+        #                     elif "跳过" in debug_line:
+        #                         reason = debug_line.strip()
+        #                         break
+        #
+        #                 if reason:
+        #                     if reason not in elimination_reasons:
+        #                         elimination_reasons[reason] = []
+        #                     elimination_reasons[reason].append(
+        #                         logistic_name
+        #                     )
+        #                 else:
+        #                     # 如果没有找到明确的原因，使用最后一个调试信息
+        #                     if debug_list:
+        #                         reason = debug_list[-1].strip()
+        #                         if reason not in elimination_reasons:
+        #                             elimination_reasons[reason] = []
+        #                         elimination_reasons[reason].append(
+        #                             logistic_name
+        #                         )
+        #
+        #     st.write(f"**总计物流规则：{total_logistics} 个**")
+        #     st.write(f"**被淘汰物流：{eliminated_count} 个**")
+        #     st.write(f"**可用物流：{total_logistics - eliminated_count} 个**")
+    pass
 
-        if land_debug:
-            st.markdown("#### 陆运预期利润计算")
-            for debug_line in land_debug:
-                st.write(debug_line)
+    # # 显示淘汰原因详情
+    # if elimination_reasons:
+    #     st.markdown("**淘汰原因统计：**")
+    #     for reason, logistics in elimination_reasons.items():
+    #         st.write(f"**原因：**{reason}")
+    #         st.write(f"**影响物流：**{len(logistics)} 个")
+    #         st.write(f"**物流名称：**{', '.join(logistics)}")
+    #         st.markdown("---")
+    #
+    # # 显示运费计算过程
+    # st.markdown("### 运费计算过程")
+    # if all_costs_debug:
+    #     for debug_info in all_costs_debug:
+    #         if isinstance(debug_info, dict):
+    #             logistic_name = debug_info.get("logistic", {}).get(
+    #                 "name", "未知物流"
+    #             )
+    #             cost = debug_info.get("cost")
+    #             debug_list = debug_info.get("debug", [])
+    #
+    #             status = "✅ 可用" if cost is not None else "❌ 被淘汰"
+    #             cost_display = (
+    #                 f"¥{cost:.2f}" if cost is not None else "无法计算"
+    #             )
+    #
+    #             st.markdown(
+    #                 f"**{logistic_name}** - {status} - 运费：{cost_display}"
+    #             )
+    #
+    #             if debug_list:
+    #                 for debug_line in debug_list:
+    #                     st.text(f"  {debug_line}")
+    #
+    #             st.markdown("---")
+    #
+    # # 查找运费为0的物流规则
+    # zero_cost_rules = []
+    # for debug_info in all_costs_debug:
+    #     if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
+    #         zero_cost_rules.append(debug_info)
+    #
+    # st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
+    # if zero_cost_rules:
+    #     st.write("**运费为0的物流规则:**")
+    #     for rule in zero_cost_rules[:5]:  # 只显示前5个
+    #         logistic_name = rule.get('logistic', {}).get('name', 'Unknown')
+    #         st.write(f"  - {logistic_name}: cost={rule.get('cost')}")
+    pass
 
-        if air_debug:
-            st.markdown("#### 空运预期利润计算")
-            for debug_line in air_debug:
-                st.write(debug_line)
-
-        # 检查all_costs_debug中的详细信息
-        all_costs_debug = pricing_result_low.get('all_costs_debug', [])
-        st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
-
-        # 显示物流淘汰过程
-        st.markdown("### 物流淘汰过程")
-        if all_costs_debug:
-            # 统计淘汰原因
-            elimination_reasons = {}
-            total_logistics = len(all_costs_debug)
-            eliminated_count = 0
-
-            for debug_info in all_costs_debug:
-                if isinstance(debug_info, dict):
-                    logistic_name = debug_info.get("logistic", {}).get(
-                        "name", "未知物流"
-                    )
-                    cost = debug_info.get("cost")
-                    debug_list = debug_info.get("debug", [])
-
-                    if cost is None:
-                        eliminated_count += 1
-                        # 找到淘汰原因
-                        reason = None
-                        for debug_line in debug_list:
-                            if "返回 None" in debug_line:
-                                reason = debug_line.replace(
-                                    "返回 None", ""
-                                ).strip()
-                                break
-                            elif "跳过" in debug_line:
-                                reason = debug_line.strip()
-                                break
-
-                        if reason:
-                            if reason not in elimination_reasons:
-                                elimination_reasons[reason] = []
-                            elimination_reasons[reason].append(
-                                logistic_name
-                            )
-                        else:
-                            # 如果没有找到明确的原因，使用最后一个调试信息
-                            if debug_list:
-                                reason = debug_list[-1].strip()
-                                if reason not in elimination_reasons:
-                                    elimination_reasons[reason] = []
-                                elimination_reasons[reason].append(
-                                    logistic_name
-                                )
-
-            st.write(f"**总计物流规则：{total_logistics} 个**")
-            st.write(f"**被淘汰物流：{eliminated_count} 个**")
-            st.write(f"**可用物流：{total_logistics - eliminated_count} 个**")
-
-            # 显示淘汰原因详情
-            if elimination_reasons:
-                st.markdown("**淘汰原因统计：**")
-                for reason, logistics in elimination_reasons.items():
-                    st.write(f"**原因：**{reason}")
-                    st.write(f"**影响物流：**{len(logistics)} 个")
-                    st.write(f"**物流名称：**{', '.join(logistics)}")
-                    st.markdown("---")
-
-        # 显示运费计算过程
-        st.markdown("### 运费计算过程")
-        if all_costs_debug:
-            for debug_info in all_costs_debug:
-                if isinstance(debug_info, dict):
-                    logistic_name = debug_info.get("logistic", {}).get(
-                        "name", "未知物流"
-                    )
-                    cost = debug_info.get("cost")
-                    debug_list = debug_info.get("debug", [])
-
-                    status = "✅ 可用" if cost is not None else "❌ 被淘汰"
-                    cost_display = (
-                        f"¥{cost:.2f}" if cost is not None else "无法计算"
-                    )
-
-                    st.markdown(
-                        f"**{logistic_name}** - {status} - 运费：{cost_display}"
-                    )
-
-                    if debug_list:
-                        for debug_line in debug_list:
-                            st.text(f"  {debug_line}")
-
-                    st.markdown("---")
-
-        # 查找运费为0的物流规则
-        zero_cost_rules = []
-        for debug_info in all_costs_debug:
-            if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
-                zero_cost_rules.append(debug_info)
-
-        st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
-        if zero_cost_rules:
-            st.write("**运费为0的物流规则:**")
-            for rule in zero_cost_rules[:5]:  # 只显示前5个
-                logistic_name = rule.get('logistic', {}).get('name', 'Unknown')
-                st.write(f"  - {logistic_name}: cost={rule.get('cost')}")
-
-        # 查找特定物流规则的运费
-        target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
-        for debug_info in all_costs_debug:
-            if isinstance(debug_info, dict):
-                logistic = debug_info.get('logistic', {})
-                name = logistic.get('name', 'Unknown')
-                if name in target_rules:
-                    st.write(
-                        f"**{name}:** cost={debug_info.get('cost')}, "
-                        f"type={logistic.get('type')}"
-                    )
+    # # 查找特定物流规则的运费
+    # target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
+    # for debug_info in all_costs_debug:
+    #     if isinstance(debug_info, dict):
+    #         logistic = debug_info.get('logistic', {})
+    #         name = logistic.get('name', 'Unknown')
+    #         if name in target_rules:
+    #             st.write(
+    #                 f"**{name}:** cost={debug_info.get('cost')}, "
+    #                 f"type={logistic.get('type')}"
+    #             )
 
     col_land_l, col_air_l = st.columns(2)
 
