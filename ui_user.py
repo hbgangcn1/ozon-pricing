@@ -687,6 +687,9 @@ def login_or_register_page():
         # 不开放注册时只显示登录表单
         _show_login_form()
 
+    # 用户协议弹窗
+    if st.session_state.get("show_terms_modal", False):
+        _show_terms_modal()
     # 添加ICP备案信息
     st.markdown(
         """
@@ -729,10 +732,40 @@ def _show_register_form():
         confirm_password = st.text_input(
             "确认密码", type="password", help="请再次输入密码"
         )
-        submitted = st.form_submit_button("注册并登录")
+
+        # 用户协议复选框
+        st.markdown("---")
+        agree_terms = st.checkbox(
+            "我已阅读并同意《最终用户协议》",
+            key="agree_terms_checkbox"
+        )
+
+        # 查看协议和注册按钮
+        col1, col2, col3 = st.columns([1, 1, 6])
+        with col1:
+            submitted = st.form_submit_button(
+                "注册并登录",
+                use_container_width=True
+            )
+        with col2:
+            view_terms = st.form_submit_button(
+                "📋 查看协议",
+                use_container_width=True
+            )
+        # col3 留空用于压缩前两个按钮的间距
+
+        # 处理查看协议按钮
+        if view_terms:
+            st.session_state.show_terms_modal = True
+            st.rerun()
+
         if submitted:
             if not username or not password:
                 st.error("❌ 请填写所有必填字段")
+                return
+
+            if not agree_terms:
+                st.error("❌ 请先阅读并同意《最终用户协议》")
                 return
 
             if password != confirm_password:
@@ -786,3 +819,82 @@ def _show_register_form():
                 except Exception as e:
                     st.error(f"❌ 注册失败: {str(e)}")
     # 数据库连接在get_db_connection上下文管理器中自动关闭
+
+
+def _show_terms_modal():
+    """显示用户协议弹窗"""
+    # 读取用户协议内容
+    try:
+        with open("最终用户协议.md", "r", encoding="utf-8") as f:
+            terms_content = f.read()
+    except FileNotFoundError:
+        terms_content = "无法加载用户协议内容，请联系客服获取。"
+    # 创建弹窗样式
+    st.markdown(
+        """
+        <style>
+        .terms-modal {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 2px solid #dee2e6;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .terms-header {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #3498db;
+        }
+        .terms-content {
+            line-height: 1.6;
+            color: #333;
+            font-size: 14px;
+        }
+        .close-btn-container {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #dee2e6;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # 弹窗容器
+    with st.container():
+        st.markdown('<div class="terms-modal">', unsafe_allow_html=True)
+
+        # 弹窗标题
+        st.markdown(
+            '<div class="terms-header"><h2>📋 最终用户协议</h2></div>',
+            unsafe_allow_html=True
+        )
+
+        # 协议内容
+        st.markdown('<div class="terms-content">', unsafe_allow_html=True)
+        st.markdown(terms_content)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # 关闭按钮
+        st.markdown(
+            '<div class="close-btn-container">',
+            unsafe_allow_html=True
+        )
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button(
+                "✖ 关闭协议",
+                key="close_terms_modal",
+                use_container_width=True
+            ):
+                st.session_state.show_terms_modal = False
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('</div>', unsafe_allow_html=True)
