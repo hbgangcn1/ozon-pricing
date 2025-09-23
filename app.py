@@ -3,6 +3,74 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from typing import Optional, Dict, List, Any
+
+# ===== 公安备案临时配置 =====
+# 备案完成后请删除此配置块并恢复原始登录流程
+POLICE_FILING_MODE = True  # 设置为False可恢复正常登录流程
+
+def create_temp_user():
+    """创建临时用户，具备专业版权限但无admin权限"""
+    return {
+        'id': -1,  # 临时用户ID
+        'username': 'temp_user_for_filing',
+        'role': 'user',  # 非admin角色
+        'user_type': 'professional',  # 专业版权限
+        'remaining_calculations': -1,  # 无限次计算
+        'expiry_date': None,  # 无过期时间
+        'is_temp_user': True  # 标记为临时用户
+    }
+
+def temp_is_admin():
+    """临时用户版本的管理员检查 - 始终返回False"""
+    return False
+
+def temp_current_user_id():
+    """临时用户版本的用户ID获取"""
+    return -1
+
+def temp_check_user_subscription_status(user_id):
+    """临时用户版本的订阅状态检查"""
+    if user_id == -1:  # 临时用户
+        return {
+            'valid': True,
+            'user_type': 'professional',
+            'remaining_calculations': -1,
+            'expiry_date': None,
+            'message': '临时用户（公安备案）'
+        }
+    # 对于其他用户，调用原始函数
+    try:
+        from .db_utils import check_user_subscription_status
+        return check_user_subscription_status(user_id)
+    except ImportError:
+        from db_utils import check_user_subscription_status
+        return check_user_subscription_status(user_id)
+
+def temp_update_user_preferred_mode(user_id, mode):
+    """临时用户版本的模式偏好更新 - 只更新session_state"""
+    if user_id == -1:  # 临时用户
+        st.session_state.current_mode = mode
+        return  # 不操作数据库
+    # 对于其他用户，调用原始函数
+    try:
+        from .db_utils import update_user_preferred_mode
+        update_user_preferred_mode(user_id, mode)
+    except ImportError:
+        from db_utils import update_user_preferred_mode
+        update_user_preferred_mode(user_id, mode)
+
+def temp_get_user_preferred_mode(user_id):
+    """临时用户版本的用户偏好获取 - 返回session_state中的模式"""
+    if user_id == -1:  # 临时用户
+        return st.session_state.get('current_mode', 'fast')
+    # 对于其他用户，调用原始函数
+    try:
+        from .db_utils import get_user_preferred_mode
+        return get_user_preferred_mode(user_id)
+    except ImportError:
+        from db_utils import get_user_preferred_mode
+        return get_user_preferred_mode(user_id)
+# ===== 公安备案临时配置结束 =====
 try:
     from .db_utils import (
         init_db,
@@ -18,6 +86,14 @@ try:
         migrate_user_preferences,
         decrement_user_calculations,
     )
+    
+    # 公安备案模式：替换关键函数
+    if POLICE_FILING_MODE:
+        is_admin = temp_is_admin
+        current_user_id = temp_current_user_id
+        check_user_subscription_status = temp_check_user_subscription_status
+        update_user_preferred_mode = temp_update_user_preferred_mode
+        get_user_preferred_mode = temp_get_user_preferred_mode
     from .ui_user import user_management_page, login_or_register_page
     from .ui_products import (
         edit_product_form,
@@ -51,6 +127,14 @@ except ImportError:  # Fallback when run as a top-level module
         migrate_user_preferences,
         decrement_user_calculations,
     )
+    
+    # 公安备案模式：替换关键函数
+    if POLICE_FILING_MODE:
+        is_admin = temp_is_admin
+        current_user_id = temp_current_user_id
+        check_user_subscription_status = temp_check_user_subscription_status
+        update_user_preferred_mode = temp_update_user_preferred_mode
+        get_user_preferred_mode = temp_get_user_preferred_mode
 
     from ui_user import user_management_page, login_or_register_page
     from ui_products import edit_product_form, batch_edit_pricing_form
@@ -576,6 +660,10 @@ def settings_page():
 # noinspection PyUnboundLocalVariable
 def should_show_subscription_management():
     """检查是否应该显示订阅管理页面"""
+    # 公安备案模式下，临时用户不显示订阅管理
+    if POLICE_FILING_MODE:
+        return False
+    
     from db_utils import is_registration_open
 
     # 首先检查是否开放注册
@@ -623,6 +711,7 @@ def _validate_user_and_get_mode():
         # 测试环境中的 SimpleNamespace 对象
         current_user = getattr(st.session_state, 'user', {}) or {}
         current_mode = getattr(st.session_state, 'current_mode', None)
+    
 
     # 明确告知静态分析器：类型已确定
     assert isinstance(current_user, dict)
@@ -646,8 +735,10 @@ def _validate_user_and_get_mode():
     # 获取用户类型并对免费版/效率版强制设为极速模式
     user_type = subscription_status.get('user_type', 'free')
     if user_type in ['free', 'efficiency']:
-        st.session_state.current_mode = 'fast'
-        current_mode = 'fast'
+        # 备案模式下不强制设置为极速模式
+        if not POLICE_FILING_MODE:
+            st.session_state.current_mode = 'fast'
+            current_mode = 'fast'
 
     # 如果session_state中没有current_mode，从数据库获取用户偏好
     if current_mode is None:
@@ -672,6 +763,7 @@ def show_main_interface():
     # noinspection PyUnboundLocalVariable
 
     # 移除未使用的导入
+
 
     # 验证用户并获取信息
     validation_result = _validate_user_and_get_mode()
@@ -718,7 +810,8 @@ def show_main_interface():
             if current_mode == 'fast':
                 # 免费版与效率版不显示"切换精准模式"按钮
                 user_type = subscription_status.get('user_type', 'free')
-                if user_type not in ['free', 'efficiency']:
+                # 备案模式下，临时用户始终显示切换按钮
+                if POLICE_FILING_MODE or user_type not in ['free', 'efficiency']:
                     if st.button(
                         "切换精准模式",
                         key="switch_to_precise",
@@ -733,7 +826,8 @@ def show_main_interface():
             else:
                 # 免费版与效率版不应出现在精准模式，亦不显示切换按钮
                 user_type = subscription_status.get('user_type', 'free')
-                if user_type not in ['free', 'efficiency']:
+                # 备案模式下，临时用户始终显示切换按钮
+                if POLICE_FILING_MODE or user_type not in ['free', 'efficiency']:
                     if st.button(
                         "切换极速模式",
                         key="switch_to_fast",
@@ -994,6 +1088,22 @@ def show_fast_mode_interface(current_user):
                 unsafe_allow_html=True,
             )
             show_system_settings()
+
+    # 公安备案模式下，在页面底部添加ICP备案信息
+    if POLICE_FILING_MODE:
+        st.markdown(
+            """
+            <div style="text-align: center; margin-top: 3rem; padding: 1rem;
+                 color: #718096; font-size: 0.9rem;">
+                <a href="https://beian.miit.gov.cn/#/Integrated/index"
+                   target="_blank"
+                   style="color: #718096; text-decoration: none;">
+                    ICP备案号：粤ICP备2025471825号
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 def show_precise_mode_interface(current_user):
@@ -5518,12 +5628,97 @@ def subscription_management_page():
                         st.info("企业版功能开发中")
                 else:
                     if st.button(button_text, key=f"action_{plan_key}"):
-                        # 模拟支付流程
-                        if plan_key == 'efficiency':
-                            st.success("正在跳转到支付页面...")
-                            st.info("首月仅需¥1，次月自动恢复¥9.9/月")
+                        # 集成微信支付流程
+                        import os
+                        
+                        # 检查是否为本地测试模式
+                        if os.getenv("LOCAL_TEST_MODE", "false").lower() == "true":
+                            from local_wechat_test import LocalWeChatPayTest
+                            local_tester = LocalWeChatPayTest()
+                            wechat_pay_handler = local_tester.handler
+                            st.info("🧪 当前为本地测试模式")
                         else:
-                            st.success("正在跳转到支付页面...")
+                            from wechat_pay_handler import wechat_pay_handler
+                        
+                        # 获取当前用户
+                        current_user = st.session_state.get('username')
+                        if not current_user:
+                            st.error("请先登录")
+                            st.stop()
+                        
+                        # 创建支付订单
+                        if plan_key == 'efficiency':
+                            amount = 1.0  # 首月1元
+                            description = "物流系统效率版订阅 - 首月优惠"
+                        elif plan_key == 'precision':
+                            amount = 19.9  # 精准版19.9元
+                            description = "物流系统精准版订阅"
+                        else:
+                            amount = 9.9
+                            description = f"物流系统{plan['name']}订阅"
+                        
+                        with st.spinner("正在创建订单..."):
+                            result = wechat_pay_handler.create_payment_order(
+                                user_id=current_user,
+                                plan_type=plan_key,
+                                amount=amount,
+                                description=description
+                            )
+                        
+                        if result["success"]:
+                            st.success("订单创建成功！")
+                            
+                            # 显示二维码
+                            qr_code_url = result.get("qr_code_url")
+                            order_id = result.get("order_id")
+                            
+                            if qr_code_url:
+                                st.info("请使用微信扫描下方二维码完成支付：")
+                                
+                                # 生成二维码（简单实现）
+                                import qrcode
+                                import io
+                                import base64
+                                
+                                qr = qrcode.QRCode(version=1, box_size=10, border=5)
+                                qr.add_data(qr_code_url)
+                                qr.make(fit=True)
+                                
+                                qr_img = qr.make_image(fill_color="black", back_color="white")
+                                
+                                # 转换为base64显示
+                                img_buffer = io.BytesIO()
+                                qr_img.save(img_buffer, format='PNG')
+                                img_str = base64.b64encode(img_buffer.getvalue()).decode()
+                                
+                                st.markdown(f"""
+                                    <div style="text-align: center;">
+                                        <img src="data:image/png;base64,{img_str}" 
+                                             style="max-width: 300px;">
+                                    </div>
+                                """, unsafe_allow_html=True)
+                                
+                                st.info(f"订单号：{order_id}")
+                                
+                                # 添加支付状态检查按钮
+                                if st.button("检查支付状态", key=f"check_{order_id}"):
+                                    status_result = wechat_pay_handler.check_order_status(order_id)
+                                    if status_result["success"]:
+                                        if status_result.get("paid"):
+                                            st.success("支付成功！订阅已激活")
+                                            st.rerun()
+                                        else:
+                                            st.info("订单尚未支付，请继续扫码支付")
+                                    else:
+                                        st.error(f"查询失败：{status_result.get('message')}")
+                            else:
+                                st.error("二维码生成失败")
+                        else:
+                            st.error(f"订单创建失败：{result.get('message')}")
+                            if plan_key == 'efficiency':
+                                st.info("首月仅需¥1，次月自动恢复¥9.9/月")
+                            else:
+                                st.info("如有问题请联系客服")
 
     st.divider()
 
@@ -5592,7 +5787,20 @@ def main():
         init_exchange_rates()
         st.session_state.exchange_rates_initialized = True
 
-    # 检查会话安全性
+    # 公安备案模式：直接设置临时用户并跳过登录检查
+    if POLICE_FILING_MODE:
+        # 设置临时用户到session_state
+        st.session_state.user = create_temp_user()
+        # 不强制设置模式，让用户可以通过按钮切换
+        if 'current_mode' not in st.session_state:
+            st.session_state.current_mode = 'fast'  # 默认极速模式
+        st.session_state.session_id = 'temp_filing_session'
+        
+        # 直接显示主界面，跳过登录检查
+        show_main_interface()
+        return
+
+    # 正常模式：检查会话安全性
     if not check_session_security():
         login_or_register_page()
         return
