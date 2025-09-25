@@ -1184,7 +1184,7 @@ def show_fast_mode_interface(current_user):
                          padding: 1.5rem; margin-bottom: 1rem;">
                         <h3 style="color: white; margin-bottom: 0.5rem;">🌍 主营业务</h3>
                         <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛）
+                            中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），同时为跨境卖家提供专业的物流定价解决方案。
                         </p>
                     </div>
                     <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
@@ -1553,7 +1553,7 @@ def show_precise_mode_interface(current_user):
                          padding: 1.5rem; margin-bottom: 1rem;">
                         <h3 style="color: white; margin-bottom: 0.5rem;">🌍 主营业务</h3>
                         <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛）
+                            中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），同时为跨境卖家提供专业的物流定价解决方案。
                         </p>
                     </div>
                     <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
