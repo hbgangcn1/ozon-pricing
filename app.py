@@ -1599,6 +1599,22 @@ def show_precise_mode_interface(current_user):
                 unsafe_allow_html=True,
             )
 
+    # 公安备案模式下，在页面底部添加ICP备案信息
+    if POLICE_FILING_MODE:
+        st.markdown(
+            """
+            <div style="text-align: center; margin-top: 3rem; padding: 1rem;
+                 color: #718096; font-size: 0.9rem;">
+                <a href="https://beian.miit.gov.cn/#/Integrated/index"
+                   target="_blank"
+                   style="color: #718096; text-decoration: none;">
+                    ICP备案号：粤ICP备2025471825号
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
 
 def fast_pricing_calculator():
     """极速模式定价计算器"""
