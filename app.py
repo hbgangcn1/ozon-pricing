@@ -1258,7 +1258,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "💎 订阅管理",
                         "⚙️ 系统设置",
@@ -1272,7 +1272,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "💎 订阅管理",
                         "⚙️ 系统设置",
@@ -1286,7 +1286,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "⚙️ 系统设置",
                         "👥 用户管理",
@@ -1299,7 +1299,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4, tab5 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "⚙️ 系统设置",
                         "👥 用户管理",
@@ -1324,9 +1324,9 @@ def show_precise_mode_interface(current_user):
             st.markdown(
                 """
                 <div style="text-align: center; margin-bottom: 2rem;">
-                    <h1 class="main-title">🚚 物流规则</h1>
+                    <h1 class="main-title">🚚 物流管理</h1>
                     <p style="color: #718096; font-size: 1.1rem; margin: 0;">
-                        配置物流服务商规则，可灵活更改
+                        管理物流规则和模板
                     </p>
                 </div>
                 """,
@@ -1403,7 +1403,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "💎 订阅管理",
                         "⚙️ 系统设置",
@@ -1416,7 +1416,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4, tab5 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "💎 订阅管理",
                         "⚙️ 系统设置",
@@ -1429,7 +1429,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4, tab5 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "⚙️ 系统设置",
                         "ℹ️ 关于我们",
@@ -1441,7 +1441,7 @@ def show_precise_mode_interface(current_user):
                 tab1, tab2, tab3, tab4 = st.tabs(
                     [
                         "💰 定价计算",
-                        "🚚 物流规则",
+                        "🚚 物流管理",
                         "🔐 账户管理",
                         "⚙️ 系统设置",
                     ]
@@ -1464,9 +1464,9 @@ def show_precise_mode_interface(current_user):
             st.markdown(
                 """
                 <div style="text-align: center; margin-bottom: 2rem;">
-                    <h1 class="main-title">🚚 物流规则</h1>
+                    <h1 class="main-title">🚚 物流管理</h1>
                     <p style="color: #718096; font-size: 1.1rem; margin: 0;">
-                        配置物流服务商规则，可灵活更改
+                        管理物流规则和模板
                     </p>
                 </div>
                 """,
