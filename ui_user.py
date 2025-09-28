@@ -690,24 +690,16 @@ def login_or_register_page():
     # 用户协议弹窗
     if st.session_state.get("show_terms_modal", False):
         _show_terms_modal()
-    # 添加备案信息
+    # 添加备案信息（ICP备案号和公安备案信息在同一行显示）
     st.markdown(
         """
         <div style="text-align: center; margin-top: 3rem; padding: 1rem;
              color: #718096; font-size: 0.9rem;">
-            <div style="margin-bottom: 0.5rem;">
-                <a href="https://beian.miit.gov.cn/#/Integrated/index"
-                   target="_blank"
-                   style="color: #718096; text-decoration: none;">
-                    ICP备案号：粤ICP备2025471825号
-                </a>
-            </div>
-        </div>
         """,
         unsafe_allow_html=True
     )
     
-    # 公安备案信息（图标和文字在同一列中左右排列，图标不缩放）
+    # 在同一行中显示ICP备案号和公安备案信息
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         # 在同一列中创建水平布局，使用HTML实现真正的左右排列
@@ -723,23 +715,37 @@ def login_or_register_page():
         except:
             icon_src = ""
         
-        # 使用HTML实现同一列中的左右排列，图标不缩放
+        # 使用HTML实现同一行中的左右排列：ICP备案号 | 公安备案图标+备案号
         st.markdown(
             f"""
-            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
-                <img src="{icon_src}" 
-                     style="width: 36px; height: 40px; flex-shrink: 0;" 
-                     alt="公安备案图标">
-                <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
-                   rel="noreferrer" 
+            <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+                <a href="https://beian.miit.gov.cn/#/Integrated/index"
                    target="_blank"
-                   style="color: #718096; text-decoration: none; font-size: 0.9rem;">
-                    粤公网安备44030002008086号
+                   style="color: #718096; text-decoration: none;">
+                    ICP备案号：粤ICP备2025471825号
                 </a>
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    <img src="{icon_src}" 
+                         style="width: 36px; height: 40px; flex-shrink: 0;" 
+                         alt="公安备案图标">
+                    <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
+                       rel="noreferrer" 
+                       target="_blank"
+                       style="color: #718096; text-decoration: none; font-size: 0.9rem;">
+                        粤公网安备44030002008086号
+                    </a>
+                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
+    
+    st.markdown(
+        """
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 def _show_login_form():
