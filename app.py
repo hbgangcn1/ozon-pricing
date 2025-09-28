@@ -74,7 +74,7 @@ except ImportError:  # Fallback when run as a top-level module
     from session_security import (
         check_session_security, SessionSecurity, secure_logout,
     )
-    # ExchangeRateService and get_usd_rate are imported at module level
+    from exchange_service import ExchangeRateService, get_usd_rate
 
 # 设置页面配置
 st.set_page_config(
