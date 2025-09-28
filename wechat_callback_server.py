@@ -4,9 +4,10 @@
 用于接收微信支付的异步通知
 """
 
-from flask import Flask, request, Response
+from flask import Flask, request, Response, jsonify
 import logging
-from wechat_pay_handler import wechat_pay_handler
+import json
+from payment_handler import payment_handler
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -18,24 +19,49 @@ app = Flask(__name__)
 @app.route('/wechat/notify', methods=['POST'])
 def wechat_notify():
     """
-    接收微信支付回调通知
+    接收微信支付回调通知（v3 API）
     """
     try:
-        # 获取XML数据
-        xml_data = request.get_data(as_text=True)
-        logger.info(f"收到微信支付通知: {xml_data}")
+        # 获取请求头信息
+        headers = {
+            'Wechatpay-Timestamp': request.headers.get('Wechatpay-Timestamp', ''),
+            'Wechatpay-Nonce': request.headers.get('Wechatpay-Nonce', ''),
+            'Wechatpay-Signature': request.headers.get('Wechatpay-Signature', ''),
+        }
         
-        # 处理支付通知
-        response_xml = wechat_pay_handler.handle_payment_notify(xml_data)
+        # 获取请求体
+        body = request.get_data(as_text=True)
+        logger.info(f"收到微信支付通知: {body}")
         
-        return Response(response_xml, content_type='application/xml')
+        # 构建通知数据
+        notify_data = {
+            'headers': headers,
+            'body': body
+        }
         
+        # 处理通知
+        result = payment_handler.process_wechat_notify(notify_data)
+        
+        if result['success']:
+            # 返回成功响应
+            return jsonify({
+                'code': 'SUCCESS',
+                'message': 'OK'
+            }), 200
+        else:
+            # 返回失败响应
+            logger.error(f"支付通知处理失败: {result['message']}")
+            return jsonify({
+                'code': 'FAIL',
+                'message': result['message']
+            }), 400
+            
     except Exception as e:
         logger.error(f"处理微信支付通知异常: {str(e)}")
-        return Response("""<xml>
-            <return_code><![CDATA[FAIL]]></return_code>
-            <return_msg><![CDATA[系统错误]]></return_msg>
-        </xml>""", content_type='application/xml')
+        return jsonify({
+            'code': 'FAIL',
+            'message': f'系统错误: {str(e)}'
+        }), 500
 
 
 @app.route('/payment/success')

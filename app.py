@@ -802,12 +802,27 @@ def show_fast_mode_interface(current_user):
     if current_user["role"] == "admin":
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
                 [
                     "💰 定价计算",
                     "🚚 物流管理",
                     "🔐 账户管理",
                     "💎 订阅管理",
+                    "💳 支付中心",
+                    "⚙️ 系统设置",
+                    "👥 用户管理",
+                    "ℹ️ 关于我们",
+                ]
+            )
+            user_management_tab = tab7
+            about_us_tab = tab8
+        else:
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "💳 支付中心",
                     "⚙️ 系统设置",
                     "👥 用户管理",
                     "ℹ️ 关于我们",
@@ -815,19 +830,6 @@ def show_fast_mode_interface(current_user):
             )
             user_management_tab = tab6
             about_us_tab = tab7
-        else:
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-                [
-                    "💰 定价计算",
-                    "🚚 物流管理",
-                    "🔐 账户管理",
-                    "⚙️ 系统设置",
-                    "👥 用户管理",
-                    "ℹ️ 关于我们",
-                ]
-            )
-            user_management_tab = tab5
-            about_us_tab = tab6
         with tab1:
             st.markdown(
                 """

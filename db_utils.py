@@ -976,6 +976,22 @@ def init_db():
             )
         """)
 
+        # 创建支付订单表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS payment_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id TEXT UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                description TEXT NOT NULL,
+                status TEXT DEFAULT 'PENDING',
+                wechat_transaction_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        """)
+
         # 初始化系统配置
         c.execute("""
             INSERT OR IGNORE INTO system_config
