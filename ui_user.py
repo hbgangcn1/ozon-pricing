@@ -702,21 +702,34 @@ def login_or_register_page():
                     ICP备案号：粤ICP备2025471825号
                 </a>
             </div>
-            <div style="display: flex; align-items: center; justify-content: center;">
-                <img src="./PSB Filing Icon.png" 
-                     style="width: 16px; height: 16px; margin-right: 5px;" 
-                     alt="公安备案图标">
-                <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
-                   rel="noreferrer" 
-                   target="_blank"
-                   style="color: #718096; text-decoration: none;">
-                    粤公网安备44030002008086号
-                </a>
-            </div>
         </div>
         """,
         unsafe_allow_html=True
     )
+    
+    # 公安备案信息（使用Streamlit方式显示图标）
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        col_icon, col_text = st.columns([1, 4])
+        with col_icon:
+            try:
+                st.image("PSB Filing Icon.png", width=16)
+            except:
+                st.write("🛡️")
+        with col_text:
+            st.markdown(
+                """
+                <div style="text-align: left;">
+                    <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
+                       rel="noreferrer" 
+                       target="_blank"
+                       style="color: #718096; text-decoration: none; font-size: 0.9rem;">
+                        粤公网安备44030002008086号
+                    </a>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 
 def _show_login_form():
