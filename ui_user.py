@@ -710,28 +710,26 @@ def login_or_register_page():
     # 公安备案信息（图标和文字在同一列中左右排列，图标不缩放）
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # 使用Streamlit的方式在同一列中实现左右排列
+        # 在同一列中创建水平布局，使用HTML实现真正的左右排列
         import os
         icon_path = os.path.join(os.path.dirname(__file__), "PSB Filing Icon.png")
         
-        # 在同一列中创建水平布局
-        st.markdown(
-            """
-            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
-            """,
-            unsafe_allow_html=True
-        )
-        
-        # 使用Streamlit显示图标，但通过HTML布局控制
+        # 读取图标文件并转换为base64，确保能正确显示
+        import base64
         try:
-            # 使用st.image但设置合适的尺寸，不缩放
-            st.image(icon_path, width=36)  # 使用原始宽度36像素
+            with open(icon_path, 'rb') as f:
+                icon_data = base64.b64encode(f.read()).decode()
+            icon_src = f"data:image/png;base64,{icon_data}"
         except:
-            st.write("🛡️")
+            icon_src = ""
         
-        # 显示备案号
+        # 使用HTML实现同一列中的左右排列，图标不缩放
         st.markdown(
-            """
+            f"""
+            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
+                <img src="{icon_src}" 
+                     style="width: 36px; height: 40px; flex-shrink: 0;" 
+                     alt="公安备案图标">
                 <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
                    rel="noreferrer" 
                    target="_blank"
