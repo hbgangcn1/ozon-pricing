@@ -703,7 +703,7 @@ def login_or_register_page():
                 </a>
             </div>
             <div style="display: flex; align-items: center; justify-content: center;">
-                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iIzcxODA5NiIvPgo8cGF0aCBkPSJNOCA0QzUuNzkgNCA0IDUuNzkgNCA4UzUuNzkgMTIgOCAxMlMxMiAxMC4yMSAxMiA4UzEwLjIxIDQgOCA0Wk04IDEwQzYuOSAxMCA2IDkuMSA2IDhTNi45IDYgOCA2UzEwIDYuOSAxMCA4UzkuMSAxMCA4IDEwWiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+" 
+                <img src="./PSB Filing Icon.png" 
                      style="width: 16px; height: 16px; margin-right: 5px;" 
                      alt="公安备案图标">
                 <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
