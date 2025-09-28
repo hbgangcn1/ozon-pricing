@@ -722,8 +722,8 @@ def login_or_register_page():
         
         with col_icon:
             try:
-                # 保持原始比例，不强制缩放
-                st.image(icon_path, width=None, use_column_width=True)
+                # 设置合适的图标尺寸，保持原始比例
+                st.image(icon_path, width=18)
             except Exception as e:
                 # 如果图片加载失败，显示emoji备用
                 st.write("🛡️")
