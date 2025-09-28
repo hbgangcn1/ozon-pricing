@@ -707,26 +707,15 @@ def login_or_register_page():
         unsafe_allow_html=True
     )
     
-    # 公安备案信息（图标和文字在同一列）
+    # 公安备案信息（图标和文字在同一列中左右排列）
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        # 使用HTML flex布局实现图标和文字的水平排列
         st.markdown(
             """
-            <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
-                <span style="margin-right: 5px;">
-            """,
-            unsafe_allow_html=True
-        )
-        
-        # 显示图标
-        try:
-            st.image("PSB Filing Icon.png", width=16)
-        except:
-            st.write("🛡️")
-        
-        st.markdown(
-            """
-                </span>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
+                <img src="PSB Filing Icon.png" style="width: 16px; height: 16px;" alt="公安备案图标" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+                <span style="display: none;">🛡️</span>
                 <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
                    rel="noreferrer" 
                    target="_blank"
