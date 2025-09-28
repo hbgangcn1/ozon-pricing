@@ -722,7 +722,7 @@ def login_or_register_page():
                 <a href="https://beian.miit.gov.cn/#/Integrated/index"
                    target="_blank"
                    style="color: #718096; text-decoration: none;">
-                    ICP备案号：粤ICP备2025471825号
+                    ICP备案号：粤ICP备2025471825号-1
                 </a>
                 <div style="display: flex; align-items: center; gap: 5px;">
                     <img src="{icon_src}" 
