@@ -707,37 +707,26 @@ def login_or_register_page():
         unsafe_allow_html=True
     )
     
-    # 公安备案信息（使用Streamlit方式显示图标，实现左右排列）
+    # 公安备案信息（图标和文字在同一列中左右排列）
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # 创建水平布局的列
-        col_icon, col_text = st.columns([1, 8])
-        
-        with col_icon:
-            # 使用Streamlit的st.image函数显示图标
-            import os
-            icon_path = os.path.join(os.path.dirname(__file__), "PSB Filing Icon.png")
-            try:
-                st.image(icon_path, width=16)
-            except Exception as e:
-                # 如果图片加载失败，显示emoji备用
-                st.write("🛡️")
-        
-        with col_text:
-            # 显示备案号链接
-            st.markdown(
-                """
-                <div style="text-align: left; padding-top: 2px;">
-                    <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
-                       rel="noreferrer" 
-                       target="_blank"
-                       style="color: #718096; text-decoration: none; font-size: 0.9rem;">
-                        粤公网安备44030002008086号
-                    </a>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        # 使用base64编码的图标数据，在同一个column中实现左右排列
+        st.markdown(
+            """
+            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
+                <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAoCAYAAACWwljjAAAFQklEQVRYw+3Wa1BUdRjH8SOpMeg4WhZGpDIxiaaTeUFgWrxE4AVRQJGlRRAVIV1JkbgMgQLi5AVBQSVLSp0xlEAUKBEEFZCrCstll8UV2AV2YbmoGCrYv31+R95UL5pmmtamZ+bz6rz5nvOc/5zDcX9jGLs/iTxuyvIlWYkRFeTHA2HVRFtzfhthTG5KuH96/vUgNlC4mMgyw1NJit/aAXLKazYje9xtIMZ/OZz50gW+9hcNkvoLEemEPbnrSP47QYwxQ5Ifv54RqzcXwFFvSyjaOhfavN8F7Y5ZcC/HH9JOB4LNa9Zw5YA76OZV8vIGMdZtSp7cDrtOnOavYiQhTAiPwi1AMtIQaqyngsxpBtw2GAGDKfaQmpUAa6xc4Vfp4UtEdzAMycsT9JQ1Tyctl/2eEkuTlYysF/rCUNxMqDEzgTqzSXBnpgnIHCzgjvEEuD52DLBr3rA1MAaWmNtB582wdtIljZ9G9D+IPU6aTxIPBjHCcXvg3CEh9K2fDLWvjIH6D6fwTIyheuwEqLUyhzLOALq8pkN+bgRw3HY4FBsMzxojZxP9DequLjAlQwVrbpIjhyIY4UYGQ/buhdBqPxlk3Gion2IMDQIz3kJe/ZS34I7uHkmD7VSQVgYDNyIAwsNCgfXGXoOBPjP9DKrOCAogA2etGTmTHAMcFwFZye7wS5QlVHGjoEw4A2qPCUBZ6AzNcQ5Q/YYRdO+YB1U3dsDwypLio4FJ3ECryIzWz6Cm3NgTRHN8HiPF6eHAGSbAdh8feFZkB7krzaHE9h2o85sDsiAbkIsXQMN+e2CtGyF0kzdwXCgU5++D/ouLQFV4OEU/g2Q/iNuIPNaKkQflAWBqexxGjhLDVUcL6IwSQN3SGVChe6FJg9dckCx6D1QBliDZLIAxo7eA8eyv4KE0BJqTrHkZvnL9DJKn+Twmt0NsGGHZy2Dn3kQYfsQ53Hh4/r4RNCz8AIpdzKEuaAF0RC2E57MmQgE3ATjuM/CPiANW7AqSfQJQ5vk362eQKmd3JrmXsoSRocpNIMnbB9zbceDIWUPmuHFQNMkISqa9DpUvNK6YDpW2s8DfwBK48WFQnhMCgzUBoLy0BrRVe5P0NWjPLdKUsJiR1tR1wGp8IeZwMgx/SrgRvjxuAziNcwLvyalgLOcJHLflhRDYGRYFrNET2rJ5yvPLoas0tOj/oL8UpC4JHyTSU+6MNCS4gvKoAB5WiKG+MAQSg0WwLXQ/ZJ3xhao0FxB5hYCbUwAEfhEF3Td8QP2dAOQnPwFlxgrolUVq9TPoaX+ZB2nLc2Gk6awj1MU78HZZwJMid2Byb550JQwVO0NfxlJgdz14vWKeRAiK6DlQF28PLZdcoLNcBIO92bb6GTQ8Q/13RURT6tlH2gvXMlITLYD6uI+gp2ozdF0VQXumM6ivCqGvahM8kPiDItkeGo8tB025GFQ3xFrSr06zI3/4yde7oN7m0sWk5eKWDqK5JWJQvAHac9ygq3Adr9gTNNc3QG85rzPfHe5/7wDtPwuhp/Zz6CjyhaZzwi6ivfetHdH/oP77+3PJQOsuRnqkQdCa4wWqyx6gyecpL64GTaEX7ycXUJz4GJp1B4O0X/Hg0Xp1tFV+8Ei1k6c5coHofxBrrzQinbKYo0SVJ+wn6iurGHlY5gY911aDJnMFaHXXiDp9GQyvtKfUA9QFTtBZ7gPdit0tpFd9OpwwFmlA9D/o9yNLDpxIKmI8PMnNSNtviCLVpYTITzrXEGWaq4qos0WgOPdpCenIF+eRrurjB4k0PXopYZG6gMg/D/gNBUxhAbSAmKMAAAAASUVORK5CYII=" 
+                     style="width: 16px; height: 16px;" 
+                     alt="公安备案图标">
+                <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
+                   rel="noreferrer" 
+                   target="_blank"
+                   style="color: #718096; text-decoration: none; font-size: 0.9rem;">
+                    粤公网安备44030002008086号
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 def _show_login_form():
