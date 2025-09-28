@@ -707,29 +707,36 @@ def login_or_register_page():
         unsafe_allow_html=True
     )
     
-    # 公安备案信息（使用Streamlit方式显示图标）
+    # 公安备案信息（图标和文字在同一列）
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        col_icon, col_text = st.columns([1, 4])
-        with col_icon:
-            try:
-                st.image("PSB Filing Icon.png", width=16)
-            except:
-                st.write("🛡️")
-        with col_text:
-            st.markdown(
-                """
-                <div style="text-align: left;">
-                    <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
-                       rel="noreferrer" 
-                       target="_blank"
-                       style="color: #718096; text-decoration: none; font-size: 0.9rem;">
-                        粤公网安备44030002008086号
-                    </a>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        st.markdown(
+            """
+            <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
+                <span style="margin-right: 5px;">
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # 显示图标
+        try:
+            st.image("PSB Filing Icon.png", width=16)
+        except:
+            st.write("🛡️")
+        
+        st.markdown(
+            """
+                </span>
+                <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
+                   rel="noreferrer" 
+                   target="_blank"
+                   style="color: #718096; text-decoration: none; font-size: 0.9rem;">
+                    粤公网安备44030002008086号
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 def _show_login_form():
