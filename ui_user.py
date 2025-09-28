@@ -707,25 +707,37 @@ def login_or_register_page():
         unsafe_allow_html=True
     )
     
-    # 公安备案信息（图标和文字在同一列中左右排列）
+    # 公安备案信息（使用Streamlit方式显示图标，实现左右排列）
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # 使用HTML flex布局实现图标和文字的水平排列
-        st.markdown(
-            """
-            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
-                <img src="PSB Filing Icon.png" style="width: 16px; height: 16px;" alt="公安备案图标" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-                <span style="display: none;">🛡️</span>
-                <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
-                   rel="noreferrer" 
-                   target="_blank"
-                   style="color: #718096; text-decoration: none; font-size: 0.9rem;">
-                    粤公网安备44030002008086号
-                </a>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        # 创建水平布局的列
+        col_icon, col_text = st.columns([1, 8])
+        
+        with col_icon:
+            # 使用Streamlit的st.image函数显示图标
+            import os
+            icon_path = os.path.join(os.path.dirname(__file__), "PSB Filing Icon.png")
+            try:
+                st.image(icon_path, width=16)
+            except Exception as e:
+                # 如果图片加载失败，显示emoji备用
+                st.write("🛡️")
+        
+        with col_text:
+            # 显示备案号链接
+            st.markdown(
+                """
+                <div style="text-align: left; padding-top: 2px;">
+                    <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
+                       rel="noreferrer" 
+                       target="_blank"
+                       style="color: #718096; text-decoration: none; font-size: 0.9rem;">
+                        粤公网安备44030002008086号
+                    </a>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 
 def _show_login_form():
