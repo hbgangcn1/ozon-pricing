@@ -4,72 +4,10 @@ import pandas as pd
 import sqlite3
 from typing import Optional, Dict, List, Any
 
-# ===== 公安备案临时配置 =====
-# 备案完成后请删除此配置块并恢复原始登录流程
-POLICE_FILING_MODE = True  # 设置为False可恢复正常登录流程
+# ===== 公安备案临时配置已移除 =====
+# 备案已完成，恢复正常登录流程
+POLICE_FILING_MODE = False  # 恢复为False，启用正常登录流程
 
-def create_temp_user():
-    """创建临时用户，具备专业版权限但无admin权限"""
-    return {
-        'id': -1,  # 临时用户ID
-        'username': 'temp_user_for_filing',
-        'role': 'user',  # 非admin角色
-        'user_type': 'professional',  # 专业版权限
-        'remaining_calculations': -1,  # 无限次计算
-        'expiry_date': None,  # 无过期时间
-        'is_temp_user': True  # 标记为临时用户
-    }
-
-def temp_is_admin():
-    """临时用户版本的管理员检查 - 始终返回False"""
-    return False
-
-def temp_current_user_id():
-    """临时用户版本的用户ID获取"""
-    return -1
-
-def temp_check_user_subscription_status(user_id):
-    """临时用户版本的订阅状态检查"""
-    if user_id == -1:  # 临时用户
-        return {
-            'valid': True,
-            'user_type': 'professional',
-            'remaining_calculations': -1,
-            'expiry_date': None,
-            'message': '临时用户（公安备案）'
-        }
-    # 对于其他用户，调用原始函数
-    try:
-        from .db_utils import check_user_subscription_status
-        return check_user_subscription_status(user_id)
-    except ImportError:
-        from db_utils import check_user_subscription_status
-        return check_user_subscription_status(user_id)
-
-def temp_update_user_preferred_mode(user_id, mode):
-    """临时用户版本的模式偏好更新 - 只更新session_state"""
-    if user_id == -1:  # 临时用户
-        st.session_state.current_mode = mode
-        return  # 不操作数据库
-    # 对于其他用户，调用原始函数
-    try:
-        from .db_utils import update_user_preferred_mode
-        update_user_preferred_mode(user_id, mode)
-    except ImportError:
-        from db_utils import update_user_preferred_mode
-        update_user_preferred_mode(user_id, mode)
-
-def temp_get_user_preferred_mode(user_id):
-    """临时用户版本的用户偏好获取 - 返回session_state中的模式"""
-    if user_id == -1:  # 临时用户
-        return st.session_state.get('current_mode', 'fast')
-    # 对于其他用户，调用原始函数
-    try:
-        from .db_utils import get_user_preferred_mode
-        return get_user_preferred_mode(user_id)
-    except ImportError:
-        from db_utils import get_user_preferred_mode
-        return get_user_preferred_mode(user_id)
 # ===== 公安备案临时配置结束 =====
 try:
     from .db_utils import (
@@ -87,13 +25,6 @@ try:
         decrement_user_calculations,
     )
     
-    # 公安备案模式：替换关键函数
-    if POLICE_FILING_MODE:
-        is_admin = temp_is_admin
-        current_user_id = temp_current_user_id
-        check_user_subscription_status = temp_check_user_subscription_status
-        update_user_preferred_mode = temp_update_user_preferred_mode
-        get_user_preferred_mode = temp_get_user_preferred_mode
     from .ui_user import user_management_page, login_or_register_page
     from .ui_products import (
         edit_product_form,
@@ -128,13 +59,6 @@ except ImportError:  # Fallback when run as a top-level module
         decrement_user_calculations,
     )
     
-    # 公安备案模式：替换关键函数
-    if POLICE_FILING_MODE:
-        is_admin = temp_is_admin
-        current_user_id = temp_current_user_id
-        check_user_subscription_status = temp_check_user_subscription_status
-        update_user_preferred_mode = temp_update_user_preferred_mode
-        get_user_preferred_mode = temp_get_user_preferred_mode
 
     from ui_user import user_management_page, login_or_register_page
     from ui_products import edit_product_form, batch_edit_pricing_form
@@ -660,10 +584,6 @@ def settings_page():
 # noinspection PyUnboundLocalVariable
 def should_show_subscription_management():
     """检查是否应该显示订阅管理页面"""
-    # 公安备案模式下，临时用户不显示订阅管理
-    if POLICE_FILING_MODE:
-        return False
-    
     from db_utils import is_registration_open
 
     # 首先检查是否开放注册
@@ -735,10 +655,8 @@ def _validate_user_and_get_mode():
     # 获取用户类型并对免费版/效率版强制设为极速模式
     user_type = subscription_status.get('user_type', 'free')
     if user_type in ['free', 'efficiency']:
-        # 备案模式下不强制设置为极速模式
-        if not POLICE_FILING_MODE:
-            st.session_state.current_mode = 'fast'
-            current_mode = 'fast'
+        st.session_state.current_mode = 'fast'
+        current_mode = 'fast'
 
     # 如果session_state中没有current_mode，从数据库获取用户偏好
     if current_mode is None:
@@ -810,8 +728,7 @@ def show_main_interface():
             if current_mode == 'fast':
                 # 免费版与效率版不显示"切换精准模式"按钮
                 user_type = subscription_status.get('user_type', 'free')
-                # 备案模式下，临时用户始终显示切换按钮
-                if POLICE_FILING_MODE or user_type not in ['free', 'efficiency']:
+                if user_type not in ['free', 'efficiency']:
                     if st.button(
                         "切换精准模式",
                         key="switch_to_precise",
@@ -826,8 +743,7 @@ def show_main_interface():
             else:
                 # 免费版与效率版不应出现在精准模式，亦不显示切换按钮
                 user_type = subscription_status.get('user_type', 'free')
-                # 备案模式下，临时用户始终显示切换按钮
-                if POLICE_FILING_MODE or user_type not in ['free', 'efficiency']:
+                if user_type not in ['free', 'efficiency']:
                     if st.button(
                         "切换极速模式",
                         key="switch_to_fast",
@@ -886,59 +802,28 @@ def show_fast_mode_interface(current_user):
     if current_user["role"] == "admin":
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                user_management_tab = tab6
-                about_us_tab = tab7
-            else:
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                    ]
-                )
-                user_management_tab = tab6
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "💎 订阅管理",
+                    "⚙️ 系统设置",
+                    "👥 用户管理",
+                ]
+            )
+            user_management_tab = tab6
         else:
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                user_management_tab = tab5
-                about_us_tab = tab6
-            else:
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                    ]
-                )
-                user_management_tab = tab5
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "⚙️ 系统设置",
+                    "👥 用户管理",
+                ]
+            )
+            user_management_tab = tab5
         with tab1:
             st.markdown(
                 """
@@ -1028,55 +913,26 @@ def show_fast_mode_interface(current_user):
     else:
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                settings_tab = tab5
-                about_us_tab = tab6
-            else:
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                    ]
-                )
-                settings_tab = tab5
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "💎 订阅管理",
+                    "⚙️ 系统设置",
+                ]
+            )
+            settings_tab = tab5
         else:
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                settings_tab = tab4
-                about_us_tab = tab5
-            else:
-                tab1, tab2, tab3, tab4 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                    ]
-                )
-                settings_tab = tab4
+            tab1, tab2, tab3, tab4 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "⚙️ 系统设置",
+                ]
+            )
+            settings_tab = tab4
 
         with tab1:
             st.markdown(
@@ -1149,102 +1005,6 @@ def show_fast_mode_interface(current_user):
             )
             show_system_settings()
 
-    # 公安备案模式下，添加"关于我们"标签页
-    if POLICE_FILING_MODE:
-        with about_us_tab:
-            st.markdown(
-                """
-                <div style="text-align: center; margin-bottom: 2rem;">
-                    <h1 class="main-title">ℹ️ 关于我们</h1>
-                    <p style="color: #718096; font-size: 1.1rem; margin: 0;">
-                        公司信息与业务介绍
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            
-            # 公司信息卡片
-            st.markdown(
-                """
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                     border-radius: 15px; padding: 2rem; margin-bottom: 2rem; 
-                     color: white; box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);">
-                    <h2 style="color: white; margin-bottom: 1.5rem; text-align: center;">
-                        🏢 公司信息
-                    </h2>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem; margin-bottom: 1rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">📋 公司名称</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            深圳超凡酷玩电子商务有限公司
-                        </p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem; margin-bottom: 1rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">🌍 主营业务</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），同时为跨境卖家提供专业的物流定价解决方案。
-                        </p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem; margin-bottom: 1rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">📍 办公地址</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            广东省深圳市龙岗区平湖街道平湖社区平安大道一号<br>
-                            华南城铁东物流区14栋219
-                        </p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">📞 联系电话</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            19328702460
-                        </p>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            
-            # 业务介绍
-            st.markdown(
-                """
-                <div style="background: #f8fafc; border-radius: 15px; padding: 2rem; 
-                     margin-bottom: 2rem; border-left: 5px solid #667eea;">
-                    <h2 style="color: #2c3e50; margin-bottom: 1.5rem;">
-                        🚀 业务简介
-                    </h2>
-                    <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
-                        我们专注于跨境电商领域，主要服务于中俄和中美两个重要市场。
-                        通过Ozon、亚马逊、eBay、沃尔玛等国际知名电商平台，
-                        为全球消费者提供优质的商品和服务。
-                    </p>
-                    <br>
-                    <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
-                        同时，公司致力于为跨境电商卖家提供专业的物流定价解决方案，
-                        帮助客户优化成本结构，提升运营效率，实现业务增长。
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    # 公安备案模式下，在页面底部添加ICP备案信息
-    if POLICE_FILING_MODE:
-        st.markdown(
-            """
-            <div style="text-align: center; margin-top: 3rem; padding: 1rem;
-                 color: #718096; font-size: 0.9rem;">
-                <a href="https://beian.miit.gov.cn/#/Integrated/index"
-                   target="_blank"
-                   style="color: #718096; text-decoration: none;">
-                    ICP备案号：粤ICP备2025471825号
-                </a>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
 
 
 def show_precise_mode_interface(current_user):
@@ -1253,59 +1013,28 @@ def show_precise_mode_interface(current_user):
     if current_user["role"] == "admin":
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                user_management_tab = tab6
-                about_us_tab = tab7
-            else:
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                    ]
-                )
-                user_management_tab = tab6
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "💎 订阅管理",
+                    "⚙️ 系统设置",
+                    "👥 用户管理",
+                ]
+            )
+            user_management_tab = tab6
         else:
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                user_management_tab = tab5
-                about_us_tab = tab6
-            else:
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                        "👥 用户管理",
-                    ]
-                )
-                user_management_tab = tab5
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "⚙️ 系统设置",
+                    "👥 用户管理",
+                ]
+            )
+            user_management_tab = tab5
         with tab1:
             st.markdown(
                 """
@@ -1398,55 +1127,26 @@ def show_precise_mode_interface(current_user):
     else:
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                settings_tab = tab5
-                about_us_tab = tab6
-            else:
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "💎 订阅管理",
-                        "⚙️ 系统设置",
-                    ]
-                )
-                settings_tab = tab5
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "💎 订阅管理",
+                    "⚙️ 系统设置",
+                ]
+            )
+            settings_tab = tab5
         else:
-            if POLICE_FILING_MODE:
-                # 备案模式下添加"关于我们"标签页
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                        "ℹ️ 关于我们",
-                    ]
-                )
-                settings_tab = tab4
-                about_us_tab = tab5
-            else:
-                tab1, tab2, tab3, tab4 = st.tabs(
-                    [
-                        "💰 定价计算",
-                        "🚚 物流管理",
-                        "🔐 账户管理",
-                        "⚙️ 系统设置",
-                    ]
-                )
-                settings_tab = tab4
+            tab1, tab2, tab3, tab4 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "⚙️ 系统设置",
+                ]
+            )
+            settings_tab = tab4
         with tab1:
             st.markdown(
                 """
@@ -1518,102 +1218,6 @@ def show_precise_mode_interface(current_user):
             )
             show_system_settings()
 
-    # 公安备案模式下，添加"关于我们"标签页
-    if POLICE_FILING_MODE:
-        with about_us_tab:
-            st.markdown(
-                """
-                <div style="text-align: center; margin-bottom: 2rem;">
-                    <h1 class="main-title">ℹ️ 关于我们</h1>
-                    <p style="color: #718096; font-size: 1.1rem; margin: 0;">
-                        公司信息与业务介绍
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            
-            # 公司信息卡片
-            st.markdown(
-                """
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                     border-radius: 15px; padding: 2rem; margin-bottom: 2rem; 
-                     color: white; box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);">
-                    <h2 style="color: white; margin-bottom: 1.5rem; text-align: center;">
-                        🏢 公司信息
-                    </h2>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem; margin-bottom: 1rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">📋 公司名称</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            深圳超凡酷玩电子商务有限公司
-                        </p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem; margin-bottom: 1rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">🌍 主营业务</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），同时为跨境卖家提供专业的物流定价解决方案。
-                        </p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem; margin-bottom: 1rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">📍 办公地址</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            广东省深圳市龙岗区平湖街道平湖社区平安大道一号<br>
-                            华南城铁东物流区14栋219
-                        </p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                         padding: 1.5rem;">
-                        <h3 style="color: white; margin-bottom: 0.5rem;">📞 联系电话</h3>
-                        <p style="color: white; font-size: 1.1rem; margin: 0;">
-                            19328702460
-                        </p>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            
-            # 业务介绍
-            st.markdown(
-                """
-                <div style="background: #f8fafc; border-radius: 15px; padding: 2rem; 
-                     margin-bottom: 2rem; border-left: 5px solid #667eea;">
-                    <h2 style="color: #2c3e50; margin-bottom: 1.5rem;">
-                        🚀 业务简介
-                    </h2>
-                    <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
-                        我们专注于跨境电商领域，主要服务于中俄和中美两个重要市场。
-                        通过Ozon、亚马逊、eBay、沃尔玛等国际知名电商平台，
-                        为全球消费者提供优质的商品和服务。
-                    </p>
-                    <br>
-                    <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
-                        同时，公司致力于为跨境电商卖家提供专业的物流定价解决方案，
-                        帮助客户优化成本结构，提升运营效率，实现业务增长。
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    # 公安备案模式下，在页面底部添加ICP备案信息
-    if POLICE_FILING_MODE:
-        st.markdown(
-            """
-            <div style="text-align: center; margin-top: 3rem; padding: 1rem;
-                 color: #718096; font-size: 0.9rem;">
-                <a href="https://beian.miit.gov.cn/#/Integrated/index"
-                   target="_blank"
-                   style="color: #718096; text-decoration: none;">
-                    ICP备案号：粤ICP备2025471825号
-                </a>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
 
 
 def fast_pricing_calculator():
@@ -6085,18 +5689,6 @@ def main():
         init_exchange_rates()
         st.session_state.exchange_rates_initialized = True
 
-    # 公安备案模式：直接设置临时用户并跳过登录检查
-    if POLICE_FILING_MODE:
-        # 设置临时用户到session_state
-        st.session_state.user = create_temp_user()
-        # 不强制设置模式，让用户可以通过按钮切换
-        if 'current_mode' not in st.session_state:
-            st.session_state.current_mode = 'fast'  # 默认极速模式
-        st.session_state.session_id = 'temp_filing_session'
-        
-        # 直接显示主界面，跳过登录检查
-        show_main_interface()
-        return
 
     # 正常模式：检查会话安全性
     if not check_session_security():
