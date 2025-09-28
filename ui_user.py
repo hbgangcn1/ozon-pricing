@@ -707,44 +707,26 @@ def login_or_register_page():
         unsafe_allow_html=True
     )
     
-    # 公安备案信息（使用Streamlit容器实现同一列左右排列）
+    # 公安备案信息（图标和文字在同一列中左右排列，图标不缩放）
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # 创建一个自定义容器来实现左右排列
-        st.markdown('<div style="display: flex; align-items: center; justify-content: center;">', unsafe_allow_html=True)
-        
-        # 使用Streamlit的st.image显示原始质量图标
-        import os
-        icon_path = os.path.join(os.path.dirname(__file__), "PSB Filing Icon.png")
-        
-        # 创建一个占位容器来容纳图标
-        col_icon, col_text = st.columns([1, 6])
-        
-        with col_icon:
-            try:
-                # 设置合适的图标尺寸，保持原始比例
-                st.image(icon_path, width=18)
-            except Exception as e:
-                # 如果图片加载失败，显示emoji备用
-                st.write("🛡️")
-        
-        with col_text:
-            # 显示备案号链接
-            st.markdown(
-                """
-                <div style="text-align: left; padding-top: 8px;">
-                    <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
-                       rel="noreferrer" 
-                       target="_blank"
-                       style="color: #718096; text-decoration: none; font-size: 0.9rem;">
-                        粤公网安备44030002008086号
-                    </a>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        # 使用HTML实现同一列中的左右排列，图标不缩放
+        st.markdown(
+            """
+            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
+                <img src="./PSB Filing Icon.png" 
+                     style="width: auto; height: auto; max-width: none; max-height: none;" 
+                     alt="公安备案图标">
+                <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
+                   rel="noreferrer" 
+                   target="_blank"
+                   style="color: #718096; text-decoration: none; font-size: 0.9rem;">
+                    粤公网安备44030002008086号
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 def _show_login_form():
