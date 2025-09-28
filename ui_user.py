@@ -690,16 +690,29 @@ def login_or_register_page():
     # 用户协议弹窗
     if st.session_state.get("show_terms_modal", False):
         _show_terms_modal()
-    # 添加ICP备案信息
+    # 添加备案信息
     st.markdown(
         """
         <div style="text-align: center; margin-top: 3rem; padding: 1rem;
              color: #718096; font-size: 0.9rem;">
-            <a href="https://beian.miit.gov.cn/#/Integrated/index"
-               target="_blank"
-               style="color: #718096; text-decoration: none;">
-                ICP备案号：粤ICP备2025471825号
-            </a>
+            <div style="margin-bottom: 0.5rem;">
+                <a href="https://beian.miit.gov.cn/#/Integrated/index"
+                   target="_blank"
+                   style="color: #718096; text-decoration: none;">
+                    ICP备案号：粤ICP备2025471825号
+                </a>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center;">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iIzcxODA5NiIvPgo8cGF0aCBkPSJNOCA0QzUuNzkgNCA0IDUuNzkgNCA4UzUuNzkgMTIgOCAxMlMxMiAxMC4yMSAxMiA4UzEwLjIxIDQgOCA0Wk04IDEwQzYuOSAxMCA2IDkuMSA2IDhTNi45IDYgOCA2UzEwIDYuOSAxMCA4UzkuMSAxMCA4IDEwWiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+" 
+                     style="width: 16px; height: 16px; margin-right: 5px;" 
+                     alt="公安备案图标">
+                <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
+                   rel="noreferrer" 
+                   target="_blank"
+                   style="color: #718096; text-decoration: none;">
+                    粤公网安备44030002008086号
+                </a>
+            </div>
         </div>
         """,
         unsafe_allow_html=True
