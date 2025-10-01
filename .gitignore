@@ -129,6 +129,7 @@ flake8_ui_logistics.txt
 
 # 微信支付敏感文件
 cert/
+wxpaycertificate/
 *.pem
 *.p12
 *.crt
