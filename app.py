@@ -5909,44 +5909,17 @@ def subscription_management_page():
                             )
 
                         with st.spinner("正在创建订单..."):
-                            # 创建内部订单
-                            order_data = (
-                                payment_handler.create_payment_order(
-                                    user_id=current_user_id_val,
-                                    amount=amount,
-                                    description=description
-                                )
+                            # 创建支付订单（包含微信支付）
+                            result = payment_handler.create_payment_order(
+                                user_id=current_user_id_val,
+                                amount=amount,
+                                description=description,
+                                payment_type="native"
                             )
 
-                            if order_data:
-                                # 发起微信支付
-                                wechat_response = (
-                                    payment_handler.initiate_wechat_payment(
-                                        order_data, trade_type="NATIVE"
-                                    )
-                                )
-
-                                if (wechat_response.get("success") and
-                                        wechat_response.get("code_url")):
-                                    result = {
-                                        "success": True,
-                                        "order_id": order_data["order_id"],
-                                        "qr_code_url": (
-                                            wechat_response["code_url"]
-                                        )
-                                    }
-                                else:
-                                    result = {
-                                        "success": False,
-                                        "message": wechat_response.get(
-                                            "message", "创建支付失败"
-                                        )
-                                    }
-                            else:
-                                result = {
-                                    "success": False,
-                                    "message": "创建订单失败"
-                                }
+                            if result.get("success"):
+                                # 重命名字段以保持兼容性
+                                result["qr_code_url"] = result.get("code_url")
 
                             if result["success"]:
                                 st.success("订单创建成功！")
