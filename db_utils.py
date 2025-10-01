@@ -1709,7 +1709,10 @@ def delete_user(user_id):
             # 5. 删除用户的物流规则
             c.execute("DELETE FROM logistics WHERE user_id = ?", (user_id,))
 
-            # 6. 删除用户本身
+            # 6. 删除用户的支付订单
+            c.execute("DELETE FROM payment_orders WHERE user_id = ?", (user_id,))
+
+            # 7. 删除用户本身
             c.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
             conn.commit()
