@@ -24,8 +24,12 @@ try:
         migrate_user_preferences,
         decrement_user_calculations,
     )
-    
-    from .ui_user import user_management_page, login_or_register_page
+
+    from .ui_user import (
+        user_management_page,
+        login_or_register_page,
+        subscription_management_page as admin_subscription_management_page
+    )
     from .ui_products import (
         edit_product_form,
         batch_edit_pricing_form,
@@ -58,9 +62,12 @@ except ImportError:  # Fallback when run as a top-level module
         migrate_user_preferences,
         decrement_user_calculations,
     )
-    
 
-    from ui_user import user_management_page, login_or_register_page
+    from ui_user import (
+        user_management_page,
+        login_or_register_page,
+        subscription_management_page as admin_subscription_management_page
+    )
     from ui_products import edit_product_form, batch_edit_pricing_form
     from ui_logistics import logistics_page
     # pricing_calculator_page is imported at module level
@@ -376,7 +383,7 @@ def show_system_settings():
             unsafe_allow_html=True
         )
 
-        # 开放注册开关
+    # 开放注册开关
         from db_utils import get_system_config, set_system_config
         current_registration_status = get_system_config(
             'open_registration', 'false'
@@ -387,7 +394,8 @@ def show_system_settings():
             "开放注册",
             value=is_open,
             help="开启后，用户可以在登录页面自行注册账号，"
-                 "所有用户都能看到订阅管理页面"
+                 "所有用户都能看到订阅管理页面",
+            key="open_registration_toggle"
         )
         if new_status != is_open:
             if set_system_config(
@@ -423,7 +431,7 @@ def show_system_settings():
             if st.button("🔄 刷新状态", help="刷新备份状态信息", key="refresh_backup"):
                 st.rerun()
 
-        # 显示备份统计信息
+    # 显示备份统计信息
         backup_stats = get_backup_info()
         if backup_stats:
             st.write(f"**备份文件数量：** {backup_stats['count']} 个")
@@ -464,7 +472,7 @@ def show_system_settings():
             '%H:%M:%S', time.localtime(session_info['last_activity']))
         st.write(f"**最后活动：** {last_activity_str}")
 
-        # 简化的会话信息显示
+    # 简化的会话信息显示
         st.write(f"**会话ID：** {session_info['session_id'][:8]}...")
 
     st.markdown('</div>', unsafe_allow_html=True)
@@ -491,7 +499,7 @@ def settings_page():
                 unsafe_allow_html=True
             )
 
-            # 修改密码 - 使用show_password_change_form函数
+        # 修改密码 - 使用show_password_change_form函数
             show_password_change_form()
 
             st.markdown('</div>', unsafe_allow_html=True)
@@ -507,7 +515,7 @@ def settings_page():
             unsafe_allow_html=True
         )
 
-        # 修改密码 - 使用show_password_change_form函数
+    # 修改密码 - 使用show_password_change_form函数
         show_password_change_form()
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -534,7 +542,7 @@ def settings_page():
             if st.button("🔄 刷新状态", help="刷新备份状态信息", key="refresh_backup"):
                 st.rerun()
 
-        # 显示备份统计信息
+    # 显示备份统计信息
         backup_stats = get_backup_info()
         if backup_stats:
             st.write(f"**备份文件数量：** {backup_stats['count']} 个")
@@ -575,7 +583,7 @@ def settings_page():
             '%H:%M:%S', time.localtime(session_info['last_activity']))
         st.write(f"**最后活动：** {last_activity_str}")
 
-        # 简化的会话信息显示
+    # 简化的会话信息显示
         st.write(f"**会话ID：** {session_info['session_id'][:8]}...")
 
     st.markdown('</div>', unsafe_allow_html=True)
@@ -606,7 +614,7 @@ def should_show_subscription_management():
         )
         if subscription_status:
             user_type = subscription_status.get('user_type', 'free')
-            # 测试用户和感谢版用户不显示订阅管理标签页
+        # 测试用户和感谢版用户不显示订阅管理标签页
             if user_type in ['test', 'gratitude']:
                 return False
     except (KeyError, TypeError, AttributeError):
@@ -631,7 +639,6 @@ def _validate_user_and_get_mode():
         # 测试环境中的 SimpleNamespace 对象
         current_user = getattr(st.session_state, 'user', {}) or {}
         current_mode = getattr(st.session_state, 'current_mode', None)
-    
 
     # 明确告知静态分析器：类型已确定
     assert isinstance(current_user, dict)
@@ -681,7 +688,6 @@ def show_main_interface():
     # noinspection PyUnboundLocalVariable
 
     # 移除未使用的导入
-
 
     # 验证用户并获取信息
     validation_result = _validate_user_and_get_mode()
@@ -735,7 +741,7 @@ def show_main_interface():
                         help="切换到精准模式",
                     ):
                         st.session_state.current_mode = 'precise'
-                        # noinspection PyUnboundLocalVariable
+                    # noinspection PyUnboundLocalVariable
                         update_user_preferred_mode(
                             current_user['id'], 'precise'
                         )
@@ -750,7 +756,7 @@ def show_main_interface():
                         help="切换到极速模式",
                     ):
                         st.session_state.current_mode = 'fast'
-                        # noinspection PyUnboundLocalVariable
+                    # noinspection PyUnboundLocalVariable
                         update_user_preferred_mode(current_user['id'], 'fast')
                         st.rerun()
 
@@ -869,7 +875,7 @@ def show_fast_mode_interface(current_user):
                 unsafe_allow_html=True,
             )
             show_password_change_form()
-        # 订阅管理标签页 - 根据开放注册状态决定是否显示
+    # 订阅管理标签页 - 根据开放注册状态决定是否显示
         if should_show_subscription_management():
             with tab4:
                 st.markdown(
@@ -885,8 +891,25 @@ def show_fast_mode_interface(current_user):
                     unsafe_allow_html=True,
                 )
                 subscription_management_page()
-        # 系统设置标签页 - 根据开放注册状态调整索引
-        system_tab = tab5 if should_show_subscription_management() else tab4
+
+    # 支付中心标签页
+        payment_tab = tab5 if should_show_subscription_management() else tab4
+        with payment_tab:
+            st.markdown(
+                """
+                <div style="text-align: center; margin-bottom: 2rem;">
+                    <h1 class="main-title">💳 支付中心</h1>
+                    <p style="color: #718096; font-size: 1.1rem; margin: 0;">
+                        管理支付和订单信息
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            payment_center_page()
+
+    # 系统设置标签页 - 根据开放注册状态调整索引
+        system_tab = tab6 if should_show_subscription_management() else tab5
         with system_tab:
             st.markdown(
                 """
@@ -901,7 +924,7 @@ def show_fast_mode_interface(current_user):
             )
             show_system_settings()
 
-        # 用户管理标签页
+    # 用户管理标签页
         with user_management_tab:
             st.markdown(
                 """
@@ -914,8 +937,11 @@ def show_fast_mode_interface(current_user):
                 """,
                 unsafe_allow_html=True,
             )
-            # 使用精准模式的用户管理页面以保持一致
-            user_management_page()
+        # 检查是否需要显示订阅管理页面
+            if 'selected_user_for_subscription' in st.session_state:
+                admin_subscription_management_page()
+            else:
+                user_management_page()
     else:
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
@@ -983,7 +1009,7 @@ def show_fast_mode_interface(current_user):
                 unsafe_allow_html=True,
             )
             show_password_change_form()
-        # 订阅管理标签页 - 根据开放注册状态决定是否显示
+    # 订阅管理标签页 - 根据开放注册状态决定是否显示
         if should_show_subscription_management():
             with tab4:
                 st.markdown(
@@ -1000,7 +1026,7 @@ def show_fast_mode_interface(current_user):
                 )
                 subscription_management_page()
 
-        # 系统设置标签页
+    # 系统设置标签页
         with settings_tab:
             st.markdown(
                 """
@@ -1028,42 +1054,63 @@ def show_fast_mode_interface(current_user):
             """,
             unsafe_allow_html=True,
         )
-        
-        # 公司信息卡片
+
+    # 公司信息卡片
         st.markdown(
             """
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                 border-radius: 15px; padding: 2rem; margin-bottom: 2rem; 
-                 color: white; box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);">
-                <h2 style="color: white; margin-bottom: 1.5rem; text-align: center;">
+            <div style="background: linear-gradient(135deg, #667eea 0%,
+                 #764ba2 100%);
+                 border-radius: 15px; padding: 2rem;
+                 margin-bottom: 2rem;
+                 color: white;
+                 box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);">
+                <h2 style="color: white; margin-bottom: 1.5rem;
+                    text-align: center;">
                     🏢 公司信息
                 </h2>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                     padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">📋 公司名称</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
+                     padding: 1.5rem;
+                     margin-bottom: 1rem;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        📋 公司名称</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
                         深圳超凡酷玩电子商务有限公司
                     </p>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                     padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">🌍 主营业务</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
-                        中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），同时为跨境卖家提供专业的物流定价解决方案。
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
+                     padding: 1.5rem;
+                     margin-bottom: 1rem;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        🌍 主营业务</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
+                        中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），
+                        同时为跨境卖家提供专业的物流定价解决方案。
                     </p>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                     padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">📍 办公地址</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
-                        广东省深圳市龙岗区平湖街道平湖社区平安大道一号<br>
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
+                     padding: 1.5rem;
+                     margin-bottom: 1rem;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        📍 办公地址</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
+                        广东省深圳市龙岗区平湖街道平湖社区<br>
+                        平安大道一号<br>
                         华南城铁东物流区14栋219
                     </p>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
                      padding: 1.5rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">📞 联系电话</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        📞 联系电话</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
                         19328702460
                     </p>
                 </div>
@@ -1071,23 +1118,29 @@ def show_fast_mode_interface(current_user):
             """,
             unsafe_allow_html=True,
         )
-        
-        # 业务介绍
+
+    # 业务介绍
         st.markdown(
             """
-            <div style="background: #f8fafc; border-radius: 15px; padding: 2rem; 
+            <div style="background: #f8fafc; border-radius: 15px;
+                 padding: 2rem;
                  margin-bottom: 2rem; border-left: 5px solid #667eea;">
-                <h2 style="color: #2c3e50; margin-bottom: 1.5rem;">
+                <h2 style="color: #2c3e50;
+                    margin-bottom: 1.5rem;">
                     🚀 业务简介
                 </h2>
-                <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
+                <p style="color: #4a5568; font-size: 1.1rem;
+                    line-height: 1.8; margin: 0;">
                     我们专注于跨境电商领域，主要服务于中俄和中美两个重要市场。
-                    通过Ozon、亚马逊、eBay、沃尔玛等国际知名电商平台，
+                    通过Ozon、亚马逊、eBay、沃尔玛等
+                    国际知名电商平台，
                     为全球消费者提供优质的商品和服务。
                 </p>
                 <br>
-                <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
-                    同时，公司致力于为跨境电商卖家提供专业的物流定价解决方案，
+                <p style="color: #4a5568; font-size: 1.1rem;
+                    line-height: 1.8; margin: 0;">
+                    同时，公司致力于为跨境电商卖家提供
+                    专业的物流定价解决方案，
                     帮助客户优化成本结构，提升运营效率，实现业务增长。
                 </p>
             </div>
@@ -1170,7 +1223,7 @@ def show_precise_mode_interface(current_user):
             )
             show_password_change_form()
 
-        # 订阅管理标签页 - 根据开放注册状态决定是否显示
+    # 订阅管理标签页 - 根据开放注册状态决定是否显示
         if should_show_subscription_management():
             with tab4:
                 st.markdown(
@@ -1187,7 +1240,7 @@ def show_precise_mode_interface(current_user):
                 )
                 subscription_management_page()
 
-        # 系统设置标签页 - 根据开放注册状态调整索引
+    # 系统设置标签页 - 根据开放注册状态调整索引
         system_tab = tab5 if should_show_subscription_management() else tab4
         with system_tab:
             st.markdown(
@@ -1203,7 +1256,7 @@ def show_precise_mode_interface(current_user):
             )
             show_system_settings()
 
-        # 用户管理标签页
+    # 用户管理标签页
         with user_management_tab:
             st.markdown(
                 """
@@ -1216,7 +1269,11 @@ def show_precise_mode_interface(current_user):
                 """,
                 unsafe_allow_html=True,
             )
-            user_management_page()
+        # 检查是否需要显示订阅管理页面
+            if 'selected_user_for_subscription' in st.session_state:
+                admin_subscription_management_page()
+            else:
+                user_management_page()
     else:
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
@@ -1233,15 +1290,17 @@ def show_precise_mode_interface(current_user):
             settings_tab = tab5
             about_us_tab = tab6
         else:
-            tab1, tab2, tab3, tab4 = st.tabs(
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(
                 [
                     "💰 定价计算",
                     "🚚 物流管理",
                     "🔐 账户管理",
                     "⚙️ 系统设置",
+                    "ℹ️ 关于我们",
                 ]
             )
             settings_tab = tab4
+            about_us_tab = tab5
         with tab1:
             st.markdown(
                 """
@@ -1281,7 +1340,7 @@ def show_precise_mode_interface(current_user):
                 unsafe_allow_html=True,
             )
             show_password_change_form()
-        # 订阅管理标签页 - 根据开放注册状态决定是否显示
+    # 订阅管理标签页 - 根据开放注册状态决定是否显示
         if should_show_subscription_management():
             with tab4:
                 st.markdown(
@@ -1298,7 +1357,7 @@ def show_precise_mode_interface(current_user):
                 )
                 subscription_management_page()
 
-        # 系统设置标签页
+    # 系统设置标签页
         with settings_tab:
             st.markdown(
                 """
@@ -1326,42 +1385,63 @@ def show_precise_mode_interface(current_user):
             """,
             unsafe_allow_html=True,
         )
-        
-        # 公司信息卡片
+
+    # 公司信息卡片
         st.markdown(
             """
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                 border-radius: 15px; padding: 2rem; margin-bottom: 2rem; 
-                 color: white; box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);">
-                <h2 style="color: white; margin-bottom: 1.5rem; text-align: center;">
+            <div style="background: linear-gradient(135deg, #667eea 0%,
+                 #764ba2 100%);
+                 border-radius: 15px; padding: 2rem;
+                 margin-bottom: 2rem;
+                 color: white;
+                 box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);">
+                <h2 style="color: white; margin-bottom: 1.5rem;
+                    text-align: center;">
                     🏢 公司信息
                 </h2>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                     padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">📋 公司名称</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
+                     padding: 1.5rem;
+                     margin-bottom: 1rem;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        📋 公司名称</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
                         深圳超凡酷玩电子商务有限公司
                     </p>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                     padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">🌍 主营业务</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
-                        中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），同时为跨境卖家提供专业的物流定价解决方案。
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
+                     padding: 1.5rem;
+                     margin-bottom: 1rem;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        🌍 主营业务</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
+                        中俄、中美跨境电商（Ozon、亚马逊、eBay、沃尔玛），
+                        同时为跨境卖家提供专业的物流定价解决方案。
                     </p>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
-                     padding: 1.5rem; margin-bottom: 1rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">📍 办公地址</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
-                        广东省深圳市龙岗区平湖街道平湖社区平安大道一号<br>
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
+                     padding: 1.5rem;
+                     margin-bottom: 1rem;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        📍 办公地址</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
+                        广东省深圳市龙岗区平湖街道平湖社区<br>
+                        平安大道一号<br>
                         华南城铁东物流区14栋219
                     </p>
                 </div>
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 10px; 
+                <div style="background: rgba(255, 255, 255, 0.1);
+                     border-radius: 10px;
                      padding: 1.5rem;">
-                    <h3 style="color: white; margin-bottom: 0.5rem;">📞 联系电话</h3>
-                    <p style="color: white; font-size: 1.1rem; margin: 0;">
+                    <h3 style="color: white; margin-bottom: 0.5rem;">
+                        📞 联系电话</h3>
+                    <p style="color: white; font-size: 1.1rem;
+                        margin: 0;">
                         19328702460
                     </p>
                 </div>
@@ -1369,23 +1449,29 @@ def show_precise_mode_interface(current_user):
             """,
             unsafe_allow_html=True,
         )
-        
-        # 业务介绍
+
+    # 业务介绍
         st.markdown(
             """
-            <div style="background: #f8fafc; border-radius: 15px; padding: 2rem; 
+            <div style="background: #f8fafc; border-radius: 15px;
+                 padding: 2rem;
                  margin-bottom: 2rem; border-left: 5px solid #667eea;">
-                <h2 style="color: #2c3e50; margin-bottom: 1.5rem;">
+                <h2 style="color: #2c3e50;
+                    margin-bottom: 1.5rem;">
                     🚀 业务简介
                 </h2>
-                <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
+                <p style="color: #4a5568; font-size: 1.1rem;
+                    line-height: 1.8; margin: 0;">
                     我们专注于跨境电商领域，主要服务于中俄和中美两个重要市场。
-                    通过Ozon、亚马逊、eBay、沃尔玛等国际知名电商平台，
+                    通过Ozon、亚马逊、eBay、沃尔玛等
+                    国际知名电商平台，
                     为全球消费者提供优质的商品和服务。
                 </p>
                 <br>
-                <p style="color: #4a5568; font-size: 1.1rem; line-height: 1.8; margin: 0;">
-                    同时，公司致力于为跨境电商卖家提供专业的物流定价解决方案，
+                <p style="color: #4a5568; font-size: 1.1rem;
+                    line-height: 1.8; margin: 0;">
+                    同时，公司致力于为跨境电商卖家提供
+                    专业的物流定价解决方案，
                     帮助客户优化成本结构，提升运营效率，实现业务增长。
                 </p>
             </div>
@@ -1535,12 +1621,12 @@ def fast_pricing_calculator():
         if unit_price <= 0 or weight_g <= 0:
             st.error("请填写进货单价和重量")
             return
-        # 获取物流规则 - 使用精准模式的物流规则表
+    # 获取物流规则 - 使用精准模式的物流规则表
         logistics_rules = get_precise_logistics_rules()
         if not logistics_rules:
             st.warning("请先在物流管理中添加物流规则")
             return
-        # 为 UI 构建字符串化选项（避免 (str, float) 触发的类型告警）
+    # 为 UI 构建字符串化选项（避免 (str, float) 触发的类型告警）
         ui_rule_options = []
         for r in logistics_rules:
             name = str(r.get('name', ''))
@@ -1549,18 +1635,18 @@ def fast_pricing_calculator():
             display = f"{name} | 因子:{wf_str}"
             ui_rule_options.append(display)
 
-        # 可选：如需让用户筛选某条规则，可启用下列示例
-        # idx = st.selectbox(
-        #     "筛选物流规则(可选)",
-        #     [-1] + list(range(len(ui_rule_options))),
-        #     format_func=lambda i: (
-        #         "全部" if i == -1 else ui_rule_options[i]
-        #     ),
-        # )
-        # if idx != -1:
-        #     logistics_rules = [logistics_rules[idx]]
+    # 可选：如需让用户筛选某条规则，可启用下列示例
+    # idx = st.selectbox(
+    #     "筛选物流规则(可选)",
+    #     [-1] + list(range(len(ui_rule_options))),
+    #     format_func=lambda i: (
+    #         "全部" if i == -1 else ui_rule_options[i]
+    #     ),
+    # )
+    # if idx != -1:
+    #     logistics_rules = [logistics_rules[idx]]
 
-        # 执行计算并显示结果（保持数据层使用原始 logistics_rules 和 float 类型）
+    # 执行计算并显示结果（保持数据层使用原始 logistics_rules 和 float 类型）
         calculate_fast_pricing_with_params(
             unit_price,
             weight_g,
@@ -1574,7 +1660,7 @@ def fast_pricing_calculator():
             logistics_rules,
         )
 
-        # 计算完成后，重新查询并即时刷新免费版剩余次数显示
+    # 计算完成后，重新查询并即时刷新免费版剩余次数显示
         try:
             _status_after = check_user_subscription_status(
                 user_id_for_free
@@ -1610,7 +1696,6 @@ def precise_products_page():
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
 
-
         if st.session_state.get("edit_product_id"):
             edit_product_form()
             return
@@ -1618,16 +1703,16 @@ def precise_products_page():
         if st.session_state.get("batch_edit_products"):
             batch_edit_pricing_form()
             return
-        # 检查是否从编辑页面返回，如果是则显示产品列表
+    # 检查是否从编辑页面返回，如果是则显示产品列表
         if st.session_state.get("return_to_product_list", False):
             st.session_state.show_product_list = True
             del st.session_state.return_to_product_list
 
-        # 产品数据在下方 user_products 查询中使用，这里移除未使用的缓存查询
+    # 产品数据在下方 user_products 查询中使用，这里移除未使用的缓存查询
 
-        # 检查是否显示产品列表页面
+    # 检查是否显示产品列表页面
         show_list = st.session_state.get("show_product_list", False)
-        # 产品基本信息标题与产品选择控件在同一行
+    # 产品基本信息标题与产品选择控件在同一行
         col1, col2, col3, col4 = st.columns(
             [2, 3, 1, 1],
             vertical_alignment="bottom",
@@ -1665,7 +1750,7 @@ def precise_products_page():
                     key="product_selector",
                     label_visibility="collapsed",
                 )
-                # 当选择产品时，获取产品数据并填充表单
+            # 当选择产品时，获取产品数据并填充表单
                 if selected_product != "选择产品" and not user_products.empty:
                     # 获取选中产品的完整数据
                     product_data = pd.read_sql(
@@ -1676,7 +1761,7 @@ def precise_products_page():
                         conn,
                         params=(selected_product, uid),
                     ).iloc[0]
-                    # 将产品数据存储到session state中，供表单使用
+                # 将产品数据存储到session state中，供表单使用
                     st.session_state.selected_product_data = (
                         product_data.to_dict()
                     )
@@ -1689,17 +1774,17 @@ def precise_products_page():
                 if st.button("📋 打开产品列表", key="open_product_list"):
                     st.session_state.show_product_list = True
                     st.rerun()
-        # 显示产品列表页面
+    # 显示产品列表页面
         if st.session_state.get("show_product_list", False):
             show_product_list_page(uid)
             return
 
-        # 添加/编辑产品
+    # 添加/编辑产品
         st.markdown("### ➕ 添加新产品")
         with st.container():
             # 获取选中的产品数据
             selected_data = st.session_state.get("selected_product_data", {})
-            # 产品名称和进货单价在一行中分两个列显示
+        # 产品名称和进货单价在一行中分两个列显示
             col1, col2 = st.columns(2)
             with col1:
                 name = st.text_input(
@@ -1716,13 +1801,13 @@ def precise_products_page():
                     key="precise_unit_price",
                 )
 
-            # 初始化已删除的字段变量
+        # 初始化已删除的字段变量
             russian_name = ""
             category = ""
             model = ""
 
             st.subheader("物流规格")
-            # 使用st.radio显示包装类型选择
+        # 使用st.radio显示包装类型选择
             package_type = st.radio(
                 "包装类型",
                 ["常规包装", "圆柱包装"],
@@ -1730,7 +1815,7 @@ def precise_products_page():
                 horizontal=True
             )
 
-            # 根据包装类型显示不同的输入字段
+        # 根据包装类型显示不同的输入字段
             if package_type == "常规包装":
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -1761,7 +1846,7 @@ def precise_products_page():
                         value=float(selected_data.get("height_cm", 0.0)),
                         step=0.1,
                     )
-                # 初始化圆柱包装的变量
+            # 初始化圆柱包装的变量
                 cylinder_diameter = 0
                 cylinder_length = 0
                 is_cylinder = False
@@ -1792,329 +1877,328 @@ def precise_products_page():
                         ),
                         step=0.1,
                     )
-                # 初始化常规包装的变量
+            # 初始化圆柱包装的变量
                 length_cm = 0
                 width_cm = 0
                 height_cm = 0
                 is_cylinder = True
 
-            # 电池和液体标题
-            st.subheader("电池和液体")
-            # 包含电池和包含易燃液体复选框放在同一行
-            col1, col2 = st.columns(2)
-            with col1:
-                has_battery = st.checkbox(
-                    "包含电池",
-                    value=bool(selected_data.get("has_battery", False)),
-                )
-            with col2:
-                has_flammable = st.checkbox(
-                    "包含易燃液体",
-                    value=bool(selected_data.get("has_flammable", False)),
-                )
-            # 初始化电池相关变量
-            choice = None
-            battery_capacity_wh = 0.0
-            battery_capacity_mah = 0.0
-            battery_voltage = 0.0
-            has_msds = False
-            if has_battery:
-                # 电池容量填写方式和MSDS证书在同一行
-                col1, col2 = st.columns(2, vertical_alignment="bottom")
-                with col1:
-                    choice = st.radio(
-                        "电池容量填写方式",
-                        ["填写 Wh（瓦时）", "填写 mAh + V"],
-                        index=(
-                            0
-                            if selected_data.get("battery_capacity_wh", 0) > 0
-                            else 1
-                        ),
-                        horizontal=True,
-                    )
-                with col2:
-                    has_msds = st.checkbox(
-                        "有 MSDS 证书",
-                        value=bool(selected_data.get("has_msds", False)),
-                    )
-                if choice == "填写 Wh（瓦时）":
-                    battery_capacity_wh = st.number_input(
-                        "电池容量（Wh）",
-                        min_value=0.0,
-                        value=float(
-                            selected_data.get("battery_capacity_wh", 0.0)
-                        ),
-                        step=0.1,
-                    )
-                    battery_capacity_mah = 0
-                    battery_voltage = 0
-                else:
-                    # 电池容量（mAh）和电池电压（V）在一行中分两个列显示
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        battery_capacity_mah = st.number_input(
-                            "电池容量（mAh）",
-                            min_value=0.0,
-                            value=float(
-                                selected_data.get("battery_capacity_mah", 0.0)
-                            ),
-                            step=0.1,
-                        )
-                    with col2:
-                        battery_voltage = st.number_input(
-                            "电池电压（V）",
-                            min_value=0.0,
-                            value=float(
-                                selected_data.get("battery_voltage", 0.0)
-                            ),
-                            step=0.1,
-                        )
-                    battery_capacity_wh = 0
-            # 注意：电池相关变量已经在上面初始化过了
-            st.subheader("定价参数")
-            # 第一行：贴标费用（元）、供货方不包邮运（元）
-            col1, col2 = st.columns(2)
-            with col1:
-                labeling_fee = st.number_input(
-                    "贴标费用（元）",
-                    min_value=0.0,
-                    value=float(
-                        selected_data.get("labeling_fee", 0.0)
-                    ),
-                    step=0.01,
-                )
-            with col2:
-                shipping_fee = st.number_input(
-                    "供货方不包邮运（元）",
-                    min_value=0.0,
-                    value=float(
-                        selected_data.get("shipping_fee", 0.0)
-                    ),
-                    step=0.01,
-                )
-            # 第二行：佣金率（%）、运营利润率（%）
-            col1, col2 = st.columns(2)
-            with col1:
-                commission_rate = (
-                    st.number_input(
-                        "佣金率(%)",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=float(
-                            selected_data.get("commission_rate", 0.0)
-                        )
-                        * 100.0,
-                        step=0.1,
-                        format="%.1f",
-                    )
-                    / 100.0
-                )
-            with col2:
-                target_profit_margin = (
-                    st.number_input(
-                        "运营利润率(%)",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=float(
-                            selected_data.get("target_profit_margin", 0.0)
-                        ) * 100.0,
-                        step=0.1,
-                        format="%.1f",
-                    )
-                    / 100.0
-                )
-            # 第三行：活动折扣率(%)、推广费率（%）
-            col1, col2 = st.columns(2)
-            with col1:
-                promotion_discount = (
-                    st.number_input(
-                        "活动折扣率(%)",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=float(
-                            selected_data.get("promotion_discount", 0.0)
-                        )
-                        * 100.0,
-                        step=0.1,
-                        format="%.1f",
-                    )
-                    / 100.0
-                )
-            with col2:
-                promotion_cost_rate = (
-                    st.number_input(
-                        "推广费率(%)",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=float(
-                            selected_data.get("promotion_cost_rate", 0.0)
-                        )
-                        * 100.0,
-                        step=0.1,
-                        format="%.1f",
-                    )
-                    / 100.0
-                )
-            # 第四行：打款提现费率(%)、收单手续费率(%)
-            col1, col2 = st.columns(2)
-            with col1:
-                withdrawal_fee_rate = (
-                    st.number_input(
-                        "打款提现费率(%)",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=float(
-                            selected_data.get("withdrawal_fee_rate", 0.0)
-                        )
-                        * 100.0,
-                        step=0.1,
-                        format="%.1f",
-                    )
-                    / 100.0
-                )
-            with col2:
-                payment_processing_fee = (
-                    st.number_input(
-                        "收单手续费率(%)",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=float(
-                            selected_data.get("payment_processing_fee", 0.0)
-                        )
-                        * 100.0,
-                        step=0.1,
-                        format="%.1f",
-                    )
-                    / 100.0
-                )
-            # 第五行：历史退货率(%)和保存产品按钮
+    # 电池和液体标题
+        st.subheader("电池和液体")
+    # 包含电池和包含易燃液体复选框放在同一行
+        col1, col2 = st.columns(2)
+        with col1:
+            has_battery = st.checkbox(
+                "包含电池",
+                value=bool(selected_data.get("has_battery", False)),
+            )
+        with col2:
+            has_flammable = st.checkbox(
+                "包含易燃液体",
+                value=bool(selected_data.get("has_flammable", False)),
+            )
+    # 初始化电池相关变量
+        choice = None
+        battery_capacity_mah = 0
+        battery_voltage = 0.0
+        has_msds = False
+        if has_battery:
+            # 电池容量填写方式和MSDS证书在同一行
             col1, col2 = st.columns(2, vertical_alignment="bottom")
             with col1:
-                return_rate = (
-                    st.number_input(
-                        "历史退货率(%)",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=float(
-                            selected_data.get("return_rate", 0.0)
-                        )
-                        * 100.0,
-                        step=0.1,
-                        format="%.1f",
-                    )
-                    / 100.0
+                choice = st.radio(
+                    "电池容量填写方式",
+                    ["填写 Wh（瓦时）", "填写 mAh + V"],
+                    index=(
+                        0
+                        if selected_data.get("battery_capacity_wh", 0) > 0
+                        else 1
+                    ),
+                    horizontal=True,
                 )
             with col2:
-                if st.button(
-                    "💾 保存产品",
-                    use_container_width=True,
-                    key="save_product_inside",
-                ):
-                    if not subscription_status.get("valid", True):
-                        st.error("账号到期，请联系客服续费")
-                        return
-                    # 确保is_cylinder变量被正确定义
-                    is_cylinder = package_type == "圆柱包装"
-                    # 检查必填字段
-                    missing_fields = []
-                    if not name or name.strip() == "":
-                        missing_fields.append("产品名称")
-                    if weight_g <= 0:
-                        missing_fields.append("重量")
-                    if unit_price <= 0:
-                        missing_fields.append("进货单价")
-                    if not is_cylinder:
-                        if length_cm <= 0:
-                            missing_fields.append("长度")
-                        if width_cm <= 0:
-                            missing_fields.append("宽度")
-                        if height_cm <= 0:
-                            missing_fields.append("高度")
-                    else:
-                        if cylinder_diameter <= 0:
-                            missing_fields.append("圆柱直径")
-                        if cylinder_length <= 0:
-                            missing_fields.append("圆柱长度")
-
-                    if missing_fields:
-                        st.error(
-                            f"请填写以下必填字段：{', '.join(missing_fields)}"
-                        )
-                    else:
-                        # 确保name不为None
-                        product_name = name.strip() if name else ""
-                        if not product_name:
-                            st.error("产品名称不能为空")
-                            return
-
-                        # 保存产品逻辑
-                        if save_product_to_db(
-                            product_name,
-                            russian_name,
-                            category,
-                            model,
-                            unit_price,
-                            weight_g,
-                            is_cylinder,
-                            length_cm,
-                            width_cm,
-                            height_cm,
-                            cylinder_diameter,
-                            cylinder_length,
-                            has_battery,
-                            battery_capacity_wh,
-                            battery_capacity_mah,
-                            battery_voltage,
-                            has_msds,
-                            has_flammable,
-                            labeling_fee,
-                            shipping_fee,
-                            promotion_discount,
-                            promotion_cost_rate,
-                            target_profit_margin,
-                            commission_rate,
-                            withdrawal_fee_rate,
-                            payment_processing_fee,
-                            return_rate,
-                        ):
-                            st.success("产品保存成功！")
-                            st.rerun()
-            # 开始计算按钮
-            st.markdown("---")
-            st.markdown("### 🚀 开始计算")
-            if st.button(
-                "🚀 开始计算",
-                type="primary",
-                use_container_width=True,
-                key="start_calc_inside",
-            ):
-                # 调用计算函数
-                calculate_precise_pricing_from_form(
-                    name,
-                    unit_price,
-                    weight_g,
-                    "长方体包装" if not is_cylinder else "圆柱包装",
-                    length_cm,
-                    width_cm,
-                    height_cm,
-                    cylinder_diameter,
-                    cylinder_length,
-                    has_battery,
-                    has_flammable,
-                    battery_capacity_wh,
-                    battery_capacity_mah,
-                    battery_voltage,
-                    has_msds,
-                    labeling_fee,
-                    shipping_fee,
-                    promotion_discount,
-                    promotion_cost_rate=promotion_cost_rate,
-                    target_profit_margin=target_profit_margin,
-                    commission_rate=commission_rate,
-                    withdrawal_fee_rate=withdrawal_fee_rate,
-                    payment_processing_fee=payment_processing_fee,
-                    return_rate=return_rate,
+                has_msds = st.checkbox(
+                    "有 MSDS 证书",
+                    value=bool(selected_data.get("has_msds", False)),
                 )
+        if choice == "填写 Wh（瓦时）":
+            battery_capacity_wh = st.number_input(
+                "电池容量（Wh）",
+                min_value=0.0,
+                value=float(
+                    selected_data.get("battery_capacity_wh", 0.0)
+                ),
+                step=0.1,
+            )
+            battery_capacity_mah = 0
+            battery_voltage = 0.0
+        else:
+            # 电池容量（mAh）和电池电压（V）在一行中分两个列显示
+            col1, col2 = st.columns(2)
+            with col1:
+                battery_capacity_mah = st.number_input(
+                    "电池容量（mAh）",
+                    min_value=0,
+                    value=int(
+                        selected_data.get("battery_capacity_mah", 0)
+                    ),
+                    step=1,
+                )
+            with col2:
+                battery_voltage = st.number_input(
+                    "电池电压（V）",
+                    min_value=0.0,
+                    value=float(
+                        selected_data.get("battery_voltage", 0.0)
+                    ),
+                    step=0.1,
+                )
+            battery_capacity_wh = 0.0
+    # 注意：电池相关变量已经在上面初始化过了
+        st.subheader("定价参数")
+    # 第一行：贴标费用（元）、供货方不包邮运（元）
+        col1, col2 = st.columns(2)
+        with col1:
+            labeling_fee = st.number_input(
+                "贴标费用（元）",
+                min_value=0.0,
+                value=float(
+                    selected_data.get("labeling_fee", 0.0)
+                ),
+                step=0.01,
+            )
+        with col2:
+            shipping_fee = st.number_input(
+                "供货方不包邮运（元）",
+                min_value=0.0,
+                value=float(
+                    selected_data.get("shipping_fee", 0.0)
+                ),
+                step=0.01,
+            )
+    # 第二行：佣金率（%）、运营利润率（%）
+        col1, col2 = st.columns(2)
+        with col1:
+            commission_rate = (
+                st.number_input(
+                    "佣金率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        selected_data.get("commission_rate", 0.0)
+                    )
+                    * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+        with col2:
+            target_profit_margin = (
+                st.number_input(
+                    "运营利润率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        selected_data.get("target_profit_margin", 0.0)
+                    ) * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+    # 第三行：活动折扣率(%)、推广费率（%）
+        col1, col2 = st.columns(2)
+        with col1:
+            promotion_discount = (
+                st.number_input(
+                    "活动折扣率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        selected_data.get("promotion_discount", 0.0)
+                    )
+                    * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+        with col2:
+            promotion_cost_rate = (
+                st.number_input(
+                    "推广费率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        selected_data.get("promotion_cost_rate", 0.0)
+                    )
+                    * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+    # 第四行：打款提现费率(%)、收单手续费率(%)
+        col1, col2 = st.columns(2)
+        with col1:
+            withdrawal_fee_rate = (
+                st.number_input(
+                    "打款提现费率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        selected_data.get("withdrawal_fee_rate", 0.0)
+                    )
+                    * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+        with col2:
+            payment_processing_fee = (
+                st.number_input(
+                    "收单手续费率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        selected_data.get("payment_processing_fee", 0.0)
+                    )
+                    * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+    # 第五行：历史退货率(%)和保存产品按钮
+        col1, col2 = st.columns(2, vertical_alignment="bottom")
+        with col1:
+            return_rate = (
+                st.number_input(
+                    "历史退货率(%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        selected_data.get("return_rate", 0.0)
+                    )
+                    * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+                / 100.0
+            )
+        with col2:
+            if st.button(
+                "💾 保存产品",
+                use_container_width=True,
+                key="save_product_inside",
+            ):
+                if not subscription_status.get("valid", True):
+                    st.error("账号到期，请联系客服续费")
+                    return
+            # 确保is_cylinder变量被正确定义
+                is_cylinder = package_type == "圆柱包装"
+            # 检查必填字段
+                missing_fields = []
+                if not name or name.strip() == "":
+                    missing_fields.append("产品名称")
+                if weight_g <= 0:
+                    missing_fields.append("重量")
+                if unit_price <= 0:
+                    missing_fields.append("进货单价")
+                if not is_cylinder:
+                    if length_cm <= 0:
+                        missing_fields.append("长度")
+                    if width_cm <= 0:
+                        missing_fields.append("宽度")
+                    if height_cm <= 0:
+                        missing_fields.append("高度")
+                else:
+                    if cylinder_diameter <= 0:
+                        missing_fields.append("圆柱直径")
+                    if cylinder_length <= 0:
+                        missing_fields.append("圆柱长度")
+
+                if missing_fields:
+                    st.error(
+                        f"请填写以下必填字段：{', '.join(missing_fields)}"
+                    )
+                else:
+                    # 确保name不为None
+                    product_name = name.strip() if name else ""
+                    if not product_name:
+                        st.error("产品名称不能为空")
+                        return
+
+                # 保存产品逻辑
+                    if save_product_to_db(
+                        product_name,
+                        russian_name,
+                        category,
+                        model,
+                        unit_price,
+                        weight_g,
+                        is_cylinder,
+                        length_cm,
+                        width_cm,
+                        height_cm,
+                        cylinder_diameter,
+                        cylinder_length,
+                        has_battery,
+                        battery_capacity_wh,
+                        battery_capacity_mah,
+                        battery_voltage,
+                        has_msds,
+                        has_flammable,
+                        labeling_fee,
+                        shipping_fee,
+                        promotion_discount,
+                        promotion_cost_rate,
+                        target_profit_margin,
+                        commission_rate,
+                        withdrawal_fee_rate,
+                        payment_processing_fee,
+                        return_rate,
+                    ):
+                        st.success("产品保存成功！")
+                        st.rerun()
+    # 开始计算按钮
+        st.markdown("---")
+        st.markdown("### 🚀 开始计算")
+        if st.button(
+            "🚀 开始计算",
+            type="primary",
+            use_container_width=True,
+            key="start_calc_inside",
+        ):
+            # 调用计算函数
+            calculate_precise_pricing_from_form(
+                name,
+                unit_price,
+                weight_g,
+                "长方体包装" if not is_cylinder else "圆柱包装",
+                length_cm,
+                width_cm,
+                height_cm,
+                cylinder_diameter,
+                cylinder_length,
+                has_battery,
+                has_flammable,
+                battery_capacity_wh,
+                battery_capacity_mah,
+                battery_voltage,
+                has_msds,
+                labeling_fee,
+                shipping_fee,
+                promotion_discount,
+                promotion_cost_rate=promotion_cost_rate,
+                target_profit_margin=target_profit_margin,
+                commission_rate=commission_rate,
+                withdrawal_fee_rate=withdrawal_fee_rate,
+                payment_processing_fee=payment_processing_fee,
+                return_rate=return_rate,
+            )
 
 
 def precise_pricing_calculator():
@@ -2164,7 +2248,7 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
             # 首先检查表结构，确保字段存在
             c.execute("PRAGMA table_info(logistics)")
             columns = [col[1] for col in c.fetchall()]
-            # 根据实际存在的字段构建查询
+        # 根据实际存在的字段构建查询
             if 'weight_factor' in columns:
                 # 新版本表结构
                 c.execute(
@@ -2203,10 +2287,10 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
                     """,
                     (current_user_id(),),
                 )
-            # 明确类型为 Dict[str, Any]，避免被推断为 Dict[str, str]
+    # 明确类型为 Dict[str, Any]，避免被推断为 Dict[str, str]
             from typing import List, Dict, Any
             results: List[Dict[str, Any]] = [dict(row) for row in c.fetchall()]
-            # 为旧版本表结构添加默认字段
+        # 为旧版本表结构添加默认字段
             for rule in results:
                 if 'weight_factor' not in rule:
                     rule['weight_factor'] = 0.0  # 默认值
@@ -2267,22 +2351,22 @@ def calculate_fast_pricing(
             if effective_weight < min_weight or effective_weight > max_weight:
                 continue
 
-            # 计算运费 - 使用精准模式的运费计算逻辑
+        # 计算运费 - 使用精准模式的运费计算逻辑
             base_fee = rule.get('base_fee', 0)
             weight_factor = rule.get('weight_factor', 0)
 
-            # 运费计算：基础费用 + 重量因子 * 重量（千克）
+        # 运费计算：基础费用 + 重量因子 * 重量（千克）
             shipping_cost = (
                 base_fee + (weight_factor * effective_weight / 1000)
             )
 
-            # 如果运费为0或负数，跳过这个物流规则
+        # 如果运费为0或负数，跳过这个物流规则
             if shipping_cost <= 0:
                 continue
-            # 计算总成本
+        # 计算总成本
             total_cost = unit_price + shipping_cost
 
-            # 计算售价
+        # 计算售价
             denominator = (1 - commission_rate) * (1 - promotion_rate)
             if denominator <= 0:
                 continue
@@ -2291,7 +2375,7 @@ def calculate_fast_pricing(
                 total_cost / (1 - target_profit_margin) / denominator
             )
 
-            # 计算利润
+        # 计算利润
             profit = selling_price - total_cost
             profit_margin = (
                 (profit / selling_price) * 100 if selling_price > 0 else 0
@@ -2346,7 +2430,7 @@ def calculate_fast_pricing_with_params(
             st.info("💡 效率版首月仅需¥1，次月¥9.9/月")
             return
 
-        # 减少计算次数
+    # 减少计算次数
         if not decrement_user_calculations(user_id):
             st.error("❌ 计算次数扣除失败")
             return
@@ -2374,7 +2458,7 @@ def calculate_fast_pricing_with_params(
         'cylinder_length': 0.0,
         'has_battery': False,
         'battery_capacity_wh': 0.0,
-        'battery_capacity_mah': 0.0,
+        'battery_capacity_mah': 0,
         'battery_voltage': 0.0,
         'has_msds': False,
         'has_flammable': False
@@ -2438,20 +2522,20 @@ def calculate_fast_pricing_with_params(
 
     # 计算定价 - 低价优先和速度优先
     # 对于送到取货点，使用pickup_point的物流
-    pricing_result_low = calculate_pricing(
-        virtual_product, land_pickup, air_pickup, "低价优先"
-    )
-    pricing_result_fast = calculate_pricing(
-        virtual_product, land_pickup, air_pickup, "速度优先"
-    )
+        pricing_result_low = calculate_pricing(
+            virtual_product, land_pickup, air_pickup, "低价优先"
+        )
+        pricing_result_fast = calculate_pricing(
+            virtual_product, land_pickup, air_pickup, "速度优先"
+        )
 
     # 计算送货上门的定价结果
-    pricing_result_low_home = calculate_pricing(
-        virtual_product, land_home, air_home, "低价优先"
-    )
-    pricing_result_fast_home = calculate_pricing(
-        virtual_product, land_home, air_home, "速度优先"
-    )
+        pricing_result_low_home = calculate_pricing(
+            virtual_product, land_home, air_home, "低价优先"
+        )
+        pricing_result_fast_home = calculate_pricing(
+            virtual_product, land_home, air_home, "速度优先"
+        )
 
     # 显示计算结果
     display_fast_pricing_results_precise_style(
@@ -2641,7 +2725,7 @@ def display_fast_pricing_results_precise_style(
     #                     f"{rule.get('max_weight', '无限制')}g"
     #                 )
     #             with col2:
-    #                 # 检查重量限制
+    #             # 检查重量限制
     #                 if effective_weight < rule.get('min_weight', 0):
     #                     st.error("❌ 重量过低")
     #                 elif effective_weight > rule.get('max_weight', 10**9):
@@ -2660,7 +2744,7 @@ def display_fast_pricing_results_precise_style(
     #                     f"{rule.get('max_weight', '无限制')}g"
     #                 )
     #             with col2:
-    #                 # 检查重量限制
+    #             # 检查重量限制
     #                 if effective_weight < rule.get('min_weight', 0):
     #                     st.error("❌ 重量过低")
     #                 elif effective_weight > rule.get('max_weight', 10**9):
@@ -2718,32 +2802,32 @@ def display_fast_pricing_results_precise_style(
     #     all_costs_debug = pricing_result_low.get('all_costs_debug', [])
     #     st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
 
-        # # 查找运费为0的物流规则
-        # zero_cost_rules = []
-        # for debug_info in all_costs_debug:
-        #     if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
-        #         zero_cost_rules.append(debug_info)
-        #
-        # st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
-        # if zero_cost_rules:
-        #     st.write("**运费为0的物流规则:**")
-        #     for rule in zero_cost_rules[:5]:  # 只显示前5个
-        #         st.write(
-        #             f"  - {rule.get('name', 'Unknown')}: "
-        #             f"cost={rule.get('cost')}"
-        #         )
-        #
-        # # 查找特定物流规则的运费
-        # target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
-        # for debug_info in all_costs_debug:
-        #     if isinstance(debug_info, dict):
-        #         logistic = debug_info.get('logistic', {})
-        #         name = logistic.get('name', 'Unknown')
-        #         if name in target_rules:
-        #             st.write(
-        #                 f"**{name}:** cost={debug_info.get('cost')}, "
-        #                 f"type={logistic.get('type')}"
-        #             )
+    #     # 查找运费为0的物流规则
+    #     zero_cost_rules = []
+    #     for debug_info in all_costs_debug:
+    #         if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
+    #             zero_cost_rules.append(debug_info)
+    #
+    #     st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
+    #     if zero_cost_rules:
+    #         st.write("**运费为0的物流规则:**")
+    #         for rule in zero_cost_rules[:5]:  # 只显示前5个
+    #             st.write(
+    #                 f"  - {rule.get('name', 'Unknown')}: "
+    #                 f"cost={rule.get('cost')}"
+    #         )
+    #
+    #     # 查找特定物流规则的运费
+    #     target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
+    #     for debug_info in all_costs_debug:
+    #         if isinstance(debug_info, dict):
+    #             logistic = debug_info.get('logistic', {})
+    #             name = logistic.get('name', 'Unknown')
+    #             if name in target_rules:
+    #                 st.write(
+    #                     f"**{name}:** cost={debug_info.get('cost')}, "
+    #                     f"type={logistic.get('type')}"
+    #                 )
     pass
 
     # =============================
@@ -2780,28 +2864,28 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             land_stats = pricing_result_low.get("land_stats", {})
             avg_cost = land_stats.get("avg_cost", 0)
             cost_saving = land_stats.get("cost_saving", 0)
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_low.get(
                 "land_expected_profit", 0
             )
@@ -2845,7 +2929,7 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -2858,14 +2942,14 @@ def display_fast_pricing_results_precise_style(
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_low_home.get(
                 "land_expected_profit", 0
             )
@@ -2923,28 +3007,28 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             air_stats = pricing_result_low.get("air_stats", {})
             avg_cost = air_stats.get("avg_cost", 0)
             cost_saving = air_stats.get("cost_saving", 0)
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_low.get(
                 "air_expected_profit", 0
             )
@@ -2992,7 +3076,7 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -3005,14 +3089,14 @@ def display_fast_pricing_results_precise_style(
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_low_home.get(
                 "air_expected_profit", 0
             )
@@ -3085,28 +3169,28 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             land_stats = pricing_result_fast.get("land_stats", {})
             avg_cost = land_stats.get("avg_cost", 0)
             cost_saving = land_stats.get("cost_saving", 0)
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_fast.get(
                 "land_expected_profit", 0
             )
@@ -3153,7 +3237,7 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -3166,14 +3250,14 @@ def display_fast_pricing_results_precise_style(
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_fast_home.get(
                 "land_expected_profit", 0
             )
@@ -3230,28 +3314,28 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             air_stats = pricing_result_fast.get("air_stats", {})
             avg_cost = air_stats.get("avg_cost", 0)
             cost_saving = air_stats.get("cost_saving", 0)
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_fast.get(
                 "air_expected_profit", 0
             )
@@ -3297,7 +3381,7 @@ def display_fast_pricing_results_precise_style(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -3310,14 +3394,14 @@ def display_fast_pricing_results_precise_style(
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_fast_home.get(
                 "air_expected_profit", 0
             )
@@ -3349,12 +3433,15 @@ def display_fast_pricing_results_precise_style(
     # 极速模式提示信息
     st.markdown(
         """
-        <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
-                    border-radius: 12px; padding: 20px; margin: 20px 0; 
-                    border-left: 4px solid #f39c12; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+        <div style="background: linear-gradient(135deg, #fff3cd 0%,
+                    #ffeaa7 100%); border-radius: 12px; padding: 20px;
+                    margin: 20px 0; border-left: 4px solid #f39c12;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <div style="display: flex; align-items: center;
+                        margin-bottom: 8px;">
                 <span style="font-size: 1.2em; margin-right: 8px;">⚡</span>
-                <strong style="color: #d68910; font-size: 1.1em;">极速模式说明</strong>
+                <strong style="color: #d68910; font-size: 1.1em;">
+                    极速模式说明</strong>
             </div>
             <div style="color: #8d4e00; font-size: 1.0em; line-height: 1.5;">
                 极速模式不考虑产品尺寸、计泡、是否含电池、液体。上述内容仅限专业版精准模式
@@ -3448,7 +3535,7 @@ def calculate_precise_pricing_from_form(
             st.info("💡 效率版首月仅需¥1，次月¥9.9/月")
             return
 
-        # 减少计算次数
+    # 减少计算次数
         if not decrement_user_calculations(user_id):
             st.error("❌ 计算次数扣除失败")
             return
@@ -3598,8 +3685,8 @@ def calculate_precise_pricing_from_form(
             else pd.DataFrame()
         )
 
-        # 计算定价 - 低价优先和速度优先
-        # 对于送到取货点，使用pickup_point的物流
+    # 计算定价 - 低价优先和速度优先
+    # 对于送到取货点，使用pickup_point的物流
         pricing_result_low = calculate_pricing(
             product_data, land_pickup, air_pickup, "低价优先"
         )
@@ -3607,7 +3694,7 @@ def calculate_precise_pricing_from_form(
             product_data, land_pickup, air_pickup, "速度优先"
         )
 
-        # 计算送货上门的定价结果
+    # 计算送货上门的定价结果
         pricing_result_low_home = calculate_pricing(
             product_data, land_home, air_home, "低价优先"
         )
@@ -3696,8 +3783,8 @@ def calculate_precise_pricing():
             else pd.DataFrame()
         )
 
-        # 计算定价 - 低价优先和速度优先
-        # 对于送到取货点，使用pickup_point的物流
+    # 计算定价 - 低价优先和速度优先
+    # 对于送到取货点，使用pickup_point的物流
         pricing_result_low = calculate_pricing(
             selected_data, land_pickup, air_pickup, "低价优先"
         )
@@ -3705,7 +3792,7 @@ def calculate_precise_pricing():
             selected_data, land_pickup, air_pickup, "速度优先"
         )
 
-        # 计算送货上门的定价结果
+    # 计算送货上门的定价结果
         pricing_result_low_home = calculate_pricing(
             selected_data, land_home, air_home, "低价优先"
         )
@@ -3833,7 +3920,7 @@ def save_product_to_db(
     cylinder_length: float,
     has_battery: bool,
     battery_capacity_wh: float,
-    battery_capacity_mah: float,
+    battery_capacity_mah: int,
     battery_voltage: float,
     has_msds: bool,
     has_flammable: bool,
@@ -3867,7 +3954,7 @@ def save_product_to_db(
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
-                """,
+        """,
                 (
                     current_user_id(),
                     name,
@@ -3941,7 +4028,7 @@ def user_management_page_fast_mode():
             }
             return mapping.get(str(x), str(x))
 
-        # 添加用户 - 使用不同的表单key
+    # 添加用户 - 使用不同的表单key
         with st.expander("添加新用户"):
             with st.form("add_user_form_fast_mode"):
                 username = st.text_input("用户名*", key="fast_username")
@@ -4002,7 +4089,7 @@ def user_management_page_fast_mode():
                         if user_type == "test":
                             remaining_calculations = -1
                             test_days_remaining = 7
-                            # 新建测试版：默认7天有效期
+                        # 新建测试版：默认7天有效期
                             try:
                                 from datetime import datetime, timedelta
                                 expiry_date = (
@@ -4016,7 +4103,7 @@ def user_management_page_fast_mode():
                             remaining_calculations = 10
                         elif user_type == "efficiency":
                             remaining_calculations = -1
-                            # 新建效率版：默认30天有效期
+                        # 新建效率版：默认30天有效期
                             try:
                                 from datetime import datetime, timedelta
                                 expiry_date = (
@@ -4026,7 +4113,7 @@ def user_management_page_fast_mode():
                                 pass
                         elif user_type == "professional":
                             remaining_calculations = -1
-                            # 新建专业版：默认30天有效期
+                        # 新建专业版：默认30天有效期
                             try:
                                 from datetime import datetime, timedelta
                                 expiry_date = (
@@ -4036,7 +4123,7 @@ def user_management_page_fast_mode():
                                 pass
                         elif user_type == "enterprise":
                             remaining_calculations = -1
-                            # 新建企业版：默认30天有效期
+                        # 新建企业版：默认30天有效期
                             try:
                                 from datetime import datetime, timedelta
                                 expiry_date = (
@@ -4068,7 +4155,7 @@ def user_management_page_fast_mode():
                         except sqlite3.Error as exc:
                             st.error(f"添加用户失败: {exc}")
 
-        # 显示用户列表
+    # 显示用户列表
         st.subheader("📋 用户列表")
         users = pd.read_sql(
             (
@@ -4087,10 +4174,10 @@ def user_management_page_fast_mode():
                 lambda x: "管理员" if x == "admin" else "普通用户"
             )
 
-            # 将DataFrame转换为字典列表以避免pandas Series类型问题
+        # 将DataFrame转换为字典列表以避免pandas Series类型问题
             users_list = users.to_dict('records')
 
-            # 显示用户信息
+        # 显示用户信息
             for user in users_list:
                 with st.container():
                     col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
@@ -4149,14 +4236,14 @@ def show_password_change_form():
                 st.error("新密码和确认密码不匹配")
                 return
 
-            # 验证密码强度
+        # 验证密码强度
             password_validation = validate_password_strength(new_password)
             if not password_validation['valid']:
                 st.error("密码强度不符合要求：")
                 for error in password_validation['errors']:
                     st.error(f"• {error}")
                 return
-            # 验证当前密码并更新
+        # 验证当前密码并更新
             user_id = st.session_state.user['id']
             if update_user_password(user_id, current_password, new_password):
                 st.success("密码修改成功！")
@@ -4220,7 +4307,7 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
         cylinder_diameter = product.get("cylinder_diameter", 0)
         cylinder_length = product.get("cylinder_length", 0)
 
-        # 首先检查物流是否有圆柱形包装限制
+    # 首先检查物流是否有圆柱形包装限制
         has_cylinder_limits = (
             logistic.get("max_cylinder_sum", 0) > 0
             or logistic.get("min_cylinder_sum", 0) > 0
@@ -4321,7 +4408,7 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
             if wh == 0:
                 mah = product.get("battery_capacity_mah", 0)
                 v = product.get("battery_voltage", 0)
-                # 如果mAh和V都为0，跳过电池容量限制判断
+            # 如果mAh和V都为0，跳过电池容量限制判断
                 if mah <= 0 and v <= 0:
                     pass  # 跳过电池容量限制判断
                 else:
@@ -4339,8 +4426,8 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
                         return (
                             f"电池容量 {wh} Wh 超过物流限制 {limit_wh} Wh"
                         )
-        if logistic.get("require_msds") and not product.get("has_msds"):
-            return "物流要求 MSDS 但产品未提供"
+    if logistic.get("require_msds") and not product.get("has_msds"):
+        return "物流要求 MSDS 但产品未提供"
 
     # 5. 限价（人民币→卢布）
     try:
@@ -4355,8 +4442,8 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
         labeling_fee = float(product.get("labeling_fee", 0))
         shipping_fee = float(product.get("shipping_fee", 0))
 
-        # 先计算运费（复用与正式计算完全一致的公式）
-        # 使用上面已经计算好的重量 w
+    # 先计算运费（复用与正式计算完全一致的公式）
+    # 使用上面已经计算好的重量 w
         fee_mode = logistic.get("fee_mode", "base_plus_continue")
         continue_unit = int(logistic.get("continue_unit", 100))
 
@@ -4375,9 +4462,9 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
                 * logistic.get("continue_fee", 0)
             )
 
-        # 估算人民币总成本
+    # 估算人民币总成本
         total_cny = unit_price + labeling_fee + shipping_fee + 15 * rate + cost
-        # 估算人民币售价
+    # 估算人民币售价
         denominator = (
             (1 - product.get("promotion_cost_rate", 0))
             * (1 - product.get("commission_rate", 0))
@@ -4392,14 +4479,14 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
         ) / denominator
         rough_rub = rough_cny / rate
 
-        # 获取价格限制和货币类型
+    # 获取价格限制和货币类型
         limit_value = logistic.get("price_limit_rub", 0)
         min_value = logistic.get("price_min_rub", 0)
         limit_currency = logistic.get("price_limit_currency", "RUB")
         min_currency = logistic.get("price_min_currency", "RUB")
 
-        # 根据货币类型进行价格比较
-        # 用户计算时只使用兜底汇率，不调用API
+    # 根据货币类型进行价格比较
+    # 用户计算时只使用兜底汇率，不调用API
         try:
             from exchange_service import get_fallback_usd_rate
         except ImportError:
@@ -4472,7 +4559,7 @@ def show_product_list_page(uid):
                 st.rerun()
             return
 
-        # 显示产品列表
+    # 显示产品列表
         st.markdown("### 产品列表")
 
         for _, product in products.iterrows():
@@ -4487,7 +4574,7 @@ def show_product_list_page(uid):
                         f"{product['package_type']}"
                     )
 
-                    # 显示特殊属性
+                # 显示特殊属性
                     special_attrs = []
                     if bool(product['has_battery']):
                         special_attrs.append("🔋 含电池")
@@ -4525,7 +4612,7 @@ def show_product_list_page(uid):
 
                 st.divider()
 
-        # 底部操作按钮
+    # 底部操作按钮
         if st.button("❌ 关闭列表", use_container_width=True):
             st.session_state.show_product_list = False
             st.rerun()
@@ -4673,7 +4760,7 @@ def display_precise_pricing_results(
     #                     f"{rule.get('max_weight', '无限制')}g"
     #                 )
     #             with col2:
-    #                 # 检查重量限制
+    #             # 检查重量限制
     #                 weight_g = (
     #                     product_info.get('weight_g', 0)
     #                     if product_info else 0
@@ -4696,7 +4783,7 @@ def display_precise_pricing_results(
     #                     f"{rule.get('max_weight', '无限制')}g"
     #                 )
     #             with col2:
-    #                 # 检查重量限制
+    #             # 检查重量限制
     #                 weight_g = (
     #                     product_info.get('weight_g', 0)
     #                     if product_info else 0
@@ -4752,55 +4839,55 @@ def display_precise_pricing_results(
     #     all_costs_debug = pricing_result_low.get('all_costs_debug', [])
     #     st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
 
-        # # 显示物流淘汰过程
-        # st.markdown("### 物流淘汰过程")
-        # if all_costs_debug:
-        #     # 统计淘汰原因
-        #     elimination_reasons = {}
-        #     total_logistics = len(all_costs_debug)
-        #     eliminated_count = 0
-        #
-        #     for debug_info in all_costs_debug:
-        #         if isinstance(debug_info, dict):
-        #             logistic_name = debug_info.get("logistic", {}).get(
-        #                 "name", "未知物流"
-        #             )
-        #             cost = debug_info.get("cost")
-        #             debug_list = debug_info.get("debug", [])
-        #
-        #             if cost is None:
-        #                 eliminated_count += 1
-        #                 # 找到淘汰原因
-        #                 reason = None
-        #                 for debug_line in debug_list:
-        #                     if "返回 None" in debug_line:
-        #                         reason = debug_line.replace(
-        #                             "返回 None", ""
-        #                         ).strip()
-        #                         break
-        #                     elif "跳过" in debug_line:
-        #                         reason = debug_line.strip()
-        #                         break
-        #
-        #                 if reason:
-        #                     if reason not in elimination_reasons:
-        #                         elimination_reasons[reason] = []
-        #                     elimination_reasons[reason].append(
-        #                         logistic_name
-        #                     )
-        #                 else:
-        #                     # 如果没有找到明确的原因，使用最后一个调试信息
-        #                     if debug_list:
-        #                         reason = debug_list[-1].strip()
-        #                         if reason not in elimination_reasons:
-        #                             elimination_reasons[reason] = []
-        #                         elimination_reasons[reason].append(
-        #                             logistic_name
-        #                         )
-        #
-        #     st.write(f"**总计物流规则：{total_logistics} 个**")
-        #     st.write(f"**被淘汰物流：{eliminated_count} 个**")
-        #     st.write(f"**可用物流：{total_logistics - eliminated_count} 个**")
+    #     # 显示物流淘汰过程
+    #     st.markdown("### 物流淘汰过程")
+    #     if all_costs_debug:
+    #     # 统计淘汰原因
+    #         elimination_reasons = {}
+    #         total_logistics = len(all_costs_debug)
+    #         eliminated_count = 0
+    #
+    #         for debug_info in all_costs_debug:
+    #             if isinstance(debug_info, dict):
+    #                 logistic_name = debug_info.get("logistic", {}).get(
+    #                     "name", "未知物流"
+    #                 )
+    #             cost = debug_info.get("cost")
+    #             debug_list = debug_info.get("debug", [])
+    #
+    #             if cost is None:
+    #                 eliminated_count += 1
+    #             # 找到淘汰原因
+    #                 reason = None
+    #                 for debug_line in debug_list:
+    #                     if "返回 None" in debug_line:
+    #                         reason = debug_line.replace(
+    #                             "返回 None", ""
+    #                         ).strip()
+    #                         break
+    #                     elif "跳过" in debug_line:
+    #                         reason = debug_line.strip()
+    #                         break
+    #
+    #                 if reason:
+    #                     if reason not in elimination_reasons:
+    #                         elimination_reasons[reason] = []
+    #                     elimination_reasons[reason].append(
+    #                         logistic_name
+    #                     )
+#                 else:
+    #                 # 如果没有找到明确的原因，使用最后一个调试信息
+    #                     if debug_list:
+    #                         reason = debug_list[-1].strip()
+    #                         if reason not in elimination_reasons:
+    #                             elimination_reasons[reason] = []
+    #                         elimination_reasons[reason].append(
+    #                             logistic_name
+    #                         )
+#
+    #     st.write(f"**总计物流规则：{total_logistics} 个**")
+    #     st.write(f"**被淘汰物流：{eliminated_count} 个**")
+    #     st.write(f"**可用物流：{total_logistics - eliminated_count} 个**")
     pass
 
     # # 显示淘汰原因详情
@@ -4894,28 +4981,28 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             land_stats = pricing_result_low.get("land_stats", {})
             avg_cost = land_stats.get("avg_cost", 0)
             cost_saving = land_stats.get("cost_saving", 0)
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_low.get(
                 "land_expected_profit", 0
             )
@@ -4951,7 +5038,7 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -4964,14 +5051,14 @@ def display_precise_pricing_results(
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_low_home.get(
                 "land_expected_profit", 0
             )
@@ -5017,28 +5104,28 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             air_stats = pricing_result_low.get("air_stats", {})
             avg_cost = air_stats.get("avg_cost", 0)
             cost_saving = air_stats.get("cost_saving", 0)
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_low.get(
                 "air_expected_profit", 0
             )
@@ -5074,7 +5161,7 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -5087,14 +5174,14 @@ def display_precise_pricing_results(
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_low_home.get(
                 "air_expected_profit", 0
             )
@@ -5156,28 +5243,28 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             land_stats = pricing_result_fast.get("land_stats", {})
             avg_cost = land_stats.get("avg_cost", 0)
             cost_saving = land_stats.get("cost_saving", 0)
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_fast.get(
                 "land_expected_profit", 0
             )
@@ -5214,7 +5301,7 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -5227,14 +5314,14 @@ def display_precise_pricing_results(
             avg_time_stats = land_stats.get("avg_time", 0)
             time_saving = land_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取陆运预期利润
+        # 获取陆运预期利润
             land_expected_profit = pricing_result_fast_home.get(
                 "land_expected_profit", 0
             )
@@ -5280,28 +5367,28 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{avg_time:.1f}天"
             )
 
-            # 获取统计信息
+        # 获取统计信息
             air_stats = pricing_result_fast.get("air_stats", {})
             avg_cost = air_stats.get("avg_cost", 0)
             cost_saving = air_stats.get("cost_saving", 0)
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_fast.get(
                 "air_expected_profit", 0
             )
@@ -5337,7 +5424,7 @@ def display_precise_pricing_results(
                 else 0
             )
 
-            # 处理时效显示
+        # 处理时效显示
             time_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
@@ -5350,14 +5437,14 @@ def display_precise_pricing_results(
             avg_time_stats = air_stats.get("avg_time", 0)
             time_saving = air_stats.get("time_saving", 0)
 
-            # 处理节省时效显示
+        # 处理节省时效显示
             time_saving_display = (
                 "该物流未填写时效"
                 if min_days == 0 and max_days == 0
                 else f"{time_saving:+.1f}天" if time_saving != 0 else "0天"
             )
 
-            # 获取空运预期利润
+        # 获取空运预期利润
             air_expected_profit = pricing_result_fast_home.get(
                 "air_expected_profit", 0
             )
@@ -5374,6 +5461,86 @@ def display_precise_pricing_results(
             st.markdown(card_html, unsafe_allow_html=True)
         else:
             st.info("暂无可用物流")
+
+
+def payment_center_page():
+    """支付中心页面"""
+    st.markdown(
+        """
+        <div class="card-container">
+            <h2 style="color: #667eea; margin-bottom: 20px;">
+                💳 支付与订单管理
+            </h2>
+            <p style="color: #718096; font-size: 1.1rem; margin-bottom: 30px;">
+                查看您的订单历史和支付记录
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # 订单历史
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    st.markdown(
+        '<h3 style="color: #667eea;">📋 订单历史</h3>',
+        unsafe_allow_html=True
+    )
+
+    from db_utils import get_db
+
+    current_user = st.session_state.get('current_user', {})
+    username = current_user.get('username', '')
+
+    try:
+        conn, cursor = get_db()
+        # 查询订单
+        cursor.execute(
+            """
+            SELECT order_id, plan_type, amount, status,
+                   created_at, paid_at
+            FROM subscription_orders
+            WHERE username = ?
+            ORDER BY created_at DESC
+            LIMIT 10
+            """,
+            (username,)
+        )
+        orders = cursor.fetchall()
+
+        if orders:
+            # 创建订单表格
+            orders_data = []
+            for order in orders:
+                orders_data.append({
+                    '订单号': order[0],
+                    '套餐类型': order[1],
+                    '金额': f'¥{order[2]:.2f}',
+                    '状态': '已支付' if order[3] == 'paid' else '待支付',
+                    '创建时间': order[4],
+                    '支付时间': order[5] if order[5] else '-'
+                })
+            df = pd.DataFrame(orders_data)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("暂无订单记录")
+
+        conn.close()
+    except Exception as e:
+        st.error(f"查询订单失败: {str(e)}")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 提示信息
+    st.markdown(
+        """
+        <div class="card-container">
+            <p style="color: #718096;">
+                💡 提示：如需订阅或升级套餐，请前往"订阅管理"页面
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 def subscription_management_page():
@@ -5480,7 +5647,7 @@ def subscription_management_page():
                 logistics_templates if logistics_templates != -1 else '无限'
             )
 
-            # 免费版与感谢版无订阅期限，视为永久有效
+        # 免费版与感谢版无订阅期限，视为永久有效
             if user_type in ['free', 'gratitude']:
                 plan_status = "永久有效"
             elif (subscription_status and
@@ -5514,7 +5681,7 @@ def subscription_management_page():
         else:
             st.error(plan_status)
 
-        # 非免费版用户不显示“已用完”，统一视为无限次
+    # 非免费版用户不显示"已用完"，统一视为无限次
         if user_type != 'free':
             st.success("无限次计算")
         else:
@@ -5567,7 +5734,7 @@ def subscription_management_page():
             else:
                 is_current = current_plan.get('name') == plan.get('name')
 
-            # 确定按钮文本
+        # 确定按钮文本
             button_text = ""
             if not is_current:
                 if plan_key == 'enterprise':
@@ -5591,7 +5758,7 @@ def subscription_management_page():
             border_color = plan['color'] if is_current else "#e0e0e0"
             border_width = "3px" if is_current else "2px"
 
-            # 构建HTML内容
+        # 构建HTML内容
             features_html = ''.join(
                 [
                     f'<li style="margin-bottom: 5px;">{feature}</li>'
@@ -5599,7 +5766,7 @@ def subscription_management_page():
                 ]
             )
 
-            # 为企业版添加开发状态
+        # 为企业版添加开发状态
             development_status_html = ''
             if plan.get('development_status'):
                 development_status_html = (
@@ -5636,13 +5803,13 @@ def subscription_management_page():
                     '</div>'
                 )
 
-            # 计算“物流模板”展示文本，避免 f-string 复杂嵌套导致语法问题
+        # 计算“物流模板”展示文本，避免 f-string 复杂嵌套导致语法问题
             templates_value = plan.get("logistics_templates", 1)
             templates_display = (
                 templates_value if templates_value != -1 else "无限"
             )
 
-            # 组合卡片 HTML（分段避免超长行）
+        # 组合卡片 HTML（分段避免超长行）
             card_html = (
                 f'<div style="border: {border_width} solid {border_color}; '
                 'border-radius: 15px; padding: 25px; margin: 10px 0; '
@@ -5693,7 +5860,7 @@ def subscription_management_page():
 
             st.markdown(card_html, unsafe_allow_html=True)
 
-            # 升级/降级按钮
+        # 升级/降级按钮
             if not is_current:
                 if plan_key == 'enterprise':
                     if st.button(
@@ -5705,96 +5872,156 @@ def subscription_management_page():
                 else:
                     if st.button(button_text, key=f"action_{plan_key}"):
                         # 集成微信支付流程
-                        import os
-                        
-                        # 检查是否为本地测试模式
-                        if os.getenv("LOCAL_TEST_MODE", "false").lower() == "true":
-                            from local_wechat_test import LocalWeChatPayTest
-                            local_tester = LocalWeChatPayTest()
-                            wechat_pay_handler = local_tester.handler
-                            st.info("🧪 当前为本地测试模式")
-                        else:
-                            from wechat_pay_handler import wechat_pay_handler
-                        
-                        # 获取当前用户
-                        current_user = st.session_state.get('username')
-                        if not current_user:
+
+                        # 使用新的支付处理器
+                        from payment_handler import (
+                            payment_handler
+                        )
+
+                        # 获取当前用户ID
+                        current_user_id_val = current_user_id()
+                        if not current_user_id_val:
                             st.error("请先登录")
                             st.stop()
                         
+                        # 获取当前用户信息
+                        current_user = st.session_state.get('user', {})
+                        if not current_user:
+                            st.error("用户信息获取失败，请重新登录")
+                            st.stop()
+
                         # 创建支付订单
                         if plan_key == 'efficiency':
-                            amount = 1.0  # 首月1元
-                            description = "物流系统效率版订阅 - 首月优惠"
+                            # 首月1元（100分）
+                            amount = 100
+                            description = (
+                                "物流系统效率版订阅 - 首月优惠"
+                            )
                         elif plan_key == 'precision':
-                            amount = 19.9  # 精准版19.9元
+                            # 精准版19.9元（1990分）
+                            amount = 1990
                             description = "物流系统精准版订阅"
                         else:
-                            amount = 9.9
-                            description = f"物流系统{plan['name']}订阅"
-                        
-                        with st.spinner("正在创建订单..."):
-                            result = wechat_pay_handler.create_payment_order(
-                                user_id=current_user,
-                                plan_type=plan_key,
-                                amount=amount,
-                                description=description
+                            # 9.9元（990分）
+                            amount = 990
+                            description = (
+                                f"物流系统{plan['name']}订阅"
                             )
-                        
-                        if result["success"]:
-                            st.success("订单创建成功！")
-                            
-                            # 显示二维码
-                            qr_code_url = result.get("qr_code_url")
-                            order_id = result.get("order_id")
-                            
-                            if qr_code_url:
-                                st.info("请使用微信扫描下方二维码完成支付：")
-                                
-                                # 生成二维码（简单实现）
-                                import qrcode
-                                import io
-                                import base64
-                                
-                                qr = qrcode.QRCode(version=1, box_size=10, border=5)
-                                qr.add_data(qr_code_url)
-                                qr.make(fit=True)
-                                
-                                qr_img = qr.make_image(fill_color="black", back_color="white")
-                                
-                                # 转换为base64显示
-                                img_buffer = io.BytesIO()
-                                qr_img.save(img_buffer, format='PNG')
-                                img_str = base64.b64encode(img_buffer.getvalue()).decode()
-                                
-                                st.markdown(f"""
-                                    <div style="text-align: center;">
-                                        <img src="data:image/png;base64,{img_str}" 
-                                             style="max-width: 300px;">
-                                    </div>
-                                """, unsafe_allow_html=True)
-                                
-                                st.info(f"订单号：{order_id}")
-                                
-                                # 添加支付状态检查按钮
-                                if st.button("检查支付状态", key=f"check_{order_id}"):
-                                    status_result = wechat_pay_handler.check_order_status(order_id)
-                                    if status_result["success"]:
-                                        if status_result.get("paid"):
-                                            st.success("支付成功！订阅已激活")
-                                            st.rerun()
+
+                        with st.spinner("正在创建订单..."):
+                            # 创建内部订单
+                            order_data = (
+                                payment_handler.create_payment_order(
+                                    user_id=current_user_id_val,
+                                    amount=amount,
+                                    description=description
+                                )
+                            )
+
+                            if order_data:
+                                # 发起微信支付
+                                wechat_response = (
+                                    payment_handler.initiate_wechat_payment(
+                                        order_data, trade_type="NATIVE"
+                                    )
+                                )
+
+                                if (wechat_response.get("success") and
+                                        wechat_response.get("code_url")):
+                                    result = {
+                                        "success": True,
+                                        "order_id": order_data["order_id"],
+                                        "qr_code_url": (
+                                            wechat_response["code_url"]
+                                        )
+                                    }
+                                else:
+                                    result = {
+                                        "success": False,
+                                        "message": wechat_response.get(
+                                            "message", "创建支付失败"
+                                        )
+                                    }
+                            else:
+                                result = {
+                                    "success": False,
+                                    "message": "创建订单失败"
+                                }
+
+                            if result["success"]:
+                                st.success("订单创建成功！")
+
+                                # 显示二维码
+                                qr_code_url = result.get("qr_code_url")
+                                order_id = result.get("order_id")
+
+                                if qr_code_url:
+                                    st.info("请使用微信扫描下方二维码完成支付：")
+
+                                    # 生成二维码（简单实现）
+                                    import qrcode
+                                    import io
+                                    import base64
+
+                                    qr = qrcode.QRCode(
+                                        version=1, box_size=10, border=5
+                                    )
+                                    qr.add_data(qr_code_url)
+                                    qr.make(fit=True)
+
+                                    qr_img = qr.make_image(
+                                        fill_color="black", back_color="white"
+                                    )
+                                    # 转换为base64显示
+                                    img_buffer = io.BytesIO()
+                                    qr_img.save(img_buffer, format='PNG')
+                                    img_str = base64.b64encode(
+                                        img_buffer.getvalue()
+                                    ).decode()
+                                    st.markdown(f"""
+                                        <div style="text-align: center;">
+                                            <img src="data:image/png;base64,
+                                                 {img_str}"
+                                                 style="max-width: 300px;">
+                                        </div>
+                                    """, unsafe_allow_html=True)
+
+                                    st.info(f"订单号：{order_id}")
+
+                                    # 添加支付状态检查按钮
+                                    if st.button("检查支付状态",
+                                                 key=f"check_{order_id}"):
+                                        status_result = (
+                                            payment_handler
+                                            .query_payment_status(order_id)
+                                        )
+                                        if status_result["success"]:
+                                            if (status_result.get("status") ==
+                                                    "SUCCESS"):
+                                                st.success(
+                                                    "支付成功！订阅已激活"
+                                                )
+                                                st.rerun()
+                                            else:
+                                                st.info(
+                                                    "订单尚未支付，"
+                                                    "请继续扫码支付"
+                                                )
                                         else:
-                                            st.info("订单尚未支付，请继续扫码支付")
+                                            st.error(
+                                                f"查询失败："
+                                                f"{status_result.get(
+                                                    'message'
+                                                )}"
+                                            )
                                     else:
-                                        st.error(f"查询失败：{status_result.get('message')}")
-                            else:
-                                st.error("二维码生成失败")
-                        else:
-                            st.error(f"订单创建失败：{result.get('message')}")
-                            if plan_key == 'efficiency':
-                                st.info("首月仅需¥1，次月自动恢复¥9.9/月")
-                            else:
-                                st.info("如有问题请联系客服")
+                                        st.error("二维码生成失败")
+                                else:
+                                    st.error(f"订单创建失败：{result.get('message')}")
+                                    if plan_key == 'efficiency':
+                                        st.info("首月仅需¥1，次月自动恢复¥9.9/月")
+                                    else:
+                                        st.info("如有问题请联系客服")
 
     st.divider()
 
@@ -5835,12 +6062,12 @@ def init_exchange_rates():
     try:
         print("🔄 系统启动：正在初始化汇率服务...")
 
-        # 获取CNY到RUB汇率
+    # 获取CNY到RUB汇率
         cny_rub_service = ExchangeRateService()
         cny_rub_rate = cny_rub_service.get_exchange_rate()
         print(f"✅ CNY到RUB汇率: {cny_rub_rate:.4f}")
 
-        # 获取USD到CNY汇率
+    # 获取USD到CNY汇率
         usd_cny_rate = get_usd_rate()
         print(f"✅ USD到CNY汇率: {usd_cny_rate:.4f}")
         print("✅ 汇率服务初始化完成")
@@ -5862,7 +6089,6 @@ def main():
     if not st.session_state.get('exchange_rates_initialized', False):
         init_exchange_rates()
         st.session_state.exchange_rates_initialized = True
-
 
     # 正常模式：检查会话安全性
     if not check_session_security():

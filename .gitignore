@@ -126,3 +126,16 @@ flake8_all.txt
 flake8_app.txt
 flake8_logic.txt
 flake8_ui_logistics.txt
+
+# 微信支付敏感文件
+cert/
+*.pem
+*.p12
+*.crt
+*.key
+cert_env_config.txt
+.env
+.env.local
+.env.production
+*_secret.py
+*_private.py

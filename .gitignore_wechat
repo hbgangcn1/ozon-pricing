@@ -1,0 +1,26 @@
+# 微信支付敏感文件
+# 请将此文件内容添加到 .gitignore 中
+
+# 证书文件
+cert/
+*.pem
+*.p12
+*.crt
+*.key
+
+# 环境变量文件
+.env
+.env.local
+.env.production
+
+# 配置文件（包含敏感信息）
+*_secret.py
+*_private.py
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.temp
