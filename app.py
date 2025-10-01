@@ -5915,19 +5915,19 @@ def subscription_management_page():
                             from wechat_pay_config import wechat_config
                             st.write("微信配置检查：")
                             app_id_display = (wechat_config.app_id[:10] + "..."
-                                             if wechat_config.app_id
-                                             else "未设置")
+                                              if wechat_config.app_id
+                                              else "未设置")
                             st.write("- AppID:", app_id_display)
                             mch_id_display = (wechat_config.mch_id[:10] + "..."
-                                             if wechat_config.mch_id
-                                             else "未设置")
+                                              if wechat_config.mch_id
+                                              else "未设置")
                             st.write("- 商户号:", mch_id_display)
                             api_key_display = ("已设置"
-                                              if wechat_config.api_v3_key
-                                              else "未设置")
+                                               if wechat_config.api_v3_key
+                                               else "未设置")
                             st.write("- API密钥:", api_key_display)
                             key_path_display = (wechat_config.private_key_path
-                                               or "未设置")
+                                                or "未设置")
                             st.write("- 私钥路径:", key_path_display)
                             # 创建支付订单（包含微信支付）
                             result = payment_handler.create_payment_order(
