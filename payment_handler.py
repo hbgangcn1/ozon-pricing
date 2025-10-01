@@ -192,6 +192,7 @@ class PaymentHandler:
     @staticmethod
     def _handle_payment_success(order_id: str):
         """处理支付成功后的业务逻辑"""
+        print(f"🔧 开始处理支付成功逻辑: 订单ID={order_id}")
         try:
             with get_db_connection() as (conn, cursor):
                 # 获取订单信息
@@ -219,6 +220,20 @@ class PaymentHandler:
                         WHERE id = ?
                     """, (int(time.time()) + 365*24*3600,
                           int(time.time()), user_id))
+
+                elif ("效率版" in description or
+                      "EFFICIENCY" in description.upper()):
+                    # 开通效率版会员
+                    print(f"🔧 处理效率版支付成功: 用户ID={user_id}, 描述={description}")
+                    cursor.execute("""
+                        UPDATE users
+                        SET subscription_type = 'efficiency',
+                            subscription_expires = ?,
+                            updated_at = ?
+                        WHERE id = ?
+                    """, (int(time.time()) + 30*24*3600,  # 30天有效期
+                          int(time.time()), user_id))
+                    print(f"✅ 效率版订阅状态已更新: 用户ID={user_id}")
 
                 elif "计算次数" in description:
                     # 增加计算次数
