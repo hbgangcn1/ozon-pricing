@@ -5583,14 +5583,15 @@ def subscription_management_page():
     user_id = current_user_id()
     subscription_status = check_user_subscription_status(user_id)
 
-    # 获取用户信息
+    # 获取用户信息 - 优先使用subscription_type字段
     with get_db_connection() as (conn, c):
-        c.execute("SELECT user_type FROM users WHERE id = ?", (user_id,))
+        c.execute("SELECT subscription_type, user_type FROM users WHERE id = ?", (user_id,))
         result = c.fetchone()
         if not result:
             st.error("无法获取用户信息")
             return
-        user_type = result[0]
+        # 优先使用subscription_type，如果没有则使用user_type
+        user_type = result[0] or result[1] if result[0] else result[1]
 
     # 套餐信息映射
     plans = {
