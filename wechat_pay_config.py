@@ -132,4 +132,6 @@ def get_wechat_pay_config() -> WeChatPayConfig:
 
 
 # 全局配置实例
+print("🔍 开始创建微信支付配置实例...")
 wechat_config = get_wechat_pay_config()
+print("✅ 微信支付配置实例创建完成")

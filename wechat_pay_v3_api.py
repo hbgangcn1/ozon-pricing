@@ -30,7 +30,7 @@ class WeChatPayV3API:
         """
         self.config = config or wechat_config
         self._private_key = None
-        self._cert_serial_no = config.cert_serial_no if config else None
+        self._cert_serial_no = self.config.cert_serial_no
 
     def _load_private_key(self) -> Optional[rsa.RSAPrivateKey]:
         """加载商户私钥"""
