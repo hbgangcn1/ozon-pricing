@@ -592,7 +592,6 @@ def settings_page():
 # noinspection PyUnboundLocalVariable
 def should_show_subscription_management():
     """检查是否应该显示订阅管理页面"""
-    from db_utils import is_registration_open
 
     # 检查当前用户类型，测试用户和感谢版用户不显示订阅管理
     # 测试环境兼容性处理
@@ -5881,7 +5880,7 @@ def subscription_management_page():
                         if not current_user_id_val:
                             st.error("请先登录")
                             st.stop()
-                        
+
                         # 获取当前用户信息
                         current_user = st.session_state.get('user', {})
                         if not current_user:
@@ -5911,15 +5910,25 @@ def subscription_management_page():
                             st.write("用户ID：", current_user_id_val)
                             st.write("金额：", amount)
                             st.write("描述：", description)
-                            
+
                             # 检查微信支付配置
                             from wechat_pay_config import wechat_config
                             st.write("微信配置检查：")
-                            st.write("- AppID:", wechat_config.app_id[:10] + "..." if wechat_config.app_id else "未设置")
-                            st.write("- 商户号:", wechat_config.mch_id[:10] + "..." if wechat_config.mch_id else "未设置")
-                            st.write("- API密钥:", "已设置" if wechat_config.api_v3_key else "未设置")
-                            st.write("- 私钥路径:", wechat_config.private_key_path or "未设置")
-                            
+                            app_id_display = (wechat_config.app_id[:10] + "..."
+                                             if wechat_config.app_id
+                                             else "未设置")
+                            st.write("- AppID:", app_id_display)
+                            mch_id_display = (wechat_config.mch_id[:10] + "..."
+                                             if wechat_config.mch_id
+                                             else "未设置")
+                            st.write("- 商户号:", mch_id_display)
+                            api_key_display = ("已设置"
+                                              if wechat_config.api_v3_key
+                                              else "未设置")
+                            st.write("- API密钥:", api_key_display)
+                            key_path_display = (wechat_config.private_key_path
+                                               or "未设置")
+                            st.write("- 私钥路径:", key_path_display)
                             # 创建支付订单（包含微信支付）
                             result = payment_handler.create_payment_order(
                                 user_id=current_user_id_val,
