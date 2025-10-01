@@ -5909,6 +5909,19 @@ def subscription_management_page():
                             )
 
                         with st.spinner("正在创建订单..."):
+                            # 调试：检查配置
+                            st.write("用户ID：", current_user_id_val)
+                            st.write("金额：", amount)
+                            st.write("描述：", description)
+                            
+                            # 检查微信支付配置
+                            from wechat_pay_config import wechat_config
+                            st.write("微信配置检查：")
+                            st.write("- AppID:", wechat_config.app_id[:10] + "..." if wechat_config.app_id else "未设置")
+                            st.write("- 商户号:", wechat_config.mch_id[:10] + "..." if wechat_config.mch_id else "未设置")
+                            st.write("- API密钥:", "已设置" if wechat_config.api_v3_key else "未设置")
+                            st.write("- 私钥路径:", wechat_config.private_key_path or "未设置")
+                            
                             # 创建支付订单（包含微信支付）
                             result = payment_handler.create_payment_order(
                                 user_id=current_user_id_val,
@@ -5917,11 +5930,14 @@ def subscription_management_page():
                                 payment_type="native"
                             )
 
+                            # 调试信息
+                            st.write("支付结果：", result)
+
                             if result.get("success"):
                                 # 重命名字段以保持兼容性
                                 result["qr_code_url"] = result.get("code_url")
 
-                            if result["success"]:
+                            if result.get("success"):
                                 st.success("订单创建成功！")
 
                                 # 显示二维码
