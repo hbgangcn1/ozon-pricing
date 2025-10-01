@@ -1749,19 +1749,23 @@ def precise_products_page():
                 )
             # 当选择产品时，获取产品数据并填充表单
                 if selected_product != "选择产品" and not user_products.empty:
-                    # 获取选中产品的完整数据
-                    product_data = pd.read_sql(
-                        (
-                            "SELECT * FROM products "
-                            "WHERE name = ? AND user_id = ?"
-                        ),
-                        conn,
-                        params=(selected_product, uid),
-                    ).iloc[0]
-                # 将产品数据存储到session state中，供表单使用
-                    st.session_state.selected_product_data = (
-                        product_data.to_dict()
-                    )
+                    # 检查是否需要更新产品数据（避免重复查询）
+                    current_product = st.session_state.get("selected_product_data", {}).get("name", "")
+                    if current_product != selected_product:
+                        # 获取选中产品的完整数据
+                        product_data = pd.read_sql(
+                            (
+                                "SELECT * FROM products "
+                                "WHERE name = ? AND user_id = ?"
+                            ),
+                            conn,
+                            params=(selected_product, uid),
+                        )
+                        if not product_data.empty:
+                            # 将产品数据存储到session state中，供表单使用
+                            st.session_state.selected_product_data = (
+                                product_data.iloc[0].to_dict()
+                            )
                 else:
                     # 清除之前选择的产品数据
                     if "selected_product_data" in st.session_state:
@@ -1781,19 +1785,41 @@ def precise_products_page():
         with st.container():
             # 获取选中的产品数据
             selected_data = st.session_state.get("selected_product_data", {})
+            
+            # 如果选择了产品，更新表单控件的默认值
+            if selected_data:
+                # 确保表单控件使用选中的产品数据
+                default_name = selected_data.get("name", "")
+                default_price = float(selected_data.get("unit_price", 0.0))
+            else:
+                default_name = ""
+                default_price = 0.0
+                
         # 产品名称和进货单价在一行中分两个列显示
             col1, col2 = st.columns(2)
             with col1:
+                # 如果session state中没有该key，使用默认值；否则保持用户输入的值
+                if "precise_product_name" not in st.session_state:
+                    st.session_state.precise_product_name = default_name
+                elif selected_data and st.session_state.precise_product_name != default_name:
+                    # 如果选择了新产品，更新表单值
+                    st.session_state.precise_product_name = default_name
+                    
                 name = st.text_input(
                     "产品名称*",
                     key="precise_product_name",
-                    value=selected_data.get("name", ""),
                 )
             with col2:
+                # 如果session state中没有该key，使用默认值；否则保持用户输入的值
+                if "precise_unit_price" not in st.session_state:
+                    st.session_state.precise_unit_price = default_price
+                elif selected_data and st.session_state.precise_unit_price != default_price:
+                    # 如果选择了新产品，更新表单值
+                    st.session_state.precise_unit_price = default_price
+                    
                 unit_price = st.number_input(
                     "进货单价（元）*",
                     min_value=0.0,
-                    value=float(selected_data.get("unit_price", 0.0)),
                     step=0.01,
                     key="precise_unit_price",
                 )
