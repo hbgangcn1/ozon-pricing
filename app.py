@@ -5938,7 +5938,9 @@ def subscription_management_page():
                             st.write("描述：", description)
 
                             # 检查微信支付配置
+                            print("🔍 开始加载微信支付配置...")
                             from wechat_pay_config import wechat_config
+                            print("✅ 微信支付配置加载完成")
                             st.write("微信配置检查：")
                             app_id_display = (wechat_config.app_id[:10] + "..."
                                               if wechat_config.app_id
@@ -5955,6 +5957,24 @@ def subscription_management_page():
                             key_path_display = (wechat_config.private_key_path
                                                 or "未设置")
                             st.write("- 私钥路径:", key_path_display)
+                            
+                            # 如果配置未设置，显示设置指导
+                            if not wechat_config.app_id or not wechat_config.mch_id:
+                                st.error("⚠️ 微信支付配置未完成！")
+                                st.markdown("""
+                                **需要在生产服务器上设置以下环境变量：**
+                                
+                                请联系系统管理员配置微信支付相关环境变量：
+                                - WECHAT_APP_ID
+                                - WECHAT_MCH_ID  
+                                - WECHAT_API_V3_KEY
+                                - WECHAT_PRIVATE_KEY_PATH
+                                - WECHAT_CERT_SERIAL_NO
+                                - PRODUCTION_MODE
+                                
+                                详细配置指南请参考服务器部署文档。
+                                """)
+                                st.stop()
                             # 创建支付订单（包含微信支付）
                             result = payment_handler.create_payment_order(
                                 user_id=current_user_id_val,
