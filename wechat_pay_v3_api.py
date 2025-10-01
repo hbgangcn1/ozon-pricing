@@ -130,15 +130,18 @@ class WeChatPayV3API:
         signature = self._build_signature(method, url_path, timestamp,
                                           nonce_str, body)
 
-        # 构建Authorization头
+        # 构建Authorization头 - 微信支付v3 API格式
         auth_str = (f'WECHATPAY2-SHA256-RSA2048 '
                     f'mchid="{self.config.mch_id}",'
                     f'nonce_str="{nonce_str}",'
                     f'signature="{signature}",'
-                    f'timestamp="{timestamp}"')
+                    f'timestamp="{timestamp}",'
+                    f'serial_no="{self._cert_serial_no}"')
 
-        if self._cert_serial_no:
-            auth_str += f',serial_no="{self._cert_serial_no}"'
+        # 调试信息
+        print(f"Authorization头: {auth_str}")
+        print(f"商户号: {self.config.mch_id}")
+        print(f"证书序列号: {self._cert_serial_no}")
 
         return {
             'Authorization': auth_str,
