@@ -103,7 +103,21 @@ def get_wechat_pay_config() -> WeChatPayConfig:
 
     # 证书配置
     config.private_key_path = os.getenv("WECHAT_PRIVATE_KEY_PATH")
-    config.cert_serial_no = os.getenv("WECHAT_CERT_SERIAL_NO")
+    cert_serial_raw = os.getenv("WECHAT_CERT_SERIAL_NO")
+    
+    # 清理证书序列号格式（移除空格、冒号等）
+    if cert_serial_raw:
+        config.cert_serial_no = cert_serial_raw.replace(":", "").replace(" ", "").replace("-", "").upper()
+    else:
+        config.cert_serial_no = None
+    
+    # 调试信息
+    print(f"🔧 微信支付配置加载:")
+    print(f"  AppID: {config.app_id[:10] if config.app_id else 'None'}...")
+    print(f"  商户号: {config.mch_id}")
+    print(f"  私钥路径: {config.private_key_path}")
+    print(f"  证书序列号: {config.cert_serial_no}")
+    print(f"  API密钥: {'已设置' if config.api_v3_key else '未设置'}")
 
     # 回调地址
     config.notify_url = os.getenv("WECHAT_NOTIFY_URL",
