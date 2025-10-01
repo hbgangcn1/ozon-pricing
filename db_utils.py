@@ -1295,7 +1295,7 @@ def get_user_subscription_info(user_id):
         user = c.execute(
             "SELECT id, username, user_type, expiry_date, "
             "remaining_calculations, first_login_date, "
-            "test_days_remaining, role "
+            "test_days_remaining, role, subscription_type, subscription_expires "
             "FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
@@ -1342,7 +1342,8 @@ def check_user_subscription_status(user_id):
             'role': 'admin',
         }
 
-    user_type = user_info.get('user_type', 'permanent')
+    # 优先使用subscription_type字段，如果没有则使用user_type
+    user_type = user_info.get('subscription_type') or user_info.get('user_type', 'permanent')
 
     # 永久用户
     if user_type == 'permanent':
@@ -1487,19 +1488,36 @@ def check_user_subscription_status(user_id):
                 'user_type': user_type,
             }
 
-        # 非免费版用户：保留原有到期检查逻辑
+        # 非免费版用户：检查订阅过期时间
+        # 优先使用subscription_expires字段，如果没有则使用expiry_date
+        subscription_expires = user_info.get('subscription_expires')
         expiry_date = user_info.get('expiry_date')
-        if not expiry_date:
+        
+        if subscription_expires:
+            # 使用subscription_expires（Unix时间戳）
+            import time
+            current_time = int(time.time())
+            days_remaining = (subscription_expires - current_time) // (24 * 3600)
+        elif expiry_date:
+            # 使用expiry_date（ISO格式）
+            try:
+                expiry = datetime.fromisoformat(expiry_date)
+                today = date.today()
+                days_remaining = (expiry.date() - today).days
+            except (ValueError, TypeError):
+                return {
+                    'valid': False,
+                    'message': '订阅信息错误',
+                    'user_type': user_type,
+                }
+        else:
             return {
                 'valid': False,
                 'message': '订阅信息不完整',
                 'user_type': user_type,
             }
+        
         try:
-            expiry = datetime.fromisoformat(expiry_date)
-            today = date.today()
-            days_remaining = (expiry.date() - today).days
-
             if days_remaining <= 0:
                 return {
                     'valid': False,
