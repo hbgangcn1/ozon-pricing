@@ -1671,8 +1671,6 @@ def update_user_password(user_id, current_password, new_password):
 
 def delete_user(user_id):
     """删除用户及其相关数据"""
-    # 确保数据库已初始化
-    init_db()
 
     with get_db_connection() as (conn, c):
         try:
