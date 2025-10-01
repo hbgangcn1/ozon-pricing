@@ -6056,8 +6056,6 @@ def subscription_management_page():
                                                     'message'
                                                 )}"
                                             )
-                                    else:
-                                        st.error("二维码生成失败")
                                 else:
                                     st.error(f"订单创建失败：{result.get('message')}")
                                     if plan_key == 'efficiency':
