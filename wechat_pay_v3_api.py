@@ -37,8 +37,12 @@ class WeChatPayV3API:
         if self._private_key is not None:
             return self._private_key
 
-        if (not self.config.private_key_path or
-                not os.path.exists(self.config.private_key_path)):
+        if not self.config.private_key_path:
+            print("私钥路径未配置")
+            return None
+            
+        if not os.path.exists(self.config.private_key_path):
+            print(f"私钥文件不存在: {self.config.private_key_path}")
             return None
 
         try:
@@ -57,6 +61,7 @@ class WeChatPayV3API:
                     return None
         except Exception as e:
             print(f"加载私钥失败: {e}")
+            print(f"私钥文件路径: {self.config.private_key_path}")
             return None
 
     @staticmethod
