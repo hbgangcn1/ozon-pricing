@@ -4,9 +4,8 @@
 用于接收微信支付的异步通知
 """
 
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, jsonify
 import logging
-import json
 from payment_handler import payment_handler
 
 # 配置日志
@@ -24,24 +23,28 @@ def wechat_notify():
     try:
         # 获取请求头信息
         headers = {
-            'Wechatpay-Timestamp': request.headers.get('Wechatpay-Timestamp', ''),
+            'Wechatpay-Timestamp': request.headers.get(
+                'Wechatpay-Timestamp', ''
+            ),
             'Wechatpay-Nonce': request.headers.get('Wechatpay-Nonce', ''),
-            'Wechatpay-Signature': request.headers.get('Wechatpay-Signature', ''),
+            'Wechatpay-Signature': request.headers.get(
+                'Wechatpay-Signature', ''
+            ),
         }
-        
+
         # 获取请求体
         body = request.get_data(as_text=True)
         logger.info(f"收到微信支付通知: {body}")
-        
+
         # 构建通知数据
         notify_data = {
             'headers': headers,
             'body': body
         }
-        
+
         # 处理通知
         result = payment_handler.process_wechat_notify(notify_data)
-        
+
         if result['success']:
             # 返回成功响应
             return jsonify({
@@ -55,7 +58,7 @@ def wechat_notify():
                 'code': 'FAIL',
                 'message': result['message']
             }), 400
-            
+
     except Exception as e:
         logger.error(f"处理微信支付通知异常: {str(e)}")
         return jsonify({
@@ -95,4 +98,3 @@ def health_check():
 if __name__ == '__main__':
     # 在生产环境中，建议使用 gunicorn 等 WSGI 服务器
     app.run(host='0.0.0.0', port=8080, debug=False)
-

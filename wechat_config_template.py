@@ -11,7 +11,7 @@ from wechat_pay_config import WeChatPayConfig
 def get_production_config() -> WeChatPayConfig:
     """
     生产环境微信支付配置
-    
+
     请填写以下信息：
     1. 在微信支付商户平台获取商户号（mch_id）
     2. 在微信公众平台或小程序平台获取AppID
@@ -19,52 +19,52 @@ def get_production_config() -> WeChatPayConfig:
     4. 下载商户证书并配置证书路径
     """
     config = WeChatPayConfig()
-    
+
     # 基础配置 - 请填写您的实际信息
     config.app_id = "YOUR_APP_ID"  # 微信公众号或小程序AppID
     config.mch_id = "YOUR_MCH_ID"  # 商户号
     config.api_v3_key = "YOUR_API_V3_KEY"  # API v3密钥（32位字符串）
-    
+
     # 证书配置 - 请填写证书文件路径
     config.private_key_path = "path/to/your/private_key.pem"  # 商户私钥文件路径
     config.cert_serial_no = "YOUR_CERT_SERIAL_NO"  # 商户证书序列号
-    
+
     # 回调配置 - 请填写您的域名
     config.notify_url = "https://your-domain.com/wechat/notify"  # 支付结果通知地址
     config.return_url = "https://your-domain.com/payment/success"  # 支付完成跳转地址
-    
+
     # 环境配置
     config.sandbox = False  # 生产环境请设置为False
-    
+
     return config
 
 
 def get_local_test_config() -> WeChatPayConfig:
     """
     本地测试环境微信支付配置
-    
+
     注意：本地测试需要配置内网穿透工具（如ngrok或cpolar）
     将本地回调地址映射到公网地址
     """
     config = WeChatPayConfig()
-    
+
     # 基础配置 - 请填写您的测试信息
     config.app_id = "YOUR_TEST_APP_ID"  # 测试公众号或小程序AppID
     config.mch_id = "YOUR_TEST_MCH_ID"  # 测试商户号
     config.api_v3_key = "YOUR_TEST_API_V3_KEY"  # 测试API v3密钥
-    
+
     # 证书配置
     config.private_key_path = "path/to/your/test_private_key.pem"
     config.cert_serial_no = "YOUR_TEST_CERT_SERIAL_NO"
-    
+
     # 回调配置 - 使用内网穿透地址
     # 例如：https://abc123.ngrok.io 或 https://abc123.cpolar.cn
     config.notify_url = "https://your-ngrok-domain.ngrok.io/wechat/notify"
     config.return_url = "https://your-ngrok-domain.ngrok.io/payment/success"
-    
+
     # 环境配置
     config.sandbox = True  # 测试环境建议使用沙箱
-    
+
     return config
 
 

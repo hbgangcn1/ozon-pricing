@@ -325,6 +325,7 @@ def user_management_page():
         users = pd.read_sql(
             "SELECT id, username, role FROM users", conn
         )
+
         if users.empty:
             st.info("暂无用户数据")
             return
@@ -339,50 +340,75 @@ def user_management_page():
             options=users.itertuples(index=False),
             format_func=_format_user_row,
         )
-        if choice:
-            # 当使用format_func时，choice是格式化后的字符串，需要从原始数据中查找
-            # 找到对应的原始行数据
-            selected_row = None
-            for row in users.itertuples(index=False):
-                if _format_user_row(row) == choice:
-                    selected_row = row
-                    break
 
-            if selected_row:
-                uid = int(getattr(selected_row, "id", selected_row[0]))
-                uname = str(getattr(selected_row, "username", selected_row[1]))
-                urole = str(getattr(selected_row, "role", selected_row[2]))
-            else:
-                # 如果找不到对应的行，跳过处理
-                return
+        if choice:
+            # choice 本身就是 namedtuple，直接使用
+            uid = int(getattr(choice, "id", choice[0]))
+            uname = str(getattr(choice, "username", choice[1]))
+            urole = str(getattr(choice, "role", choice[2]))
+
             st.write("---")
             st.write(f"**已选用户：** {uname}（{urole}）")
 
+            # 操作按钮 - 放在顶部显眼位置
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button(
+                    "📋 订阅管理",
+                    key=f"subscription_{uid}",
+                    use_container_width=True
+                ):
+                    st.session_state.selected_user_for_subscription = uid
+                    st.rerun()
+            with col2:
+                if st.button(
+                    "🔒 重置密码",
+                    key=f"show_reset_pwd_{uid}",
+                    use_container_width=True
+                ):
+                    st.session_state[f"show_reset_password_{uid}"] = True
+            with col3:
+                if st.button(
+                    "🗑️ 删除用户",
+                    key=f"del_user_{uid}",
+                    use_container_width=True
+                ):
+                    if uid == st.session_state.user["id"]:
+                        st.error("不能删除当前登录用户")
+                    else:
+                        st.session_state.delete_confirm_user_id = uid
+                        st.rerun()
+
             # 重置密码
-            with st.expander("重置密码"):
-                with st.form("reset_password_form"):
-                    new_pwd = st.text_input(
-                        "新密码*", type="password",
-                        help=get_password_requirements_text(),
-                    )
-                    if st.form_submit_button("确认重置"):
-                        if not new_pwd:
-                            st.error("请输入新密码")
-                        else:
-                            ok = validate_password_strength(new_pwd)
-                            if not ok.get('is_valid', False):
-                                st.error("密码强度不符合要求：")
-                                for err in ok.get('errors', []):
-                                    st.error(f"• {err}")
-                                return
-                            hashed = hash_password(new_pwd)
-                            c.execute(
-                                "UPDATE users SET password=? WHERE id=?",
-                                (hashed, uid),
-                            )
-                            conn.commit()
-                            st.success("密码已更新！")
-                            st.rerun()
+            if st.session_state.get(f"show_reset_password_{uid}", False):
+                with st.expander("重置密码", expanded=True):
+                    with st.form("reset_password_form"):
+                        new_pwd = st.text_input(
+                            "新密码*", type="password",
+                            help=get_password_requirements_text(),
+                        )
+                        if st.form_submit_button("确认重置"):
+                            if not new_pwd:
+                                st.error("请输入新密码")
+                            else:
+                                ok = validate_password_strength(new_pwd)
+                                if not ok.get('is_valid', False):
+                                    st.error("密码强度不符合要求：")
+                                    for err in ok.get('errors', []):
+                                        st.error(f"• {err}")
+                                    return
+                                hashed = hash_password(new_pwd)
+                                c.execute(
+                                    "UPDATE users SET password=? WHERE id=?",
+                                    (hashed, uid),
+                                )
+                                conn.commit()
+                                st.success("密码已更新！")
+                                pwd_key = f"show_reset_password_{uid}"
+                                if pwd_key in st.session_state:
+                                    del st.session_state[pwd_key]
+                                st.rerun()
+
             # 单用户同步
             with st.expander("物流规则同步"):
                 query = (
@@ -412,20 +438,6 @@ def user_management_page():
                         sync_logistics_rules(uid, overwrite)
                         st.success(
                             f"成功同步 {admin_cnt} 条物流规则到 {uname}")
-                        st.rerun()
-
-            # 顶部操作
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("订阅管理", key=f"subscription_{uid}"):
-                    st.session_state.selected_user_for_subscription = uid
-                    st.rerun()
-            with col2:
-                if st.button("删除用户", key=f"del_user_{uid}"):
-                    if uid == st.session_state.user["id"]:
-                        st.error("不能删除当前登录用户")
-                    else:
-                        st.session_state.delete_confirm_user_id = uid
                         st.rerun()
 
             # 删除确认
@@ -468,6 +480,11 @@ def subscription_management_page():
     if not user_info:
         st.error("用户信息不存在")
         return
+
+    # 添加返回按钮
+    if st.button("← 返回用户列表", key="back_to_user_list"):
+        del st.session_state.selected_user_for_subscription
+        st.rerun()
 
     st.markdown(
         """
@@ -549,64 +566,99 @@ def subscription_management_page():
 
     # 如果是admin用户，显示提示信息
     if user_role == 'admin':
-        st.info("**管理员用户无需订阅管理，但可以管理其他用户的订阅**")
+        st.info("**管理员用户无需订阅管理**")
+    else:
+        # 通用的增加订阅天数功能
+        st.write("**增加订阅时长：**")
+        col1, col2 = st.columns(2)
 
-    if user_info['user_type'] == 'test':
-        if st.button("转为感谢版用户"):
-            update_user_subscription(user_id, {
-                'user_type': 'gratitude',
-                'expiry_date': None,
-                'remaining_calculations': -1,
-                'test_days_remaining': 0
-            })
-            st.success("用户已转为感谢版用户！")
-            st.rerun()
+        with col1:
+            if st.button(
+                "➕ 增加30天",
+                key="add_30_days",
+                use_container_width=True
+            ):
+                current_expiry = user_info.get('expiry_date')
+                from datetime import date
 
-    elif user_info['user_type'] == 'monthly':
-        st.write("**增加订阅：**")
-        calculation_option = st.radio("选择次数", ["100次", "500次"])
-        calculations = 100 if calculation_option == "100次" else 500
+                if current_expiry:
+                    try:
+                        expiry = datetime.fromisoformat(current_expiry)
+                        today = datetime.now()
+                        # 如果已经过期，从今天开始加天数；否则从过期日期加天数
+                        if expiry.date() <= date.today():
+                            new_expiry = today + timedelta(days=30)
+                        else:
+                            new_expiry = expiry + timedelta(days=30)
+                    except (ValueError, TypeError):
+                        new_expiry = datetime.now() + timedelta(days=30)
+                else:
+                    new_expiry = datetime.now() + timedelta(days=30)
 
-        if st.button("增加30天"):
-            current_expiry = user_info.get('expiry_date')
-            if current_expiry:
-                new_expiry = (
-                    datetime.fromisoformat(current_expiry) +
-                    timedelta(days=30)
-                )
-            else:
-                new_expiry = datetime.now() + timedelta(days=30)
+                update_user_subscription(user_id, {
+                    'expiry_date': new_expiry.isoformat()
+                })
+                st.success("✅ 已增加30天订阅时长！")
+                st.rerun()
 
-            new_calculations = (
-                user_info.get(
-                    'remaining_calculations',
-                    0,
-                ) + calculations
+        with col2:
+            if st.button(
+                "➕ 增加365天",
+                key="add_365_days",
+                use_container_width=True
+            ):
+                current_expiry = user_info.get('expiry_date')
+                from datetime import date
+
+                if current_expiry:
+                    try:
+                        expiry = datetime.fromisoformat(current_expiry)
+                        today = datetime.now()
+                        # 如果已经过期，从今天开始加天数；否则从过期日期加天数
+                        if expiry.date() <= date.today():
+                            new_expiry = today + timedelta(days=365)
+                        else:
+                            new_expiry = expiry + timedelta(days=365)
+                    except (ValueError, TypeError):
+                        new_expiry = datetime.now() + timedelta(days=365)
+                else:
+                    new_expiry = datetime.now() + timedelta(days=365)
+
+                update_user_subscription(user_id, {
+                    'expiry_date': new_expiry.isoformat()
+                })
+                st.success("✅ 已增加365天订阅时长！")
+                st.rerun()
+
+        # 针对特定用户类型的额外操作
+        st.write("---")
+        if user_info['user_type'] == 'test':
+            if st.button("转为感谢版用户"):
+                update_user_subscription(user_id, {
+                    'user_type': 'gratitude',
+                    'expiry_date': None,
+                    'remaining_calculations': -1,
+                    'test_days_remaining': 0
+                })
+                st.success("用户已转为感谢版用户！")
+                st.rerun()
+
+        elif user_info['user_type'] == 'monthly':
+            st.write("**增加计算次数：**")
+            calculation_option = st.radio(
+                "选择次数", ["100次", "500次"], key="calc_option"
             )
+            calculations = 100 if calculation_option == "100次" else 500
 
-            update_user_subscription(user_id, {
-                'expiry_date': new_expiry.isoformat(),
-                'remaining_calculations': new_calculations
-            })
-            st.success(f"已增加30天时长和{calculations}次计算！")
-            st.rerun()
-
-    elif user_info['user_type'] == 'enterprise':
-        if st.button("增加30天"):
-            current_expiry = user_info.get('expiry_date')
-            if current_expiry:
-                new_expiry = (
-                    datetime.fromisoformat(current_expiry) +
-                    timedelta(days=30)
+            if st.button("增加计算次数", key="add_calculations"):
+                new_calculations = (
+                    user_info.get('remaining_calculations', 0) + calculations
                 )
-            else:
-                new_expiry = datetime.now() + timedelta(days=30)
-
-            update_user_subscription(user_id, {
-                'expiry_date': new_expiry.isoformat()
-            })
-            st.success("已增加30天时长！")
-            st.rerun()
+                update_user_subscription(user_id, {
+                    'remaining_calculations': new_calculations
+                })
+                st.success(f"✅ 已增加{calculations}次计算！")
+                st.rerun()
 
     # 减少订阅
     st.subheader("减少订阅")
@@ -698,40 +750,45 @@ def login_or_register_page():
         """,
         unsafe_allow_html=True
     )
-    
+
     # 在同一行中显示ICP备案号和公安备案信息
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         # 在同一列中创建水平布局，使用HTML实现真正的左右排列
         import os
-        icon_path = os.path.join(os.path.dirname(__file__), "PSB Filing Icon.png")
-        
+        icon_path = os.path.join(
+            os.path.dirname(__file__), "PSB Filing Icon.png"
+        )
+
         # 读取图标文件并转换为base64，确保能正确显示
         import base64
         try:
             with open(icon_path, 'rb') as f:
                 icon_data = base64.b64encode(f.read()).decode()
             icon_src = f"data:image/png;base64,{icon_data}"
-        except:
+        except (FileNotFoundError, PermissionError, OSError):
             icon_src = ""
-        
-        # 使用HTML实现同一行中的左右排列：ICP备案号 | 公安备案图标+备案号
+
+        # 使用HTML实现同一行中的左右排列：
+        # ICP备案号 | 公安备案图标+备案号
         st.markdown(
             f"""
-            <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+            <div style="display: flex; align-items: center;
+                 justify-content: center; gap: 20px;">
                 <a href="https://beian.miit.gov.cn/#/Integrated/index"
                    target="_blank"
                    style="color: #718096; text-decoration: none;">
                     ICP备案号：粤ICP备2025471825号-1
                 </a>
                 <div style="display: flex; align-items: center; gap: 5px;">
-                    <img src="{icon_src}" 
-                         style="width: 36px; height: 40px; flex-shrink: 0;" 
+                    <img src="{icon_src}"
+                         style="width: 36px; height: 40px; flex-shrink: 0;"
                          alt="公安备案图标">
-                    <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44030002008086" 
-                       rel="noreferrer" 
+                    <a href="https://beian.mps.gov.cn/#/query/webSearch"
+                       rel="noreferrer"
                        target="_blank"
-                       style="color: #718096; text-decoration: none; font-size: 0.9rem;">
+                       style="color: #718096; text-decoration: none;
+                              font-size: 0.9rem;">
                         粤公网安备44030002008086号
                     </a>
                 </div>
@@ -739,7 +796,6 @@ def login_or_register_page():
             """,
             unsafe_allow_html=True
         )
-    
     st.markdown(
         """
         </div>
