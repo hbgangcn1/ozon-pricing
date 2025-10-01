@@ -8,6 +8,14 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+# 尝试加载.env文件
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # 如果没有安装python-dotenv，忽略
+    pass
+
 
 @dataclass
 class WeChatPayConfig:
