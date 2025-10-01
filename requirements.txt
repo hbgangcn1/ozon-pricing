@@ -6,5 +6,9 @@ requests==2.32.5
 schedule==1.2.2
 
 # 微信支付相关依赖
+# 注意：cryptography需要编译，可能需要系统依赖
 cryptography>=41.0.0
 PyJWT>=2.8.0
+
+# 其他依赖
+qrcode[pil]>=7.4.2
