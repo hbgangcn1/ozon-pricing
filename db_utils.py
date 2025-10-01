@@ -707,7 +707,9 @@ def _upgrade_users_subscription_fields():
             "expiry_date": "TEXT",
             "remaining_calculations": "INTEGER DEFAULT -1",
             "first_login_date": "TEXT",
-            "test_days_remaining": "INTEGER DEFAULT 0"
+            "test_days_remaining": "INTEGER DEFAULT 0",
+            "subscription_type": "TEXT DEFAULT 'free'",
+            "subscription_expires": "INTEGER"
         }
         for col, def_sql in new_cols.items():
             if col not in cols:
