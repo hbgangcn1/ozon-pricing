@@ -594,10 +594,6 @@ def should_show_subscription_management():
     """检查是否应该显示订阅管理页面"""
     from db_utils import is_registration_open
 
-    # 首先检查是否开放注册
-    if not is_registration_open():
-        return False
-
     # 检查当前用户类型，测试用户和感谢版用户不显示订阅管理
     # 测试环境兼容性处理
     if hasattr(st.session_state, 'get'):
@@ -620,6 +616,8 @@ def should_show_subscription_management():
     except (KeyError, TypeError, AttributeError):
         pass  # 如果获取失败，默认显示
 
+    # 修改：无论开放注册状态如何，都显示订阅管理页面
+    # 这样可以确保所有用户都能访问订阅管理功能
     return True
 
 
