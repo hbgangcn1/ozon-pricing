@@ -29,6 +29,7 @@ class WeChatPayConfig:
     # 证书配置
     private_key_path: Optional[str] = None  # 商户私钥文件路径
     cert_serial_no: Optional[str] = None    # 商户证书序列号
+    public_key_path: Optional[str] = None  # 微信支付公钥文件路径
 
     # 回调配置
     notify_url: str = ""  # 支付结果通知地址
@@ -103,6 +104,7 @@ def get_wechat_pay_config() -> WeChatPayConfig:
 
     # 证书配置
     config.private_key_path = os.getenv("WECHAT_PRIVATE_KEY_PATH")
+    config.public_key_path = os.getenv("WECHAT_PUBLIC_KEY_PATH")
     cert_serial_raw = os.getenv("WECHAT_CERT_SERIAL_NO")
     
     # 清理证书序列号格式（移除空格、冒号等）
@@ -116,6 +118,7 @@ def get_wechat_pay_config() -> WeChatPayConfig:
     print(f"  AppID: {config.app_id[:10] if config.app_id else 'None'}...")
     print(f"  商户号: {config.mch_id}")
     print(f"  私钥路径: {config.private_key_path}")
+    print(f"  公钥路径: {config.public_key_path}")
     print(f"  证书序列号: {config.cert_serial_no}")
     print(f"  API密钥: {'已设置' if config.api_v3_key else '未设置'}")
 

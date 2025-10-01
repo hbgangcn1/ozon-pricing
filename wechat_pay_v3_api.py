@@ -13,7 +13,7 @@ import os
 from typing import Dict, Optional, Any
 import requests
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives.asymmetric import rsa, padding, utils
 from cryptography.hazmat.backends import default_backend
 from wechat_pay_config import wechat_config
 
@@ -377,11 +377,9 @@ class WeChatPayV3API:
                          .get("Wechatpay-Signature", ""))
             body = request_data.get("body", "")
 
-            # 验证签名（临时跳过，后续需要实现正确的RSA签名验证）
-            # TODO: 实现正确的微信支付v3 API RSA签名验证
-            # if not self.verify_notify_signature(timestamp, nonce, body,
-            #                                     signature):
-            #     return {"success": False, "message": "签名验证失败"}
+            # 验证签名（使用微信支付公钥）
+            if not self.verify_notify_signature_with_public_key(timestamp, nonce, body, signature):
+                return {"success": False, "message": "签名验证失败"}
 
             # 解析通知数据
             notify_data = json.loads(body)
@@ -406,6 +404,54 @@ class WeChatPayV3API:
 
         except Exception as e:
             return {"success": False, "message": f"通知处理失败: {str(e)}"}
+
+    def verify_notify_signature_with_public_key(self, timestamp: str, nonce: str,
+                                                body: str, signature: str) -> bool:
+        """
+        使用微信支付公钥验证回调通知签名
+
+        Args:
+            timestamp: 时间戳
+            nonce: 随机字符串
+            body: 请求体
+            signature: 签名
+
+        Returns:
+            bool: 签名是否正确
+        """
+        try:
+            # 检查是否有公钥配置
+            if not self.config.public_key_path:
+                print("⚠️ 微信支付公钥路径未配置，跳过签名验证")
+                return True  # 如果没有配置公钥，跳过验证
+            
+            # 检查公钥文件是否存在
+            if not os.path.exists(self.config.public_key_path):
+                print(f"⚠️ 微信支付公钥文件不存在: {self.config.public_key_path}")
+                return True  # 如果公钥文件不存在，跳过验证
+            
+            # 构建待验证的字符串
+            sign_str = f"{timestamp}\n{nonce}\n{body}\n"
+            
+            # 加载微信支付公钥
+            with open(self.config.public_key_path, 'rb') as f:
+                public_key_data = f.read()
+                public_key = serialization.load_pem_public_key(public_key_data)
+            
+            # 验证签名
+            public_key.verify(
+                base64.b64decode(signature),
+                sign_str.encode('utf-8'),
+                padding.PKCS1v15(),
+                hashes.SHA256()
+            )
+            
+            print("✅ 微信支付回调签名验证成功")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 微信支付回调签名验证失败: {e}")
+            return False
 
 
 # 全局API实例
