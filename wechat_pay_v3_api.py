@@ -55,9 +55,10 @@ class WeChatPayV3API:
                 # 确保返回的是RSA私钥
                 if isinstance(private_key, rsa.RSAPrivateKey):
                     self._private_key = private_key
+                    print("✅ 私钥加载成功")
                     return self._private_key
                 else:
-                    print("私钥不是RSA类型")
+                    print("❌ 私钥不是RSA类型")
                     return None
         except Exception as e:
             print(f"加载私钥失败: {e}")
@@ -94,6 +95,7 @@ class WeChatPayV3API:
         """
         # 构建签名字符串
         sign_str = f"{method}\n{url_path}\n{timestamp}\n{nonce_str}\n{body}\n"
+        print(f"签名字符串: {repr(sign_str)}")
 
         # 使用商户私钥签名
         private_key = self._load_private_key()
@@ -108,7 +110,9 @@ class WeChatPayV3API:
         )
 
         # Base64编码
-        return base64.b64encode(signature).decode('utf-8')
+        signature_b64 = base64.b64encode(signature).decode('utf-8')
+        print(f"签名结果: {signature_b64}")
+        return signature_b64
 
     def _build_auth_header(self, method: str, url_path: str,
                            body: str = "") -> Dict[str, str]:
@@ -142,6 +146,8 @@ class WeChatPayV3API:
         print(f"Authorization头: {auth_str}")
         print(f"商户号: {self.config.mch_id}")
         print(f"证书序列号: {self._cert_serial_no}")
+        print(f"证书序列号长度: {len(self._cert_serial_no) if self._cert_serial_no else 0}")
+        print(f"证书序列号类型: {type(self._cert_serial_no)}")
 
         return {
             'Authorization': auth_str,
