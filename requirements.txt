@@ -1,14 +1,13 @@
 # 核心业务依赖
-streamlit==1.49.1
-pandas==2.3.2
-bcrypt==4.3.0
-requests==2.32.5
-schedule==1.2.2
+streamlit>=1.40.0,<1.51.0
+pandas>=2.0.0,<3.0.0
+bcrypt>=4.0.0,<6.0.0
+requests>=2.30.0,<3.0.0
+schedule>=1.2.0,<2.0.0
 
 # 微信支付相关依赖
-# 注意：cryptography需要编译，可能需要系统依赖
-cryptography>=41.0.0
-PyJWT>=2.8.0
+cryptography>=41.0.0,<47.0.0
+PyJWT>=2.8.0,<3.0.0
 
 # 其他依赖
-qrcode[pil]>=7.4.2
+qrcode[pil]>=7.4.2,<8.0.0
