@@ -5941,31 +5941,10 @@ def subscription_management_page():
                             )
 
                         with st.spinner("正在创建订单..."):
-                            # 调试：检查配置
-                            st.write("用户ID：", current_user_id_val)
-                            st.write("金额：", amount)
-                            st.write("描述：", description)
-
                             # 检查微信支付配置
                             print("🔍 开始加载微信支付配置...")
                             from wechat_pay_config import wechat_config
                             print("✅ 微信支付配置加载完成")
-                            st.write("微信配置检查：")
-                            app_id_display = (wechat_config.app_id[:10] + "..."
-                                              if wechat_config.app_id
-                                              else "未设置")
-                            st.write("- AppID:", app_id_display)
-                            mch_id_display = (wechat_config.mch_id[:10] + "..."
-                                              if wechat_config.mch_id
-                                              else "未设置")
-                            st.write("- 商户号:", mch_id_display)
-                            api_key_display = (
-                                "已设置" if wechat_config.api_v3_key else "未设置"
-                            )
-                            st.write("- API密钥:", api_key_display)
-                            key_path_display = (wechat_config.private_key_path
-                                                or "未设置")
-                            st.write("- 私钥路径:", key_path_display)
 
                             # 如果配置未设置，显示设置指导
                             if (not wechat_config.app_id or
@@ -5992,9 +5971,6 @@ def subscription_management_page():
                                 description=description,
                                 payment_type="native"
                             )
-
-                            # 调试信息
-                            st.write("支付结果：", result)
 
                             if result.get("success"):
                                 # 重命名字段以保持兼容性
@@ -6039,33 +6015,10 @@ def subscription_management_page():
                                     """, unsafe_allow_html=True)
 
                                     st.info(f"订单号：{order_id}")
-
-                                    # 添加支付状态检查按钮
-                                    if st.button("检查支付状态",
-                                                 key=f"check_{order_id}"):
-                                        status_result = (
-                                            payment_handler
-                                            .query_payment_status(order_id)
-                                        )
-                                        if status_result["success"]:
-                                            if (status_result.get("status") ==
-                                                    "SUCCESS"):
-                                                st.success(
-                                                    "支付成功！订阅已激活"
-                                                )
-                                                st.rerun()
-                                            else:
-                                                st.info(
-                                                    "订单尚未支付，"
-                                                    "请继续扫码支付"
-                                                )
-                                        else:
-                                            st.error(
-                                                f"查询失败："
-                                                f"{status_result.get(
-                                                    'message'
-                                                )}"
-                                            )
+                                    
+                                    # 启动实时支付监控
+                                    from ui_payment import start_payment_monitoring
+                                    start_payment_monitoring(payment_handler, order_id, plan['name'])
                                 else:
                                     st.error(f"订单创建失败：{result.get('message')}")
                                     if plan_key == 'efficiency':

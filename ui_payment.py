@@ -95,12 +95,31 @@ def create_professional_payment(payment_handler: PaymentHandler, user_id: int):
         # 显示二维码
         if result.get("code_url"):
             st.subheader("📱 请使用微信扫描二维码完成支付")
-            # 这里可以集成二维码生成库
-            st.code(result["code_url"])
-            st.info("请在微信中打开链接完成支付")
-            # 轮询支付状态
-            if st.button("检查支付状态"):
-                check_payment_status(payment_handler, result["order_id"])
+            
+            # 生成二维码
+            import qrcode
+            import io
+            import base64
+            
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(result["code_url"])
+            qr.make(fit=True)
+            
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            img_buffer = io.BytesIO()
+            qr_img.save(img_buffer, format='PNG')
+            img_str = base64.b64encode(img_buffer.getvalue()).decode()
+            
+            st.markdown(f"""
+                <div style="text-align: center;">
+                    <img src="data:image/png;base64,{img_str}" style="max-width: 300px;">
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.info("请在微信中扫描二维码完成支付")
+            
+            # 启动实时状态检查
+            start_payment_monitoring(payment_handler, result["order_id"], "专业版")
         else:
             st.error("二维码生成失败")
     else:
@@ -121,18 +140,121 @@ def create_calculation_payment(
         st.success("订单创建成功！")
         if result.get("code_url"):
             st.subheader("📱 请使用微信扫描二维码完成支付")
-            st.code(result["code_url"])
-            st.info("请在微信中打开链接完成支付")
-            if st.button("检查支付状态", key="check_calc"):
-                check_payment_status(payment_handler, result["order_id"])
+            
+            # 生成二维码
+            import qrcode
+            import io
+            import base64
+            
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(result["code_url"])
+            qr.make(fit=True)
+            
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            img_buffer = io.BytesIO()
+            qr_img.save(img_buffer, format='PNG')
+            img_str = base64.b64encode(img_buffer.getvalue()).decode()
+            
+            st.markdown(f"""
+                <div style="text-align: center;">
+                    <img src="data:image/png;base64,{img_str}" style="max-width: 300px;">
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.info("请在微信中扫描二维码完成支付")
+            
+            # 启动实时状态检查
+            start_payment_monitoring(payment_handler, result["order_id"], f"{amount}次计算")
         else:
             st.error("二维码生成失败")
     else:
         st.error(f"订单创建失败: {result['message']}")
 
 
+def start_payment_monitoring(payment_handler: PaymentHandler, order_id: str, plan_name: str):
+    """启动支付状态实时监控"""
+    # 设置监控状态
+    if 'payment_monitoring' not in st.session_state:
+        st.session_state.payment_monitoring = {}
+    
+    st.session_state.payment_monitoring[order_id] = {
+        'start_time': time.time(),
+        'plan_name': plan_name,
+        'check_count': 0
+    }
+    
+    # 显示监控状态
+    st.info("🔄 正在实时监控支付状态...")
+    
+    # 创建状态显示区域
+    status_placeholder = st.empty()
+    progress_placeholder = st.empty()
+    
+    # 开始监控循环
+    monitor_payment_status(payment_handler, order_id, plan_name, status_placeholder, progress_placeholder)
+
+
+def monitor_payment_status(payment_handler: PaymentHandler, order_id: str, plan_name: str, status_placeholder, progress_placeholder):
+    """监控支付状态"""
+    max_checks = 30  # 最多检查30次
+    check_interval = 3  # 每3秒检查一次
+    
+    if order_id not in st.session_state.payment_monitoring:
+        return
+    
+    monitoring_info = st.session_state.payment_monitoring[order_id]
+    check_count = monitoring_info['check_count']
+    
+    if check_count >= max_checks:
+        status_placeholder.warning("⏰ 支付监控超时，请手动检查支付状态")
+        return
+    
+    # 更新检查次数
+    monitoring_info['check_count'] += 1
+    
+    # 显示进度
+    progress = check_count / max_checks
+    progress_placeholder.progress(progress, text=f"检查进度: {check_count}/{max_checks}")
+    
+    # 检查支付状态
+    with st.spinner("正在检查支付状态..."):
+        result = payment_handler.query_payment_status(order_id)
+        
+        if result["success"]:
+            status = result["status"]
+            if status == "SUCCESS":
+                # 支付成功
+                status_placeholder.success("🎉 支付成功！正在跳转到成功页面...")
+                progress_placeholder.empty()
+                
+                # 清除监控状态
+                del st.session_state.payment_monitoring[order_id]
+                
+                # 跳转到成功页面
+                time.sleep(2)
+                from payment_success_page import show_payment_success_page
+                show_payment_success_page(order_id, plan_name)
+                return
+                
+            elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
+                # 支付失败
+                status_placeholder.error("❌ 支付失败，请重新尝试")
+                progress_placeholder.empty()
+                del st.session_state.payment_monitoring[order_id]
+                return
+            else:
+                # 仍在处理中
+                status_placeholder.info(f"⏳ 支付处理中... (已检查 {check_count} 次)")
+        else:
+            status_placeholder.warning(f"⚠️ 查询失败: {result.get('message', '未知错误')}")
+    
+    # 继续监控
+    time.sleep(check_interval)
+    st.rerun()
+
+
 def check_payment_status(payment_handler: PaymentHandler, order_id: str):
-    """检查支付状态"""
+    """检查支付状态（保留用于手动检查）"""
     result = payment_handler.query_payment_status(order_id)
     if result["success"]:
         status = result["status"]
