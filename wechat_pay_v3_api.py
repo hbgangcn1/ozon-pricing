@@ -398,7 +398,8 @@ class WeChatPayV3API:
 
             # 解码base64数据
             ciphertext_bytes = base64.b64decode(ciphertext)
-            nonce_bytes = base64.b64decode(nonce)
+            # nonce不需要base64解码，直接使用原始字符串
+            nonce_bytes = nonce.encode('utf-8')
             associated_data_bytes = associated_data.encode('utf-8')
 
             print(f"🔧 解密参数: key长度={len(key)}, nonce长度={len(nonce_bytes)}, ciphertext长度={len(ciphertext_bytes)}")
