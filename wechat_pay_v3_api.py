@@ -391,7 +391,9 @@ class WeChatPayV3API:
                 print(f"⚠️ API v3密钥长度不正确: {len(api_key)}，应该是32字节")
                 return {}
             
+            # 直接使用API v3密钥作为AES密钥
             key = api_key.encode('utf-8')
+            print(f"🔧 使用原始API v3密钥，长度: {len(key)}")
 
             # 解码base64数据
             ciphertext_bytes = base64.b64decode(ciphertext)
