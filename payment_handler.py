@@ -213,7 +213,10 @@ class PaymentHandler:
 
                 order_info = cursor.fetchone()
                 if not order_info:
+                    print(f"❌ 未找到订单记录: {order_id}")
                     return
+                
+                print(f"✅ 找到订单记录: {order_info}")
 
                 user_id, amount, description = order_info
 
