@@ -13,8 +13,11 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    # 如果没有安装python-dotenv，忽略
-    pass
+    # 如果没有安装python-dotenv，定义一个占位符函数
+    def load_dotenv(*args, **kwargs) -> bool:
+        # 占位符函数，忽略所有参数
+        _ = args, kwargs  # 明确标记参数为未使用
+        return False
 
 
 @dataclass
@@ -106,15 +109,20 @@ def get_wechat_pay_config() -> WeChatPayConfig:
     config.private_key_path = os.getenv("WECHAT_PRIVATE_KEY_PATH")
     config.public_key_path = os.getenv("WECHAT_PUBLIC_KEY_PATH")
     cert_serial_raw = os.getenv("WECHAT_CERT_SERIAL_NO")
-    
+
     # 清理证书序列号格式（移除空格、冒号等）
     if cert_serial_raw:
-        config.cert_serial_no = cert_serial_raw.replace(":", "").replace(" ", "").replace("-", "").upper()
+        config.cert_serial_no = (
+            cert_serial_raw.replace(":", "")
+            .replace(" ", "")
+            .replace("-", "")
+            .upper()
+        )
     else:
         config.cert_serial_no = None
-    
+
     # 调试信息
-    print(f"🔧 微信支付配置加载:")
+    print("🔧 微信支付配置加载:")
     print(f"  AppID: {config.app_id[:10] if config.app_id else 'None'}...")
     print(f"  商户号: {config.mch_id}")
     print(f"  私钥路径: {config.private_key_path}")

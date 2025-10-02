@@ -1751,7 +1751,9 @@ def precise_products_page():
             # 当选择产品时，获取产品数据并填充表单
                 if selected_product != "选择产品" and not user_products.empty:
                     # 检查是否需要更新产品数据（避免重复查询）
-                    current_product = st.session_state.get("selected_product_data", {}).get("name", "")
+                    current_product = st.session_state.get(
+                        "selected_product_data", {}
+                    ).get("name", "")
                     if current_product != selected_product:
                         # 获取选中产品的完整数据
                         product_data = pd.read_sql(
@@ -1786,7 +1788,7 @@ def precise_products_page():
         with st.container():
             # 获取选中的产品数据
             selected_data = st.session_state.get("selected_product_data", {})
-            
+
             # 如果选择了产品，更新表单控件的默认值
             if selected_data:
                 # 确保表单控件使用选中的产品数据
@@ -1795,17 +1797,18 @@ def precise_products_page():
             else:
                 default_name = ""
                 default_price = 0.0
-                
+
         # 产品名称和进货单价在一行中分两个列显示
             col1, col2 = st.columns(2)
             with col1:
                 # 如果session state中没有该key，使用默认值；否则保持用户输入的值
                 if "precise_product_name" not in st.session_state:
                     st.session_state.precise_product_name = default_name
-                elif selected_data and st.session_state.precise_product_name != default_name:
+                elif (selected_data and
+                      st.session_state.precise_product_name != default_name):
                     # 如果选择了新产品，更新表单值
                     st.session_state.precise_product_name = default_name
-                    
+
                 name = st.text_input(
                     "产品名称*",
                     key="precise_product_name",
@@ -1814,10 +1817,11 @@ def precise_products_page():
                 # 如果session state中没有该key，使用默认值；否则保持用户输入的值
                 if "precise_unit_price" not in st.session_state:
                     st.session_state.precise_unit_price = default_price
-                elif selected_data and st.session_state.precise_unit_price != default_price:
+                elif (selected_data and
+                      st.session_state.precise_unit_price != default_price):
                     # 如果选择了新产品，更新表单值
                     st.session_state.precise_unit_price = default_price
-                    
+
                 unit_price = st.number_input(
                     "进货单价（元）*",
                     min_value=0.0,
@@ -5586,7 +5590,10 @@ def subscription_management_page():
 
     # 获取用户信息 - 优先使用subscription_type字段
     with get_db_connection() as (conn, c):
-        c.execute("SELECT subscription_type, user_type FROM users WHERE id = ?", (user_id,))
+        c.execute(
+            "SELECT subscription_type, user_type FROM users WHERE id = ?",
+            (user_id,)
+        )
         result = c.fetchone()
         if not result:
             st.error("无法获取用户信息")
@@ -5952,28 +5959,29 @@ def subscription_management_page():
                                               if wechat_config.mch_id
                                               else "未设置")
                             st.write("- 商户号:", mch_id_display)
-                            api_key_display = ("已设置"
-                                               if wechat_config.api_v3_key
-                                               else "未设置")
+                            api_key_display = (
+                                "已设置" if wechat_config.api_v3_key else "未设置"
+                            )
                             st.write("- API密钥:", api_key_display)
                             key_path_display = (wechat_config.private_key_path
                                                 or "未设置")
                             st.write("- 私钥路径:", key_path_display)
-                            
+
                             # 如果配置未设置，显示设置指导
-                            if not wechat_config.app_id or not wechat_config.mch_id:
+                            if (not wechat_config.app_id or
+                                    not wechat_config.mch_id):
                                 st.error("⚠️ 微信支付配置未完成！")
                                 st.markdown("""
                                 **需要在生产服务器上设置以下环境变量：**
-                                
+
                                 请联系系统管理员配置微信支付相关环境变量：
                                 - WECHAT_APP_ID
-                                - WECHAT_MCH_ID  
+                                - WECHAT_MCH_ID
                                 - WECHAT_API_V3_KEY
                                 - WECHAT_PRIVATE_KEY_PATH
                                 - WECHAT_CERT_SERIAL_NO
                                 - PRODUCTION_MODE
-                                
+
                                 详细配置指南请参考服务器部署文档。
                                 """)
                                 st.stop()
@@ -6126,37 +6134,43 @@ def start_wechat_callback_server():
             from flask import Flask, request, jsonify
             import logging
             from payment_handler import payment_handler
-            
+
             # 配置日志
             logging.basicConfig(level=logging.INFO)
             logger = logging.getLogger(__name__)
-            
+
             app = Flask(__name__)
-            
+
             @app.route('/wechat/notify', methods=['POST'])
             def wechat_notify():
                 """接收微信支付回调通知（v3 API）"""
                 try:
                     # 获取请求头信息
                     headers = {
-                        'Wechatpay-Timestamp': request.headers.get('Wechatpay-Timestamp', ''),
-                        'Wechatpay-Nonce': request.headers.get('Wechatpay-Nonce', ''),
-                        'Wechatpay-Signature': request.headers.get('Wechatpay-Signature', ''),
+                        'Wechatpay-Timestamp': request.headers.get(
+                            'Wechatpay-Timestamp', ''
+                        ),
+                        'Wechatpay-Nonce': request.headers.get(
+                            'Wechatpay-Nonce', ''
+                        ),
+                        'Wechatpay-Signature': request.headers.get(
+                            'Wechatpay-Signature', ''
+                        ),
                     }
-                    
+
                     # 获取请求体
                     body = request.get_data(as_text=True)
                     logger.info(f"收到微信支付通知: {body}")
-                    
+
                     # 构建通知数据
                     notify_data = {
                         'headers': headers,
                         'body': body
                     }
-                    
+
                     # 处理通知
                     result = payment_handler.process_wechat_notify(notify_data)
-                    
+
                     if result['success']:
                         # 返回成功响应
                         return jsonify({
@@ -6170,39 +6184,42 @@ def start_wechat_callback_server():
                             'code': 'FAIL',
                             'message': result['message']
                         }), 400
-                        
-                except Exception as e:
-                    logger.error(f"处理微信支付通知异常: {str(e)}")
+
+                except Exception as error:
+                    logger.error(f"处理微信支付通知异常: {str(error)}")
                     return jsonify({
                         'code': 'FAIL',
-                        'message': f'系统错误: {str(e)}'
+                        'message': f'系统错误: {str(error)}'
                     }), 500
-            
+
             @app.route('/health')
             def health_check():
                 """健康检查接口"""
                 return {"status": "ok", "message": "微信支付回调服务运行正常"}
-            
+
             # 在后台线程中启动Flask应用
             def run_server():
-                app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
-            
+                app.run(
+                    host='0.0.0.0', port=8080, debug=False, use_reloader=False
+                )
+
             server_thread = threading.Thread(target=run_server, daemon=True)
             server_thread.start()
-            
+
             st.session_state.callback_server_started = True
             print("✅ 微信支付回调服务器已启动 (端口: 8080)")
-            
+
         except ImportError:
             print("⚠️ Flask未安装，无法启动微信支付回调服务器")
             print("📝 请运行: pip install flask")
-        except Exception as e:
-            print(f"⚠️ 启动微信支付回调服务器失败: {e}")
+        except Exception as ex:
+            print(f"⚠️ 启动微信支付回调服务器失败: {ex}")
+
 
 def main():
     # 启动微信支付回调服务器（后台线程）
     start_wechat_callback_server()
-    
+
     init_db()
     # 初始化会话安全相关数据表，防止首次启动时表缺失
     SessionSecurity.init_session_tables()

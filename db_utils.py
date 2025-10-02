@@ -1295,7 +1295,8 @@ def get_user_subscription_info(user_id):
         user = c.execute(
             "SELECT id, username, user_type, expiry_date, "
             "remaining_calculations, first_login_date, "
-            "test_days_remaining, role, subscription_type, subscription_expires "
+            "test_days_remaining, role, subscription_type, "
+            "subscription_expires "
             "FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
@@ -1343,7 +1344,8 @@ def check_user_subscription_status(user_id):
         }
 
     # 优先使用subscription_type字段，如果没有则使用user_type
-    user_type = user_info.get('subscription_type') or user_info.get('user_type', 'permanent')
+    user_type = (user_info.get('subscription_type') or
+                 user_info.get('user_type', 'permanent'))
 
     # 永久用户
     if user_type == 'permanent':
@@ -1492,12 +1494,15 @@ def check_user_subscription_status(user_id):
         # 优先使用subscription_expires字段，如果没有则使用expiry_date
         subscription_expires = user_info.get('subscription_expires')
         expiry_date = user_info.get('expiry_date')
-        
+
         if subscription_expires:
             # 使用subscription_expires（Unix时间戳）
             import time
             current_time = int(time.time())
-            days_remaining = (subscription_expires - current_time) // (24 * 3600)
+            # 确保subscription_expires是整数类型
+            subscription_expires = int(subscription_expires)
+            days_remaining = ((subscription_expires - current_time) //
+                              (24 * 3600))
         elif expiry_date:
             # 使用expiry_date（ISO格式）
             try:
@@ -1516,7 +1521,7 @@ def check_user_subscription_status(user_id):
                 'message': '订阅信息不完整',
                 'user_type': user_type,
             }
-        
+
         try:
             if days_remaining <= 0:
                 return {
@@ -1707,10 +1712,14 @@ def delete_user(user_id):
             )
 
             # 5. 删除用户的物流规则
-            c.execute("DELETE FROM logistics WHERE user_id = ?", (user_id,))
+            c.execute(
+                "DELETE FROM logistics WHERE user_id = ?", (user_id,)
+            )
 
             # 6. 删除用户的支付订单
-            c.execute("DELETE FROM payment_orders WHERE user_id = ?", (user_id,))
+            c.execute(
+                "DELETE FROM payment_orders WHERE user_id = ?", (user_id,)
+            )
 
             # 7. 删除用户本身
             c.execute("DELETE FROM users WHERE id = ?", (user_id,))

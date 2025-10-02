@@ -13,7 +13,7 @@ import os
 from typing import Dict, Optional, Any
 import requests
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, padding, utils
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.backends import default_backend
 from wechat_pay_config import wechat_config
 
@@ -40,7 +40,7 @@ class WeChatPayV3API:
         if not self.config.private_key_path:
             print("私钥路径未配置")
             return None
-            
+
         if not os.path.exists(self.config.private_key_path):
             print(f"私钥文件不存在: {self.config.private_key_path}")
             return None
@@ -146,7 +146,8 @@ class WeChatPayV3API:
         print(f"Authorization头: {auth_str}")
         print(f"商户号: {self.config.mch_id}")
         print(f"证书序列号: {self._cert_serial_no}")
-        print(f"证书序列号长度: {len(self._cert_serial_no) if self._cert_serial_no else 0}")
+        cert_length = len(self._cert_serial_no) if self._cert_serial_no else 0
+        print(f"证书序列号长度: {cert_length}")
         print(f"证书序列号类型: {type(self._cert_serial_no)}")
 
         return {
@@ -378,7 +379,9 @@ class WeChatPayV3API:
             body = request_data.get("body", "")
 
             # 验证签名（使用微信支付公钥）
-            if not self.verify_notify_signature_with_public_key(timestamp, nonce, body, signature):
+            if not self.verify_notify_signature_with_public_key(
+                timestamp, nonce, body, signature
+            ):
                 return {"success": False, "message": "签名验证失败"}
 
             # 解析通知数据
@@ -403,10 +406,14 @@ class WeChatPayV3API:
                 }
 
         except Exception as e:
-            return {"success": False, "message": f"通知处理失败: {str(e)}"}
+            return {
+                "success": False,
+                "message": f"通知处理失败: {str(e)}"
+            }
 
-    def verify_notify_signature_with_public_key(self, timestamp: str, nonce: str,
-                                                body: str, signature: str) -> bool:
+    def verify_notify_signature_with_public_key(
+        self, timestamp: str, nonce: str, body: str, signature: str
+    ) -> bool:
         """
         使用微信支付公钥验证回调通知签名
 
@@ -424,31 +431,35 @@ class WeChatPayV3API:
             if not self.config.public_key_path:
                 print("⚠️ 微信支付公钥路径未配置，跳过签名验证")
                 return True  # 如果没有配置公钥，跳过验证
-            
+
             # 检查公钥文件是否存在
             if not os.path.exists(self.config.public_key_path):
                 print(f"⚠️ 微信支付公钥文件不存在: {self.config.public_key_path}")
                 return True  # 如果公钥文件不存在，跳过验证
-            
+
             # 构建待验证的字符串
             sign_str = f"{timestamp}\n{nonce}\n{body}\n"
-            
+
             # 加载微信支付公钥
             with open(self.config.public_key_path, 'rb') as f:
                 public_key_data = f.read()
                 public_key = serialization.load_pem_public_key(public_key_data)
-            
+
             # 验证签名
+            # 确保公钥是RSA类型
+            if not isinstance(public_key, rsa.RSAPublicKey):
+                raise ValueError("微信支付公钥必须是RSA类型")
+
             public_key.verify(
                 base64.b64decode(signature),
                 sign_str.encode('utf-8'),
                 padding.PKCS1v15(),
                 hashes.SHA256()
             )
-            
+
             print("✅ 微信支付回调签名验证成功")
             return True
-            
+
         except Exception as e:
             print(f"❌ 微信支付回调签名验证失败: {e}")
             return False

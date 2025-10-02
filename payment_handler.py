@@ -47,7 +47,7 @@ class PaymentHandler:
                 cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
                 if not cursor.fetchone():
                     return {"success": False, "message": f"用户ID {user_id} 不存在"}
-                
+
                 cursor.execute("""
                     INSERT INTO payment_orders
                     (order_id, user_id, amount, description, status,
