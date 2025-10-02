@@ -362,10 +362,10 @@ class WeChatPayV3API:
     def _decrypt_resource(self, resource: Dict[str, Any]) -> Dict[str, Any]:
         """
         解密微信支付回调中的resource数据
-        
+
         Args:
             resource: 加密的resource数据
-            
+
         Returns:
             Dict[str, Any]: 解密后的数据
         """
@@ -374,32 +374,32 @@ class WeChatPayV3API:
             ciphertext = resource.get("ciphertext", "")
             associated_data = resource.get("associated_data", "")
             nonce = resource.get("nonce", "")
-            
+
             if not all([ciphertext, associated_data, nonce]):
                 print("⚠️ 缺少解密参数")
                 return {}
-            
+
             # 使用API v3密钥作为解密密钥
             key = self.config.api_v3_key.encode('utf-8')
-            
+
             # 解码base64数据
             ciphertext_bytes = base64.b64decode(ciphertext)
             nonce_bytes = base64.b64decode(nonce)
             associated_data_bytes = associated_data.encode('utf-8')
-            
+
             # 使用AES-GCM解密
             aesgcm = AESGCM(key)
             decrypted_data = aesgcm.decrypt(
-                nonce_bytes, 
-                ciphertext_bytes, 
+                nonce_bytes,
+                ciphertext_bytes,
                 associated_data_bytes
             )
-            
+
             # 解析JSON数据
             decrypted_json = json.loads(decrypted_data.decode('utf-8'))
             print(f"✅ 解密成功: {decrypted_json}")
             return decrypted_json
-            
+
         except Exception as e:
             print(f"❌ 解密失败: {e}")
             return {}
@@ -436,19 +436,22 @@ class WeChatPayV3API:
             # 检查通知类型
             if notify_data.get("event_type") == "TRANSACTION.SUCCESS":
                 resource = notify_data.get("resource", {})
-                
+
                 # 解密resource中的数据
                 decrypted_data = self._decrypt_resource(resource)
                 if not decrypted_data:
                     return {"success": False, "message": "解密失败"}
-                
+
                 # 从解密后的数据中获取订单信息
                 out_trade_no = decrypted_data.get("out_trade_no")
                 transaction_id = decrypted_data.get("transaction_id")
                 trade_state = decrypted_data.get("trade_state")
-                
-                print(f"🔧 支付成功通知: 订单号={out_trade_no}, 交易号={transaction_id}, 状态={trade_state}")
-                
+
+                print(
+                    f"🔧 支付成功通知: 订单号={out_trade_no}, "
+                    f"交易号={transaction_id}, 状态={trade_state}"
+                )
+
                 return {
                     "success": True,
                     "out_trade_no": out_trade_no,
