@@ -370,6 +370,11 @@ class WeChatPayV3API:
             Dict[str, Any]: 解密后的数据
         """
         try:
+            # 调试信息：检查API v3密钥
+            print(f"🔧 解密调试 - API v3密钥状态: {'已设置' if self.config.api_v3_key else '未设置'}")
+            if self.config.api_v3_key:
+                print(f"🔧 解密调试 - API v3密钥长度: {len(self.config.api_v3_key)}")
+            
             # 获取加密相关参数
             ciphertext = resource.get("ciphertext", "")
             associated_data = resource.get("associated_data", "")
@@ -410,6 +415,9 @@ class WeChatPayV3API:
 
         except Exception as e:
             print(f"❌ 解密失败: {e}")
+            print(f"❌ 解密失败详情: 类型={type(e).__name__}, 消息={str(e)}")
+            import traceback
+            print(f"❌ 解密失败堆栈: {traceback.format_exc()}")
             return {}
 
     def process_notify(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
