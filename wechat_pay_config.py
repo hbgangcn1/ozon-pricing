@@ -104,6 +104,14 @@ def get_wechat_pay_config() -> WeChatPayConfig:
     config.app_id = os.getenv("WECHAT_APP_ID", "")
     config.mch_id = os.getenv("WECHAT_MCH_ID", "")
     config.api_v3_key = os.getenv("WECHAT_API_V3_KEY", "")
+    
+    # 调试信息：检查环境变量是否被正确加载
+    print(f"🔧 环境变量调试信息:")
+    print(f"  WECHAT_APP_ID: {'已设置' if config.app_id else '未设置'}")
+    print(f"  WECHAT_MCH_ID: {'已设置' if config.mch_id else '未设置'}")
+    print(f"  WECHAT_API_V3_KEY: {'已设置' if config.api_v3_key else '未设置'}")
+    if config.api_v3_key:
+        print(f"  API_V3_KEY长度: {len(config.api_v3_key)}")
 
     # 证书配置
     config.private_key_path = os.getenv("WECHAT_PRIVATE_KEY_PATH")
