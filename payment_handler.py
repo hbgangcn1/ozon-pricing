@@ -227,11 +227,10 @@ class PaymentHandler:
                     cursor.execute("""
                         UPDATE users
                         SET subscription_type = 'professional',
-                            subscription_expires = ?,
-                            updated_at = ?
+                            subscription_expires = ?
                         WHERE id = ?
                     """, (int(time.time()) + 365*24*3600,
-                          int(time.time()), user_id))
+                          user_id))
 
                 elif ("效率版" in description or
                       "EFFICIENCY" in description.upper()):
@@ -240,11 +239,10 @@ class PaymentHandler:
                     cursor.execute("""
                         UPDATE users
                         SET subscription_type = 'efficiency',
-                            subscription_expires = ?,
-                            updated_at = ?
+                            subscription_expires = ?
                         WHERE id = ?
                     """, (int(time.time()) + 30*24*3600,  # 30天有效期
-                          int(time.time()), user_id))
+                          user_id))
                     print(f"✅ 效率版订阅状态已更新: 用户ID={user_id}")
 
                 elif "计算次数" in description:
