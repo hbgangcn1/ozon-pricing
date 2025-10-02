@@ -474,6 +474,7 @@ class WeChatPayV3API:
                     f"🔧 支付成功通知: 订单号={out_trade_no}, "
                     f"交易号={transaction_id}, 状态={trade_state}"
                 )
+                print(f"🔧 解密后的完整数据: {decrypted_data}")
 
                 return {
                     "success": True,

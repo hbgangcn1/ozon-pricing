@@ -178,15 +178,23 @@ class PaymentHandler:
         """
         print("🚀 PaymentHandler.process_wechat_notify 开始处理")
         result = wechat_pay_v3.process_notify(notify_data)
+        print(f"🔧 wechat_pay_v3.process_notify 返回结果: {result}")
 
         if result["success"]:
             order_id = result.get("out_trade_no")
+            print(f"🔧 获取到订单ID: {order_id}")
             if order_id:
                 # 更新订单状态为已支付
+                print(f"🔧 开始更新订单状态: {order_id}")
                 PaymentHandler._update_order_status(order_id, "PAID")
 
                 # 这里可以添加业务逻辑，比如开通会员、增加计算次数等
+                print(f"🔧 开始处理支付成功业务逻辑: {order_id}")
                 PaymentHandler._handle_payment_success(order_id)
+            else:
+                print("❌ 未获取到订单ID")
+        else:
+            print(f"❌ 支付通知处理失败: {result.get('message', '未知错误')}")
 
         return result
 
