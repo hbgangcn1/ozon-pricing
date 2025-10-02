@@ -6015,10 +6015,12 @@ def subscription_management_page():
                                     """, unsafe_allow_html=True)
 
                                     st.info(f"订单号：{order_id}")
-                                    
+
                                     # 启动实时支付监控
                                     from ui_payment import start_payment_monitoring
-                                    start_payment_monitoring(payment_handler, order_id, plan['name'])
+                                    start_payment_monitoring(
+                                        payment_handler, order_id, plan['name']
+                                    )
                                 else:
                                     st.error(f"订单创建失败：{result.get('message')}")
                                     if plan_key == 'efficiency':
