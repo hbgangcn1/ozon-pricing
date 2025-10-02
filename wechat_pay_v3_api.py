@@ -380,12 +380,20 @@ class WeChatPayV3API:
                 return {}
 
             # 使用API v3密钥作为解密密钥
-            key = self.config.api_v3_key.encode('utf-8')
+            # 微信支付API v3密钥应该是32字节的字符串
+            api_key = self.config.api_v3_key
+            if len(api_key) != 32:
+                print(f"⚠️ API v3密钥长度不正确: {len(api_key)}，应该是32字节")
+                return {}
+            
+            key = api_key.encode('utf-8')
 
             # 解码base64数据
             ciphertext_bytes = base64.b64decode(ciphertext)
             nonce_bytes = base64.b64decode(nonce)
             associated_data_bytes = associated_data.encode('utf-8')
+
+            print(f"🔧 解密参数: key长度={len(key)}, nonce长度={len(nonce_bytes)}, ciphertext长度={len(ciphertext_bytes)}")
 
             # 使用AES-GCM解密
             aesgcm = AESGCM(key)
