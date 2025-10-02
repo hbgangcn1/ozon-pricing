@@ -9,7 +9,9 @@ from db_utils import get_user_subscription_info
 from typing import Optional
 
 
-def show_payment_success_page(order_id: Optional[str] = None, plan_name: Optional[str] = None):
+def show_payment_success_page(
+    order_id: Optional[str] = None, plan_name: Optional[str] = None
+):
     """
     显示支付成功页面
 
@@ -99,7 +101,9 @@ def show_payment_success_page(order_id: Optional[str] = None, plan_name: Optiona
         st.rerun()
 
 
-def show_payment_processing_page(order_id: str, plan_name: Optional[str] = None):
+def show_payment_processing_page(
+    order_id: str, plan_name: Optional[str] = None
+):
     """
     显示支付处理中页面，包含实时状态检查
 
