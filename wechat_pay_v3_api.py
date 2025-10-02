@@ -430,6 +430,7 @@ class WeChatPayV3API:
         Returns:
             Dict[str, Any]: 处理结果
         """
+        print(f"🔧 process_notify 开始处理: {request_data}")
         try:
             # 获取签名相关参数
             timestamp = (request_data.get("headers", {})
@@ -454,8 +455,10 @@ class WeChatPayV3API:
                 resource = notify_data.get("resource", {})
 
                 # 解密resource中的数据
+                print(f"🔧 开始解密resource数据: {resource}")
                 decrypted_data = self._decrypt_resource(resource)
                 if not decrypted_data:
+                    print(f"❌ 解密返回空数据")
                     return {"success": False, "message": "解密失败"}
 
                 # 从解密后的数据中获取订单信息
