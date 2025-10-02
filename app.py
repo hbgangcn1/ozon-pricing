@@ -6017,7 +6017,9 @@ def subscription_management_page():
                                     st.info(f"订单号：{order_id}")
 
                                     # 启动实时支付监控
-                                    from ui_payment import start_payment_monitoring
+                                    from ui_payment import (
+                                        start_payment_monitoring
+                                    )
                                     start_payment_monitoring(
                                         payment_handler, order_id, plan['name']
                                     )
