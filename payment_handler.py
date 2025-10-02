@@ -176,6 +176,7 @@ class PaymentHandler:
         Returns:
             Dict[str, Any]: 处理结果
         """
+        print("🚀 PaymentHandler.process_wechat_notify 开始处理")
         result = wechat_pay_v3.process_notify(notify_data)
 
         if result["success"]:
