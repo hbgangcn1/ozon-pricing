@@ -5772,7 +5772,7 @@ def subscription_management_page():
                 if plan_key == 'enterprise':
                     button_text = f"联系客服升级到{plan['name']}"
                 else:
-                    # 判断是升级还是降级
+                    # 只允许升级，不允许降级
                     plan_order = {
                         'free': 0,
                         'efficiency': 1,
@@ -5785,7 +5785,8 @@ def subscription_management_page():
                     if target_order > current_order:
                         button_text = f"升级到{plan['name']}"
                     else:
-                        button_text = f"降级到{plan['name']}"
+                        # 不允许降级，不显示按钮
+                        button_text = ""
 
             border_color = plan['color'] if is_current else "#e0e0e0"
             border_width = "3px" if is_current else "2px"
@@ -5892,8 +5893,8 @@ def subscription_management_page():
 
             st.markdown(card_html, unsafe_allow_html=True)
 
-        # 升级/降级按钮
-            if not is_current:
+        # 升级按钮（只允许升级，不允许降级）
+            if not is_current and button_text:
                 if plan_key == 'enterprise':
                     if st.button(
                         f"联系客服升级到{plan['name']}",

@@ -1501,8 +1501,10 @@ def check_user_subscription_status(user_id):
             current_time = int(time.time())
             # 确保subscription_expires是整数类型
             subscription_expires = int(subscription_expires)
-            days_remaining = ((subscription_expires - current_time) //
-                              (24 * 3600))
+            # 使用向上取整，确保用户看到完整的剩余天数
+            import math
+            days_remaining = math.ceil((subscription_expires - current_time) /
+                                      (24 * 3600))
         elif expiry_date:
             # 使用expiry_date（ISO格式）
             try:
