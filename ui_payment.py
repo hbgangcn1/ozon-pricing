@@ -33,21 +33,27 @@ def check_payment_status_in_db(order_id: str) -> bool:
 
 def handle_payment_success(order_id: str):
     """处理支付成功后的跳转逻辑"""
+    print(f"🔧 handle_payment_success 开始: 订单ID={order_id}")
     st.success("🎉 支付成功！正在跳转到订阅管理页面...")
 
     # 清除监控状态
     if order_id in st.session_state.payment_monitoring:
         del st.session_state.payment_monitoring[order_id]
+        print(f"🔧 已清除监控状态: {order_id}")
 
     # 清除支付相关的session state
     if f'payment_order_{order_id}' in st.session_state:
         del st.session_state[f'payment_order_{order_id}']
+        print(f"🔧 已清除订单状态: {order_id}")
     if f'payment_qr_{order_id}' in st.session_state:
         del st.session_state[f'payment_qr_{order_id}']
+        print(f"🔧 已清除二维码状态: {order_id}")
 
     # 跳转到订阅管理页面
+    print(f"🔧 准备跳转到订阅管理页面")
     time.sleep(2)
     st.session_state["current_page"] = "subscription"
+    print(f"🔧 已设置页面路由: subscription")
     st.rerun()
 
 
@@ -55,9 +61,15 @@ def monitor_payment_status(
     payment_handler: PaymentHandler, order_id: str, plan_name: str
 ):
     """监控支付状态"""
+    print(f"🔧 monitor_payment_status 开始: 订单ID={order_id}")
+    
     # 首先检查数据库中的支付状态
+    print(f"🔧 开始检查数据库支付状态: {order_id}")
     payment_success = check_payment_status_in_db(order_id)
+    print(f"🔧 数据库支付状态检查结果: {payment_success}")
+    
     if payment_success:
+        print(f"🔧 支付成功，准备跳转: {order_id}")
         handle_payment_success(order_id)
         return
 
