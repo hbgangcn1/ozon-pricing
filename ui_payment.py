@@ -118,6 +118,15 @@ def create_professional_payment(payment_handler: PaymentHandler, user_id: int):
             """, unsafe_allow_html=True)
 
             st.info("请在微信中扫描二维码完成支付")
+            # 将code_url保存到监控状态，便于后续自动刷新二维码
+            if ('payment_monitoring' in st.session_state and
+                    result.get("order_id")):
+                st.session_state.payment_monitoring.setdefault(
+                    result["order_id"], {}
+                )['code_url'] = result["code_url"]
+                st.session_state.payment_monitoring[result["order_id"]][
+                    'qr_last_refresh'
+                ] = time.time()
 
             # 启动实时状态检查
             start_payment_monitoring(
@@ -166,6 +175,15 @@ def create_calculation_payment(
             """, unsafe_allow_html=True)
 
             st.info("请在微信中扫描二维码完成支付")
+            # 将code_url保存到监控状态，便于后续自动刷新二维码
+            if ('payment_monitoring' in st.session_state and
+                    result.get("order_id")):
+                st.session_state.payment_monitoring.setdefault(
+                    result["order_id"], {}
+                )['code_url'] = result["code_url"]
+                st.session_state.payment_monitoring[result["order_id"]][
+                    'qr_last_refresh'
+                ] = time.time()
 
             # 启动实时状态检查
             start_payment_monitoring(
@@ -198,6 +216,7 @@ def start_payment_monitoring(
     # 创建状态显示区域
     status_placeholder = st.empty()
     progress_placeholder = st.empty()
+    qr_placeholder = st.empty()
 
     # 初始化显示状态
     if f'payment_status_{order_id}' not in st.session_state:
@@ -208,17 +227,19 @@ def start_payment_monitoring(
     # 开始监控循环
     monitor_payment_status(
         payment_handler, order_id, plan_name, status_placeholder,
-        progress_placeholder
+        progress_placeholder, qr_placeholder
     )
 
 
 def monitor_payment_status(
     payment_handler: PaymentHandler, order_id: str, plan_name: str,
-    status_placeholder, progress_placeholder
+    status_placeholder, progress_placeholder, qr_placeholder=None
 ):
     """监控支付状态"""
-    max_checks = 60  # 最多检查60次
+    # 不设置严格超时，允许长时间等待；通过较大次数与较短间隔实现“长期等待”
+    max_checks = 3600  # 最多检查3600次（约2小时，间隔2秒）
     check_interval = 2  # 每2秒检查一次
+    qr_refresh_interval = 60  # 每60秒刷新一次二维码
 
     if order_id not in st.session_state.payment_monitoring:
         return
@@ -228,8 +249,9 @@ def monitor_payment_status(
     first_check_done = monitoring_info.get('first_check_done', False)
 
     if check_count >= max_checks:
-        status_placeholder.warning("⏰ 支付监控超时，请手动检查支付状态")
-        return
+        # 长等待模式：不结束监控，重置计数继续
+        monitoring_info['check_count'] = 0
+        check_count = 0
 
     # 如果是第一次检查，等待5秒让微信支付系统处理订单
     if not first_check_done:
@@ -255,6 +277,38 @@ def monitor_payment_status(
     progress_placeholder.progress(progress, text=progress_text)
     # 保存进度到session_state
     st.session_state[f'payment_progress_{order_id}'] = progress
+
+    # 到点刷新二维码（如果有code_url）
+    code_url = monitoring_info.get('code_url')
+    last_refresh = monitoring_info.get(
+        'qr_last_refresh', monitoring_info.get('start_time', time.time())
+    )
+    if (code_url and (time.time() - last_refresh) >= qr_refresh_interval and
+            qr_placeholder is not None):
+        try:
+            import qrcode
+            import io
+            import base64
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(code_url)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            img_buffer = io.BytesIO()
+            qr_img.save(img_buffer, kind='PNG')
+            img_str = base64.b64encode(img_buffer.getvalue()).decode()
+            qr_placeholder.markdown(
+                f"""
+                <div style="text-align: center;">
+                    <img src="data:image/png;base64,{img_str}"
+                         style="max-width: 300px;">
+                    <div style="color:#888; font-size:12px;">二维码已自动刷新</div>
+                </div>
+                """, unsafe_allow_html=True
+            )
+            monitoring_info['qr_last_refresh'] = time.time()
+        except Exception:
+            # 刷新失败不影响主流程
+            pass
 
     # 检查支付状态
     with st.spinner("正在检查支付状态..."):
