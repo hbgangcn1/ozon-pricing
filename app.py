@@ -5912,7 +5912,8 @@ def subscription_management_page():
                     if st.button(button_text, key=f"action_{plan_key}"):
                         # 跳转到支付页面
                         st.session_state["payment_plan"] = plan['name']
-                        st.switch_page("payment_page")
+                        st.session_state["current_page"] = "payment"
+                        st.rerun()
 
 
 def init_exchange_rates():
@@ -6053,8 +6054,16 @@ def main():
         from session_security import show_session_info
         show_session_info()
 
-    # 如果会话有效，显示主界面
-    show_main_interface()
+    # 检查页面路由
+    current_page = st.session_state.get("current_page", "main")
+
+    if current_page == "payment":
+        # 显示支付页面
+        from payment_page import show_payment_page
+        show_payment_page()
+    else:
+        # 显示主界面
+        show_main_interface()
 
 
 if __name__ == "__main__":
