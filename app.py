@@ -10,7 +10,7 @@ st.set_page_config(
     page_title="物流系统",
     page_icon="🚚",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # ===== 公安备案临时配置已移除 =====
