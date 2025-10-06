@@ -199,6 +199,12 @@ def start_payment_monitoring(
     status_placeholder = st.empty()
     progress_placeholder = st.empty()
 
+    # 初始化显示状态
+    if f'payment_status_{order_id}' not in st.session_state:
+        st.session_state[f'payment_status_{order_id}'] = "⏳ 等待微信支付系统处理订单..."
+    if f'payment_progress_{order_id}' not in st.session_state:
+        st.session_state[f'payment_progress_{order_id}'] = 0
+
     # 开始监控循环
     monitor_payment_status(
         payment_handler, order_id, plan_name, status_placeholder,
@@ -225,11 +231,15 @@ def monitor_payment_status(
         status_placeholder.warning("⏰ 支付监控超时，请手动检查支付状态")
         return
 
-    # 如果是第一次检查，等待5秒让微信支付系统处理订单
+    # 如果是第一次检查，等待10秒让微信支付系统处理订单
     if not first_check_done:
-        status_placeholder.info("⏳ 等待微信支付系统处理订单...")
+        status_msg = "⏳ 等待微信支付系统处理订单..."
+        status_placeholder.info(status_msg)
         progress_placeholder.progress(0, text="等待中...")
-        time.sleep(5)
+        # 保存状态到session_state
+        st.session_state[f'payment_status_{order_id}'] = status_msg
+        st.session_state[f'payment_progress_{order_id}'] = 0
+        time.sleep(10)  # 增加等待时间到10秒
         st.session_state.payment_monitoring[order_id][
             'first_check_done'
         ] = True
@@ -241,9 +251,10 @@ def monitor_payment_status(
 
     # 显示进度
     progress = check_count / max_checks
-    progress_placeholder.progress(
-        progress, text=f"检查进度: {check_count}/{max_checks}"
-    )
+    progress_text = f"检查进度: {check_count}/{max_checks}"
+    progress_placeholder.progress(progress, text=progress_text)
+    # 保存进度到session_state
+    st.session_state[f'payment_progress_{order_id}'] = progress
 
     # 检查支付状态
     with st.spinner("正在检查支付状态..."):
@@ -279,10 +290,13 @@ def monitor_payment_status(
             error_msg = result.get('message', '未知错误')
             if "签名错误" in error_msg or "HTTP" in error_msg:
                 # 对于签名错误或HTTP错误，继续监控
-                status_placeholder.warning(
+                warning_msg = (
                     f"⚠️ 查询失败: {error_msg}，继续监控中... "
                     f"(已检查 {check_count} 次)"
                 )
+                status_placeholder.warning(warning_msg)
+                # 保存状态到session_state
+                st.session_state[f'payment_status_{order_id}'] = warning_msg
             else:
                 # 其他错误，停止监控
                 status_placeholder.error(f"❌ 查询失败: {error_msg}")
@@ -292,6 +306,7 @@ def monitor_payment_status(
 
     # 继续监控
     time.sleep(check_interval)
+    # 使用st.rerun()来更新页面，但保持监控状态
     st.rerun()
 
 
