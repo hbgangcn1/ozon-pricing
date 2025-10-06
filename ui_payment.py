@@ -217,8 +217,8 @@ def monitor_payment_status(
     status_placeholder, progress_placeholder
 ):
     """监控支付状态"""
-    max_checks = 30  # 最多检查30次
-    check_interval = 3  # 每3秒检查一次
+    max_checks = 60  # 最多检查60次
+    check_interval = 2  # 每2秒检查一次
 
     if order_id not in st.session_state.payment_monitoring:
         return
@@ -231,7 +231,7 @@ def monitor_payment_status(
         status_placeholder.warning("⏰ 支付监控超时，请手动检查支付状态")
         return
 
-    # 如果是第一次检查，等待60秒让微信支付系统处理订单
+    # 如果是第一次检查，等待5秒让微信支付系统处理订单
     if not first_check_done:
         status_msg = "⏳ 等待微信支付系统处理订单..."
         status_placeholder.info(status_msg)
@@ -239,7 +239,7 @@ def monitor_payment_status(
         # 保存状态到session_state
         st.session_state[f'payment_status_{order_id}'] = status_msg
         st.session_state[f'payment_progress_{order_id}'] = 0
-        time.sleep(60)  # 增加等待时间到60秒
+        time.sleep(5)  # 等待5秒后开始检查
         st.session_state.payment_monitoring[order_id][
             'first_check_done'
         ] = True
@@ -290,11 +290,20 @@ def monitor_payment_status(
             error_msg = result.get('message', '未知错误')
             if "签名错误" in error_msg or "HTTP" in error_msg:
                 # 对于签名错误或HTTP错误，继续监控
-                warning_msg = (
-                    f"⚠️ 查询失败: {error_msg}，继续监控中... "
-                    f"(已检查 {check_count} 次)"
-                )
-                status_placeholder.warning(warning_msg)
+                if check_count <= 5:
+                    # 前5次检查失败时，显示更友好的信息
+                    warning_msg = (
+                        f"⏳ 正在检查支付状态... "
+                        f"(已检查 {check_count} 次)"
+                    )
+                    status_placeholder.info(warning_msg)
+                else:
+                    # 5次后仍失败，显示警告信息
+                    warning_msg = (
+                        f"⚠️ 查询失败: {error_msg}，继续监控中... "
+                        f"(已检查 {check_count} 次)"
+                    )
+                    status_placeholder.warning(warning_msg)
                 # 保存状态到session_state
                 st.session_state[f'payment_status_{order_id}'] = warning_msg
             else:
