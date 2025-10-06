@@ -5592,6 +5592,16 @@ def subscription_management_page():
     )
 
     user_id = current_user_id()
+
+    # 添加状态刷新按钮
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 刷新状态", key="refresh_subscription_status"):
+            # 清除可能的缓存状态
+            if 'subscription_status' in st.session_state:
+                del st.session_state['subscription_status']
+            st.rerun()
+
     subscription_status = check_user_subscription_status(user_id)
 
     # 获取用户信息 - 优先使用subscription_type字段

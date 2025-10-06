@@ -144,11 +144,22 @@ def show_existing_payment(
                 del st.session_state[f"payment_qr_{order_id}"]
             st.rerun()
 
-    # 返回按钮
+    # 返回按钮和状态刷新
     st.markdown("---")
-    if st.button("🏠 返回首页", key="back_to_home"):
-        st.session_state["current_page"] = "main"
-        st.rerun()
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🏠 返回首页", key="back_to_home"):
+            st.session_state["current_page"] = "main"
+            st.rerun()
+
+    with col2:
+        if st.button("🔄 刷新账户状态", key="refresh_status"):
+            # 清除可能的缓存状态
+            if 'subscription_status' in st.session_state:
+                del st.session_state['subscription_status']
+            st.success("✅ 账户状态已刷新，请重新登录查看最新状态")
+            st.info("💡 如果支付成功但状态未更新，请尝试重新登录")
 
 
 def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
