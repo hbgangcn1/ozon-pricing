@@ -256,6 +256,29 @@ def restore_payment_display(order_id: str):
         st.info("请在微信中扫描二维码完成支付")
         st.info("🔄 正在实时监控支付状态...")
 
+        # 显示当前状态
+        current_status = st.session_state.get(
+            f'payment_status_{order_id}', "⏳ 等待微信支付系统处理订单..."
+        )
+        current_progress = st.session_state.get(
+            f'payment_progress_{order_id}', 0
+        )
+
+        st.info(current_status)
+        progress_text = f"检查进度: {int(current_progress * 3600)}/3600"
+        st.progress(current_progress, text=progress_text)
+
+
+def check_and_restore_payment_status():
+    """检查并恢复支付状态（在页面加载时调用）"""
+    if ('payment_monitoring' in st.session_state and
+            st.session_state.payment_monitoring):
+        # 有正在进行的支付，恢复显示
+        for order_id in list(st.session_state.payment_monitoring.keys()):
+            restore_payment_display(order_id)
+            return True
+    return False
+
 
 def start_payment_monitoring(
     payment_handler: PaymentHandler, order_id: str, plan_name: str
@@ -305,13 +328,7 @@ def monitor_payment_status(
 
     # 如果是第一次检查，等待5秒让微信支付系统处理订单
     if not first_check_done:
-        # 恢复显示状态
-        restore_payment_display(order_id)
-
         status_msg = "⏳ 等待微信支付系统处理订单..."
-        st.info(status_msg)
-        st.progress(0, text="等待中...")
-        # 保存状态到session_state
         st.session_state[f'payment_status_{order_id}'] = status_msg
         st.session_state[f'payment_progress_{order_id}'] = 0
 
@@ -322,19 +339,12 @@ def monitor_payment_status(
         ] = True
         # 第一次检查后，重新运行以显示更新后的状态
         st.rerun()
-        return
 
     # 更新检查次数
     monitoring_info['check_count'] += 1
 
-    # 恢复显示状态（仅在非第一次检查时）
-    restore_payment_display(order_id)
-
     # 显示进度
     progress = check_count / max_checks
-    progress_text = f"检查进度: {check_count}/{max_checks}"
-    st.progress(progress, text=progress_text)
-    # 保存进度到session_state
     st.session_state[f'payment_progress_{order_id}'] = progress
 
     # 到点刷新二维码（如果有code_url）
@@ -402,7 +412,6 @@ def monitor_payment_status(
             else:
                 # 仍在处理中
                 status_msg = f"⏳ 支付处理中... (已检查 {check_count} 次)"
-                st.info(status_msg)
                 st.session_state[f'payment_status_{order_id}'] = status_msg
         else:
             # 查询失败，但不停止监控，继续尝试
@@ -415,14 +424,12 @@ def monitor_payment_status(
                         f"⏳ 正在检查支付状态... "
                         f"(已检查 {check_count} 次)"
                     )
-                    st.info(warning_msg)
                 else:
                     # 5次后仍失败，显示警告信息
                     warning_msg = (
                         f"⚠️ 查询失败: {error_msg}，继续监控中... "
                         f"(已检查 {check_count} 次)"
                     )
-                    st.warning(warning_msg)
                 # 保存状态到session_state
                 st.session_state[f'payment_status_{order_id}'] = warning_msg
             else:

@@ -5493,6 +5493,12 @@ def display_precise_pricing_results(
 
 def payment_center_page():
     """支付中心页面"""
+    # 检查并恢复支付状态
+    from ui_payment import check_and_restore_payment_status
+    if check_and_restore_payment_status():
+        # 如果有正在进行的支付，显示状态后直接返回
+        return
+    
     st.markdown(
         """
         <div class="card-container">
