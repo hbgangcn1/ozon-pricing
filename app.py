@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import threading
-import time
 from typing import Optional, Dict, List, Any
 
 # ===== 公安备案临时配置已移除 =====
@@ -5601,6 +5600,7 @@ def subscription_management_page():
             # 清除可能的缓存状态
             if 'subscription_status' in st.session_state:
                 del st.session_state['subscription_status']
+            st.success("✅ 状态已刷新")
             st.rerun()
 
     # 获取用户信息 - 优先使用subscription_type字段
@@ -5616,20 +5616,9 @@ def subscription_management_page():
         # 优先使用subscription_type，如果没有则使用user_type
         user_type = result[0] or result[1] if result[0] else result[1]
 
-    # 添加手动升级功能（仅对免费用户显示）
+    # 自动刷新提示
     if user_type == 'free':
-        st.markdown("---")
-        st.markdown("#### 🔧 手动处理支付成功")
-        st.warning("如果支付成功但账户状态未自动更新，可以使用以下功能手动处理：")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ 手动升级到效率版", key="manual_upgrade_efficiency_main"):
-                manual_upgrade_user_subscription("efficiency")
-
-        with col2:
-            if st.button("✅ 手动升级到专业版", key="manual_upgrade_professional_main"):
-                manual_upgrade_user_subscription("professional")
+        st.info("💡 支付成功后，请点击上方'刷新状态'按钮查看最新账户状态")
 
     subscription_status = check_user_subscription_status(user_id)
 
@@ -5942,48 +5931,6 @@ def subscription_management_page():
                         st.rerun()
 
 
-def manual_upgrade_user_subscription(plan_type: str):
-    """手动升级用户订阅"""
-    user_id = current_user_id()
-    if not user_id:
-        st.error("❌ 请先登录")
-        return
-
-    try:
-        with get_db_connection() as (conn, cursor):
-            if plan_type == "efficiency":
-                # 升级到效率版
-                cursor.execute("""
-                    UPDATE users
-                    SET subscription_type = 'efficiency',
-                        subscription_expires = ?
-                    WHERE id = ?
-                """, (int(time.time()) + 30*24*3600, user_id))
-                st.success("✅ 已手动升级到效率版！有效期30天")
-
-            elif plan_type == "professional":
-                # 升级到专业版
-                cursor.execute("""
-                    UPDATE users
-                    SET subscription_type = 'professional',
-                        subscription_expires = ?
-                    WHERE id = ?
-                """, (int(time.time()) + 365*24*3600, user_id))
-                st.success("✅ 已手动升级到专业版！有效期365天")
-
-            conn.commit()
-
-            # 清除缓存状态
-            if 'subscription_status' in st.session_state:
-                del st.session_state['subscription_status']
-
-            st.info("🔄 请重新登录查看最新状态")
-            st.rerun()
-
-    except Exception as e:
-        st.error(f"❌ 手动升级失败：{e}")
-
-
 def init_exchange_rates():
     """系统启动时预获取汇率"""
     try:
@@ -6038,6 +5985,7 @@ def start_wechat_callback_server():
                     # 获取请求体
                     body = request.get_data(as_text=True)
                     logger.info(f"收到微信支付通知: {body}")
+                    logger.info(f"回调请求头: {dict(request.headers)}")
 
                     # 构建通知数据
                     notify_data = {
@@ -6047,6 +5995,7 @@ def start_wechat_callback_server():
 
                     # 处理通知
                     result = payment_handler.process_wechat_notify(notify_data)
+                    logger.info(f"支付通知处理结果: {result}")
 
                     if result['success']:
                         # 返回成功响应

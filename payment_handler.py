@@ -254,9 +254,12 @@ class PaymentHandler:
                     """, (amount // 100, user_id))  # 假设1元=1次计算
 
                 conn.commit()
+                print(f"✅ 支付成功处理完成: 订单ID={order_id}")
 
         except Exception as e:
-            print(f"处理支付成功逻辑失败: {e}")
+            print(f"❌ 处理支付成功逻辑失败: {e}")
+            import traceback
+            print(f"❌ 错误详情: {traceback.format_exc()}")
 
 
 def show_payment_page():
