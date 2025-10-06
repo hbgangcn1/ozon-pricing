@@ -277,36 +277,30 @@ def check_and_restore_payment_status():
         for order_id in list(st.session_state.payment_monitoring.keys()):
             restore_payment_display(order_id)
 
-            # 检查是否需要继续监控
-            if st.session_state.get(f'continue_monitoring_{order_id}', False):
-                # 清除继续监控标记
-                del st.session_state[f'continue_monitoring_{order_id}']
-
-                # 启动监控
-                from payment_handler import payment_handler
-                monitoring_info = st.session_state.payment_monitoring[order_id]
-                plan_name = monitoring_info.get('plan_name', '未知套餐')
-                monitor_payment_status(payment_handler, order_id, plan_name)
+            # 显示当前状态和手动检查按钮
+            monitoring_info = st.session_state.payment_monitoring[order_id]
+            if not monitoring_info.get('first_check_done', False):
+                # 第一次检查还没完成，继续等待
+                st.info("⏳ 等待微信支付系统处理订单...")
+                st.progress(0, text="等待中...")
             else:
-                # 显示当前状态
-                monitoring_info = st.session_state.payment_monitoring[order_id]
-                if not monitoring_info.get('first_check_done', False):
-                    # 第一次检查还没完成，继续等待
-                    st.info("⏳ 等待微信支付系统处理订单...")
-                    st.progress(0, text="等待中...")
-                else:
-                    # 已经开始检查，显示当前状态
-                    current_status = st.session_state.get(
-                        f'payment_status_{order_id}', "⏳ 正在检查支付状态..."
+                # 已经开始检查，显示当前状态
+                current_status = st.session_state.get(
+                    f'payment_status_{order_id}', "⏳ 正在检查支付状态..."
+                )
+                st.info(current_status)
+
+                # 显示手动检查按钮
+                st.info("💡 请点击下方按钮手动检查支付状态")
+                if st.button(
+                    "🔄 检查支付状态", key=f"check_payment_{order_id}"
+                ):
+                    # 用户点击按钮时，启动监控
+                    from payment_handler import payment_handler
+                    plan_name = monitoring_info.get('plan_name', '未知套餐')
+                    monitor_payment_status(
+                        payment_handler, order_id, plan_name
                     )
-                    current_progress = st.session_state.get(
-                        f'payment_progress_{order_id}', 0
-                    )
-                    st.info(current_status)
-                    progress_text = (
-                        f"检查进度: {int(current_progress * 1800)}/1800"
-                    )
-                    st.progress(current_progress, text=progress_text)
             return True
     return False
 
@@ -332,8 +326,14 @@ def start_payment_monitoring(
     if f'payment_progress_{order_id}' not in st.session_state:
         st.session_state[f'payment_progress_{order_id}'] = 0
 
-    # 开始监控循环
-    monitor_payment_status(payment_handler, order_id, plan_name)
+    # 显示等待信息和手动检查按钮
+    st.info("⏳ 等待微信支付系统处理订单...")
+    st.progress(0, text="等待中...")
+
+    st.info("💡 请点击下方按钮开始检查支付状态")
+    if st.button("🔄 开始检查支付状态", key=f"start_check_{order_id}"):
+        # 用户点击按钮时，启动监控
+        monitor_payment_status(payment_handler, order_id, plan_name)
 
 
 def monitor_payment_status(
@@ -342,7 +342,6 @@ def monitor_payment_status(
     """监控支付状态"""
     # 不设置严格超时，允许长时间等待；通过较大次数与较短间隔实现"长期等待"
     max_checks = 1800  # 最多检查1800次（约1小时，间隔2秒）
-    check_interval = 2  # 每2秒检查一次
     qr_refresh_interval = 60  # 每60秒刷新一次二维码
 
     if order_id not in st.session_state.payment_monitoring:
@@ -469,12 +468,11 @@ def monitor_payment_status(
                 del st.session_state.payment_monitoring[order_id]
                 return
 
-    # 继续监控
-    time.sleep(check_interval)
-    # 使用st.rerun()来更新页面，但保持监控状态
-    # 添加一个标记，表示需要继续监控
-    st.session_state[f'continue_monitoring_{order_id}'] = True
-    st.rerun()
+    # 显示手动刷新按钮，而不是自动刷新
+    st.info("💡 请点击下方按钮手动检查支付状态")
+    if st.button("🔄 检查支付状态", key=f"check_payment_{order_id}"):
+        # 用户点击按钮时，继续监控
+        monitor_payment_status(payment_handler, order_id, plan_name)
 
 
 def check_payment_status(payment_handler: PaymentHandler, order_id: str):
