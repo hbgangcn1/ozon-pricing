@@ -81,7 +81,9 @@ def monitor_payment_status(
         monitor_payment_status(payment_handler, order_id, plan_name)
 
 
-def start_payment_monitoring(payment_handler: PaymentHandler, order_id: str, plan_name: str):
+def start_payment_monitoring(
+    payment_handler: PaymentHandler, order_id: str, plan_name: str
+):
     """启动支付监控"""
     if not order_id:
         st.error("❌ 订单ID无效")
@@ -116,8 +118,14 @@ def restore_payment_display(order_id: str):
     order_info = st.session_state.get(f'payment_order_{order_id}')
     if order_info:
         st.info(f"📋 订单号: {order_id}")
-        st.info(f"💰 金额: ¥{order_info.get('amount', 0) / 100}")
-        st.info(f"📝 描述: {order_info.get('description', '')}")
+        amount_yuan = order_info.get('amount', 0) / 100
+        st.info(
+            f"💰 金额: ¥{amount_yuan}"
+        )
+        description_text = order_info.get('description', '')
+        st.info(
+            f"📝 描述: {description_text}"
+        )
 
     # 显示二维码
     qr_data = st.session_state.get(f'payment_qr_{order_id}')
@@ -132,7 +140,9 @@ def restore_payment_display(order_id: str):
         )
 
     # 显示当前状态
-    status_msg = st.session_state.get(f'payment_status_{order_id}', '⏳ 等待支付...')
+    status_msg = st.session_state.get(
+        f'payment_status_{order_id}', '⏳ 等待支付...'
+    )
     st.info(status_msg)
 
 
@@ -174,8 +184,8 @@ def create_professional_payment(payment_handler: PaymentHandler):
         # 显示支付信息
         st.success("✅ 支付订单创建成功！")
         st.info(f"📋 订单号: {order_id}")
-        st.info(f"💰 金额: ¥365.00")
-        st.info(f"📝 描述: 物流系统专业版订阅 - 首月优惠")
+        st.info("💰 金额: ¥365.00")
+        st.info("📝 描述: 物流系统专业版订阅 - 首月优惠")
 
         # 显示二维码
         st.markdown(
@@ -232,8 +242,8 @@ def create_efficiency_payment(payment_handler: PaymentHandler):
         # 显示支付信息
         st.success("✅ 支付订单创建成功！")
         st.info(f"📋 订单号: {order_id}")
-        st.info(f"💰 金额: ¥100.00")
-        st.info(f"📝 描述: 物流系统效率版订阅 - 首月优惠")
+        st.info("💰 金额: ¥100.00")
+        st.info("📝 描述: 物流系统效率版订阅 - 首月优惠")
 
         # 显示二维码
         st.markdown(
@@ -262,7 +272,8 @@ def show_payment_page():
         return
 
     # 检查是否有正在进行的支付
-    if 'payment_monitoring' in st.session_state and st.session_state.payment_monitoring:
+    if ('payment_monitoring' in st.session_state and
+            st.session_state.payment_monitoring):
         for order_id in list(st.session_state.payment_monitoring.keys()):
             restore_payment_display(order_id)
             return
