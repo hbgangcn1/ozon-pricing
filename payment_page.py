@@ -103,6 +103,8 @@ def show_existing_payment(
         if st.button("🔍 检查支付状态", key="check_payment_status"):
             with st.spinner("正在检查支付状态..."):
                 # 1) 优先查询数据库（可靠、低延迟）
+                order_key = f"payment_order_{plan_name}"
+                qr_key = f"payment_qr_{order_id}"
                 paid_in_db = False
                 try:
                     with get_db_connection() as (conn, cursor):
@@ -116,17 +118,24 @@ def show_existing_payment(
                         row = cursor.fetchone()
                         if row:
                             status_in_db = row[0]
-                            paid_in_db = status_in_db in ["PAID", "SUCCESS", "SUCCESSFUL"]
+                            paid_in_db = status_in_db in [
+                                "PAID",
+                                "SUCCESS",
+                                "SUCCESSFUL",
+                            ]
                 except Exception as ex:
                     # 安静失败，继续走 API 回退
                     print(f"检查数据库订单状态出错: {ex}")
 
                 if paid_in_db:
-                    st.success("🎉 支付成功！正在跳转到订阅管理页面...")
-                    if f"payment_order_{plan_name}" in st.session_state:
-                        del st.session_state[f"payment_order_{plan_name}"]
-                    if f"payment_qr_{order_id}" in st.session_state:
-                        del st.session_state[f"payment_qr_{order_id}"]
+                    success_msg = (
+                        "🎉 支付成功！正在跳转到订阅管理页面..."
+                    )
+                    st.success(success_msg)
+                    if order_key in st.session_state:
+                        del st.session_state[order_key]
+                    if qr_key in st.session_state:
+                        del st.session_state[qr_key]
                     time.sleep(1)
                     st.session_state["current_page"] = "subscription"
                     st.rerun()
@@ -137,27 +146,34 @@ def show_existing_payment(
                     if result.get("success"):
                         status = result.get("status")
                         if status == "SUCCESS":
-                            st.success("🎉 支付成功！正在跳转到订阅管理页面...")
-                            if f"payment_order_{plan_name}" in st.session_state:
-                                del st.session_state[f"payment_order_{plan_name}"]
-                            if f"payment_qr_{order_id}" in st.session_state:
-                                del st.session_state[f"payment_qr_{order_id}"]
+                            success_msg = (
+                                "🎉 支付成功！正在跳转到订阅管理页面..."
+                            )
+                            st.success(success_msg)
+                            if order_key in st.session_state:
+                                del st.session_state[order_key]
+                            if qr_key in st.session_state:
+                                del st.session_state[qr_key]
                             time.sleep(1)
                             st.session_state["current_page"] = "subscription"
                             st.rerun()
                         elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
                             st.error("❌ 支付失败，请重新创建订单")
-                            if f"payment_order_{plan_name}" in st.session_state:
-                                del st.session_state[f"payment_order_{plan_name}"]
-                            if f"payment_qr_{order_id}" in st.session_state:
-                                del st.session_state[f"payment_qr_{order_id}"]
+                            if order_key in st.session_state:
+                                del st.session_state[order_key]
+                            if qr_key in st.session_state:
+                                del st.session_state[qr_key]
                             st.rerun()
                         else:
-                            st.info(f"⏳ 支付状态：{status}")
+                            status_msg = f"⏳ 支付状态：{status}"
+                            st.info(status_msg)
                     else:
                         error_msg = result.get("message", "未知错误")
                         # 对签名错误等短期不稳定情况，给温和提示
-                        if "签名错误" in error_msg or "signature" in error_msg.lower():
+                        if (
+                            "签名错误" in error_msg
+                            or "signature" in error_msg.lower()
+                        ):
                             st.warning("⏳ 支付状态尚未同步，请稍后再试")
                         else:
                             st.error(f"❌ 查询失败：{error_msg}")
@@ -186,7 +202,9 @@ def show_existing_payment(
             if 'subscription_status' in st.session_state:
                 del st.session_state['subscription_status']
             st.success("✅ 账户状态已刷新，请重新登录查看最新状态")
-            st.info("💡 如果支付成功但状态未更新，请尝试重新登录")
+            st.info(
+                "💡 如果支付成功但状态未更新，请尝试重新登录"
+            )
 
 
 def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
