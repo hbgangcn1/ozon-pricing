@@ -32,14 +32,27 @@ class WeChatPayV3API:
         self.config = config or wechat_config
         self._private_key = None
         self._cert_serial_no = self.config.cert_serial_no
+        # 调试开关：仅当 WECHAT_PAY_DEBUG=true 时输出详细日志
+        self._debug = os.getenv("WECHAT_PAY_DEBUG", "false").lower() == "true"
 
-        # 调试信息：显示配置状态
-        print("🔧 WeChatPayV3API 初始化:")
-        print(f"  公钥路径: {self.config.public_key_path}")
-        print(f"  私钥路径: {self.config.private_key_path}")
-        print(f"  证书序列号: {self.config.cert_serial_no}")
-        print(f"  AppID: {self.config.app_id}")
-        print(f"  商户号: {self.config.mch_id}")
+        if self._debug:
+            # 仅在调试模式输出（并做部分脱敏）
+            masked_cert = (
+                f"{self.config.cert_serial_no[:6]}...{self.config.cert_serial_no[-4:]}"
+                if self.config.cert_serial_no and len(self.config.cert_serial_no) > 10
+                else str(self.config.cert_serial_no)
+            )
+            masked_mch = (
+                f"{self.config.mch_id[:3]}***{self.config.mch_id[-2:]}"
+                if self.config.mch_id and len(self.config.mch_id) > 5
+                else str(self.config.mch_id)
+            )
+            print("🔧 WeChatPayV3API 初始化:")
+            print(f"  公钥路径: {self.config.public_key_path}")
+            print(f"  私钥路径: {self.config.private_key_path}")
+            print(f"  证书序列号: {masked_cert}")
+            print(f"  AppID: {self.config.app_id}")
+            print(f"  商户号: {masked_mch}")
 
     def _load_private_key(self) -> Optional[rsa.RSAPrivateKey]:
         """加载商户私钥"""
@@ -104,7 +117,13 @@ class WeChatPayV3API:
         """
         # 构建签名字符串
         sign_str = f"{method}\n{url_path}\n{timestamp}\n{nonce_str}\n{body}\n"
-        print(f"签名字符串: {repr(sign_str)}")
+        if self._debug:
+            # 调试时打印签名字符串的摘要而非全文
+            try:
+                digest = hashlib.sha256(sign_str.encode("utf-8")).hexdigest()
+                print(f"签名字符串摘要(SHA256): {digest}")
+            except Exception:
+                pass
 
         # 使用商户私钥签名
         private_key = self._load_private_key()
@@ -120,7 +139,10 @@ class WeChatPayV3API:
 
         # Base64编码
         signature_b64 = base64.b64encode(signature).decode('utf-8')
-        print(f"签名结果: {signature_b64}")
+        if self._debug:
+            # 仅打印签名的前后若干位做脱敏
+            masked_sig = f"{signature_b64[:8]}...{signature_b64[-6:]}"
+            print(f"签名结果(脱敏): {masked_sig}")
         return signature_b64
 
     def _build_auth_header(self, method: str, url_path: str,
@@ -151,13 +173,20 @@ class WeChatPayV3API:
                     f'timestamp="{timestamp}",'
                     f'serial_no="{self._cert_serial_no}"')
 
-        # 调试信息
-        print(f"Authorization头: {auth_str}")
-        print(f"商户号: {self.config.mch_id}")
-        print(f"证书序列号: {self._cert_serial_no}")
-        cert_length = len(self._cert_serial_no) if self._cert_serial_no else 0
-        print(f"证书序列号长度: {cert_length}")
-        print(f"证书序列号类型: {type(self._cert_serial_no)}")
+        # 调试信息（脱敏）
+        if self._debug:
+            masked_serial = (
+                f"{self._cert_serial_no[:6]}...{self._cert_serial_no[-4:]}"
+                if self._cert_serial_no and len(self._cert_serial_no) > 10
+                else str(self._cert_serial_no)
+            )
+            masked_auth = "WECHATPAY2-SHA256-RSA2048 ...(已脱敏)"
+            print(f"Authorization头(脱敏): {masked_auth}")
+            print(f"商户号(脱敏): {self.config.mch_id[:3]}***{self.config.mch_id[-2:]}")
+            cert_length = len(self._cert_serial_no) if self._cert_serial_no else 0
+            print(f"证书序列号(脱敏): {masked_serial}")
+            print(f"证书序列号长度: {cert_length}")
+            print(f"证书序列号类型: {type(self._cert_serial_no)}")
 
         return {
             'Authorization': auth_str,

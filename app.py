@@ -6062,6 +6062,7 @@ def main():
         ):
             start_wechat_callback_server()
         else:
+            # 仅在首次打印一次，避免日志噪音
             print("🔧 内置微信支付回调服务器已禁用（使用独立Gunicorn服务）")
         st.session_state.callback_server_initialized = True
 
