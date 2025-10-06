@@ -217,8 +217,8 @@ def monitor_payment_status(payment_handler: PaymentHandler, order_id: str, plan_
         progress_placeholder.progress(0, text="等待中...")
         time.sleep(5)
         st.session_state.payment_monitoring[order_id]['first_check_done'] = True
+        # st.rerun 会触发应用重跑，之后代码不会执行
         st.rerun()
-        return
     
     # 更新检查次数
     monitoring_info['check_count'] += 1
