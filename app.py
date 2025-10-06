@@ -5,6 +5,14 @@ import sqlite3
 import threading
 from typing import Optional, Dict, List, Any
 
+# 配置 Streamlit 服务器设置
+st.set_page_config(
+    page_title="物流系统",
+    page_icon="🚚",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # ===== 公安备案临时配置已移除 =====
 # 备案已完成，恢复正常登录流程
 POLICE_FILING_MODE = False  # 恢复为False，启用正常登录流程
