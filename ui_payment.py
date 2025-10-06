@@ -286,7 +286,7 @@ def monitor_payment_status(
     payment_handler: PaymentHandler, order_id: str, plan_name: str
 ):
     """监控支付状态"""
-    # 不设置严格超时，允许长时间等待；通过较大次数与较短间隔实现“长期等待”
+    # 不设置严格超时，允许长时间等待；通过较大次数与较短间隔实现"长期等待"
     max_checks = 3600  # 最多检查3600次（约2小时，间隔2秒）
     check_interval = 2  # 每2秒检查一次
     qr_refresh_interval = 60  # 每60秒刷新一次二维码
@@ -303,26 +303,32 @@ def monitor_payment_status(
         monitoring_info['check_count'] = 0
         check_count = 0
 
-    # 恢复显示状态
-    restore_payment_display(order_id)
-
     # 如果是第一次检查，等待5秒让微信支付系统处理订单
     if not first_check_done:
+        # 恢复显示状态
+        restore_payment_display(order_id)
+
         status_msg = "⏳ 等待微信支付系统处理订单..."
         st.info(status_msg)
         st.progress(0, text="等待中...")
         # 保存状态到session_state
         st.session_state[f'payment_status_{order_id}'] = status_msg
         st.session_state[f'payment_progress_{order_id}'] = 0
-        time.sleep(5)  # 等待5秒后开始检查
+
+        # 等待5秒后开始检查
+        time.sleep(5)
         st.session_state.payment_monitoring[order_id][
             'first_check_done'
         ] = True
-        # 直接继续执行，不调用st.rerun()
-        # 这样可以避免重跑导致的状态丢失
+        # 第一次检查后，重新运行以显示更新后的状态
+        st.rerun()
+        return
 
     # 更新检查次数
     monitoring_info['check_count'] += 1
+
+    # 恢复显示状态（仅在非第一次检查时）
+    restore_payment_display(order_id)
 
     # 显示进度
     progress = check_count / max_checks
