@@ -139,7 +139,7 @@ def create_professional_payment(payment_handler: PaymentHandler, user_id: int):
             st.info("请在微信中扫描二维码完成支付")
 
             # 将code_url保存到监控状态，便于后续自动刷新二维码
-            if ('payment_monitoring' in st.session_state and order_id):
+            if 'payment_monitoring' in st.session_state and order_id:
                 st.session_state.payment_monitoring.setdefault(
                     order_id, {}
                 )['code_url'] = result["code_url"]
@@ -216,7 +216,7 @@ def create_calculation_payment(
             st.info("请在微信中扫描二维码完成支付")
 
             # 将code_url保存到监控状态，便于后续自动刷新二维码
-            if ('payment_monitoring' in st.session_state and order_id):
+            if 'payment_monitoring' in st.session_state and order_id:
                 st.session_state.payment_monitoring.setdefault(
                     order_id, {}
                 )['code_url'] = result["code_url"]
@@ -336,7 +336,7 @@ def monitor_payment_status(
     last_refresh = monitoring_info.get(
         'qr_last_refresh', monitoring_info.get('start_time', time.time())
     )
-    if (code_url and (time.time() - last_refresh) >= qr_refresh_interval):
+    if code_url and (time.time() - last_refresh) >= qr_refresh_interval:
         try:
             import qrcode
             import io
@@ -364,8 +364,9 @@ def monitor_payment_status(
                 """, unsafe_allow_html=True
             )
             monitoring_info['qr_last_refresh'] = time.time()
-        except Exception:
-            # 刷新失败不影响主流程
+        except (ImportError, OSError, ValueError, KeyError) as e:
+            # 刷新失败不影响主流程，记录错误但不中断
+            print(f"二维码刷新失败: {e}")
             pass
 
     # 检查支付状态
