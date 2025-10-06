@@ -148,9 +148,10 @@ def create_professional_payment(payment_handler: PaymentHandler, user_id: int):
                 ] = time.time()
 
             # 启动实时状态检查
-            start_payment_monitoring(
-                payment_handler, order_id, "专业版"
-            )
+            if order_id:
+                start_payment_monitoring(
+                    payment_handler, order_id, "专业版"
+                )
         else:
             st.error("二维码生成失败")
     else:
@@ -224,9 +225,10 @@ def create_calculation_payment(
                 ] = time.time()
 
             # 启动实时状态检查
-            start_payment_monitoring(
-                payment_handler, order_id, f"{amount}次计算"
-            )
+            if order_id:
+                start_payment_monitoring(
+                    payment_handler, order_id, f"{amount}次计算"
+                )
         else:
             st.error("二维码生成失败")
     else:
