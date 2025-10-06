@@ -6,6 +6,26 @@
 import streamlit as st
 import time
 from payment_handler import PaymentHandler
+from db_utils import get_db_connection
+
+
+def check_payment_status_in_db(order_id: str) -> bool:
+    """检查数据库中订单的支付状态"""
+    try:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute("""
+                SELECT status FROM payment_orders
+                WHERE order_id = ?
+            """, (order_id,))
+
+            result = cursor.fetchone()
+            if result:
+                status = result[0]
+                return status == "PAID"
+            return False
+    except Exception as e:
+        print(f"检查支付状态失败: {e}")
+        return False
 
 
 def show_payment_page():
@@ -340,6 +360,28 @@ def monitor_payment_status(
     payment_handler: PaymentHandler, order_id: str, plan_name: str
 ):
     """监控支付状态"""
+    # 首先检查数据库中的支付状态（更可靠）
+    payment_success = check_payment_status_in_db(order_id)
+    if payment_success:
+        # 支付成功，跳转到订阅管理页面
+        st.success("🎉 支付成功！正在跳转到订阅管理页面...")
+
+        # 清除监控状态
+        if order_id in st.session_state.payment_monitoring:
+            del st.session_state.payment_monitoring[order_id]
+
+        # 清除支付相关的session state
+        if f'payment_order_{order_id}' in st.session_state:
+            del st.session_state[f'payment_order_{order_id}']
+        if f'payment_qr_{order_id}' in st.session_state:
+            del st.session_state[f'payment_qr_{order_id}']
+
+        # 跳转到订阅管理页面
+        time.sleep(2)
+        st.session_state["current_page"] = "subscription"
+        st.rerun()
+        return
+
     # 不设置严格超时，允许长时间等待；通过较大次数与较短间隔实现"长期等待"
     max_checks = 1800  # 最多检查1800次（约1小时，间隔2秒）
     qr_refresh_interval = 60  # 每60秒刷新一次二维码

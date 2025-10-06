@@ -6078,6 +6078,9 @@ def main():
         # 显示支付页面
         from payment_page import show_payment_page
         show_payment_page()
+    elif current_page == "subscription":
+        # 显示订阅管理页面
+        subscription_management_page()
     else:
         # 显示主界面
         show_main_interface()
