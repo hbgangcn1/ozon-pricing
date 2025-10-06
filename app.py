@@ -5498,7 +5498,7 @@ def payment_center_page():
     if check_and_restore_payment_status():
         # 如果有正在进行的支付，显示状态后直接返回
         return
-    
+
     st.markdown(
         """
         <div class="card-container">
@@ -5912,7 +5912,9 @@ def subscription_management_page():
                     if st.button(button_text, key=f"action_{plan_key}"):
                         # 跳转到支付页面
                         st.session_state["payment_plan"] = plan['name']
-                        st.switch_page("payment_page.py")
+                        st.switch_page("payment_page")
+
+
 def init_exchange_rates():
     """系统启动时预获取汇率"""
     try:

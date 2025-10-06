@@ -39,7 +39,7 @@ def show_payment_page():
 
     if not plan_name:
         st.error("❌ 未找到支付计划信息，请重新选择订阅套餐")
-        st.button("🏠 返回首页", on_click=lambda: st.switch_page("app.py"))
+        st.button("🏠 返回首页", on_click=lambda: st.switch_page("app"))
         return
 
     # 显示计划信息
@@ -142,7 +142,7 @@ def show_existing_payment(
     # 返回按钮
     st.markdown("---")
     if st.button("🏠 返回首页", key="back_to_home"):
-        st.switch_page("app.py")
+        st.switch_page("app")
 
 
 def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
