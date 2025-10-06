@@ -231,7 +231,7 @@ def monitor_payment_status(
         status_placeholder.warning("⏰ 支付监控超时，请手动检查支付状态")
         return
 
-    # 如果是第一次检查，等待10秒让微信支付系统处理订单
+    # 如果是第一次检查，等待60秒让微信支付系统处理订单
     if not first_check_done:
         status_msg = "⏳ 等待微信支付系统处理订单..."
         status_placeholder.info(status_msg)
@@ -239,7 +239,7 @@ def monitor_payment_status(
         # 保存状态到session_state
         st.session_state[f'payment_status_{order_id}'] = status_msg
         st.session_state[f'payment_progress_{order_id}'] = 0
-        time.sleep(10)  # 增加等待时间到10秒
+        time.sleep(60)  # 增加等待时间到60秒
         st.session_state.payment_monitoring[order_id][
             'first_check_done'
         ] = True
