@@ -107,7 +107,7 @@ def create_professional_payment(payment_handler: PaymentHandler, user_id: int):
             
             qr_img = qr.make_image(fill_color="black", back_color="white")
             img_buffer = io.BytesIO()
-            qr_img.save(img_buffer, format='PNG')
+            qr_img.save(img_buffer, kind='PNG')
             img_str = base64.b64encode(img_buffer.getvalue()).decode()
             
             st.markdown(f"""
@@ -152,7 +152,7 @@ def create_calculation_payment(
             
             qr_img = qr.make_image(fill_color="black", back_color="white")
             img_buffer = io.BytesIO()
-            qr_img.save(img_buffer, format='PNG')
+            qr_img.save(img_buffer, kind='PNG')
             img_str = base64.b64encode(img_buffer.getvalue()).decode()
             
             st.markdown(f"""
