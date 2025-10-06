@@ -21,7 +21,10 @@ def check_payment_status_in_db(order_id: str) -> bool:
             result = cursor.fetchone()
             if result:
                 status = result[0]
-                return status == "PAID"
+                print(f"🔧 数据库订单状态检查: 订单ID={order_id}, 状态={status}")
+                # 检查多种可能的成功状态
+                return status in ["PAID", "SUCCESS", "SUCCESSFUL"]
+            print(f"🔧 数据库订单状态检查: 订单ID={order_id}, 未找到记录")
             return False
     except Exception as e:
         print(f"检查支付状态失败: {e}")
