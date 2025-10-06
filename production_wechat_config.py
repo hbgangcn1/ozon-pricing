@@ -32,6 +32,7 @@ class ProductionWeChatConfig(WeChatPayConfig):
 
         # 证书配置
         self.private_key_path = os.getenv("WECHAT_PRIVATE_KEY_PATH")
+        self.public_key_path = os.getenv("WECHAT_PUBLIC_KEY_PATH")
         self.cert_serial_no = os.getenv("WECHAT_CERT_SERIAL_NO")
 
         # 生产环境回调地址
@@ -53,6 +54,7 @@ class ProductionWeChatConfig(WeChatPayConfig):
             ("WECHAT_MCH_ID", self.mch_id),
             ("WECHAT_API_V3_KEY", self.api_v3_key),
             ("WECHAT_PRIVATE_KEY_PATH", self.private_key_path),
+            ("WECHAT_PUBLIC_KEY_PATH", self.public_key_path),
             ("WECHAT_CERT_SERIAL_NO", self.cert_serial_no),
         ]
 
