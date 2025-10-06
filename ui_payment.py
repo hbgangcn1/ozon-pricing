@@ -180,7 +180,8 @@ def start_payment_monitoring(payment_handler: PaymentHandler, order_id: str, pla
     st.session_state.payment_monitoring[order_id] = {
         'start_time': time.time(),
         'plan_name': plan_name,
-        'check_count': 0
+        'check_count': 0,
+        'first_check_done': False
     }
     
     # 显示监控状态
@@ -204,9 +205,19 @@ def monitor_payment_status(payment_handler: PaymentHandler, order_id: str, plan_
     
     monitoring_info = st.session_state.payment_monitoring[order_id]
     check_count = monitoring_info['check_count']
+    first_check_done = monitoring_info.get('first_check_done', False)
     
     if check_count >= max_checks:
         status_placeholder.warning("⏰ 支付监控超时，请手动检查支付状态")
+        return
+    
+    # 如果是第一次检查，等待5秒让微信支付系统处理订单
+    if not first_check_done:
+        status_placeholder.info("⏳ 等待微信支付系统处理订单...")
+        progress_placeholder.progress(0, text="等待中...")
+        time.sleep(5)
+        st.session_state.payment_monitoring[order_id]['first_check_done'] = True
+        st.rerun()
         return
     
     # 更新检查次数
@@ -246,7 +257,17 @@ def monitor_payment_status(payment_handler: PaymentHandler, order_id: str, plan_
                 # 仍在处理中
                 status_placeholder.info(f"⏳ 支付处理中... (已检查 {check_count} 次)")
         else:
-            status_placeholder.warning(f"⚠️ 查询失败: {result.get('message', '未知错误')}")
+            # 查询失败，但不停止监控，继续尝试
+            error_msg = result.get('message', '未知错误')
+            if "签名错误" in error_msg or "HTTP" in error_msg:
+                # 对于签名错误或HTTP错误，继续监控
+                status_placeholder.warning(f"⚠️ 查询失败: {error_msg}，继续监控中... (已检查 {check_count} 次)")
+            else:
+                # 其他错误，停止监控
+                status_placeholder.error(f"❌ 查询失败: {error_msg}")
+                progress_placeholder.empty()
+                del st.session_state.payment_monitoring[order_id]
+                return
     
     # 继续监控
     time.sleep(check_interval)
