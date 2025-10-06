@@ -52,30 +52,76 @@ def monitor_payment_status(
     payment_handler: PaymentHandler, order_id: str, plan_name: str
 ):
     """监控支付状态"""
-    # 检查数据库中的支付状态
+    # 首先检查数据库中的支付状态
     payment_success = check_payment_status_in_db(order_id)
     if payment_success:
         handle_payment_success(order_id)
         return
 
-    # 如果支付未成功，显示等待信息
-    if order_id not in st.session_state.payment_monitoring:
-        return
+    # 如果数据库中没有成功记录，查询微信支付API
+    with st.spinner("正在查询支付状态..."):
+        try:
+            result = payment_handler.query_payment_status(order_id)
+            if result["success"]:
+                status = result["status"]
+                if status == "SUCCESS":
+                    # 支付成功，跳转到订阅管理页面
+                    handle_payment_success(order_id)
+                    return
+                elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
+                    st.error("❌ 支付失败或已关闭")
+                    return
+                else:
+                    # 支付处理中
+                    if order_id not in st.session_state.payment_monitoring:
+                        return
 
-    monitoring_info = st.session_state.payment_monitoring[order_id]
-    check_count = monitoring_info.get('check_count', 0)
+                    monitoring_info = (
+                        st.session_state.payment_monitoring[order_id]
+                    )
+                    check_count = monitoring_info.get('check_count', 0)
+                    monitoring_info['check_count'] = check_count + 1
+                    check_count = monitoring_info['check_count']
 
-    # 更新检查计数
-    monitoring_info['check_count'] = check_count + 1
-    check_count = monitoring_info['check_count']
+                    status_msg = (
+                        f"⏳ 支付处理中... (已检查 {check_count} 次)"
+                    )
+                    st.session_state[f'payment_status_{order_id}'] = status_msg
+                    st.info(status_msg)
+            else:
+                # API查询失败，显示错误信息
+                error_msg = result.get('message', '未知错误')
+                if "签名错误" in error_msg:
+                    # 对于签名错误，显示友好提示
+                    if order_id not in st.session_state.payment_monitoring:
+                        return
 
-    # 显示等待信息
-    status_msg = f"⏳ 等待支付完成... (已检查 {check_count} 次)"
-    st.session_state[f'payment_status_{order_id}'] = status_msg
-    st.info(status_msg)
+                    monitoring_info = (
+                        st.session_state.payment_monitoring[order_id]
+                    )
+                    check_count = monitoring_info.get('check_count', 0)
+                    monitoring_info['check_count'] = check_count + 1
+                    check_count = monitoring_info['check_count']
+
+                    if check_count <= 3:
+                        status_msg = "⏳ 正在检查支付状态..."
+                    else:
+                        status_msg = (
+                            f"⚠️ 查询失败: {error_msg}，继续监控中... "
+                            f"(已检查 {check_count} 次)"
+                        )
+
+                    st.session_state[f'payment_status_{order_id}'] = status_msg
+                    st.info(status_msg)
+                else:
+                    st.error(f"❌ 查询失败: {error_msg}")
+                    return
+        except Exception as e:
+            st.error(f"❌ 查询异常: {str(e)}")
+            return
 
     # 显示手动检查按钮
-    st.info("💡 请点击下方按钮检查支付状态")
+    st.info("💡 请点击下方按钮继续检查支付状态")
     if st.button("🔄 检查支付状态", key=f"check_payment_{order_id}"):
         # 用户点击按钮时，继续监控
         monitor_payment_status(payment_handler, order_id, plan_name)
