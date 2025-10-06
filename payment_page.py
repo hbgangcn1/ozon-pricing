@@ -9,6 +9,7 @@ import qrcode
 import io
 import base64
 from payment_handler import PaymentHandler
+from db_utils import get_db_connection
 from payment_success_page import show_payment_success_page
 from db_utils import current_user_id
 
@@ -102,38 +103,66 @@ def show_existing_payment(
         # 检查支付状态按钮
         if st.button("🔍 检查支付状态", key="check_payment_status"):
             with st.spinner("正在检查支付状态..."):
-                result = payment_handler.query_payment_status(order_id)
+                # 1) 优先查询数据库（可靠、低延迟）
+                paid_in_db = False
+                try:
+                    with get_db_connection() as (conn, cursor):
+                        cursor.execute(
+                            """
+                            SELECT status FROM payment_orders
+                            WHERE order_id = ?
+                            """,
+                            (order_id,),
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            status_in_db = row[0]
+                            paid_in_db = status_in_db in ["PAID", "SUCCESS", "SUCCESSFUL"]
+                except Exception as ex:
+                    # 安静失败，继续走 API 回退
+                    print(f"检查数据库订单状态出错: {ex}")
 
-                if result["success"]:
-                    status = result["status"]
-                    if status == "SUCCESS":
-                        st.success("🎉 支付成功！")
-                        # 清除订单信息
-                        if f"payment_order_{plan_name}" in st.session_state:
-                            del st.session_state[f"payment_order_{plan_name}"]
-                        if f"payment_qr_{order_id}" in st.session_state:
-                            del st.session_state[f"payment_qr_{order_id}"]
-
-                        # 跳转到成功页面
-                        time.sleep(2)
-                        show_payment_success_page(order_id, plan_name)
-                        return
-                    elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
-                        st.error("❌ 支付失败，请重新创建订单")
-                        # 清除订单信息
-                        if f"payment_order_{plan_name}" in st.session_state:
-                            del st.session_state[f"payment_order_{plan_name}"]
-                        if f"payment_qr_{order_id}" in st.session_state:
-                            del st.session_state[f"payment_qr_{order_id}"]
-                        st.rerun()
-                    else:
-                        st.info(f"⏳ 支付状态：{status}")
+                if paid_in_db:
+                    st.success("🎉 支付成功！正在跳转到订阅管理页面...")
+                    if f"payment_order_{plan_name}" in st.session_state:
+                        del st.session_state[f"payment_order_{plan_name}"]
+                    if f"payment_qr_{order_id}" in st.session_state:
+                        del st.session_state[f"payment_qr_{order_id}"]
+                    time.sleep(1)
+                    st.session_state["current_page"] = "subscription"
+                    st.rerun()
                 else:
-                    error_msg = result.get('message', '未知错误')
-                    if "签名错误" in error_msg:
-                        st.warning("⚠️ 查询失败，请稍后重试")
+                    # 2) 回退调用微信查询接口
+                    result = payment_handler.query_payment_status(order_id)
+
+                    if result.get("success"):
+                        status = result.get("status")
+                        if status == "SUCCESS":
+                            st.success("🎉 支付成功！正在跳转到订阅管理页面...")
+                            if f"payment_order_{plan_name}" in st.session_state:
+                                del st.session_state[f"payment_order_{plan_name}"]
+                            if f"payment_qr_{order_id}" in st.session_state:
+                                del st.session_state[f"payment_qr_{order_id}"]
+                            time.sleep(1)
+                            st.session_state["current_page"] = "subscription"
+                            st.rerun()
+                            return
+                        elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
+                            st.error("❌ 支付失败，请重新创建订单")
+                            if f"payment_order_{plan_name}" in st.session_state:
+                                del st.session_state[f"payment_order_{plan_name}"]
+                            if f"payment_qr_{order_id}" in st.session_state:
+                                del st.session_state[f"payment_qr_{order_id}"]
+                            st.rerun()
+                        else:
+                            st.info(f"⏳ 支付状态：{status}")
                     else:
-                        st.error(f"❌ 查询失败：{error_msg}")
+                        error_msg = result.get("message", "未知错误")
+                        # 对签名错误等短期不稳定情况，给温和提示
+                        if "签名错误" in error_msg or "signature" in error_msg.lower():
+                            st.warning("⏳ 支付状态尚未同步，请稍后再试")
+                        else:
+                            st.error(f"❌ 查询失败：{error_msg}")
 
         # 重新创建订单按钮
         if st.button("🔄 重新创建订单", key="recreate_order"):
