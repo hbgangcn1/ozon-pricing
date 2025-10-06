@@ -38,8 +38,10 @@ class WeChatPayV3API:
         if self._debug:
             # 仅在调试模式输出（并做部分脱敏）
             masked_cert = (
-                f"{self.config.cert_serial_no[:6]}...{self.config.cert_serial_no[-4:]}"
-                if self.config.cert_serial_no and len(self.config.cert_serial_no) > 10
+                f"{self.config.cert_serial_no[:6]}..."
+                f"{self.config.cert_serial_no[-4:]}"
+                if (self.config.cert_serial_no and
+                    len(self.config.cert_serial_no) > 10)
                 else str(self.config.cert_serial_no)
             )
             masked_mch = (
@@ -183,8 +185,11 @@ class WeChatPayV3API:
             )
             masked_auth = "WECHATPAY2-SHA256-RSA2048 ...(已脱敏)"
             print(f"Authorization头(脱敏): {masked_auth}")
-            print(f"商户号(脱敏): {self.config.mch_id[:3]}***{self.config.mch_id[-2:]}")
-            cert_length = len(self._cert_serial_no) if self._cert_serial_no else 0
+            mch_masked = (f"{self.config.mch_id[:3]}***"
+                          f"{self.config.mch_id[-2:]}")
+            print(f"商户号(脱敏): {mch_masked}")
+            cert_length = (len(self._cert_serial_no)
+                           if self._cert_serial_no else 0)
             print(f"证书序列号(脱敏): {masked_serial}")
             print(f"证书序列号长度: {cert_length}")
             print(f"证书序列号类型: {type(self._cert_serial_no)}")
@@ -409,10 +414,11 @@ class WeChatPayV3API:
         """
         try:
             # 调试信息：检查API v3密钥
-            print(f"🔧 解密调试 - API v3密钥状态: {'已设置' if self.config.api_v3_key else '未设置'}")
+            key_status = "已设置" if self.config.api_v3_key else "未设置"
+            print(f"🔧 解密调试 - API v3密钥状态: {key_status}")
             if self.config.api_v3_key:
                 print(f"🔧 解密调试 - API v3密钥长度: {len(self.config.api_v3_key)}")
-            
+
             # 获取加密相关参数
             ciphertext = resource.get("ciphertext", "")
             associated_data = resource.get("associated_data", "")
@@ -428,7 +434,7 @@ class WeChatPayV3API:
             if len(api_key) != 32:
                 print(f"⚠️ API v3密钥长度不正确: {len(api_key)}，应该是32字节")
                 return {}
-            
+
             # 直接使用原始API v3密钥作为AES密钥
             key = api_key.encode('utf-8')
             print(f"🔧 使用原始API v3密钥，长度: {len(key)}")
@@ -440,7 +446,9 @@ class WeChatPayV3API:
             nonce_bytes = nonce.encode('utf-8')
             associated_data_bytes = associated_data.encode('utf-8')
 
-            print(f"🔧 解密参数: key长度={len(key)}, nonce长度={len(nonce_bytes)}, ciphertext长度={len(ciphertext_bytes)}")
+            print(f"🔧 解密参数: key长度={len(key)}, "
+                  f"nonce长度={len(nonce_bytes)}, "
+                  f"ciphertext长度={len(ciphertext_bytes)}")
 
             # 使用AES-GCM解密
             aesgcm = AESGCM(key)
@@ -497,10 +505,10 @@ class WeChatPayV3API:
                 resource = notify_data.get("resource", {})
 
                 # 解密resource中的数据
-                print(f"🔧 开始解密resource数据: {resource}")
+                print("🔧 开始解密resource数据:", resource)
                 decrypted_data = self._decrypt_resource(resource)
                 if not decrypted_data:
-                    print(f"❌ 解密返回空数据")
+                    print("❌ 解密返回空数据")
                     return {"success": False, "message": "解密失败"}
 
                 # 从解密后的数据中获取订单信息
