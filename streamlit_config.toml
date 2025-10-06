@@ -1,0 +1,20 @@
+[server]
+# 启用 XSRF 保护（推荐）
+enableXsrfProtection = true
+# 启用 CORS（与 XSRF 保护兼容）
+enableCORS = true
+# 端口设置
+port = 8501
+# 最大上传文件大小（200MB）
+maxUploadSize = 200
+
+[browser]
+# 自动打开浏览器（生产环境建议设为 false）
+gatherUsageStats = false
+
+[theme]
+# 主题设置
+primaryColor = "#FF6B6B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"

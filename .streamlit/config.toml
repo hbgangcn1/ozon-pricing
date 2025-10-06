@@ -5,8 +5,6 @@ enableXsrfProtection = true
 enableCORS = true
 # 端口设置
 port = 8501
-# 允许文件上传
-enableUploads = true
 # 最大上传文件大小（200MB）
 maxUploadSize = 200
 
