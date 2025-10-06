@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import threading
+import os
 from typing import Optional, Dict, List, Any
 
 # 配置 Streamlit 服务器设置
@@ -6053,7 +6054,10 @@ def start_wechat_callback_server():
 def main():
     # 启动微信支付回调服务器（后台线程）
     # 检查是否禁用内置回调服务器（当使用独立Gunicorn回调服务时）
-    if not os.getenv("DISABLE_EMBEDDED_WECHAT_CALLBACK", "false").lower() == "true":
+    if not (
+        os.getenv("DISABLE_EMBEDDED_WECHAT_CALLBACK", "false").lower()
+        == "true"
+    ):
         start_wechat_callback_server()
     else:
         print("🔧 内置微信支付回调服务器已禁用（使用独立Gunicorn服务）")
