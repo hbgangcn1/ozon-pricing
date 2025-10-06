@@ -122,7 +122,8 @@ class WeChatPayV3API:
             try:
                 digest = hashlib.sha256(sign_str.encode("utf-8")).hexdigest()
                 print(f"签名字符串摘要(SHA256): {digest}")
-            except Exception:
+            except (UnicodeEncodeError, AttributeError, TypeError):
+                # 如果无法计算摘要，静默跳过
                 pass
 
         # 使用商户私钥签名
