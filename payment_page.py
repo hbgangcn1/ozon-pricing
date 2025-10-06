@@ -10,7 +10,7 @@ import io
 import base64
 from payment_handler import PaymentHandler
 from payment_success_page import show_payment_success_page
-from db_utils import current_user_id
+from db_utils import current_user_id, get_db_connection
 
 
 def show_payment_page():
@@ -161,6 +161,20 @@ def show_existing_payment(
             st.success("✅ 账户状态已刷新，请重新登录查看最新状态")
             st.info("💡 如果支付成功但状态未更新，请尝试重新登录")
 
+    # 添加手动处理支付成功的功能
+    st.markdown("---")
+    st.markdown("#### 🔧 手动处理支付成功")
+    st.info("如果支付成功但账户状态未自动更新，可以使用以下功能手动处理：")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ 手动升级到效率版", key="manual_upgrade_efficiency"):
+            manual_upgrade_user("efficiency")
+
+    with col2:
+        if st.button("✅ 手动升级到专业版", key="manual_upgrade_professional"):
+            manual_upgrade_user("professional")
+
 
 def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
     """创建新的支付订单"""
@@ -222,6 +236,47 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
                 st.error(f"❌ 二维码生成失败：{e}")
         else:
             st.error(f"❌ 订单创建失败：{result.get('message', '未知错误')}")
+
+
+def manual_upgrade_user(plan_type: str):
+    """手动升级用户账户"""
+    user_id = current_user_id()
+    if not user_id:
+        st.error("❌ 请先登录")
+        return
+
+    try:
+        with get_db_connection() as (conn, cursor):
+            if plan_type == "efficiency":
+                # 升级到效率版
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_type = 'efficiency',
+                        subscription_expires = ?
+                    WHERE id = ?
+                """, (int(time.time()) + 30*24*3600, user_id))
+                st.success("✅ 已手动升级到效率版！有效期30天")
+
+            elif plan_type == "professional":
+                # 升级到专业版
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_type = 'professional',
+                        subscription_expires = ?
+                    WHERE id = ?
+                """, (int(time.time()) + 365*24*3600, user_id))
+                st.success("✅ 已手动升级到专业版！有效期365天")
+
+            conn.commit()
+
+            # 清除缓存状态
+            if 'subscription_status' in st.session_state:
+                del st.session_state['subscription_status']
+
+            st.info("🔄 请重新登录查看最新状态")
+
+    except Exception as e:
+        st.error(f"❌ 手动升级失败：{e}")
 
 
 if __name__ == "__main__":

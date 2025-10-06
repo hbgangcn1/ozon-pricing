@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import threading
+import time
 from typing import Optional, Dict, List, Any
 
 # ===== 公安备案临时配置已移除 =====
@@ -5602,8 +5603,6 @@ def subscription_management_page():
                 del st.session_state['subscription_status']
             st.rerun()
 
-    subscription_status = check_user_subscription_status(user_id)
-
     # 获取用户信息 - 优先使用subscription_type字段
     with get_db_connection() as (conn, c):
         c.execute(
@@ -5616,6 +5615,23 @@ def subscription_management_page():
             return
         # 优先使用subscription_type，如果没有则使用user_type
         user_type = result[0] or result[1] if result[0] else result[1]
+
+    # 添加手动升级功能（仅对免费用户显示）
+    if user_type == 'free':
+        st.markdown("---")
+        st.markdown("#### 🔧 手动处理支付成功")
+        st.warning("如果支付成功但账户状态未自动更新，可以使用以下功能手动处理：")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ 手动升级到效率版", key="manual_upgrade_efficiency_main"):
+                manual_upgrade_user_subscription("efficiency")
+
+        with col2:
+            if st.button("✅ 手动升级到专业版", key="manual_upgrade_professional_main"):
+                manual_upgrade_user_subscription("professional")
+
+    subscription_status = check_user_subscription_status(user_id)
 
     # 套餐信息映射
     plans = {
@@ -5924,6 +5940,48 @@ def subscription_management_page():
                         st.session_state["payment_plan"] = plan['name']
                         st.session_state["current_page"] = "payment"
                         st.rerun()
+
+
+def manual_upgrade_user_subscription(plan_type: str):
+    """手动升级用户订阅"""
+    user_id = current_user_id()
+    if not user_id:
+        st.error("❌ 请先登录")
+        return
+
+    try:
+        with get_db_connection() as (conn, cursor):
+            if plan_type == "efficiency":
+                # 升级到效率版
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_type = 'efficiency',
+                        subscription_expires = ?
+                    WHERE id = ?
+                """, (int(time.time()) + 30*24*3600, user_id))
+                st.success("✅ 已手动升级到效率版！有效期30天")
+
+            elif plan_type == "professional":
+                # 升级到专业版
+                cursor.execute("""
+                    UPDATE users
+                    SET subscription_type = 'professional',
+                        subscription_expires = ?
+                    WHERE id = ?
+                """, (int(time.time()) + 365*24*3600, user_id))
+                st.success("✅ 已手动升级到专业版！有效期365天")
+
+            conn.commit()
+
+            # 清除缓存状态
+            if 'subscription_status' in st.session_state:
+                del st.session_state['subscription_status']
+
+            st.info("🔄 请重新登录查看最新状态")
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"❌ 手动升级失败：{e}")
 
 
 def init_exchange_rates():
