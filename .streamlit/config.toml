@@ -7,6 +7,8 @@ enableCORS = true
 port = 8501
 # 最大上传文件大小（200MB）
 maxUploadSize = 200
+# 禁用文件变更监控，避免频繁自动重启（生产环境）
+fileWatcherType = "none"
 
 [browser]
 # 自动打开浏览器（生产环境建议设为 false）
