@@ -233,8 +233,8 @@ def monitor_payment_status(
         st.session_state.payment_monitoring[order_id][
             'first_check_done'
         ] = True
-        # st.rerun 会触发应用重跑，之后代码不会执行
-        st.rerun()
+        # 直接继续执行，不调用st.rerun()
+        # 这样可以避免重跑导致的状态丢失
 
     # 更新检查次数
     monitoring_info['check_count'] += 1
