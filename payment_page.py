@@ -10,6 +10,7 @@ import io
 import base64
 from payment_handler import PaymentHandler
 from payment_success_page import show_payment_success_page
+from db_utils import current_user_id
 
 
 def show_payment_page():
@@ -160,8 +161,15 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
             st.error("❌ 未知的订阅计划")
             return
 
+        # 获取当前用户ID
+        user_id = current_user_id()
+        if not user_id:
+            st.error("❌ 请先登录")
+            return
+
         # 创建支付订单
         result = payment_handler.create_payment_order(
+            user_id=user_id,
             amount=amount,
             description=description
         )
