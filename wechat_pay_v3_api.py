@@ -62,7 +62,7 @@ class WeChatPayV3API:
                     return self._private_key
                 else:
                     return None
-        except Exception:
+        except (OSError, IOError, ValueError, TypeError):
             return None
 
     @staticmethod
@@ -403,7 +403,7 @@ class WeChatPayV3API:
             decrypted_json = json.loads(decrypted_data.decode('utf-8'))
             return decrypted_json
 
-        except Exception:
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
             # 移除详细的解密失败信息输出
             return {}
 
@@ -518,7 +518,7 @@ class WeChatPayV3API:
 
             return True
 
-        except Exception:
+        except (OSError, IOError, ValueError, TypeError):
             return False
 
 
