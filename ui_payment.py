@@ -356,6 +356,26 @@ def start_payment_monitoring(
         monitor_payment_status(payment_handler, order_id, plan_name)
 
 
+def handle_payment_success(order_id: str):
+    """处理支付成功后的跳转逻辑"""
+    st.success("🎉 支付成功！正在跳转到订阅管理页面...")
+
+    # 清除监控状态
+    if order_id in st.session_state.payment_monitoring:
+        del st.session_state.payment_monitoring[order_id]
+
+    # 清除支付相关的session state
+    if f'payment_order_{order_id}' in st.session_state:
+        del st.session_state[f'payment_order_{order_id}']
+    if f'payment_qr_{order_id}' in st.session_state:
+        del st.session_state[f'payment_qr_{order_id}']
+
+    # 跳转到订阅管理页面
+    time.sleep(2)
+    st.session_state["current_page"] = "subscription"
+    st.rerun()
+
+
 def monitor_payment_status(
     payment_handler: PaymentHandler, order_id: str, plan_name: str
 ):
@@ -363,25 +383,10 @@ def monitor_payment_status(
     # 首先检查数据库中的支付状态（更可靠）
     payment_success = check_payment_status_in_db(order_id)
     if payment_success:
-        # 支付成功，跳转到订阅管理页面
-        st.success("🎉 支付成功！正在跳转到订阅管理页面...")
-
-        # 清除监控状态
-        if order_id in st.session_state.payment_monitoring:
-            del st.session_state.payment_monitoring[order_id]
-
-        # 清除支付相关的session state
-        if f'payment_order_{order_id}' in st.session_state:
-            del st.session_state[f'payment_order_{order_id}']
-        if f'payment_qr_{order_id}' in st.session_state:
-            del st.session_state[f'payment_qr_{order_id}']
-
-        # 跳转到订阅管理页面
-        time.sleep(2)
-        st.session_state["current_page"] = "subscription"
-        st.rerun()
+        handle_payment_success(order_id)
         return
 
+    # 如果支付未成功，继续监控流程
     # 不设置严格超时，允许长时间等待；通过较大次数与较短间隔实现"长期等待"
     max_checks = 1800  # 最多检查1800次（约1小时，间隔2秒）
     qr_refresh_interval = 60  # 每60秒刷新一次二维码
