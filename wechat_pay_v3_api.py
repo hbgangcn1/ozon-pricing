@@ -35,26 +35,8 @@ class WeChatPayV3API:
         # 调试开关：仅当 WECHAT_PAY_DEBUG=true 时输出详细日志
         self._debug = os.getenv("WECHAT_PAY_DEBUG", "false").lower() == "true"
 
-        if self._debug:
-            # 仅在调试模式输出（并做部分脱敏）
-            masked_cert = (
-                f"{self.config.cert_serial_no[:6]}..."
-                f"{self.config.cert_serial_no[-4:]}"
-                if (self.config.cert_serial_no and
-                    len(self.config.cert_serial_no) > 10)
-                else str(self.config.cert_serial_no)
-            )
-            masked_mch = (
-                f"{self.config.mch_id[:3]}***{self.config.mch_id[-2:]}"
-                if self.config.mch_id and len(self.config.mch_id) > 5
-                else str(self.config.mch_id)
-            )
-            print("🔧 WeChatPayV3API 初始化:")
-            print(f"  公钥路径: {self.config.public_key_path}")
-            print(f"  私钥路径: {self.config.private_key_path}")
-            print(f"  证书序列号: {masked_cert}")
-            print(f"  AppID: {self.config.app_id}")
-            print(f"  商户号: {masked_mch}")
+        # 完全移除敏感信息输出，即使是在调试模式下
+        # 如需调试，请通过其他方式查看配置信息
 
     def _load_private_key(self) -> Optional[rsa.RSAPrivateKey]:
         """加载商户私钥"""
@@ -62,11 +44,9 @@ class WeChatPayV3API:
             return self._private_key
 
         if not self.config.private_key_path:
-            print("私钥路径未配置")
             return None
 
         if not os.path.exists(self.config.private_key_path):
-            print(f"私钥文件不存在: {self.config.private_key_path}")
             return None
 
         try:
@@ -79,14 +59,10 @@ class WeChatPayV3API:
                 # 确保返回的是RSA私钥
                 if isinstance(private_key, rsa.RSAPrivateKey):
                     self._private_key = private_key
-                    print("✅ 私钥加载成功")
                     return self._private_key
                 else:
-                    print("❌ 私钥不是RSA类型")
                     return None
-        except Exception as e:
-            print(f"加载私钥失败: {e}")
-            print(f"私钥文件路径: {self.config.private_key_path}")
+        except Exception:
             return None
 
     @staticmethod
@@ -119,14 +95,7 @@ class WeChatPayV3API:
         """
         # 构建签名字符串
         sign_str = f"{method}\n{url_path}\n{timestamp}\n{nonce_str}\n{body}\n"
-        if self._debug:
-            # 调试时打印签名字符串的摘要而非全文
-            try:
-                digest = hashlib.sha256(sign_str.encode("utf-8")).hexdigest()
-                print(f"签名字符串摘要(SHA256): {digest}")
-            except (UnicodeEncodeError, AttributeError, TypeError):
-                # 如果无法计算摘要，静默跳过
-                pass
+        # 完全移除签名字符串输出，即使是摘要形式
 
         # 使用商户私钥签名
         private_key = self._load_private_key()
@@ -142,10 +111,7 @@ class WeChatPayV3API:
 
         # Base64编码
         signature_b64 = base64.b64encode(signature).decode('utf-8')
-        if self._debug:
-            # 仅打印签名的前后若干位做脱敏
-            masked_sig = f"{signature_b64[:8]}...{signature_b64[-6:]}"
-            print(f"签名结果(脱敏): {masked_sig}")
+        # 完全移除签名结果输出
         return signature_b64
 
     def _build_auth_header(self, method: str, url_path: str,
@@ -177,22 +143,7 @@ class WeChatPayV3API:
                     f'serial_no="{self._cert_serial_no}"')
 
         # 调试信息（脱敏）
-        if self._debug:
-            masked_serial = (
-                f"{self._cert_serial_no[:6]}...{self._cert_serial_no[-4:]}"
-                if self._cert_serial_no and len(self._cert_serial_no) > 10
-                else str(self._cert_serial_no)
-            )
-            masked_auth = "WECHATPAY2-SHA256-RSA2048 ...(已脱敏)"
-            print(f"Authorization头(脱敏): {masked_auth}")
-            mch_masked = (f"{self.config.mch_id[:3]}***"
-                          f"{self.config.mch_id[-2:]}")
-            print(f"商户号(脱敏): {mch_masked}")
-            cert_length = (len(self._cert_serial_no)
-                           if self._cert_serial_no else 0)
-            print(f"证书序列号(脱敏): {masked_serial}")
-            print(f"证书序列号长度: {cert_length}")
-            print(f"证书序列号类型: {type(self._cert_serial_no)}")
+        # 完全移除Authorization头和证书信息输出
 
         return {
             'Authorization': auth_str,
@@ -413,11 +364,7 @@ class WeChatPayV3API:
             Dict[str, Any]: 解密后的数据
         """
         try:
-            # 调试信息：检查API v3密钥
-            key_status = "已设置" if self.config.api_v3_key else "未设置"
-            print(f"🔧 解密调试 - API v3密钥状态: {key_status}")
-            if self.config.api_v3_key:
-                print(f"🔧 解密调试 - API v3密钥长度: {len(self.config.api_v3_key)}")
+            # 移除API v3密钥调试信息输出
 
             # 获取加密相关参数
             ciphertext = resource.get("ciphertext", "")
@@ -425,20 +372,16 @@ class WeChatPayV3API:
             nonce = resource.get("nonce", "")
 
             if not all([ciphertext, associated_data, nonce]):
-                print("⚠️ 缺少解密参数")
                 return {}
 
             # 使用API v3密钥作为解密密钥
             # 微信支付API v3密钥应该是32字节的字符串
             api_key = self.config.api_v3_key
             if len(api_key) != 32:
-                print(f"⚠️ API v3密钥长度不正确: {len(api_key)}，应该是32字节")
                 return {}
 
             # 直接使用原始API v3密钥作为AES密钥
             key = api_key.encode('utf-8')
-            print(f"🔧 使用原始API v3密钥，长度: {len(key)}")
-            print(f"🔧 API v3密钥前4位: {api_key[:4]}...")
 
             # 解码base64数据
             ciphertext_bytes = base64.b64decode(ciphertext)
@@ -446,9 +389,7 @@ class WeChatPayV3API:
             nonce_bytes = nonce.encode('utf-8')
             associated_data_bytes = associated_data.encode('utf-8')
 
-            print(f"🔧 解密参数: key长度={len(key)}, "
-                  f"nonce长度={len(nonce_bytes)}, "
-                  f"ciphertext长度={len(ciphertext_bytes)}")
+            # 移除解密参数调试信息
 
             # 使用AES-GCM解密
             aesgcm = AESGCM(key)
@@ -460,14 +401,10 @@ class WeChatPayV3API:
 
             # 解析JSON数据
             decrypted_json = json.loads(decrypted_data.decode('utf-8'))
-            print(f"✅ 解密成功: {decrypted_json}")
             return decrypted_json
 
-        except Exception as e:
-            print(f"❌ 解密失败: {e}")
-            print(f"❌ 解密失败详情: 类型={type(e).__name__}, 消息={str(e)}")
-            import traceback
-            print(f"❌ 解密失败堆栈: {traceback.format_exc()}")
+        except Exception:
+            # 移除详细的解密失败信息输出
             return {}
 
     def process_notify(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -480,7 +417,7 @@ class WeChatPayV3API:
         Returns:
             Dict[str, Any]: 处理结果
         """
-        print(f"🔧 process_notify 开始处理: {request_data}")
+        # 移除process_notify调试信息
         try:
             # 获取签名相关参数
             timestamp = (request_data.get("headers", {})
@@ -505,10 +442,8 @@ class WeChatPayV3API:
                 resource = notify_data.get("resource", {})
 
                 # 解密resource中的数据
-                print("🔧 开始解密resource数据:", resource)
                 decrypted_data = self._decrypt_resource(resource)
                 if not decrypted_data:
-                    print("❌ 解密返回空数据")
                     return {"success": False, "message": "解密失败"}
 
                 # 从解密后的数据中获取订单信息
@@ -516,11 +451,7 @@ class WeChatPayV3API:
                 transaction_id = decrypted_data.get("transaction_id")
                 trade_state = decrypted_data.get("trade_state")
 
-                print(
-                    f"🔧 支付成功通知: 订单号={out_trade_no}, "
-                    f"交易号={transaction_id}, 状态={trade_state}"
-                )
-                print(f"🔧 解密后的完整数据: {decrypted_data}")
+                # 移除支付成功通知的详细数据输出
 
                 return {
                     "success": True,
@@ -558,18 +489,11 @@ class WeChatPayV3API:
         """
         try:
             # 检查是否有公钥配置
-            print("🔧 签名验证调试:")
-            print(f"  公钥路径配置: {self.config.public_key_path}")
-            print(f"  公钥路径是否为空: {not self.config.public_key_path}")
-
             if not self.config.public_key_path:
-                print("⚠️ 微信支付公钥路径未配置，跳过签名验证")
                 return True  # 如果没有配置公钥，跳过验证
 
             # 检查公钥文件是否存在
-            print(f"  公钥文件是否存在: {os.path.exists(self.config.public_key_path)}")
             if not os.path.exists(self.config.public_key_path):
-                print(f"⚠️ 微信支付公钥文件不存在: {self.config.public_key_path}")
                 return True  # 如果公钥文件不存在，跳过验证
 
             # 构建待验证的字符串
@@ -592,11 +516,9 @@ class WeChatPayV3API:
                 hashes.SHA256()
             )
 
-            print("✅ 微信支付回调签名验证成功")
             return True
 
-        except Exception as e:
-            print(f"❌ 微信支付回调签名验证失败: {e}")
+        except Exception:
             return False
 
 
