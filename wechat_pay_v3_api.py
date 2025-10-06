@@ -33,6 +33,14 @@ class WeChatPayV3API:
         self._private_key = None
         self._cert_serial_no = self.config.cert_serial_no
 
+        # 调试信息：显示配置状态
+        print("🔧 WeChatPayV3API 初始化:")
+        print(f"  公钥路径: {self.config.public_key_path}")
+        print(f"  私钥路径: {self.config.private_key_path}")
+        print(f"  证书序列号: {self.config.cert_serial_no}")
+        print(f"  AppID: {self.config.app_id}")
+        print(f"  商户号: {self.config.mch_id}")
+
     def _load_private_key(self) -> Optional[rsa.RSAPrivateKey]:
         """加载商户私钥"""
         if self._private_key is not None:
@@ -512,11 +520,16 @@ class WeChatPayV3API:
         """
         try:
             # 检查是否有公钥配置
+            print("🔧 签名验证调试:")
+            print(f"  公钥路径配置: {self.config.public_key_path}")
+            print(f"  公钥路径是否为空: {not self.config.public_key_path}")
+
             if not self.config.public_key_path:
                 print("⚠️ 微信支付公钥路径未配置，跳过签名验证")
                 return True  # 如果没有配置公钥，跳过验证
 
             # 检查公钥文件是否存在
+            print(f"  公钥文件是否存在: {os.path.exists(self.config.public_key_path)}")
             if not os.path.exists(self.config.public_key_path):
                 print(f"⚠️ 微信支付公钥文件不存在: {self.config.public_key_path}")
                 return True  # 如果公钥文件不存在，跳过验证
