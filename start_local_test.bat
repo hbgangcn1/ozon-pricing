@@ -29,7 +29,7 @@ if "%choice%"=="1" (
 ) else if "%choice%"=="2" (
     echo.
     echo 启动回调服务器...
-    echo 回调地址: http://localhost:8080
+    echo 回调地址: http://localhost:8081
     echo.
     python wechat_callback_server.py
 ) else if "%choice%"=="3" (
@@ -41,7 +41,7 @@ if "%choice%"=="1" (
     echo.
     echo 同时启动主应用和回调服务器...
     echo 主应用: http://localhost:8501
-    echo 回调服务: http://localhost:8080
+    echo 回调服务: http://localhost:8081
     echo.
     start "回调服务器" cmd /c "python wechat_callback_server.py"
     timeout /t 2 /nobreak > nul

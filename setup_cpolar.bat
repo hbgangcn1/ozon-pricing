@@ -10,18 +10,18 @@ echo 3. 登录账号: cpolar authtoken YOUR_TOKEN
 echo 4. 运行此脚本
 echo.
 
-set /p choice=是否现在启动 cpolar 穿透到端口 8080? (y/n): 
+set /p choice=是否现在启动 cpolar 穿透到端口 8081? (y/n): 
 
 if /i "%choice%"=="y" (
     echo.
-    echo 启动 cpolar 穿透到本地 8080 端口...
+    echo 启动 cpolar 穿透到本地 8081 端口...
     echo 请保持此窗口打开，并记录生成的公网地址
     echo.
-    cpolar http 8080
+    cpolar http 8081
 ) else (
     echo.
     echo 手动启动命令：
-    echo cpolar http 8080
+    echo cpolar http 8081
     echo.
     echo 获取到公网地址后，请设置环境变量：
     echo set TUNNEL_DOMAIN=your-domain.cpolar.cn

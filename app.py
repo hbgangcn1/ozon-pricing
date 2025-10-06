@@ -6158,14 +6158,14 @@ def start_wechat_callback_server():
             # 在后台线程中启动Flask应用
             def run_server():
                 app.run(
-                    host='0.0.0.0', port=8080, debug=False, use_reloader=False
+                    host='0.0.0.0', port=8081, debug=False, use_reloader=False
                 )
 
             server_thread = threading.Thread(target=run_server, daemon=True)
             server_thread.start()
 
             st.session_state.callback_server_started = True
-            print("✅ 微信支付回调服务器已启动 (端口: 8080)")
+            print("✅ 微信支付回调服务器已启动 (端口: 8081)")
 
         except ImportError:
             print("⚠️ Flask未安装，无法启动微信支付回调服务器")

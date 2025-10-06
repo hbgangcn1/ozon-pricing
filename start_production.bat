@@ -23,7 +23,7 @@ echo.
 
 echo 请选择启动方式：
 echo 1. 启动主应用 (Streamlit - 端口8501)
-echo 2. 启动回调服务器 (Flask - 端口8080)  
+echo 2. 启动回调服务器 (Flask - 端口8081)  
 echo 3. 同时启动主应用和回调服务器
 echo 0. 退出
 
@@ -38,14 +38,14 @@ if "%choice%"=="1" (
 ) else if "%choice%"=="2" (
     echo.
     echo 启动回调服务器...
-    echo 回调地址: http://localhost:8080
+    echo 回调地址: http://localhost:8081
     echo.
     python wechat_callback_server.py
 ) else if "%choice%"=="3" (
     echo.
     echo 同时启动主应用和回调服务器...
     echo 主应用: http://localhost:8501
-    echo 回调服务: http://localhost:8080
+    echo 回调服务: http://localhost:8081
     echo.
     start "微信支付回调服务" cmd /c "python wechat_callback_server.py"
     timeout /t 2 /nobreak > nul

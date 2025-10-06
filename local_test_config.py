@@ -24,8 +24,8 @@ class LocalTestConfig(WeChatPayConfig):
 
         # 本地回调地址（使用内网穿透工具）
         tunnel_domain = os.getenv("TUNNEL_DOMAIN", "localhost")
-        self.notify_url = f"https://{tunnel_domain}:8080/wechat/notify"
-        self.return_url = f"https://{tunnel_domain}:8080/payment/success"
+        self.notify_url = f"https://{tunnel_domain}:8081/wechat/notify"
+        self.return_url = f"https://{tunnel_domain}:8081/payment/success"
 
         print("🧪 使用本地测试配置（沙箱模式）")
         print(f"📡 回调地址: {self.notify_url}")
