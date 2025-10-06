@@ -10,7 +10,6 @@ import io
 import base64
 from payment_handler import PaymentHandler
 from db_utils import get_db_connection
-from payment_success_page import show_payment_success_page
 from db_utils import current_user_id
 
 
@@ -146,7 +145,6 @@ def show_existing_payment(
                             time.sleep(1)
                             st.session_state["current_page"] = "subscription"
                             st.rerun()
-                            return
                         elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
                             st.error("❌ 支付失败，请重新创建订单")
                             if f"payment_order_{plan_name}" in st.session_state:
