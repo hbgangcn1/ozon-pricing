@@ -694,40 +694,17 @@ def show_main_interface():
     """显示主界面"""
     # noinspection PyUnboundLocalVariable
 
-    # 检查是否有支付成功的通知（只显示一次）
-    has_payment = 'last_successful_payment' in st.session_state
-    shown_before = st.session_state.get('_payment_success_shown', False)
-    print(f"🔍 支付通知检查: has_payment={has_payment}, "
-          f"shown_before={shown_before}")
-
-    if has_payment and not shown_before:
-        payment_info = st.session_state['last_successful_payment']
-        print(f"✅ 显示支付成功通知: {payment_info}")
+    # 由于服务会频繁重启导致session_state丢失，不再显示支付成功通知
+    # 用户可以直接在侧边栏查看订阅状态
+    # 清除可能残留的支付成功标记
+    if 'last_successful_payment' in st.session_state:
         # 清除订阅状态缓存，强制从数据库重新读取
         if 'subscription_status' in st.session_state:
             del st.session_state['subscription_status']
-            print("🗑️ 已清除订阅状态缓存")
-
-        # 显示通知和关闭按钮
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.success(
-                f"🎉 恭喜！您已成功升级到{payment_info['plan_name']}！"
-            )
-            st.info("💡 请在侧边栏点击'订阅管理'查看最新订阅状态")
-        with col2:
-            if st.button("✖️ 关闭", key="close_payment_notification"):
-                # 清除通知
-                del st.session_state['last_successful_payment']
-                st.session_state['_payment_success_shown'] = True
-                print("✅ 用户手动关闭通知")
-                st.rerun()
-
-        # 标记为已显示
-        st.session_state['_payment_success_shown'] = True
-        print("✅ 已标记为已显示")
-    elif has_payment and shown_before:
-        print("ℹ️ 支付成功通知已显示过，跳过")
+            print("🗑️ 已清除订阅状态缓存（支付成功后）")
+        # 清除支付成功标记
+        del st.session_state['last_successful_payment']
+        print("🗑️ 已清除支付成功标记")
 
     # 移除未使用的导入
 
