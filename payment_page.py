@@ -185,6 +185,11 @@ def show_existing_payment(
         max_checks=max_checks
     )
 
+    # 如果检查次数未超限，使用Streamlit原生的自动刷新作为备用
+    if check_count < max_checks:
+        time.sleep(5)
+        st.rerun()
+
     # 提示信息
     if check_count >= max_checks:
         st.warning(
