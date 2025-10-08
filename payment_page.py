@@ -23,6 +23,7 @@ def cleanup_payment_state(plan_name: str, order_id: str):
         f"payment_order_{plan_name}",
         f"payment_qr_{order_id}",
         f"order_creation_time_{order_id}",
+        f"last_check_{order_id}",  # 清理检查缓存
         'auto_check_count'
     ]
     for key in keys_to_remove:
@@ -34,6 +35,14 @@ def handle_payment_success(order_id: str, plan_name: str):
     """处理支付成功"""
     st.balloons()
     st.success("🎉 支付成功！正在跳转...")
+
+    # 记录支付成功时间（用于数据分析和用户体验优化）
+    st.session_state['last_successful_payment'] = {
+        'order_id': order_id,
+        'plan_name': plan_name,
+        'timestamp': time.time(),
+        'success_time': time.strftime('%Y-%m-%d %H:%M:%S')
+    }
 
     # 清理支付相关状态
     cleanup_payment_state(plan_name, order_id)
@@ -49,6 +58,14 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
     自动检查支付状态并在成功时重定向
     这个函数在每次页面刷新时静默执行
     """
+    # 检查缓存（最近3秒内查过就不重复查询，减少数据库压力）
+    cache_key = f"last_check_{order_id}"
+    last_check = st.session_state.get(cache_key, 0)
+    if time.time() - last_check < 3:
+        return
+
+    st.session_state[cache_key] = time.time()
+
     # 检查是否超时（30分钟）
     order_creation_time = st.session_state.get(
         f"order_creation_time_{order_id}"
@@ -75,8 +92,11 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
                     # 支付成功
                     handle_payment_success(order_id, plan_name)
                 elif status_in_db in ["CLOSED", "REVOKED", "PAYERROR"]:
-                    # 支付失败
+                    # 支付失败，提供明确指导
                     st.error("❌ 支付失败，请重新创建订单")
+                    st.info(
+                        "💡 如果问题持续，请检查微信余额或联系客服"
+                    )
                     cleanup_payment_state(plan_name, order_id)
                     time.sleep(2)
                     st.rerun()
