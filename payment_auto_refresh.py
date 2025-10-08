@@ -44,6 +44,9 @@ def inject_smart_auto_refresh(
         check_interval_seconds: 刷新间隔（秒）
         max_checks: 最大检查次数（防止无限刷新）
     """
+    print(f"🔧 注入自动刷新脚本: 间隔{check_interval_seconds}秒, "
+          f"最多{max_checks}次")
+
     html_code = f"""
     <script>
     (function() {{
@@ -55,6 +58,7 @@ def inject_smart_auto_refresh(
         sessionStorage.setItem('payment_check_count', checkCount.toString());
 
         console.log("🔄 自动检查次数: " + checkCount + "/{max_checks}");
+        console.log("⏰ 将在{check_interval_seconds}秒后自动刷新页面");
 
         if (checkCount >= {max_checks}) {{
             console.log("🛑 达到最大检查次数，停止自动刷新");
