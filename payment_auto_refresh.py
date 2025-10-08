@@ -38,15 +38,16 @@ def inject_smart_auto_refresh(
     max_checks: int = 60
 ):
     """
-    智能自动刷新 - 使用localStorage持久化检查次数
+    智能自动刷新 - 使用meta refresh标签（不受iframe沙箱限制）
 
     Args:
         check_interval_seconds: 刷新间隔（秒）
         max_checks: 最大检查次数（防止无限刷新）
     """
-    print(f"🔧 注入自动刷新脚本: 间隔{check_interval_seconds}秒, "
+    print(f"🔧 注入自动刷新(meta): 间隔{check_interval_seconds}秒, "
           f"最多{max_checks}次")
 
+    # 从localStorage读取检查次数，决定是否继续刷新
     html_code = f"""
     <script>
     (function() {{
@@ -68,38 +69,28 @@ def inject_smart_auto_refresh(
         localStorage.setItem('current_payment', JSON.stringify(paymentState));
 
         console.log("🔄 自动检查次数: " + checkCount + "/{max_checks}");
-        console.log("⏰ 将在{check_interval_seconds}秒后自动刷新页面");
 
         if (checkCount >= {max_checks}) {{
             console.log("🛑 达到最大检查次数，停止自动刷新");
-            // 不清除支付状态，只停止自动刷新
             return;
         }}
 
-        setTimeout(() => {{
-            console.log("🔄 执行自动刷新");
-            // 刷新时确保携带恢复参数
-            // 关键：必须刷新父窗口（top），而不是iframe（window）
-            const url = new URL(window.top.location);
-            url.searchParams.set('restore_order', paymentState.order_id);
-            url.searchParams.set('restore_plan', paymentState.plan_name);
-            const targetUrl = url.toString();
-            console.log("🔗 刷新目标URL:", targetUrl);
-            console.log("📦 携带的恢复参数:", {{
-                restore_order: paymentState.order_id,
-                restore_plan: paymentState.plan_name
-            }});
-            // 刷新父窗口
-            window.top.location.href = targetUrl;
-        }}, {check_interval_seconds} * 1000);
+        console.log("⏰ 将在{check_interval_seconds}秒后通过meta标签刷新页面");
+
+        // 使用meta refresh标签刷新父窗口（不受沙箱限制）
+        const meta = parent.document.createElement('meta');
+        meta.httpEquiv = 'refresh';
+        meta.content = '{check_interval_seconds}';
+        parent.document.getElementsByTagName('head')[0].appendChild(meta);
+        console.log("✅ meta refresh标签已添加到父窗口");
     }})();
     </script>
     <div style="display:none;">
-        Smart auto-refresh with localStorage (max {max_checks} checks)
+        Meta refresh auto-reload (max {max_checks} checks)
     </div>
     """
 
-    components.html(html_code, height=0)
+    components.html(html_code, height=0, scrolling=False)
 
 
 def show_auto_check_indicator(check_count: int = 0):
