@@ -251,8 +251,38 @@ def show_existing_payment(
     with col2:
         st.markdown("#### 🔄 支付状态")
 
-        # 检查支付状态按钮
-        if st.button("🔍 检查支付状态", key="check_payment_status"):
+        # 醒目的支付提示
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        ">
+            <div style="font-size: 24px; margin-bottom: 10px;">💳</div>
+            <div style="
+                font-size: 16px;
+                font-weight: bold;
+                margin-bottom: 8px;
+            ">
+                支付完成后请点击下方按钮
+            </div>
+            <div style="font-size: 14px; opacity: 0.9;">
+                支付成功后立即跳转
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # 检查支付状态按钮 - 使用type="primary"使其更显眼
+        if st.button(
+            "🔍 检查支付状态",
+            key="check_payment_status",
+            type="primary",
+            use_container_width=True
+        ):
             with st.spinner("正在检查支付状态..."):
                 # 1) 优先查询数据库（可靠、低延迟）
                 order_key = f"payment_order_{plan_name}"
