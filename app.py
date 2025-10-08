@@ -694,21 +694,29 @@ def show_main_interface():
     """显示主界面"""
     # noinspection PyUnboundLocalVariable
 
-    # 检查是否有支付成功的通知
-    if 'last_successful_payment' in st.session_state:
+    # 检查是否有支付成功的通知（只显示一次）
+    has_payment = 'last_successful_payment' in st.session_state
+    shown_before = st.session_state.get('_payment_success_shown', False)
+    print(f"🔍 支付通知检查: has_payment={has_payment}, "
+          f"shown_before={shown_before}")
+
+    if has_payment and not shown_before:
         payment_info = st.session_state['last_successful_payment']
+        print(f"✅ 显示支付成功通知: {payment_info}")
         # 清除订阅状态缓存，强制从数据库重新读取
         if 'subscription_status' in st.session_state:
             del st.session_state['subscription_status']
+            print("🗑️ 已清除订阅状态缓存")
         # 显示一次性通知
         st.success(
             f"🎉 恭喜！您已成功升级到{payment_info['plan_name']}！"
         )
         st.info("💡 请在侧边栏点击'订阅管理'查看最新订阅状态")
-        # 立即清除通知标记，确保下次刷新不再显示
-        del st.session_state['last_successful_payment']
-        # 添加一个标记，表示已显示过通知
+        # 标记为已显示，确保下次不再显示
         st.session_state['_payment_success_shown'] = True
+        print("✅ 已标记为已显示")
+    elif has_payment and shown_before:
+        print("ℹ️ 支付成功通知已显示过，跳过")
 
     # 移除未使用的导入
 
