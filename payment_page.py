@@ -134,11 +134,11 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
 
 def show_payment_page():
     """显示支付页面"""
-    st.set_page_config(
-        page_title="支付中心",
-        page_icon="💳",
-        layout="wide"
-    )
+    # 注意：不能在这里调用 st.set_page_config()
+    # 因为主应用 app.py 已经调用过了
+    # Streamlit 不允许重复调用 st.set_page_config()
+
+    print("🔧 显示支付页面")
 
     # 页面标题
     st.markdown(
