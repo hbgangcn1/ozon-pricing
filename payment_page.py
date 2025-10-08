@@ -276,10 +276,10 @@ def show_existing_payment(
                 font-weight: bold;
                 margin-bottom: 8px;
             ">
-                支付完成后请点击下方按钮
+                支付完成后，若未自动跳转，请点击下方按钮
             </div>
             <div style="font-size: 14px; opacity: 0.9;">
-                支付成功后立即跳转
+                通常会在5秒内自动跳转
             </div>
         </div>
         """, unsafe_allow_html=True)
