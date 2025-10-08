@@ -16,7 +16,6 @@ from payment_auto_refresh import (
 )
 from payment_state_manager import (
     save_payment_state_to_browser,
-    restore_payment_state_from_browser,
     clear_payment_state_from_browser
 )
 
@@ -147,15 +146,9 @@ def show_payment_page():
 
     print("🔧 显示支付页面")
 
-    # 尝试从localStorage恢复支付状态（仅执行JavaScript恢复逻辑）
-    # 由于iframe沙箱限制，这个函数只能检测localStorage，无法导航
-    restore_payment_state_from_browser()
-
-    # 由于iframe沙箱限制，无法通过URL参数传递
-    # 改用另一种方案：直接在Python端检查localStorage状态
-    # 通过session_state的持久化来维护状态
-
-    print("ℹ️ 使用session_state维护支付状态（iframe沙箱限制）")
+    # 注意：由于iframe沙箱限制，无法使用JavaScript导航或URL参数恢复
+    # 当前采用Python time.sleep + st.rerun 的自动刷新机制
+    # 依赖session_state在服务稳定运行时的持久化
 
     # 页面标题
     st.markdown(
