@@ -79,7 +79,8 @@ def inject_smart_auto_refresh(
         setTimeout(() => {{
             console.log("🔄 执行自动刷新");
             // 刷新时确保携带恢复参数
-            const url = new URL(window.location);
+            // 关键：必须刷新父窗口（top），而不是iframe（window）
+            const url = new URL(window.top.location);
             url.searchParams.set('restore_order', paymentState.order_id);
             url.searchParams.set('restore_plan', paymentState.plan_name);
             const targetUrl = url.toString();
@@ -88,7 +89,8 @@ def inject_smart_auto_refresh(
                 restore_order: paymentState.order_id,
                 restore_plan: paymentState.plan_name
             }});
-            window.location.href = targetUrl;
+            // 刷新父窗口
+            window.top.location.href = targetUrl;
         }}, {check_interval_seconds} * 1000);
     }})();
     </script>

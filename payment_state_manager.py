@@ -49,18 +49,20 @@ def restore_payment_state_from_browser():
             }}
 
             // 通过URL参数传递订单信息给Streamlit
-            const url = new URL(window.location);
+            // 关键：必须使用父窗口的URL（top），不是iframe的URL
+            const url = new URL(window.top.location);
             url.searchParams.set('restore_order', paymentState.order_id);
             url.searchParams.set('restore_plan', paymentState.plan_name);
 
             // 如果URL参数已经包含恢复信息，不重复添加
-            if (window.location.search.includes('restore_order')) {{
+            if (window.top.location.search.includes('restore_order')) {{
                 console.log('✅ URL参数已包含恢复信息');
                 return;
             }}
 
-            console.log('🔁 更新URL参数并刷新页面');
-            window.location.href = url.toString();
+            console.log('🔁 更新URL参数并刷新父窗口');
+            console.log('🔗 目标URL:', url.toString());
+            window.top.location.href = url.toString();
         }} else {{
             console.log('ℹ️ 浏览器中没有保存的支付状态');
         }}
