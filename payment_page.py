@@ -38,7 +38,7 @@ def handle_payment_success(order_id: str, plan_name: str):
     """处理支付成功"""
     print(f"🎉 检测到支付成功: {order_id}")
     st.balloons()
-    st.success("🎉 支付成功！正在跳转...")
+    st.success("🎉 支付成功！正在跳转到主界面...")
 
     # 记录支付成功时间（用于数据分析和用户体验优化）
     st.session_state['last_successful_payment'] = {
@@ -67,10 +67,10 @@ def handle_payment_success(order_id: str, plan_name: str):
     ]
     print(f"清理状态后: {payment_keys_after}")
 
-    # 跳转到订阅管理页面
+    # 跳转到主界面（带有完整的侧边栏和标签页）
     time.sleep(1.5)
-    st.session_state["current_page"] = "subscription"
-    print("🔄 触发页面跳转到订阅管理")
+    st.session_state["current_page"] = "main"
+    print("🔄 触发页面跳转到主界面")
     st.rerun()
 
 
@@ -315,7 +315,7 @@ def show_existing_payment(
 
                 if paid_in_db:
                     success_msg = (
-                        "🎉 支付成功！正在跳转到订阅管理页面..."
+                        "🎉 支付成功！正在跳转到主界面..."
                     )
                     st.success(success_msg)
                     if order_key in st.session_state:
@@ -323,7 +323,7 @@ def show_existing_payment(
                     if qr_key in st.session_state:
                         del st.session_state[qr_key]
                     time.sleep(1)
-                    st.session_state["current_page"] = "subscription"
+                    st.session_state["current_page"] = "main"
                     st.rerun()
                 else:
                     # 2) 回退调用微信查询接口
@@ -333,7 +333,7 @@ def show_existing_payment(
                         status = result.get("status")
                         if status == "SUCCESS":
                             success_msg = (
-                                "🎉 支付成功！正在跳转到订阅管理页面..."
+                                "🎉 支付成功！正在跳转到主界面..."
                             )
                             st.success(success_msg)
                             if order_key in st.session_state:
@@ -341,7 +341,7 @@ def show_existing_payment(
                             if qr_key in st.session_state:
                                 del st.session_state[qr_key]
                             time.sleep(1)
-                            st.session_state["current_page"] = "subscription"
+                            st.session_state["current_page"] = "main"
                             st.rerun()
                         elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
                             st.error("❌ 支付失败，请重新创建订单")

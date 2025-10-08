@@ -694,6 +694,16 @@ def show_main_interface():
     """显示主界面"""
     # noinspection PyUnboundLocalVariable
 
+    # 检查是否有支付成功的通知
+    if 'last_successful_payment' in st.session_state:
+        payment_info = st.session_state['last_successful_payment']
+        st.success(
+            f"🎉 恭喜！您已成功升级到{payment_info['plan_name']}！"
+        )
+        st.info("💡 请在侧边栏点击'订阅管理'查看最新订阅状态")
+        # 清除通知，避免重复显示
+        del st.session_state['last_successful_payment']
+
     # 移除未使用的导入
 
     # 验证用户并获取信息
