@@ -188,9 +188,6 @@ def show_existing_payment(
 ):
     """显示已有订单的支付信息（带智能自动检查）"""
 
-    # 首先自动检查支付状态（静默）
-    auto_check_and_redirect(order_id, plan_name)
-
     # 初始化自动检查计数器
     if 'auto_check_count' not in st.session_state:
         st.session_state['auto_check_count'] = 0
@@ -199,6 +196,7 @@ def show_existing_payment(
     check_count = st.session_state['auto_check_count']
 
     # 使用智能刷新（最多检查60次，约5分钟）
+    # 重要：必须在auto_check_and_redirect之前注入，确保脚本被加载
     max_checks = 60
     inject_smart_auto_refresh(
         check_interval_seconds=5,
@@ -210,6 +208,9 @@ def show_existing_payment(
         check_count=check_count,
         max_checks=max_checks
     )
+
+    # 然后检查支付状态（如果成功会触发跳转）
+    auto_check_and_redirect(order_id, plan_name)
 
     # 提示信息
     if check_count >= max_checks:
