@@ -38,7 +38,7 @@ def inject_smart_auto_refresh(
     max_checks: int = 60
 ):
     """
-    智能自动刷新 - 在达到最大检查次数后停止刷新
+    智能自动刷新 - 使用localStorage持久化检查次数
 
     Args:
         check_interval_seconds: 刷新间隔（秒）
@@ -50,30 +50,44 @@ def inject_smart_auto_refresh(
     html_code = f"""
     <script>
     (function() {{
-        // 从sessionStorage获取检查次数
-        let checkCount = parseInt(
-            sessionStorage.getItem('payment_check_count') || '0'
+        // 从localStorage获取支付状态和检查次数
+        let paymentState = JSON.parse(
+            localStorage.getItem('current_payment') || 'null'
         );
+
+        if (!paymentState) {{
+            console.log('⚠️ localStorage中没有支付状态，跳过自动刷新');
+            return;
+        }}
+
+        let checkCount = paymentState.auto_check_count || 0;
         checkCount++;
-        sessionStorage.setItem('payment_check_count', checkCount.toString());
+
+        // 更新localStorage中的检查次数
+        paymentState.auto_check_count = checkCount;
+        localStorage.setItem('current_payment', JSON.stringify(paymentState));
 
         console.log("🔄 自动检查次数: " + checkCount + "/{max_checks}");
         console.log("⏰ 将在{check_interval_seconds}秒后自动刷新页面");
 
         if (checkCount >= {max_checks}) {{
             console.log("🛑 达到最大检查次数，停止自动刷新");
-            sessionStorage.removeItem('payment_check_count');
+            // 不清除支付状态，只停止自动刷新
             return;
         }}
 
         setTimeout(() => {{
             console.log("🔄 执行自动刷新");
-            window.location.reload();
+            // 刷新时确保携带恢复参数
+            const url = new URL(window.location);
+            url.searchParams.set('restore_order', paymentState.order_id);
+            url.searchParams.set('restore_plan', paymentState.plan_name);
+            window.location.href = url.toString();
         }}, {check_interval_seconds} * 1000);
     }})();
     </script>
     <div style="display:none;">
-        Smart auto-refresh enabled (check {max_checks} times max)
+        Smart auto-refresh with localStorage (max {max_checks} checks)
     </div>
     """
 

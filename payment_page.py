@@ -15,6 +15,12 @@ from payment_auto_refresh import (
     inject_smart_auto_refresh,
     show_enhanced_auto_check_indicator
 )
+from payment_state_manager import (
+    save_payment_state_to_browser,
+    restore_payment_state_from_browser,
+    clear_payment_state_from_browser,
+    update_check_count_in_browser
+)
 
 
 def cleanup_payment_state(plan_name: str, order_id: str):
@@ -51,6 +57,9 @@ def handle_payment_success(order_id: str, plan_name: str):
         if isinstance(k, str) and 'payment' in k
     ]
     print(f"清理状态前: {payment_keys_before}")
+
+    # 清除浏览器端的支付状态
+    clear_payment_state_from_browser()
 
     # 清理支付相关状态
     cleanup_payment_state(plan_name, order_id)
@@ -140,6 +149,23 @@ def show_payment_page():
 
     print("🔧 显示支付页面")
 
+    # 尝试从浏览器localStorage恢复支付状态
+    restore_payment_state_from_browser()
+
+    # 检查URL参数中的恢复信息
+    restore_order = st.query_params.get("restore_order")
+    restore_plan = st.query_params.get("restore_plan")
+
+    if restore_order and restore_plan:
+        print(f"🔄 从URL参数恢复订单: {restore_order}, 计划: {restore_plan}")
+        # 恢复session_state
+        st.session_state[f"payment_order_{restore_plan}"] = restore_order
+        st.session_state["payment_plan"] = restore_plan
+        st.session_state["current_page"] = "payment"
+        # 清除URL参数避免重复恢复
+        st.query_params.clear()
+        st.rerun()
+
     # 页面标题
     st.markdown(
         """
@@ -188,12 +214,15 @@ def show_existing_payment(
 ):
     """显示已有订单的支付信息（带智能自动检查）"""
 
-    # 初始化自动检查计数器
+    # 初始化自动检查计数器（从session_state获取，用于显示）
     if 'auto_check_count' not in st.session_state:
         st.session_state['auto_check_count'] = 0
 
     st.session_state['auto_check_count'] += 1
     check_count = st.session_state['auto_check_count']
+
+    # 更新浏览器localStorage中的检查次数（用于持久化）
+    update_check_count_in_browser()
 
     # 使用智能刷新（最多检查60次，约5分钟）
     # 重要：必须在auto_check_and_redirect之前注入，确保脚本被加载
@@ -426,6 +455,9 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
             st.session_state[f"payment_order_{plan_name}"] = order_id
             # 保存订单创建时间（用于超时检查）
             st.session_state[f"order_creation_time_{order_id}"] = time.time()
+
+            # 保存到浏览器localStorage（关键！）
+            save_payment_state_to_browser(order_id, plan_name)
 
             # 生成二维码
             try:
