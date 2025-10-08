@@ -6054,8 +6054,9 @@ def start_wechat_callback_server():
 def main():
     # 启动微信支付回调服务器（后台线程）
     # 检查是否禁用内置回调服务器（当使用独立Gunicorn回调服务时）
-    # 使用 session_state 避免重复打印
-    if not st.session_state.get('callback_server_initialized', False):
+    # 使用全局变量避免重复初始化（session_state在重启时不稳定）
+    global _CALLBACK_SERVER_INITIALIZED
+    if not _CALLBACK_SERVER_INITIALIZED:
         if not (
             os.getenv("DISABLE_EMBEDDED_WECHAT_CALLBACK", "false").lower()
             == "true"
@@ -6064,7 +6065,7 @@ def main():
         else:
             # 仅在首次打印一次，避免日志噪音
             print("🔧 内置微信支付回调服务器已禁用（使用独立Gunicorn服务）")
-        st.session_state.callback_server_initialized = True
+        _CALLBACK_SERVER_INITIALIZED = True
 
     init_db()
     # 初始化会话安全相关数据表，防止首次启动时表缺失
@@ -6074,9 +6075,11 @@ def main():
     # 迁移用户偏好设置
     migrate_user_preferences()
     # 系统启动时预获取汇率（只执行一次）
-    if not st.session_state.get('exchange_rates_initialized', False):
+    # 使用全局变量避免重复初始化（session_state在重启时不稳定）
+    global _EXCHANGE_RATES_INITIALIZED
+    if not _EXCHANGE_RATES_INITIALIZED:
         init_exchange_rates()
-        st.session_state.exchange_rates_initialized = True
+        _EXCHANGE_RATES_INITIALIZED = True
 
     # 正常模式：检查会话安全性
     if not check_session_security():
@@ -6106,13 +6109,19 @@ def main():
         show_main_interface()
 
 
+# 使用全局变量标记，避免在服务重启期间重复初始化
+_BACKUP_SERVICE_STARTED = False
+_CALLBACK_SERVER_INITIALIZED = False
+_EXCHANGE_RATES_INITIALIZED = False
+
+
 if __name__ == "__main__":
-    # 使用 session_state 确保备份服务只启动一次
-    if not st.session_state.get('backup_service_started', False):
+    # 使用全局变量确保备份服务只启动一次（避免session_state在重启时不稳定）
+    if not _BACKUP_SERVICE_STARTED:
         try:
             start_backup_service()
             print("🚀 自动备份服务已启动")
-            st.session_state.backup_service_started = True
+            globals()['_BACKUP_SERVICE_STARTED'] = True
         except (RuntimeError, OSError) as backup_exc:
             print(f"⚠️ 自动备份服务启动失败: {backup_exc}")
 
