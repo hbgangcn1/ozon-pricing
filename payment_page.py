@@ -11,6 +11,51 @@ import base64
 from payment_handler import PaymentHandler
 from db_utils import get_db_connection
 from db_utils import current_user_id
+from payment_auto_refresh import (
+    inject_simple_auto_refresh,
+    show_auto_check_indicator
+)
+
+
+def auto_check_and_redirect(order_id: str, plan_name: str):
+    """
+    自动检查支付状态并在成功时重定向
+    这个函数在每次页面刷新时静默执行
+    """
+    try:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute(
+                """
+                SELECT status FROM payment_orders
+                WHERE order_id = ?
+                """,
+                (order_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                status_in_db = row[0]
+                if status_in_db in ["PAID", "SUCCESS", "SUCCESSFUL"]:
+                    # 支付成功，清理session state并跳转
+                    st.balloons()
+                    st.success("🎉 支付成功！正在跳转...")
+
+                    # 清理支付相关状态
+                    order_key = f"payment_order_{plan_name}"
+                    qr_key = f"payment_qr_{order_id}"
+                    if order_key in st.session_state:
+                        del st.session_state[order_key]
+                    if qr_key in st.session_state:
+                        del st.session_state[qr_key]
+                    if 'auto_check_count' in st.session_state:
+                        del st.session_state['auto_check_count']
+
+                    # 跳转到订阅管理页面
+                    time.sleep(1.5)
+                    st.session_state["current_page"] = "subscription"
+                    st.rerun()
+    except Exception as e:
+        # 静默失败，不影响页面显示
+        print(f"自动检查支付状态失败: {e}")
 
 
 def show_payment_page():
@@ -57,7 +102,7 @@ def show_payment_page():
     order_id = st.session_state.get(f"payment_order_{plan_name}", None)
 
     if order_id:
-        # 已有订单，显示支付信息
+        # 已有订单，显示支付信息（带自动刷新）
         show_existing_payment(order_id, plan_name, payment_handler)
     else:
         # 创建新订单
@@ -67,8 +112,26 @@ def show_payment_page():
 def show_existing_payment(
     order_id: str, plan_name: str, payment_handler: PaymentHandler
 ):
-    """显示已有订单的支付信息"""
+    """显示已有订单的支付信息（带自动检查）"""
+
+    # 首先自动检查支付状态（静默）
+    auto_check_and_redirect(order_id, plan_name)
+
+    # 初始化自动检查计数器
+    if 'auto_check_count' not in st.session_state:
+        st.session_state['auto_check_count'] = 0
+
+    st.session_state['auto_check_count'] += 1
+    check_count = st.session_state['auto_check_count']
+
+    # 注入自动刷新脚本（每5秒刷新一次页面来检查状态）
+    inject_simple_auto_refresh(check_interval_seconds=5)
+
+    # 显示自动检查指示器
+    show_auto_check_indicator(check_count)
+
     st.success("✅ 订单已创建，请完成支付")
+    st.info("💡 支付成功后将自动跳转，无需手动操作")
 
     # 显示订单信息
     col1, col2 = st.columns([2, 1])
