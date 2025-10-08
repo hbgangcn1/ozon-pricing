@@ -82,7 +82,13 @@ def inject_smart_auto_refresh(
             const url = new URL(window.location);
             url.searchParams.set('restore_order', paymentState.order_id);
             url.searchParams.set('restore_plan', paymentState.plan_name);
-            window.location.href = url.toString();
+            const targetUrl = url.toString();
+            console.log("🔗 刷新目标URL:", targetUrl);
+            console.log("📦 携带的恢复参数:", {{
+                restore_order: paymentState.order_id,
+                restore_plan: paymentState.plan_name
+            }});
+            window.location.href = targetUrl;
         }}, {check_interval_seconds} * 1000);
     }})();
     </script>

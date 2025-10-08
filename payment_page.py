@@ -153,18 +153,26 @@ def show_payment_page():
     restore_payment_state_from_browser()
 
     # 检查URL参数中的恢复信息
+    print(f"🔍 检查URL参数: {dict(st.query_params)}")
     restore_order = st.query_params.get("restore_order")
     restore_plan = st.query_params.get("restore_plan")
+    print(f"🔍 恢复参数: restore_order={restore_order}, "
+          f"restore_plan={restore_plan}")
 
     if restore_order and restore_plan:
-        print(f"🔄 从URL参数恢复订单: {restore_order}, 计划: {restore_plan}")
+        print(f"✅ 从URL参数恢复订单: {restore_order}, 计划: {restore_plan}")
         # 恢复session_state
         st.session_state[f"payment_order_{restore_plan}"] = restore_order
         st.session_state["payment_plan"] = restore_plan
         st.session_state["current_page"] = "payment"
+        print(f"📝 恢复后的session_state: payment_plan="
+              f"{st.session_state.get('payment_plan')}")
         # 清除URL参数避免重复恢复
         st.query_params.clear()
+        print("🔄 触发页面重新加载")
         st.rerun()
+    else:
+        print("ℹ️ URL参数中无恢复信息，使用正常流程")
 
     # 页面标题
     st.markdown(
