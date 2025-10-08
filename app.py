@@ -697,12 +697,18 @@ def show_main_interface():
     # 检查是否有支付成功的通知
     if 'last_successful_payment' in st.session_state:
         payment_info = st.session_state['last_successful_payment']
+        # 清除订阅状态缓存，强制从数据库重新读取
+        if 'subscription_status' in st.session_state:
+            del st.session_state['subscription_status']
+        # 显示一次性通知
         st.success(
             f"🎉 恭喜！您已成功升级到{payment_info['plan_name']}！"
         )
         st.info("💡 请在侧边栏点击'订阅管理'查看最新订阅状态")
-        # 清除通知，避免重复显示
+        # 立即清除通知标记，确保下次刷新不再显示
         del st.session_state['last_successful_payment']
+        # 添加一个标记，表示已显示过通知
+        st.session_state['_payment_success_shown'] = True
 
     # 移除未使用的导入
 
