@@ -12,9 +12,36 @@ from payment_handler import PaymentHandler
 from db_utils import get_db_connection
 from db_utils import current_user_id
 from payment_auto_refresh import (
-    inject_simple_auto_refresh,
-    show_auto_check_indicator
+    inject_smart_auto_refresh,
+    show_enhanced_auto_check_indicator
 )
+
+
+def cleanup_payment_state(plan_name: str, order_id: str):
+    """清理支付状态"""
+    keys_to_remove = [
+        f"payment_order_{plan_name}",
+        f"payment_qr_{order_id}",
+        f"order_creation_time_{order_id}",
+        'auto_check_count'
+    ]
+    for key in keys_to_remove:
+        if key in st.session_state:
+            del st.session_state[key]
+
+
+def handle_payment_success(order_id: str, plan_name: str):
+    """处理支付成功"""
+    st.balloons()
+    st.success("🎉 支付成功！正在跳转...")
+
+    # 清理支付相关状态
+    cleanup_payment_state(plan_name, order_id)
+
+    # 跳转到订阅管理页面
+    time.sleep(1.5)
+    st.session_state["current_page"] = "subscription"
+    st.rerun()
 
 
 def auto_check_and_redirect(order_id: str, plan_name: str):
@@ -22,11 +49,22 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
     自动检查支付状态并在成功时重定向
     这个函数在每次页面刷新时静默执行
     """
+    # 检查是否超时（30分钟）
+    order_creation_time = st.session_state.get(
+        f"order_creation_time_{order_id}"
+    )
+    if order_creation_time and time.time() - order_creation_time > 1800:
+        st.warning("⏰ 订单已超时，请重新创建订单")
+        cleanup_payment_state(plan_name, order_id)
+        time.sleep(2)
+        st.rerun()
+        return
+
     try:
         with get_db_connection() as (conn, cursor):
             cursor.execute(
                 """
-                SELECT status FROM payment_orders
+                SELECT status, created_at FROM payment_orders
                 WHERE order_id = ?
                 """,
                 (order_id,),
@@ -35,24 +73,15 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
             if row:
                 status_in_db = row[0]
                 if status_in_db in ["PAID", "SUCCESS", "SUCCESSFUL"]:
-                    # 支付成功，清理session state并跳转
-                    st.balloons()
-                    st.success("🎉 支付成功！正在跳转...")
-
-                    # 清理支付相关状态
-                    order_key = f"payment_order_{plan_name}"
-                    qr_key = f"payment_qr_{order_id}"
-                    if order_key in st.session_state:
-                        del st.session_state[order_key]
-                    if qr_key in st.session_state:
-                        del st.session_state[qr_key]
-                    if 'auto_check_count' in st.session_state:
-                        del st.session_state['auto_check_count']
-
-                    # 跳转到订阅管理页面
-                    time.sleep(1.5)
-                    st.session_state["current_page"] = "subscription"
+                    # 支付成功
+                    handle_payment_success(order_id, plan_name)
+                elif status_in_db in ["CLOSED", "REVOKED", "PAYERROR"]:
+                    # 支付失败
+                    st.error("❌ 支付失败，请重新创建订单")
+                    cleanup_payment_state(plan_name, order_id)
+                    time.sleep(2)
                     st.rerun()
+
     except Exception as e:
         # 静默失败，不影响页面显示
         print(f"自动检查支付状态失败: {e}")
@@ -112,7 +141,7 @@ def show_payment_page():
 def show_existing_payment(
     order_id: str, plan_name: str, payment_handler: PaymentHandler
 ):
-    """显示已有订单的支付信息（带自动检查）"""
+    """显示已有订单的支付信息（带智能自动检查）"""
 
     # 首先自动检查支付状态（静默）
     auto_check_and_redirect(order_id, plan_name)
@@ -124,14 +153,28 @@ def show_existing_payment(
     st.session_state['auto_check_count'] += 1
     check_count = st.session_state['auto_check_count']
 
-    # 注入自动刷新脚本（每5秒刷新一次页面来检查状态）
-    inject_simple_auto_refresh(check_interval_seconds=5)
+    # 使用智能刷新（最多检查60次，约5分钟）
+    max_checks = 60
+    inject_smart_auto_refresh(
+        check_interval_seconds=5,
+        max_checks=max_checks
+    )
 
-    # 显示自动检查指示器
-    show_auto_check_indicator(check_count)
+    # 显示增强的自动检查指示器（带进度条）
+    show_enhanced_auto_check_indicator(
+        check_count=check_count,
+        max_checks=max_checks
+    )
 
-    st.success("✅ 订单已创建，请完成支付")
-    st.info("💡 支付成功后将自动跳转，无需手动操作")
+    # 提示信息
+    if check_count >= max_checks:
+        st.warning(
+            "⏰ 已达到最大检查次数。"
+            "如已支付成功但未跳转，请点击下方'检查支付状态'按钮"
+        )
+    else:
+        st.success("✅ 订单已创建，请完成支付")
+        st.info("💡 支付成功后将自动跳转，无需手动操作（最多等待5分钟）")
 
     # 显示订单信息
     col1, col2 = st.columns([2, 1])
@@ -305,6 +348,8 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
 
             # 保存订单信息到session_state
             st.session_state[f"payment_order_{plan_name}"] = order_id
+            # 保存订单创建时间（用于超时检查）
+            st.session_state[f"order_creation_time_{order_id}"] = time.time()
 
             # 生成二维码
             try:

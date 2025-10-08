@@ -33,6 +33,49 @@ def inject_simple_auto_refresh(check_interval_seconds: int = 3):
     components.html(html_code, height=0)
 
 
+def inject_smart_auto_refresh(
+    check_interval_seconds: int = 5,
+    max_checks: int = 60
+):
+    """
+    智能自动刷新 - 在达到最大检查次数后停止刷新
+
+    Args:
+        check_interval_seconds: 刷新间隔（秒）
+        max_checks: 最大检查次数（防止无限刷新）
+    """
+    html_code = f"""
+    <script>
+    (function() {{
+        // 从sessionStorage获取检查次数
+        let checkCount = parseInt(
+            sessionStorage.getItem('payment_check_count') || '0'
+        );
+        checkCount++;
+        sessionStorage.setItem('payment_check_count', checkCount.toString());
+
+        console.log("🔄 自动检查次数: " + checkCount + "/{max_checks}");
+
+        if (checkCount >= {max_checks}) {{
+            console.log("🛑 达到最大检查次数，停止自动刷新");
+            sessionStorage.removeItem('payment_check_count');
+            return;
+        }}
+
+        setTimeout(() => {{
+            console.log("🔄 执行自动刷新");
+            window.location.reload();
+        }}, {check_interval_seconds} * 1000);
+    }})();
+    </script>
+    <div style="display:none;">
+        Smart auto-refresh enabled (check {max_checks} times max)
+    </div>
+    """
+
+    components.html(html_code, height=0)
+
+
 def show_auto_check_indicator(check_count: int = 0):
     """
     显示自动检查指示器
@@ -57,6 +100,73 @@ def show_auto_check_indicator(check_count: int = 0):
     ">
         <span style="display: inline-block; margin-right: 8px;">🔄</span>
         自动检查中... (第 {check_count} 次)
+    </div>
+    <style>
+        @keyframes pulse {{
+            0%, 100% {{
+                transform: scale(1);
+                opacity: 1;
+            }}
+            50% {{
+                transform: scale(1.05);
+                opacity: 0.9;
+            }}
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def show_enhanced_auto_check_indicator(
+    check_count: int = 0,
+    max_checks: int = 60
+):
+    """
+    显示增强的自动检查指示器（带进度条）
+
+    Args:
+        check_count: 当前检查次数
+        max_checks: 最大检查次数
+    """
+    progress = min(check_count / max_checks, 1.0) * 100
+
+    st.markdown(f"""
+    <div style="
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 25px;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 9999;
+        animation: pulse 2s infinite;
+    ">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 18px;">🔄</span>
+            <div>
+                <div style="margin-bottom: 6px;">
+                    自动检查中... ({check_count}/{max_checks})
+                </div>
+                <div style="
+                    background: rgba(255,255,255,0.3);
+                    height: 4px;
+                    border-radius: 2px;
+                    width: 120px;
+                    overflow: hidden;
+                ">
+                    <div style="
+                        background: white;
+                        height: 100%;
+                        border-radius: 2px;
+                        width: {progress}%;
+                        transition: width 0.3s ease;
+                    "></div>
+                </div>
+            </div>
+        </div>
     </div>
     <style>
         @keyframes pulse {{
