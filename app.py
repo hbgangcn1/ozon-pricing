@@ -707,12 +707,23 @@ def show_main_interface():
         if 'subscription_status' in st.session_state:
             del st.session_state['subscription_status']
             print("🗑️ 已清除订阅状态缓存")
-        # 显示一次性通知
-        st.success(
-            f"🎉 恭喜！您已成功升级到{payment_info['plan_name']}！"
-        )
-        st.info("💡 请在侧边栏点击'订阅管理'查看最新订阅状态")
-        # 标记为已显示，确保下次不再显示
+
+        # 显示通知和关闭按钮
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.success(
+                f"🎉 恭喜！您已成功升级到{payment_info['plan_name']}！"
+            )
+            st.info("💡 请在侧边栏点击'订阅管理'查看最新订阅状态")
+        with col2:
+            if st.button("✖️ 关闭", key="close_payment_notification"):
+                # 清除通知
+                del st.session_state['last_successful_payment']
+                st.session_state['_payment_success_shown'] = True
+                print("✅ 用户手动关闭通知")
+                st.rerun()
+
+        # 标记为已显示
         st.session_state['_payment_success_shown'] = True
         print("✅ 已标记为已显示")
     elif has_payment and shown_before:

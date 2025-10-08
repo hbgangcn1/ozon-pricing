@@ -61,6 +61,10 @@ def handle_payment_success(order_id: str, plan_name: str):
     # 清理支付相关状态
     cleanup_payment_state(plan_name, order_id)
 
+    # 重置"已显示"标记，确保下次支付能正常显示通知
+    if '_payment_success_shown' in st.session_state:
+        del st.session_state['_payment_success_shown']
+
     payment_keys_after = [
         k for k in st.session_state.keys()
         if isinstance(k, str) and 'payment' in k
