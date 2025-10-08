@@ -33,6 +33,7 @@ def cleanup_payment_state(plan_name: str, order_id: str):
 
 def handle_payment_success(order_id: str, plan_name: str):
     """处理支付成功"""
+    print(f"🎉 检测到支付成功: {order_id}")
     st.balloons()
     st.success("🎉 支付成功！正在跳转...")
 
@@ -44,12 +45,24 @@ def handle_payment_success(order_id: str, plan_name: str):
         'success_time': time.strftime('%Y-%m-%d %H:%M:%S')
     }
 
+    # 添加调试信息
+    payment_keys_before = [
+        k for k in st.session_state.keys() if 'payment' in k
+    ]
+    print(f"清理状态前: {payment_keys_before}")
+
     # 清理支付相关状态
     cleanup_payment_state(plan_name, order_id)
+
+    payment_keys_after = [
+        k for k in st.session_state.keys() if 'payment' in k
+    ]
+    print(f"清理状态后: {payment_keys_after}")
 
     # 跳转到订阅管理页面
     time.sleep(1.5)
     st.session_state["current_page"] = "subscription"
+    print("🔄 触发页面跳转到订阅管理")
     st.rerun()
 
 
@@ -58,13 +71,17 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
     自动检查支付状态并在成功时重定向
     这个函数在每次页面刷新时静默执行
     """
+    print(f"🔍 开始自动检查订单: {order_id}")
+
     # 检查缓存（最近3秒内查过就不重复查询，减少数据库压力）
     cache_key = f"last_check_{order_id}"
     last_check = st.session_state.get(cache_key, 0)
     if time.time() - last_check < 3:
+        print("⏩ 跳过检查（缓存中）")
         return
 
     st.session_state[cache_key] = time.time()
+    print("✅ 执行数据库查询...")
 
     # 检查是否超时（30分钟）
     order_creation_time = st.session_state.get(
@@ -88,11 +105,14 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
             row = cursor.fetchone()
             if row:
                 status_in_db = row[0]
+                print(f"📊 数据库订单状态: {status_in_db}")
                 if status_in_db in ["PAID", "SUCCESS", "SUCCESSFUL"]:
                     # 支付成功
+                    print("✅ 检测到支付成功，准备跳转")
                     handle_payment_success(order_id, plan_name)
                 elif status_in_db in ["CLOSED", "REVOKED", "PAYERROR"]:
                     # 支付失败，提供明确指导
+                    print(f"❌ 检测到支付失败: {status_in_db}")
                     st.error("❌ 支付失败，请重新创建订单")
                     st.info(
                         "💡 如果问题持续，请检查微信余额或联系客服"
@@ -100,10 +120,14 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
                     cleanup_payment_state(plan_name, order_id)
                     time.sleep(2)
                     st.rerun()
+                else:
+                    print(f"⏳ 订单状态: {status_in_db}，继续等待")
+            else:
+                print(f"⚠️ 未找到订单记录: {order_id}")
 
     except Exception as e:
         # 静默失败，不影响页面显示
-        print(f"自动检查支付状态失败: {e}")
+        print(f"❌ 自动检查支付状态失败: {e}")
 
 
 def show_payment_page():
@@ -184,11 +208,6 @@ def show_existing_payment(
         check_count=check_count,
         max_checks=max_checks
     )
-
-    # 如果检查次数未超限，使用Streamlit原生的自动刷新作为备用
-    if check_count < max_checks:
-        time.sleep(5)
-        st.rerun()
 
     # 提示信息
     if check_count >= max_checks:
