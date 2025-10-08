@@ -58,7 +58,6 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
         cleanup_payment_state(plan_name, order_id)
         time.sleep(2)
         st.rerun()
-        return
 
     try:
         with get_db_connection() as (conn, cursor):
