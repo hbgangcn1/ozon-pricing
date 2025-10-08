@@ -12,14 +12,12 @@ from payment_handler import PaymentHandler
 from db_utils import get_db_connection
 from db_utils import current_user_id
 from payment_auto_refresh import (
-    inject_smart_auto_refresh,
     show_enhanced_auto_check_indicator
 )
 from payment_state_manager import (
     save_payment_state_to_browser,
     restore_payment_state_from_browser,
-    clear_payment_state_from_browser,
-    update_check_count_in_browser
+    clear_payment_state_from_browser
 )
 
 
@@ -211,28 +209,19 @@ def show_existing_payment(
     if 'auto_check_count' not in st.session_state:
         st.session_state['auto_check_count'] = 0
 
+    # 先检查支付状态（如果成功会触发跳转）
+    auto_check_and_redirect(order_id, plan_name)
+
+    # 如果支付未成功，继续显示页面并准备下一次检查
     st.session_state['auto_check_count'] += 1
     check_count = st.session_state['auto_check_count']
 
-    # 更新浏览器localStorage中的检查次数（用于持久化）
-    update_check_count_in_browser()
-
-    # 使用智能刷新（最多检查60次，约5分钟）
-    # 重要：必须在auto_check_and_redirect之前注入，确保脚本被加载
-    max_checks = 60
-    inject_smart_auto_refresh(
-        check_interval_seconds=5,
-        max_checks=max_checks
-    )
-
     # 显示增强的自动检查指示器（带进度条）
+    max_checks = 60
     show_enhanced_auto_check_indicator(
         check_count=check_count,
         max_checks=max_checks
     )
-
-    # 然后检查支付状态（如果成功会触发跳转）
-    auto_check_and_redirect(order_id, plan_name)
 
     # 提示信息
     if check_count >= max_checks:
@@ -409,6 +398,14 @@ def show_existing_payment(
             st.info(
                 "💡 如果支付成功但状态未更新，请尝试重新登录"
             )
+
+    # 关键：在所有UI显示完成后，添加Python自动刷新
+    # 这样用户能看到完整的页面，然后页面会在5秒后自动刷新检查
+    if check_count < max_checks:
+        print(f"⏰ 准备在5秒后自动刷新（第{check_count}次检查）")
+        time.sleep(5)
+        print("🔄 执行Python自动刷新")
+        st.rerun()
 
 
 def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
