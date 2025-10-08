@@ -47,7 +47,8 @@ def handle_payment_success(order_id: str, plan_name: str):
 
     # 添加调试信息
     payment_keys_before = [
-        k for k in st.session_state.keys() if 'payment' in k
+        k for k in st.session_state.keys()
+        if isinstance(k, str) and 'payment' in k
     ]
     print(f"清理状态前: {payment_keys_before}")
 
@@ -55,7 +56,8 @@ def handle_payment_success(order_id: str, plan_name: str):
     cleanup_payment_state(plan_name, order_id)
 
     payment_keys_after = [
-        k for k in st.session_state.keys() if 'payment' in k
+        k for k in st.session_state.keys()
+        if isinstance(k, str) and 'payment' in k
     ]
     print(f"清理状态后: {payment_keys_after}")
 
