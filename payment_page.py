@@ -27,11 +27,231 @@ def cleanup_payment_state(plan_name: str, order_id: str):
         f"payment_qr_{order_id}",
         f"order_creation_time_{order_id}",
         f"last_check_{order_id}",  # 清理检查缓存
-        'auto_check_count'
+        'auto_check_count',
+        f"payment_duration_{plan_name}"  # 清理时长选择
     ]
     for key in keys_to_remove:
         if key in st.session_state:
             del st.session_state[key]
+
+
+def show_duration_selection(plan_name: str):
+    """显示购买时长选择对话框"""
+    st.markdown("---")
+    st.markdown("### ⏱️ 选择购买时长")
+
+    # 检查用户是否使用过效率版首月优惠
+    user_id = current_user_id()
+    promo_used = False
+
+    if "效率版" in plan_name:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute(
+                "SELECT efficiency_promo_used FROM users WHERE id = ?",
+                (user_id,)
+            )
+            result = cursor.fetchone()
+            if result and result[0]:
+                promo_used = True
+
+    # 根据套餐类型显示不同的选项
+    if "效率版" in plan_name:
+        st.markdown(
+            """
+            <div style="background: linear-gradient(135deg, #E8F5E8, #C8E6C9);
+                 border-radius: 15px; padding: 20px; margin-bottom: 20px;">
+                <h4 style="color: #4CAF50; margin-bottom: 15px;">💚 效率版套餐</h4>
+                <p style="color: #2E7D32; font-size: 1.1rem; margin: 0;">
+                    无限次极速模式计算 + 3个物流模板
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # 月付选项
+            if not promo_used:
+                st.markdown(
+                    """
+                    <div style="background: linear-gradient(135deg,
+                         #FFF3E0, #FFE0B2);
+                         border-radius: 12px; padding: 20px;
+                         margin-bottom: 15px;
+                         border: 3px solid #FF9800;">
+                        <h4 style="color: #E65100; text-align: center;
+                            margin-bottom: 10px;">
+                            🎉 首月特惠
+                        </h4>
+                        <h2 style="color: #F57C00; text-align: center;
+                            margin: 15px 0;">
+                            ¥1
+                        </h2>
+                        <p style="text-align: center; color: #EF6C00;
+                            margin: 0; font-size: 0.9rem;">
+                            仅首月，次月起¥9.9/月
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    """
+                    <div style="background: linear-gradient(135deg,
+                         #E8F5E8, #C8E6C9);
+                         border-radius: 12px; padding: 20px;
+                         margin-bottom: 15px;">
+                        <h4 style="color: #4CAF50; text-align: center;
+                            margin-bottom: 10px;">
+                            📅 月付套餐
+                        </h4>
+                        <h2 style="color: #2E7D32; text-align: center;
+                            margin: 15px 0;">
+                            ¥9.9
+                        </h2>
+                        <p style="text-align: center; color: #388E3C;
+                            margin: 0; font-size: 0.9rem;">
+                            按月续费
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            if st.button(
+                "购买1个月" if promo_used else "首月仅需¥1",
+                key="duration_1_month",
+                use_container_width=True,
+                type="primary" if not promo_used else "secondary"
+            ):
+                st.session_state[f"payment_duration_{plan_name}"] = "1_month"
+                st.rerun()
+
+        with col2:
+            # 年付选项
+            st.markdown(
+                """
+                <div style="background: linear-gradient(135deg,
+                     #E3F2FD, #BBDEFB);
+                     border-radius: 12px; padding: 20px;
+                     margin-bottom: 15px;">
+                    <h4 style="color: #1976D2; text-align: center;
+                        margin-bottom: 10px;">
+                        💎 年付套餐
+                    </h4>
+                    <h2 style="color: #0D47A1; text-align: center;
+                        margin: 15px 0;">
+                        ¥99
+                    </h2>
+                    <p style="text-align: center; color: #1565C0;
+                        margin: 0; font-size: 0.9rem;">
+                        相当于¥8.25/月，省16%
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            if st.button(
+                "购买1年",
+                key="duration_1_year",
+                use_container_width=True
+            ):
+                st.session_state[f"payment_duration_{plan_name}"] = "1_year"
+                st.rerun()
+
+    elif "专业版" in plan_name:
+        st.markdown(
+            """
+            <div style="background: linear-gradient(135deg,
+                 #E3F2FD, #BBDEFB);
+                 border-radius: 15px; padding: 20px; margin-bottom: 20px;">
+                <h4 style="color: #2196F3; margin-bottom: 15px;">
+                    ⭐ 专业版套餐
+                </h4>
+                <p style="color: #1565C0; font-size: 1.1rem; margin: 0;">
+                    极速+精准双模式 + 无限物流模板 + 多物流比价
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # 月付选项
+            st.markdown(
+                """
+                <div style="background: linear-gradient(135deg,
+                     #E3F2FD, #BBDEFB);
+                     border-radius: 12px; padding: 20px;
+                     margin-bottom: 15px;">
+                    <h4 style="color: #2196F3; text-align: center;
+                        margin-bottom: 10px;">
+                        📅 月付套餐
+                    </h4>
+                    <h2 style="color: #1976D2; text-align: center;
+                        margin: 15px 0;">
+                        ¥149
+                    </h2>
+                    <p style="text-align: center; color: #1565C0;
+                        margin: 0; font-size: 0.9rem;">
+                        按月续费
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            if st.button(
+                "购买1个月",
+                key="duration_1_month",
+                use_container_width=True
+            ):
+                st.session_state[f"payment_duration_{plan_name}"] = "1_month"
+                st.rerun()
+
+        with col2:
+            # 年付选项
+            st.markdown(
+                """
+                <div style="background: linear-gradient(135deg,
+                     #F3E5F5, #E1BEE7);
+                     border-radius: 12px; padding: 20px;
+                     margin-bottom: 15px;">
+                    <h4 style="color: #9C27B0; text-align: center;
+                        margin-bottom: 10px;">
+                        💎 年付套餐
+                    </h4>
+                    <h2 style="color: #7B1FA2; text-align: center;
+                        margin: 15px 0;">
+                        ¥1499
+                    </h2>
+                    <p style="text-align: center; color: #8E24AA;
+                        margin: 0; font-size: 0.9rem;">
+                        相当于¥124.9/月，省16%
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            if st.button(
+                "购买1年",
+                key="duration_1_year",
+                use_container_width=True
+            ):
+                st.session_state[f"payment_duration_{plan_name}"] = "1_year"
+                st.rerun()
+
+    st.markdown("---")
+    if st.button("🏠 返回首页", key="back_to_home_from_duration"):
+        st.session_state["current_page"] = "main"
+        st.rerun()
 
 
 def handle_payment_success(order_id: str, plan_name: str):
@@ -39,6 +259,25 @@ def handle_payment_success(order_id: str, plan_name: str):
     print(f"🎉 检测到支付成功: {order_id}")
     st.balloons()
     st.success("🎉 支付成功！正在跳转到主界面...")
+
+    # 如果是效率版首月优惠订单，标记用户已使用优惠
+    promo_mark_key = f"mark_efficiency_promo_{order_id}"
+    if promo_mark_key in st.session_state and st.session_state[promo_mark_key]:
+        user_id = current_user_id()
+        if user_id:
+            try:
+                with get_db_connection() as (conn, cursor):
+                    cursor.execute(
+                        "UPDATE users SET efficiency_promo_used = 1 "
+                        "WHERE id = ?",
+                        (user_id,)
+                    )
+                    conn.commit()
+                    print(f"✅ 已标记用户 {user_id} 使用过效率版首月优惠")
+            except Exception as e:
+                print(f"⚠️ 标记首月优惠使用失败: {e}")
+        # 清除标记
+        del st.session_state[promo_mark_key]
 
     # 记录支付成功时间（用于数据分析和用户体验优化）
     st.session_state['last_successful_payment'] = {
@@ -193,8 +432,14 @@ def show_payment_page():
         # 已有订单，显示支付信息（带自动刷新）
         show_existing_payment(order_id, plan_name, payment_handler)
     else:
-        # 创建新订单
-        create_new_payment(plan_name, payment_handler)
+        # 检查是否已选择购买时长
+        duration_key = f"payment_duration_{plan_name}"
+        if duration_key not in st.session_state:
+            # 显示时长选择对话框
+            show_duration_selection(plan_name)
+        else:
+            # 已选择时长，创建订单
+            create_new_payment(plan_name, payment_handler)
 
 
 def show_existing_payment(
@@ -409,22 +654,62 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
     """创建新的支付订单"""
     st.info("🔄 正在创建支付订单...")
 
-    with st.spinner("创建订单中..."):
-        # 根据计划名称确定价格和描述
-        if "效率版" in plan_name:
-            amount = 100  # 1元 = 100分
-            description = "物流系统效率版订阅 - 首月优惠"
-        elif "专业版" in plan_name:
-            amount = 300  # 3元 = 300分
-            description = "物流系统专业版订阅 - 首月优惠"
-        else:
-            st.error("❌ 未知的订阅计划")
-            return
+    # 获取选择的购买时长
+    duration_key = f"payment_duration_{plan_name}"
+    duration = st.session_state.get(duration_key, None)
 
+    if not duration:
+        st.error("❌ 未选择购买时长，请返回重新选择")
+        if st.button("返回选择时长"):
+            if duration_key in st.session_state:
+                del st.session_state[duration_key]
+            st.rerun()
+        return
+
+    with st.spinner("创建订单中..."):
         # 获取当前用户ID
         user_id = current_user_id()
         if not user_id:
             st.error("❌ 请先登录")
+            return
+
+        # 检查是否使用过效率版首月优惠
+        promo_used = False
+        if "效率版" in plan_name:
+            with get_db_connection() as (conn, cursor):
+                cursor.execute(
+                    "SELECT efficiency_promo_used FROM users WHERE id = ?",
+                    (user_id,)
+                )
+                result = cursor.fetchone()
+                if result and result[0]:
+                    promo_used = True
+
+        # 根据计划名称和时长确定价格和描述
+        if "效率版" in plan_name:
+            if duration == "1_month":
+                if not promo_used:
+                    amount = 100  # 首月1元 = 100分
+                    description = "物流系统效率版订阅 - 首月优惠(1个月)"
+                else:
+                    # 【临时测试】原价 990 (9.9元)，测试改为 110 (1.1元)
+                    amount = 110  # 测试价 1.1元 = 110分
+                    description = "物流系统效率版订阅 - 月付(1个月)"
+            else:  # 1_year
+                # 【临时测试】原价 9900 (99元)，测试改为 120 (1.2元)
+                amount = 120  # 测试价 1.2元 = 120分
+                description = "物流系统效率版订阅 - 年付(12个月)"
+        elif "专业版" in plan_name:
+            if duration == "1_month":
+                # 【临时测试】原价 14900 (149元)，测试改为 130 (1.3元)
+                amount = 130  # 测试价 1.3元 = 130分
+                description = "物流系统专业版订阅 - 月付(1个月)"
+            else:  # 1_year
+                # 【临时测试】原价 149900 (1499元)，测试改为 140 (1.4元)
+                amount = 140  # 测试价 1.4元 = 140分
+                description = "物流系统专业版订阅 - 年付(12个月)"
+        else:
+            st.error("❌ 未知的订阅计划")
             return
 
         # 创建支付订单
@@ -445,6 +730,10 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
 
             # 保存到浏览器localStorage（关键！）
             save_payment_state_to_browser(order_id, plan_name)
+
+            # 如果是效率版首月优惠，标记在session_state中（支付成功后使用）
+            if "效率版" in plan_name and duration == "1_month" and not promo_used:
+                st.session_state[f"mark_efficiency_promo_{order_id}"] = True
 
             # 生成二维码
             try:

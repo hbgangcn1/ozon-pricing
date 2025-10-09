@@ -709,7 +709,8 @@ def _upgrade_users_subscription_fields():
             "first_login_date": "TEXT",
             "test_days_remaining": "INTEGER DEFAULT 0",
             "subscription_type": "TEXT DEFAULT 'free'",
-            "subscription_expires": "INTEGER"
+            "subscription_expires": "INTEGER",
+            "efficiency_promo_used": "INTEGER DEFAULT 0"  # 记录是否使用过效率版首月1元优惠
         }
         for col, def_sql in new_cols.items():
             if col not in cols:
