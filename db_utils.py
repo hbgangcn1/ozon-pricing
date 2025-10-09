@@ -742,6 +742,18 @@ def _upgrade_products_return_rate():
         conn.commit()
 
 
+def _upgrade_payment_orders_duration():
+    """升级：新增支付订单时长字段"""
+    with get_db_connection() as (conn, c):
+        cols = [col[1] for col in c.execute(
+            "PRAGMA table_info(payment_orders)").fetchall()]
+        if "duration" not in cols:
+            c.execute(
+                "ALTER TABLE payment_orders ADD COLUMN duration TEXT"
+            )
+        conn.commit()
+
+
 def create_user(username, password, role="user", email=None, user_type="free"):
     """创建用户"""
     # 确保数据库已初始化
@@ -987,6 +999,7 @@ def init_db():
                 user_id INTEGER NOT NULL,
                 amount INTEGER NOT NULL,
                 description TEXT NOT NULL,
+                duration TEXT,
                 status TEXT DEFAULT 'PENDING',
                 wechat_transaction_id TEXT,
                 created_at INTEGER NOT NULL,
@@ -1013,6 +1026,7 @@ def init_db():
         _upgrade_logistics_price_min()
         _upgrade_products_return_rate()
         _upgrade_users_subscription_fields()
+        _upgrade_payment_orders_duration()
         # 3. 初始管理员（避免递归调用）
         admin_user = c.execute(
             "SELECT * FROM users WHERE username = ?",

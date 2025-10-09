@@ -716,7 +716,8 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
         result = payment_handler.create_payment_order(
             user_id=user_id,
             amount=amount,
-            description=description
+            description=description,
+            duration=duration  # 传递时长参数（1_month 或 1_year）
         )
 
         if result["success"]:

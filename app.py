@@ -5810,7 +5810,15 @@ def subscription_management_page():
 
         # 确定按钮文本
             button_text = ""
-            if not is_current:
+            if is_current:
+                # 当前套餐，显示续费按钮（免费版除外）
+                if plan_key in ['efficiency', 'professional']:
+                    button_text = f"续费{plan['name']}"
+                # 免费版、企业版和感谢版不显示续费按钮
+                else:
+                    button_text = ""
+            else:
+                # 非当前套餐
                 if plan_key == 'enterprise':
                     button_text = f"联系客服升级到{plan['name']}"
                 else:
@@ -5935,11 +5943,11 @@ def subscription_management_page():
 
             st.markdown(card_html, unsafe_allow_html=True)
 
-        # 升级按钮（只允许升级，不允许降级）
-            if not is_current and button_text:
+        # 升级/续费按钮
+            if button_text:
                 if plan_key == 'enterprise':
                     if st.button(
-                        f"联系客服升级到{plan['name']}",
+                        button_text,
                         key=f"upgrade_{plan_key}",
                         help="企业版需要联系客服开通",
                     ):

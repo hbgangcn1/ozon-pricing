@@ -24,6 +24,7 @@ class PaymentHandler:
     def create_payment_order(user_id: int,
                              amount: int,
                              description: str,
+                             duration: str = "month",
                              payment_type: str = "native") -> Dict[str, Any]:
         """
         创建支付订单
@@ -32,6 +33,7 @@ class PaymentHandler:
             user_id: 用户ID
             amount: 支付金额（分）
             description: 订单描述
+            duration: 订阅时长（month/year）
             payment_type: 支付类型（native/jsapi）
 
         Returns:
@@ -50,11 +52,11 @@ class PaymentHandler:
 
                 cursor.execute("""
                     INSERT INTO payment_orders
-                    (order_id, user_id, amount, description, status,
+                    (order_id, user_id, amount, description, duration, status,
                      created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (order_id, user_id, amount, description, 'PENDING',
-                      int(time.time())))
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (order_id, user_id, amount, description, duration,
+                      'PENDING', int(time.time())))
 
                 conn.commit()
 
@@ -206,7 +208,7 @@ class PaymentHandler:
             with get_db_connection() as (conn, cursor):
                 # 获取订单信息
                 cursor.execute("""
-                    SELECT user_id, amount, description
+                    SELECT user_id, amount, description, duration
                     FROM payment_orders
                     WHERE order_id = ?
                 """, (order_id,))
@@ -218,32 +220,49 @@ class PaymentHandler:
 
                 print(f"✅ 找到订单记录: {order_info}")
 
-                user_id, amount, description = order_info
+                user_id, amount, description, duration = order_info
+
+                # 根据duration字段判断订阅时长
+                if duration == "year" or duration == "1_year":
+                    days = 365  # 年付
+                    duration_text = "年付"
+                else:  # duration == "month" or duration == "1_month" 或 None
+                    days = 30  # 月付
+                    duration_text = "月付"
+
+                print(f"🔧 订阅时长判断: duration={duration}, "
+                      f"{duration_text}, {days}天, 描述={description}")
 
                 # 根据支付金额和描述处理业务逻辑
                 if ("专业版" in description or
                         "PROFESSIONAL" in description.upper()):
                     # 开通专业版会员
+                    print(f"🔧 处理专业版支付成功: 用户ID={user_id}, "
+                          f"{duration_text}, {days}天")
                     cursor.execute("""
                         UPDATE users
                         SET subscription_type = 'professional',
                             subscription_expires = ?
                         WHERE id = ?
-                    """, (int(time.time()) + 365*24*3600,
+                    """, (int(time.time()) + days*24*3600,
                           user_id))
+                    print(f"✅ 专业版订阅状态已更新: 用户ID={user_id}, "
+                          f"{duration_text}, {days}天")
 
                 elif ("效率版" in description or
                       "EFFICIENCY" in description.upper()):
                     # 开通效率版会员
-                    print(f"🔧 处理效率版支付成功: 用户ID={user_id}, 描述={description}")
+                    print(f"🔧 处理效率版支付成功: 用户ID={user_id}, "
+                          f"{duration_text}, {days}天, 描述={description}")
                     cursor.execute("""
                         UPDATE users
                         SET subscription_type = 'efficiency',
                             subscription_expires = ?
                         WHERE id = ?
-                    """, (int(time.time()) + 30*24*3600,  # 30天有效期
+                    """, (int(time.time()) + days*24*3600,
                           user_id))
-                    print(f"✅ 效率版订阅状态已更新: 用户ID={user_id}")
+                    print(f"✅ 效率版订阅状态已更新: 用户ID={user_id}, "
+                          f"{duration_text}, {days}天")
 
                 elif "计算次数" in description:
                     # 增加计算次数
