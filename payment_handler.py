@@ -226,12 +226,38 @@ class PaymentHandler:
                 if duration == "year" or duration == "1_year":
                     days = 365  # 年付
                     duration_text = "年付"
-                else:  # duration == "month" or duration == "1_month" 或 None
+                elif duration == "month" or duration == "1_month":
                     days = 30  # 月付
                     duration_text = "月付"
+                else:
+                    # 如果duration为None或其他值，默认为月付
+                    days = 30
+                    duration_text = "月付(默认)"
+                    print(f"⚠️ duration字段异常: {duration}, 使用默认月付30天")
 
                 print(f"🔧 订阅时长判断: duration={duration}, "
                       f"{duration_text}, {days}天, 描述={description}")
+
+                # 获取用户当前订阅到期时间
+                cursor.execute("""
+                    SELECT subscription_expires
+                    FROM users
+                    WHERE id = ?
+                """, (user_id,))
+                user_info = cursor.fetchone()
+                current_expires = user_info[0] if user_info else None
+
+                # 计算新的到期时间：在原有基础上累加
+                current_time = int(time.time())
+                if current_expires and current_expires > current_time:
+                    # 如果还未到期，在原有到期时间基础上增加
+                    new_expires = current_expires + days*24*3600
+                    print(f"🔧 续费：原到期时间={current_expires}, "
+                          f"增加{days}天后={new_expires}")
+                else:
+                    # 如果已过期或没有到期时间，从现在开始计算
+                    new_expires = current_time + days*24*3600
+                    print(f"🔧 新订阅：从现在开始，增加{days}天后={new_expires}")
 
                 # 根据支付金额和描述处理业务逻辑
                 if ("专业版" in description or
@@ -244,10 +270,9 @@ class PaymentHandler:
                         SET subscription_type = 'professional',
                             subscription_expires = ?
                         WHERE id = ?
-                    """, (int(time.time()) + days*24*3600,
-                          user_id))
+                    """, (new_expires, user_id))
                     print(f"✅ 专业版订阅状态已更新: 用户ID={user_id}, "
-                          f"{duration_text}, {days}天")
+                          f"{duration_text}, {days}天, 新到期时间={new_expires}")
 
                 elif ("效率版" in description or
                       "EFFICIENCY" in description.upper()):
@@ -259,10 +284,9 @@ class PaymentHandler:
                         SET subscription_type = 'efficiency',
                             subscription_expires = ?
                         WHERE id = ?
-                    """, (int(time.time()) + days*24*3600,
-                          user_id))
+                    """, (new_expires, user_id))
                     print(f"✅ 效率版订阅状态已更新: 用户ID={user_id}, "
-                          f"{duration_text}, {days}天")
+                          f"{duration_text}, {days}天, 新到期时间={new_expires}")
 
                 elif "计算次数" in description:
                     # 增加计算次数
