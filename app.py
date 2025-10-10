@@ -5808,7 +5808,7 @@ def subscription_management_page():
             else:
                 is_current = current_plan.get('name') == plan.get('name')
 
-        # 确定按钮文本
+            # 确定按钮文本
             button_text = ""
             if is_current:
                 # 当前套餐，显示续费按钮（免费版除外）
@@ -5841,7 +5841,7 @@ def subscription_management_page():
             border_color = plan['color'] if is_current else "#e0e0e0"
             border_width = "3px" if is_current else "2px"
 
-        # 构建HTML内容
+            # 构建HTML内容
             features_html = ''.join(
                 [
                     f'<li style="margin-bottom: 5px;">{feature}</li>'
@@ -5849,7 +5849,7 @@ def subscription_management_page():
                 ]
             )
 
-        # 为企业版添加开发状态
+            # 为企业版添加开发状态
             development_status_html = ''
             if plan.get('development_status'):
                 development_status_html = (
@@ -5886,13 +5886,13 @@ def subscription_management_page():
                     '</div>'
                 )
 
-        # 计算“物流模板”展示文本，避免 f-string 复杂嵌套导致语法问题
+            # 计算"物流模板"展示文本，避免 f-string 复杂嵌套导致语法问题
             templates_value = plan.get("logistics_templates", 1)
             templates_display = (
                 templates_value if templates_value != -1 else "无限"
             )
 
-        # 组合卡片 HTML（分段避免超长行）
+            # 组合卡片 HTML（分段避免超长行）
             card_html = (
                 f'<div style="border: {border_width} solid {border_color}; '
                 'border-radius: 15px; padding: 25px; margin: 10px 0; '
@@ -5943,7 +5943,7 @@ def subscription_management_page():
 
             st.markdown(card_html, unsafe_allow_html=True)
 
-        # 升级/续费按钮
+            # 升级/续费按钮
             if button_text:
                 if plan_key == 'enterprise':
                     if st.button(
