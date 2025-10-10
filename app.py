@@ -5814,9 +5814,6 @@ def subscription_management_page():
                 # 当前套餐，显示续费按钮（免费版除外）
                 if plan_key in ['efficiency', 'professional']:
                     button_text = f"续费{plan['name']}"
-                # 免费版、企业版和感谢版不显示续费按钮
-                else:
-                    button_text = ""
             else:
                 # 非当前套餐
                 if plan_key == 'enterprise':
@@ -5834,9 +5831,6 @@ def subscription_management_page():
 
                     if target_order > current_order:
                         button_text = f"升级到{plan['name']}"
-                    else:
-                        # 不允许降级，不显示按钮
-                        button_text = ""
 
             border_color = plan['color'] if is_current else "#e0e0e0"
             border_width = "3px" if is_current else "2px"
