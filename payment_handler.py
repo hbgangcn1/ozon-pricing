@@ -238,55 +238,120 @@ class PaymentHandler:
                 print(f"🔧 订阅时长判断: duration={duration}, "
                       f"{duration_text}, {days}天, 描述={description}")
 
-                # 获取用户当前订阅到期时间
+                # 获取用户当前订阅信息
                 cursor.execute("""
-                    SELECT subscription_expires
+                    SELECT subscription_type, subscription_expires, user_type
                     FROM users
                     WHERE id = ?
                 """, (user_id,))
                 user_info = cursor.fetchone()
-                current_expires = user_info[0] if user_info else None
+                if user_info:
+                    (current_sub_type, current_expires,
+                     current_user_type) = user_info
+                    print(
+                        f"🔍 用户当前状态: "
+                        f"subscription_type={current_sub_type}, "
+                        f"subscription_expires={current_expires}, "
+                        f"user_type={current_user_type}"
+                    )
+                else:
+                    current_expires = None
+                    print(f"⚠️ 未找到用户记录: user_id={user_id}")
 
                 # 计算新的到期时间：在原有基础上累加
                 current_time = int(time.time())
+                from datetime import datetime
+
                 if current_expires and current_expires > current_time:
                     # 如果还未到期，在原有到期时间基础上增加
-                    new_expires = current_expires + days*24*3600
-                    print(f"🔧 续费：原到期时间={current_expires}, "
-                          f"增加{days}天后={new_expires}")
+                    old_expires_dt = datetime.fromtimestamp(current_expires)
+                    new_expires = current_expires + days * 24 * 3600
+                    new_expires_dt = datetime.fromtimestamp(new_expires)
+                    print("🔧 续费模式：")
+                    old_time_str = old_expires_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    print(
+                        f"   原到期时间: {old_time_str} "
+                        f"(时间戳={current_expires})"
+                    )
+                    print(f"   增加时长: {days}天")
+                    new_time_str = new_expires_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    print(
+                        f"   新到期时间: {new_time_str} "
+                        f"(时间戳={new_expires})"
+                    )
                 else:
                     # 如果已过期或没有到期时间，从现在开始计算
-                    new_expires = current_time + days*24*3600
-                    print(f"🔧 新订阅：从现在开始，增加{days}天后={new_expires}")
+                    new_expires = current_time + days * 24 * 3600
+                    new_expires_dt = datetime.fromtimestamp(new_expires)
+                    print("🔧 新订阅模式：")
+                    current_dt = datetime.fromtimestamp(current_time)
+                    current_time_str = current_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"   当前时间: {current_time_str}")
+                    print(f"   增加时长: {days}天")
+                    new_time_str = new_expires_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    print(
+                        f"   新到期时间: {new_time_str} "
+                        f"(时间戳={new_expires})"
+                    )
 
                 # 根据支付金额和描述处理业务逻辑
+                subscription_type = None
                 if ("专业版" in description or
                         "PROFESSIONAL" in description.upper()):
-                    # 开通专业版会员
+                    subscription_type = "professional"
                     print(f"🔧 处理专业版支付成功: 用户ID={user_id}, "
                           f"{duration_text}, {days}天")
-                    cursor.execute("""
-                        UPDATE users
-                        SET subscription_type = 'professional',
-                            subscription_expires = ?
-                        WHERE id = ?
-                    """, (new_expires, user_id))
-                    print(f"✅ 专业版订阅状态已更新: 用户ID={user_id}, "
-                          f"{duration_text}, {days}天, 新到期时间={new_expires}")
 
                 elif ("效率版" in description or
                       "EFFICIENCY" in description.upper()):
-                    # 开通效率版会员
+                    subscription_type = "efficiency"
                     print(f"🔧 处理效率版支付成功: 用户ID={user_id}, "
                           f"{duration_text}, {days}天, 描述={description}")
+
+                if subscription_type:
+                    # 更新订阅信息
                     cursor.execute("""
                         UPDATE users
-                        SET subscription_type = 'efficiency',
-                            subscription_expires = ?
+                        SET subscription_type = ?,
+                            subscription_expires = ?,
+                            user_type = ?
                         WHERE id = ?
-                    """, (new_expires, user_id))
-                    print(f"✅ 效率版订阅状态已更新: 用户ID={user_id}, "
-                          f"{duration_text}, {days}天, 新到期时间={new_expires}")
+                    """, (
+                        subscription_type, new_expires,
+                        subscription_type, user_id
+                    ))
+
+                    # 验证更新结果
+                    cursor.execute("""
+                        SELECT subscription_type, subscription_expires,
+                               user_type
+                        FROM users
+                        WHERE id = ?
+                    """, (user_id,))
+                    verify_info = cursor.fetchone()
+                    if verify_info:
+                        (verify_sub_type, verify_expires,
+                         verify_user_type) = verify_info
+                        verify_dt = datetime.fromtimestamp(verify_expires)
+                        print(
+                            f"✅ {subscription_type}订阅状态已更新并验证:"
+                        )
+                        print(f"   用户ID: {user_id}")
+                        print(f"   订阅类型: {verify_sub_type}")
+                        print(f"   用户类型: {verify_user_type}")
+                        verify_time_str = verify_dt.strftime(
+                            '%Y-%m-%d %H:%M:%S'
+                        )
+                        print(f"   到期时间: {verify_time_str}")
+                        print(f"   时间戳: {verify_expires}")
+
+                        # 计算剩余天数
+                        days_remaining = (
+                            (verify_expires - current_time) / (24 * 3600)
+                        )
+                        print(f"   剩余天数: {days_remaining:.1f}天")
+                    else:
+                        print("⚠️ 更新后无法验证用户信息")
 
                 elif "计算次数" in description:
                     # 增加计算次数
@@ -295,6 +360,7 @@ class PaymentHandler:
                         SET calculations_remaining = calculations_remaining + ?
                         WHERE id = ?
                     """, (amount // 100, user_id))  # 假设1元=1次计算
+                    print(f"✅ 计算次数已增加: {amount // 100}次")
 
                 conn.commit()
                 print(f"✅ 支付成功处理完成: 订单ID={order_id}")
