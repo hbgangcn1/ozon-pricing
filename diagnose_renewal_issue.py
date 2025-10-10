@@ -9,15 +9,17 @@ import sqlite3
 import sys
 from datetime import datetime
 
-def diagnose_issue(username=None):
+def diagnose_issue(username=None, db_path='logistics.db'):
     """诊断续费问题"""
     
     print("=" * 70)
     print("订阅续费问题诊断")
     print("=" * 70)
+    print(f"数据库路径: {db_path}")
+    print("=" * 70)
     
     try:
-        conn = sqlite3.connect('logistics.db')
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         # 1. 检查数据库字段
@@ -146,12 +148,38 @@ def diagnose_issue(username=None):
 
 
 if __name__ == "__main__":
-    username = sys.argv[1] if len(sys.argv) > 1 else None
+    # 参数解析：python diagnose_renewal_issue.py [username] [db_path]
+    username = None
+    db_path = 'logistics.db'
+    
+    if len(sys.argv) > 1:
+        # 如果第一个参数是.db文件，则作为数据库路径
+        if sys.argv[1].endswith('.db'):
+            db_path = sys.argv[1]
+        else:
+            username = sys.argv[1]
+            # 如果有第二个参数，作为数据库路径
+            if len(sys.argv) > 2:
+                db_path = sys.argv[2]
+    
+    # 检查数据库文件是否存在
+    import os
+    if not os.path.exists(db_path):
+        print(f"❌ 错误：数据库文件不存在: {db_path}")
+        print(f"\n提示：")
+        print(f"  1. 检查当前目录: ls -lh *.db")
+        print(f"  2. 查找数据库: find . -name '*.db'")
+        print(f"  3. 指定数据库: python {sys.argv[0]} {username or ''} /path/to/your.db")
+        print(f"\n快速查找命令:")
+        print(f"  bash find_database.sh")
+        sys.exit(1)
     
     if username:
-        print(f"诊断用户: {username}\n")
+        print(f"诊断用户: {username}")
     else:
-        print(f"诊断最近的效率版用户\n")
+        print(f"诊断最近的效率版用户")
     
-    diagnose_issue(username)
+    print(f"使用数据库: {db_path}\n")
+    
+    diagnose_issue(username, db_path)
 

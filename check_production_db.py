@@ -85,6 +85,16 @@ def check_database_fields(db_path='logistics.db'):
 
 if __name__ == "__main__":
     db_path = sys.argv[1] if len(sys.argv) > 1 else 'logistics.db'
+    
+    import os
+    if not os.path.exists(db_path):
+        print(f"❌ 错误：数据库文件不存在: {db_path}")
+        print(f"\n提示：")
+        print(f"  1. 检查当前目录: ls -lh *.db")
+        print(f"  2. 查找数据库: find . -name '*.db'")
+        print(f"  3. 指定路径: python {sys.argv[0]} /path/to/your.db")
+        sys.exit(1)
+    
     print(f"数据库路径: {db_path}\n")
     
     result = check_database_fields(db_path)
