@@ -5980,6 +5980,65 @@ def init_exchange_rates():
         print("📝 将使用本地兜底汇率")
 
 
+def restart_gunicorn_callback_server():
+    """重启独立的 Gunicorn 回调服务器，确保加载最新代码"""
+    import subprocess
+    
+    try:
+        print("🔄 检查并重启 Gunicorn 回调服务器...")
+        
+        # 获取项目根目录
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        venv_python = os.path.join(project_dir, 'venv', 'bin', 'gunicorn')
+        
+        # 1. 检查是否有旧的 gunicorn 进程
+        check_cmd = "ps aux | grep 'gunicorn.*wechat_callback' | grep -v grep"
+        result = subprocess.run(
+            check_cmd, shell=True, capture_output=True, text=True
+        )
+        
+        if result.stdout.strip():
+            print("   发现旧的 gunicorn 进程，正在停止...")
+            # 停止旧进程
+            subprocess.run(
+                "pkill -9 -f 'gunicorn.*wechat_callback'",
+                shell=True
+            )
+            time.sleep(2)
+            print("   ✅ 旧进程已停止")
+        else:
+            print("   未发现运行中的 gunicorn 进程")
+        
+        # 2. 启动新的 gunicorn 进程
+        print("   启动新的 gunicorn 进程...")
+        gunicorn_cmd = (
+            f"cd {project_dir} && "
+            f"nohup {venv_python} "
+            "-w 2 -b 0.0.0.0:8081 wechat_callback_server:app "
+            "--access-logfile gunicorn_access.log "
+            "--error-logfile gunicorn_error.log "
+            "--log-level info "
+            "> gunicorn_wechat.log 2>&1 &"
+        )
+        
+        subprocess.run(gunicorn_cmd, shell=True)
+        time.sleep(3)
+        
+        # 3. 验证启动
+        verify_cmd = "ps aux | grep 'gunicorn.*wechat_callback' | grep -v grep"
+        verify_result = subprocess.run(
+            verify_cmd, shell=True, capture_output=True, text=True
+        )
+        
+        if verify_result.stdout.strip():
+            print("   ✅ Gunicorn 回调服务器已启动（加载最新代码）")
+        else:
+            print("   ⚠️  Gunicorn 回调服务器启动可能失败")
+            
+    except Exception as e:
+        print(f"⚠️ 重启 Gunicorn 回调服务器失败: {e}")
+
+
 def start_wechat_callback_server():
     """启动微信支付回调服务器（后台线程）"""
     if not st.session_state.get('callback_server_started', False):
@@ -6093,8 +6152,8 @@ def main():
         ):
             start_wechat_callback_server()
         else:
-            # 仅在首次打印一次，避免日志噪音
-            print("🔧 内置微信支付回调服务器已禁用（使用独立Gunicorn服务）")
+            # 使用独立Gunicorn服务，启动时重启确保加载最新代码
+            restart_gunicorn_callback_server()
         st.session_state['_callback_init_attempted'] = True
 
     init_db()
