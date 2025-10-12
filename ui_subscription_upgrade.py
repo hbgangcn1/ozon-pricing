@@ -9,6 +9,10 @@ import time
 from subscription_upgrade import SubscriptionUpgrade
 from payment_handler import PaymentHandler
 from db_utils import current_user_id, get_db_connection
+from payment_auto_refresh import (
+    inject_smart_auto_refresh,
+    show_enhanced_auto_check_indicator
+)
 import qrcode
 import io
 import base64
@@ -66,11 +70,35 @@ def show_subscription_upgrade_page():
                         )
 
                 st.info("💡 支付完成后将自动跳转到订阅管理页面")
-                st.info("💡 请点击下方按钮检查支付状态")
 
-                # 显示检查支付状态按钮
+                # 获取自动检查次数
+                monitoring = st.session_state.upgrade_payment_monitoring
+                monitoring_info = monitoring.get(order_id, {})
+                check_count = monitoring_info.get('auto_check_count', 0)
+
+                # 注入自动刷新（每5秒检查一次，最多60次即5分钟）
+                inject_smart_auto_refresh(
+                    check_interval_seconds=5,
+                    max_checks=60
+                )
+
+                # 显示自动检查指示器
+                show_enhanced_auto_check_indicator(
+                    check_count=check_count,
+                    max_checks=60
+                )
+
+                # 更新检查次数
+                monitoring_info['auto_check_count'] = check_count + 1
+                st.session_state.upgrade_payment_monitoring[order_id] = (
+                    monitoring_info
+                )
+
+                # 显示手动检查按钮作为备选
+                st.markdown("---")
+                st.info("💡 也可以点击下方按钮手动检查支付状态")
                 if st.button(
-                    "🔄 检查支付状态",
+                    "🔄 立即检查支付状态",
                     key=f"recheck_upgrade_payment_{order_id}"
                 ):
                     monitor_upgrade_payment_status(order_id)
@@ -385,7 +413,7 @@ def handle_paid_upgrade(user_id: int, option: dict):
                 use_container_width=True
             )
 
-        st.info("💡 支付完成后将自动跳转到订阅管理页面")
+        st.info("💡 支付完成后将自动跳转到订阅管理页面（无需手动操作）")
 
         # 初始化监控状态
         if 'upgrade_payment_monitoring' not in st.session_state:
@@ -394,14 +422,35 @@ def handle_paid_upgrade(user_id: int, option: dict):
         if order_id not in st.session_state.upgrade_payment_monitoring:
             st.session_state.upgrade_payment_monitoring[order_id] = {
                 'check_count': 0,
+                'auto_check_count': 0,
                 'start_time': time.time()
             }
 
-        # 显示手动检查按钮
-        st.info("⏳ 等待微信支付系统处理订单...")
-        st.info("💡 请点击下方按钮开始检查支付状态")
+        # 获取自动检查次数
+        monitoring_info = st.session_state.upgrade_payment_monitoring[order_id]
+        check_count = monitoring_info.get('auto_check_count', 0)
+
+        # 注入自动刷新（每5秒检查一次，最多60次即5分钟）
+        inject_smart_auto_refresh(
+            check_interval_seconds=5,
+            max_checks=60
+        )
+
+        # 显示自动检查指示器
+        show_enhanced_auto_check_indicator(
+            check_count=check_count,
+            max_checks=60
+        )
+
+        # 更新检查次数
+        monitoring_info['auto_check_count'] = check_count + 1
+        st.session_state.upgrade_payment_monitoring[order_id] = monitoring_info
+
+        # 显示手动检查按钮作为备选
+        st.markdown("---")
+        st.info("💡 也可以点击下方按钮立即检查支付状态")
         if st.button(
-            "🔄 开始检查支付状态",
+            "🔄 立即检查支付状态",
             key=f"start_check_upgrade_{order_id}"
         ):
             monitor_upgrade_payment_status(order_id)
