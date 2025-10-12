@@ -760,34 +760,37 @@ def _upgrade_subscription_upgrade_system():
         # 1. 添加 users 表的升级相关字段
         cols = [col[1] for col in c.execute(
             "PRAGMA table_info(users)").fetchall()]
-        
+
         new_fields = {
             'billing_cycle': 'TEXT DEFAULT "month"',
             'last_paid_amount': 'REAL DEFAULT 0',
             'subscription_start': 'INTEGER',
         }
-        
+
         for field_name, field_def in new_fields.items():
             if field_name not in cols:
-                c.execute(f"ALTER TABLE users ADD COLUMN {field_name} {field_def}")
-        
+                sql = f"ALTER TABLE users ADD COLUMN {field_name} {field_def}"
+                c.execute(sql)
+
         # 2. 添加 payment_orders 表的升级相关字段
         payment_cols = [col[1] for col in c.execute(
             "PRAGMA table_info(payment_orders)").fetchall()]
-        
+
         payment_new_fields = {
             'is_upgrade': 'INTEGER DEFAULT 0',
             'upgrade_from_plan': 'TEXT',
             'upgrade_to_plan': 'TEXT',
             'remaining_value': 'REAL DEFAULT 0',
         }
-        
+
         for field_name, field_def in payment_new_fields.items():
             if field_name not in payment_cols:
-                c.execute(
-                    f"ALTER TABLE payment_orders ADD COLUMN {field_name} {field_def}"
+                sql = (
+                    f"ALTER TABLE payment_orders ADD COLUMN "
+                    f"{field_name} {field_def}"
                 )
-        
+                c.execute(sql)
+
         # 3. 创建升级历史表
         c.execute("""
             CREATE TABLE IF NOT EXISTS subscription_upgrade_history (
@@ -806,7 +809,7 @@ def _upgrade_subscription_upgrade_system():
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
-        
+
         conn.commit()
 
 
