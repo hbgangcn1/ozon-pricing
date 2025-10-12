@@ -80,7 +80,7 @@ class SubscriptionUpgrade:
         
         # 计算剩余天数
         remaining_seconds = end_timestamp - current_time
-        remaining_days = max(0, remaining_seconds / (24 * 3600))
+        remaining_days = max(0.0, remaining_seconds / (24 * 3600))
         
         # 计算周期天数
         cycle_days = 365 if billing_cycle == 'year' else 30
