@@ -8,7 +8,7 @@ import streamlit as st
 import time
 from subscription_upgrade import SubscriptionUpgrade
 from payment_handler import PaymentHandler
-from db_utils import current_user_id
+from db_utils import current_user_id, get_db_connection
 import qrcode
 import io
 import base64
@@ -25,6 +25,57 @@ def show_subscription_upgrade_page():
     if not user_id:
         st.error("请先登录")
         return
+
+    # 检查是否有正在进行的升级支付订单
+    if 'upgrade_payment_monitoring' in st.session_state:
+        monitoring_keys = (
+            st.session_state.upgrade_payment_monitoring.keys()
+        )
+        for order_id in list(monitoring_keys):
+            # 检查订单是否已完成支付
+            payment_success = check_payment_status_in_db(order_id)
+            if payment_success:
+                handle_upgrade_payment_success(order_id)
+                return
+
+            # 显示订单信息和二维码
+            order_info = st.session_state.get(f'upgrade_order_{order_id}')
+            if order_info:
+                st.success("✅ 升级订单已创建")
+
+                option = order_info['option']
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.info(f"📋 订单号: {order_id}")
+                with col2:
+                    st.info(f"💰 应付: ¥{option['actual_payment']:.2f}")
+                with col3:
+                    st.info(f"💚 折抵: ¥{option['remaining_value']:.2f}")
+
+                # 显示二维码
+                qr_data = st.session_state.get(
+                    f'upgrade_payment_qr_{order_id}'
+                )
+                if qr_data:
+                    st.markdown("### 📱 请使用微信扫描二维码完成支付")
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        st.image(
+                            f"data:image/png;base64,{qr_data}",
+                            use_container_width=True
+                        )
+
+                st.info("💡 支付完成后将自动跳转到订阅管理页面")
+                st.info("💡 请点击下方按钮检查支付状态")
+
+                # 显示检查支付状态按钮
+                if st.button(
+                    "🔄 检查支付状态",
+                    key=f"recheck_upgrade_payment_{order_id}"
+                ):
+                    monitor_upgrade_payment_status(order_id)
+
+                return
 
     # 获取目标套餐（如果用户指定了）
     target_plan_key = st.session_state.get("target_upgrade_plan")
@@ -300,6 +351,13 @@ def handle_paid_upgrade(user_id: int, option: dict):
         qr_img.save(img_buffer, kind='PNG')
         img_str = base64.b64encode(img_buffer.getvalue()).decode()
 
+        # 保存二维码和订单信息到 session_state
+        st.session_state[f'upgrade_payment_qr_{order_id}'] = img_str
+        st.session_state[f'upgrade_order_{order_id}'] = {
+            'option': option,
+            'order_id': order_id
+        }
+
         # 显示支付信息
         st.success("✅ 升级订单创建成功！")
 
@@ -320,13 +378,165 @@ def handle_paid_upgrade(user_id: int, option: dict):
                 use_container_width=True
             )
 
-        st.info("💡 支付完成后将自动升级套餐")
+        st.info("💡 支付完成后将自动跳转到订阅管理页面")
 
-        # 保存订单信息到 session_state
-        st.session_state[f'upgrade_order_{order_id}'] = {
-            'option': option,
-            'order_id': order_id
-        }
+        # 初始化监控状态
+        if 'upgrade_payment_monitoring' not in st.session_state:
+            st.session_state.upgrade_payment_monitoring = {}
+
+        if order_id not in st.session_state.upgrade_payment_monitoring:
+            st.session_state.upgrade_payment_monitoring[order_id] = {
+                'check_count': 0,
+                'start_time': time.time()
+            }
+
+        # 显示手动检查按钮
+        st.info("⏳ 等待微信支付系统处理订单...")
+        st.info("💡 请点击下方按钮开始检查支付状态")
+        if st.button(
+            "🔄 开始检查支付状态",
+            key=f"start_check_upgrade_{order_id}"
+        ):
+            monitor_upgrade_payment_status(order_id)
 
     else:
         st.error(f"❌ 订单创建失败: {result.get('message')}")
+
+
+def check_payment_status_in_db(order_id: str) -> bool:
+    """检查数据库中订单的支付状态"""
+    try:
+        with get_db_connection() as (conn, cursor):
+            cursor.execute("""
+                SELECT status FROM payment_orders
+                WHERE order_id = ?
+            """, (order_id,))
+
+            result = cursor.fetchone()
+            if result:
+                status = result[0]
+                print(
+                    f"🔧 数据库订单状态检查: 订单ID={order_id}, 状态={status}"
+                )
+                # 检查多种可能的成功状态
+                return status in ["PAID", "SUCCESS", "SUCCESSFUL"]
+            print(f"🔧 数据库订单状态检查: 订单ID={order_id}, 未找到记录")
+            return False
+    except Exception as e:
+        print(f"检查支付状态失败: {e}")
+        return False
+
+
+def handle_upgrade_payment_success(order_id: str):
+    """处理升级支付成功后的跳转逻辑"""
+    print(f"🔧 handle_upgrade_payment_success 开始: 订单ID={order_id}")
+    st.success("🎉 支付成功！正在跳转到订阅管理页面...")
+
+    # 清除监控状态
+    if 'upgrade_payment_monitoring' not in st.session_state:
+        st.session_state.upgrade_payment_monitoring = {}
+
+    if order_id in st.session_state.upgrade_payment_monitoring:
+        del st.session_state.upgrade_payment_monitoring[order_id]
+        print(f"🔧 已清除监控状态: {order_id}")
+
+    # 清除支付相关的session state
+    if f'upgrade_order_{order_id}' in st.session_state:
+        del st.session_state[f'upgrade_order_{order_id}']
+        print(f"🔧 已清除订单状态: {order_id}")
+    if f'upgrade_payment_qr_{order_id}' in st.session_state:
+        del st.session_state[f'upgrade_payment_qr_{order_id}']
+        print(f"🔧 已清除二维码状态: {order_id}")
+
+    # 跳转到订阅管理页面
+    print("🔧 准备跳转到订阅管理页面")
+    time.sleep(2)
+    st.session_state["current_page"] = "subscription"
+    print("🔧 已设置页面路由: subscription")
+    st.rerun()
+
+
+def monitor_upgrade_payment_status(order_id: str):
+    """监控升级支付状态"""
+    print(f"🔧 monitor_upgrade_payment_status 开始: 订单ID={order_id}")
+
+    # 首先检查数据库中的支付状态
+    print(f"🔧 开始检查数据库支付状态: {order_id}")
+    payment_success = check_payment_status_in_db(order_id)
+    print(f"🔧 数据库支付状态检查结果: {payment_success}")
+
+    if payment_success:
+        print(f"🔧 支付成功，准备跳转: {order_id}")
+        handle_upgrade_payment_success(order_id)
+        return
+
+    # 如果数据库中没有成功记录，查询微信支付API
+    with st.spinner("正在查询支付状态..."):
+        try:
+            payment_handler = PaymentHandler()
+            result = payment_handler.query_payment_status(order_id)
+            if result["success"]:
+                status = result["status"]
+                if status == "SUCCESS":
+                    # 支付成功，跳转到订阅管理页面
+                    handle_upgrade_payment_success(order_id)
+                    return
+                elif status in ["CLOSED", "REVOKED", "PAYERROR"]:
+                    st.error("❌ 支付失败或已关闭")
+                    return
+                else:
+                    # 支付处理中
+                    if 'upgrade_payment_monitoring' not in st.session_state:
+                        st.session_state.upgrade_payment_monitoring = {}
+
+                    monitoring = st.session_state.upgrade_payment_monitoring
+                    if order_id not in monitoring:
+                        return
+
+                    monitoring_info = monitoring[order_id]
+                    check_count = monitoring_info.get('check_count', 0)
+                    monitoring_info['check_count'] = check_count + 1
+                    check_count = monitoring_info['check_count']
+
+                    status_msg = (
+                        f"⏳ 支付处理中... (已检查 {check_count} 次)"
+                    )
+                    st.info(status_msg)
+            else:
+                # API查询失败，显示错误信息
+                error_msg = result.get('message', '未知错误')
+                if "签名错误" in error_msg:
+                    # 对于签名错误，显示友好提示
+                    if 'upgrade_payment_monitoring' not in st.session_state:
+                        st.session_state.upgrade_payment_monitoring = {}
+
+                    monitoring = st.session_state.upgrade_payment_monitoring
+                    if order_id not in monitoring:
+                        return
+
+                    monitoring_info = monitoring[order_id]
+                    check_count = monitoring_info.get('check_count', 0)
+                    monitoring_info['check_count'] = check_count + 1
+                    check_count = monitoring_info['check_count']
+
+                    if check_count <= 3:
+                        status_msg = "⏳ 正在检查支付状态..."
+                    else:
+                        status_msg = (
+                            f"⚠️ 查询失败: {error_msg}，继续监控中... "
+                            f"(已检查 {check_count} 次)"
+                        )
+
+                    st.info(status_msg)
+                else:
+                    st.error(f"❌ 查询失败: {error_msg}")
+                    return
+        except Exception as e:
+            st.error(f"❌ 查询异常: {str(e)}")
+            return
+
+    # 显示手动检查按钮
+    st.info("💡 请点击下方按钮继续检查支付状态")
+    if st.button("🔄 检查支付状态", key=f"check_upgrade_payment_{order_id}"):
+        # 用户点击按钮时，继续监控
+        monitor_upgrade_payment_status(order_id)
