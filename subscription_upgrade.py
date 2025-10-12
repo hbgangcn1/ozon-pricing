@@ -55,7 +55,6 @@ class SubscriptionUpgrade:
 
     @staticmethod
     def calculate_remaining_value(
-        current_plan: str,
         billing_cycle: str,
         amount_paid: float,
         end_timestamp: int
@@ -64,7 +63,6 @@ class SubscriptionUpgrade:
         计算当前套餐的剩余价值
 
         Args:
-            current_plan: 当前套餐类型（如 efficiency, professional）
             billing_cycle: 计费周期（month/year）
             amount_paid: 实际支付金额
             end_timestamp: 订阅结束时间戳
@@ -149,7 +147,7 @@ class SubscriptionUpgrade:
 
         # 计算当前套餐剩余价值
         remaining_info = SubscriptionUpgrade.calculate_remaining_value(
-            current_plan, current_cycle, current_paid, current_end
+            current_cycle, current_paid, current_end
         )
 
         # 计算差价
