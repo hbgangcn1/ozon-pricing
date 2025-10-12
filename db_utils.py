@@ -1764,53 +1764,82 @@ def delete_user(user_id):
             ).fetchone()
 
             if not user:
+                print(f"删除失败: 用户 ID={user_id} 不存在")
                 return False  # 用户不存在
+
+            print(f"准备删除用户: ID={user[0]}, "
+                  f"用户名={user[1]}, 角色={user[2]}")
 
             # 不允许删除admin用户
             if user[2] == 'admin':
+                print(f"删除失败: 用户 {user[1]} 是管理员，不允许删除")
                 return False
 
             # 删除用户相关的数据（按外键依赖顺序）
             # 1. 删除用户的产品
-            c.execute("DELETE FROM products WHERE user_id = ?", (user_id,))
+            result = c.execute(
+                "DELETE FROM products WHERE user_id = ?", (user_id,)
+            )
+            print(f"删除产品: {result.rowcount} 条")
 
             # 2. 删除用户的会话记录
-            c.execute(
+            result = c.execute(
                 "DELETE FROM active_sessions WHERE user_id = ?", (user_id,)
             )
+            print(f"删除会话记录: {result.rowcount} 条")
 
             # 3. 删除用户的登录尝试记录
-            c.execute(
+            result = c.execute(
                 "DELETE FROM login_attempts WHERE identifier = ?", (user[1],)
             )
+            print(f"删除登录尝试记录: {result.rowcount} 条")
 
             # 4. 删除用户的锁定记录
-            c.execute(
+            result = c.execute(
                 "DELETE FROM user_lockouts WHERE identifier = ?", (user[1],)
             )
+            print(f"删除锁定记录: {result.rowcount} 条")
 
             # 5. 删除用户的物流规则
-            c.execute(
+            result = c.execute(
                 "DELETE FROM logistics WHERE user_id = ?", (user_id,)
             )
+            print(f"删除物流规则: {result.rowcount} 条")
 
-            # 6. 删除用户的支付订单
-            c.execute(
+            # 6. 删除用户的升级历史（如果表存在）
+            try:
+                result = c.execute(
+                    "DELETE FROM subscription_upgrade_history "
+                    "WHERE user_id = ?", (user_id,)
+                )
+                print(f"删除升级历史: {result.rowcount} 条")
+            except sqlite3.OperationalError:
+                print("升级历史表不存在，跳过")
+
+            # 7. 删除用户的支付订单
+            result = c.execute(
                 "DELETE FROM payment_orders WHERE user_id = ?", (user_id,)
             )
+            print(f"删除支付订单: {result.rowcount} 条")
 
-            # 7. 删除用户本身
-            c.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            # 8. 删除用户本身
+            result = c.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            print(f"删除用户: {result.rowcount} 条")
 
             conn.commit()
+            print(f"✅ 成功删除用户 {user[1]} (ID={user_id})")
             return True
 
         except sqlite3.Error as e:
-            print(f"数据库错误: {e}")
+            print(f"❌ 数据库错误: {e}")
+            import traceback
+            traceback.print_exc()
             conn.rollback()
             return False
         except (Exception,) as e:
-            print(f"删除用户失败: {e}")
+            print(f"❌ 删除用户失败: {e}")
+            import traceback
+            traceback.print_exc()
             conn.rollback()
             return False
 
