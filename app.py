@@ -5978,7 +5978,7 @@ def subscription_management_page():
                         }
                         current_order = plan_order.get(user_type, 0)
                         target_order = plan_order.get(plan_key, 0)
-                        
+
                         if target_order > current_order:
                             # 升级：跳转到升级页面
                             st.session_state["current_page"] = "upgrade"
