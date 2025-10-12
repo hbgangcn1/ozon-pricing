@@ -104,10 +104,17 @@ def show_subscription_upgrade_page():
 
     # 如果用户指定了目标套餐，只显示该套餐的选项
     if target_plan_key:
-        upgrade_options = [
-            opt for opt in upgrade_options
-            if opt['plan_key'] == target_plan_key
-        ]
+        # 特殊处理：如果目标是 efficiency，也包括 efficiency_promo
+        if target_plan_key == 'efficiency':
+            upgrade_options = [
+                opt for opt in upgrade_options
+                if opt['plan_key'] in ['efficiency', 'efficiency_promo']
+            ]
+        else:
+            upgrade_options = [
+                opt for opt in upgrade_options
+                if opt['plan_key'] == target_plan_key
+            ]
 
         if not upgrade_options:
             st.warning(f"未找到 {target_plan_key} 的升级选项")

@@ -291,6 +291,13 @@ class SubscriptionUpgrade:
             target_days = 365 if target_cycle == 'year' else 30
             new_end_time = current_time + target_days * 24 * 3600
 
+            # 处理 efficiency_promo：实际订阅类型是 efficiency
+            actual_subscription_type = target_plan
+            efficiency_promo_used = 0
+            if target_plan == 'efficiency_promo':
+                actual_subscription_type = 'efficiency'
+                efficiency_promo_used = 1
+
             with get_db_connection() as (conn, cursor):
                 # 更新订阅信息
                 cursor.execute("""
@@ -299,12 +306,14 @@ class SubscriptionUpgrade:
                         user_type = ?,
                         subscription_expires = ?,
                         billing_cycle = ?,
-                        last_paid_amount = ?
+                        last_paid_amount = ?,
+                        subscription_start = ?,
+                        efficiency_promo_used = ?
                     WHERE id = ?
                 """, (
-                    target_plan, target_plan, new_end_time,
-                    target_cycle, upgrade_info['target_price'],
-                    user_id
+                    actual_subscription_type, actual_subscription_type,
+                    new_end_time, target_cycle, upgrade_info['target_price'],
+                    current_time, efficiency_promo_used, user_id
                 ))
 
                 # 4. 记录升级历史

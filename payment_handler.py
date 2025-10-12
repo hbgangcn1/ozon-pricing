@@ -350,6 +350,14 @@ class PaymentHandler:
                     # 计算实际支付金额（转为元）
                     paid_amount = amount / 100
 
+                    # 检查是否是首月优惠（金额为1元）
+                    efficiency_promo_used = 0
+                    if (subscription_type == "efficiency" and
+                            paid_amount <= 1.5 and billing_cycle == 'month'):
+                        efficiency_promo_used = 1
+                        print("🎉 检测到首月优惠支付，标记 "
+                              "efficiency_promo_used=1")
+
                     # 更新订阅信息（包含计费周期和支付金额）
                     cursor.execute("""
                         UPDATE users
@@ -358,12 +366,14 @@ class PaymentHandler:
                             user_type = ?,
                             billing_cycle = ?,
                             last_paid_amount = ?,
-                            subscription_start = ?
+                            subscription_start = ?,
+                            efficiency_promo_used = ?
                         WHERE id = ?
                     """, (
                         subscription_type, new_expires,
                         subscription_type, billing_cycle,
-                        paid_amount, current_time, user_id
+                        paid_amount, current_time,
+                        efficiency_promo_used, user_id
                     ))
 
                     # 验证更新结果
