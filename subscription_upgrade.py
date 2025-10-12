@@ -75,20 +75,20 @@ class SubscriptionUpgrade:
             - cycle_days: 周期天数
         """
         current_time = int(time.time())
-        
+
         # 计算剩余天数
         remaining_seconds = end_timestamp - current_time
         remaining_days = max(0.0, remaining_seconds / (24 * 3600))
-        
+
         # 计算周期天数
         cycle_days = 365 if billing_cycle == 'year' else 30
-        
+
         # 计算日均价（使用实际支付金额）
         daily_price = amount_paid / cycle_days
-        
+
         # 计算剩余价值
         remaining_value = daily_price * remaining_days
-        
+
         return {
             'remaining_days': remaining_days,
             'daily_price': daily_price,
@@ -182,7 +182,9 @@ class SubscriptionUpgrade:
         }
 
     @staticmethod
-    def get_current_subscription_info(user_id: int) -> Optional[Dict[str, Any]]:
+    def get_current_subscription_info(
+        user_id: int
+    ) -> Optional[Dict[str, Any]]:
         """
         获取用户当前订阅信息
 
@@ -345,7 +347,8 @@ class SubscriptionUpgrade:
             return {'success': False, 'message': '无法获取订阅信息'}
 
         current_plan = current_sub['subscription_type']
-        current_level = SUBSCRIPTION_PLANS.get(current_plan, {}).get('level', 0)
+        current_plan_config = SUBSCRIPTION_PLANS.get(current_plan, {})
+        current_level = current_plan_config.get('level', 0)
 
         # 计算所有可升级的套餐
         upgrade_options = []
@@ -396,4 +399,3 @@ class SubscriptionUpgrade:
             ).get('name', '未知'),
             'upgrade_options': upgrade_options
         }
-
