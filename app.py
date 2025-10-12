@@ -5969,9 +5969,23 @@ def subscription_management_page():
                         st.info("企业版功能开发中")
                 else:
                     if st.button(button_text, key=f"action_{plan_key}"):
-                        # 跳转到支付页面
-                        st.session_state["payment_plan"] = plan['name']
-                        st.session_state["current_page"] = "payment"
+                        # 判断是升级还是续费
+                        plan_order = {
+                            'free': 0,
+                            'efficiency': 1,
+                            'professional': 2,
+                            'enterprise': 3,
+                        }
+                        current_order = plan_order.get(user_type, 0)
+                        target_order = plan_order.get(plan_key, 0)
+                        
+                        if target_order > current_order:
+                            # 升级：跳转到升级页面
+                            st.session_state["current_page"] = "upgrade"
+                        else:
+                            # 续费：跳转到支付页面
+                            st.session_state["payment_plan"] = plan['name']
+                            st.session_state["current_page"] = "payment"
                         st.rerun()
 
 
