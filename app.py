@@ -5773,6 +5773,27 @@ def subscription_management_page():
 
     st.divider()
 
+    # 添加套餐升级入口（非免费版且非管理员）
+    if (user_type not in ['free', 'gratitude'] and
+            st.session_state.user.get('role') != 'admin'):
+        col_upgrade1, col_upgrade2 = st.columns([1, 3])
+        with col_upgrade1:
+            if st.button(
+                "📈 查看升级选项",
+                key="view_upgrade_options",
+                type="primary",
+                use_container_width=True
+            ):
+                st.session_state["current_page"] = "upgrade"
+                st.rerun()
+        with col_upgrade2:
+            st.markdown(
+                '<p style="color: #718096; padding-top: 8px;">'
+                '💡 升级套餐可享受剩余时间自动折抵优惠</p>',
+                unsafe_allow_html=True
+            )
+        st.divider()
+
     # 套餐对比表
     st.subheader("📊 套餐对比")
 
@@ -6186,6 +6207,10 @@ def main():
     elif current_page == "subscription":
         # 显示订阅管理页面
         subscription_management_page()
+    elif current_page == "upgrade":
+        # 显示套餐升级页面
+        from ui_subscription_upgrade import show_subscription_upgrade_page
+        show_subscription_upgrade_page()
     else:
         # 显示主界面
         show_main_interface()

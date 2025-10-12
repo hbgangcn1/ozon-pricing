@@ -7,7 +7,7 @@
 import streamlit as st
 import time
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from wechat_pay_v3_api import wechat_pay_v3
 from wechat_pay_config import wechat_config
 from db_utils import get_db_connection
@@ -25,7 +25,10 @@ class PaymentHandler:
                              amount: int,
                              description: str,
                              duration: str = "month",
-                             payment_type: str = "native") -> Dict[str, Any]:
+                             payment_type: str = "native",
+                             is_upgrade: bool = False,
+                             upgrade_info: Optional[Dict[str, Any]] = None
+                             ) -> Dict[str, Any]:
         """
         创建支付订单
 
@@ -35,6 +38,8 @@ class PaymentHandler:
             description: 订单描述
             duration: 订阅时长（month/year）
             payment_type: 支付类型（native/jsapi）
+            is_upgrade: 是否为套餐升级
+            upgrade_info: 升级信息（包含折抵详情）
 
         Returns:
             Dict[str, Any]: 订单创建结果
@@ -50,13 +55,29 @@ class PaymentHandler:
                 if not cursor.fetchone():
                     return {"success": False, "message": f"用户ID {user_id} 不存在"}
 
-                cursor.execute("""
-                    INSERT INTO payment_orders
-                    (order_id, user_id, amount, description, duration, status,
-                     created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (order_id, user_id, amount, description, duration,
-                      'PENDING', int(time.time())))
+                # 保存订单信息（包含升级信息）
+                if is_upgrade and upgrade_info:
+                    cursor.execute("""
+                        INSERT INTO payment_orders
+                        (order_id, user_id, amount, description, duration,
+                         status, created_at, is_upgrade, upgrade_from_plan,
+                         upgrade_to_plan, remaining_value)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        order_id, user_id, amount, description, duration,
+                        'PENDING', int(time.time()), 1,
+                        upgrade_info.get('current_plan'),
+                        upgrade_info.get('target_plan'),
+                        upgrade_info.get('remaining_value', 0)
+                    ))
+                else:
+                    cursor.execute("""
+                        INSERT INTO payment_orders
+                        (order_id, user_id, amount, description, duration,
+                         status, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (order_id, user_id, amount, description, duration,
+                          'PENDING', int(time.time())))
 
                 conn.commit()
 
@@ -206,9 +227,10 @@ class PaymentHandler:
         print(f"🔧 开始处理支付成功逻辑: 订单ID={order_id}")
         try:
             with get_db_connection() as (conn, cursor):
-                # 获取订单信息
+                # 获取订单信息（包含升级信息）
                 cursor.execute("""
-                    SELECT user_id, amount, description, duration
+                    SELECT user_id, amount, description, duration, is_upgrade,
+                           upgrade_from_plan, upgrade_to_plan, remaining_value
                     FROM payment_orders
                     WHERE order_id = ?
                 """, (order_id,))
@@ -220,7 +242,19 @@ class PaymentHandler:
 
                 print(f"✅ 找到订单记录: {order_info}")
 
-                user_id, amount, description, duration = order_info
+                (user_id, amount, description, duration, is_upgrade,
+                 upgrade_from, upgrade_to, remaining_value) = order_info
+
+                # 判断是否为升级订单
+                if is_upgrade:
+                    print(f"🔄 这是一个升级订单: {upgrade_from} → {upgrade_to}")
+                    print(f"   剩余价值折抵: ¥{remaining_value / 100:.2f}")
+                    # 升级订单使用专门的处理逻辑
+                    PaymentHandler._handle_upgrade_payment_success(
+                        order_id, user_id, upgrade_to, duration,
+                        amount / 100, remaining_value / 100
+                    )
+                    return
 
                 # 根据duration字段判断订阅时长
                 if duration == "year" or duration == "1_year":
@@ -309,16 +343,27 @@ class PaymentHandler:
                           f"{duration_text}, {days}天, 描述={description}")
 
                 if subscription_type:
-                    # 更新订阅信息
+                    # 确定计费周期
+                    billing_cycle = (
+                        'year' if duration in ['year', '1_year'] else 'month'
+                    )
+                    # 计算实际支付金额（转为元）
+                    paid_amount = amount / 100
+
+                    # 更新订阅信息（包含计费周期和支付金额）
                     cursor.execute("""
                         UPDATE users
                         SET subscription_type = ?,
                             subscription_expires = ?,
-                            user_type = ?
+                            user_type = ?,
+                            billing_cycle = ?,
+                            last_paid_amount = ?,
+                            subscription_start = ?
                         WHERE id = ?
                     """, (
                         subscription_type, new_expires,
-                        subscription_type, user_id
+                        subscription_type, billing_cycle,
+                        paid_amount, current_time, user_id
                     ))
 
                     # 验证更新结果
@@ -369,6 +414,42 @@ class PaymentHandler:
             print(f"❌ 处理支付成功逻辑失败: {e}")
             import traceback
             print(f"❌ 错误详情: {traceback.format_exc()}")
+
+    @staticmethod
+    def _handle_upgrade_payment_success(
+        order_id: str,
+        user_id: int,
+        target_plan: str,
+        target_cycle: str,
+        paid_amount: float,
+        remaining_value: float
+    ):
+        """处理升级支付成功的业务逻辑"""
+        print(f"🔄 处理套餐升级支付: 订单ID={order_id}")
+        print(f"   用户ID={user_id}, 目标套餐={target_plan}")
+        print(f"   支付金额=¥{paid_amount:.2f}, 折抵价值=¥{remaining_value:.2f}")
+
+        try:
+            from subscription_upgrade import SubscriptionUpgrade
+
+            # 执行升级
+            result = SubscriptionUpgrade.execute_upgrade(
+                user_id=user_id,
+                target_plan=target_plan,
+                target_cycle=target_cycle,
+                payment_order_id=order_id
+            )
+
+            if result['success']:
+                print(f"✅ 套餐升级成功: {target_plan}")
+                print(f"   新到期时间: {result.get('new_end_time')}")
+            else:
+                print(f"❌ 套餐升级失败: {result.get('message')}")
+
+        except Exception as e:
+            print(f"❌ 处理升级支付失败: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 def show_payment_page():

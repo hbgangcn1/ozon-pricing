@@ -754,6 +754,62 @@ def _upgrade_payment_orders_duration():
         conn.commit()
 
 
+def _upgrade_subscription_upgrade_system():
+    """升级：添加订阅升级系统相关字段和表"""
+    with get_db_connection() as (conn, c):
+        # 1. 添加 users 表的升级相关字段
+        cols = [col[1] for col in c.execute(
+            "PRAGMA table_info(users)").fetchall()]
+        
+        new_fields = {
+            'billing_cycle': 'TEXT DEFAULT "month"',
+            'last_paid_amount': 'REAL DEFAULT 0',
+            'subscription_start': 'INTEGER',
+        }
+        
+        for field_name, field_def in new_fields.items():
+            if field_name not in cols:
+                c.execute(f"ALTER TABLE users ADD COLUMN {field_name} {field_def}")
+        
+        # 2. 添加 payment_orders 表的升级相关字段
+        payment_cols = [col[1] for col in c.execute(
+            "PRAGMA table_info(payment_orders)").fetchall()]
+        
+        payment_new_fields = {
+            'is_upgrade': 'INTEGER DEFAULT 0',
+            'upgrade_from_plan': 'TEXT',
+            'upgrade_to_plan': 'TEXT',
+            'remaining_value': 'REAL DEFAULT 0',
+        }
+        
+        for field_name, field_def in payment_new_fields.items():
+            if field_name not in payment_cols:
+                c.execute(
+                    f"ALTER TABLE payment_orders ADD COLUMN {field_name} {field_def}"
+                )
+        
+        # 3. 创建升级历史表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS subscription_upgrade_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                from_plan TEXT NOT NULL,
+                to_plan TEXT NOT NULL,
+                from_cycle TEXT,
+                to_cycle TEXT,
+                upgrade_time INTEGER NOT NULL,
+                remaining_value REAL DEFAULT 0,
+                difference_paid REAL DEFAULT 0,
+                target_price REAL NOT NULL,
+                payment_order_id TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+        
+        conn.commit()
+
+
 def create_user(username, password, role="user", email=None, user_type="free"):
     """创建用户"""
     # 确保数据库已初始化
@@ -1027,6 +1083,7 @@ def init_db():
         _upgrade_products_return_rate()
         _upgrade_users_subscription_fields()
         _upgrade_payment_orders_duration()
+        _upgrade_subscription_upgrade_system()
         # 3. 初始管理员（避免递归调用）
         admin_user = c.execute(
             "SELECT * FROM users WHERE username = ?",
