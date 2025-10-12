@@ -6001,10 +6001,19 @@ def restart_gunicorn_callback_server():
     import time
 
     try:
+        # 使用文件锁，确保整个应用生命周期内只重启一次
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        lock_file = os.path.join(project_dir, '.gunicorn_restart_lock')
+
+        # 检查锁文件（如果存在且创建时间在5分钟内，跳过重启）
+        if os.path.exists(lock_file):
+            lock_time = os.path.getmtime(lock_file)
+            if time.time() - lock_time < 300:  # 5分钟内
+                print("⏭️  Gunicorn 最近已重启，跳过本次重启")
+                return
+
         print("🔄 检查并重启 Gunicorn 回调服务器...")
 
-        # 获取项目根目录
-        project_dir = os.path.dirname(os.path.abspath(__file__))
         venv_python = os.path.join(project_dir, 'venv', 'bin', 'gunicorn')
 
         # 1. 检查是否有旧的 gunicorn 进程
@@ -6048,6 +6057,9 @@ def restart_gunicorn_callback_server():
 
         if verify_result.stdout.strip():
             print("   ✅ Gunicorn 回调服务器已启动（加载最新代码）")
+            # 创建锁文件
+            with open(lock_file, 'w') as f:
+                f.write(str(time.time()))
         else:
             print("   ⚠️  Gunicorn 回调服务器启动可能失败")
 
