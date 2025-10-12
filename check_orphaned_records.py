@@ -33,14 +33,14 @@ def check_orphaned_records(db_path):
             
             # 显示详细信息
             c.execute("""
-                SELECT id, user_id, session_token, last_activity
+                SELECT session_id, user_id, last_activity
                 FROM active_sessions
                 WHERE user_id NOT IN (SELECT id FROM users)
                 LIMIT 5
             """)
             for row in c.fetchall():
-                print(f"      ID={row[0]}, user_id={row[1]}, "
-                      f"token={row[2][:20]}...")
+                print(f"      session_id={row[0][:30]}..., "
+                      f"user_id={row[1]}")
         else:
             print("   ✅ 没有孤立记录")
 
