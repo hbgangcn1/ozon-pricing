@@ -6,7 +6,7 @@
 
 import streamlit as st
 import time
-from subscription_upgrade import SubscriptionUpgrade, SUBSCRIPTION_PLANS
+from subscription_upgrade import SubscriptionUpgrade
 from payment_handler import PaymentHandler
 from db_utils import current_user_id
 import qrcode
@@ -107,9 +107,15 @@ def show_plan_upgrade_options(
 
     # 选择卡片颜色
     colors = {
-        'efficiency': {'bg': '#E8F5E8', 'border': '#4CAF50', 'text': '#2E7D32'},
-        'professional': {'bg': '#E3F2FD', 'border': '#2196F3', 'text': '#1565C0'},
-        'enterprise': {'bg': '#F3E5F5', 'border': '#9C27B0', 'text': '#6A1B9A'},
+        'efficiency': {
+            'bg': '#E8F5E8', 'border': '#4CAF50', 'text': '#2E7D32'
+        },
+        'professional': {
+            'bg': '#E3F2FD', 'border': '#2196F3', 'text': '#1565C0'
+        },
+        'enterprise': {
+            'bg': '#F3E5F5', 'border': '#9C27B0', 'text': '#6A1B9A'
+        },
     }
     color_scheme = colors.get(
         plan_key,
@@ -210,7 +216,7 @@ def show_single_upgrade_option(
         if actual_payment <= 0:
             # 无需支付，直接升级
             if st.button(
-                f"🎁 免费升级",
+                "🎁 免费升级",
                 key=button_key,
                 type="primary",
                 use_container_width=True
