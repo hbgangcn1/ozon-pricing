@@ -146,9 +146,19 @@ class SubscriptionUpgrade:
             }
 
         # 计算当前套餐剩余价值
-        remaining_info = SubscriptionUpgrade.calculate_remaining_value(
-            current_cycle, current_paid, current_end
-        )
+        # 免费版用户没有剩余价值
+        if current_plan == 'free' or current_end is None:
+            remaining_info = {
+                'remaining_days': 0,
+                'daily_price': 0,
+                'remaining_value': 0,
+                'cycle_days': 0,
+                'amount_paid': 0
+            }
+        else:
+            remaining_info = SubscriptionUpgrade.calculate_remaining_value(
+                current_cycle, current_paid, current_end
+            )
 
         # 计算差价
         difference = target_price - remaining_info['remaining_value']
