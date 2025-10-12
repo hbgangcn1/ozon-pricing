@@ -5980,7 +5980,8 @@ def subscription_management_page():
                         target_order = plan_order.get(plan_key, 0)
 
                         if target_order > current_order:
-                            # 升级：跳转到升级页面
+                            # 升级：跳转到升级页面，并记录目标套餐
+                            st.session_state["target_upgrade_plan"] = plan_key
                             st.session_state["current_page"] = "upgrade"
                         else:
                             # 续费：跳转到支付页面
