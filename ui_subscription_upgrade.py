@@ -120,7 +120,9 @@ def show_subscription_upgrade_page():
                         use_container_width=True
                     ):
                         # 清理订单状态
-                        upgrade_mon = st.session_state.upgrade_payment_monitoring
+                        upgrade_mon = (
+                            st.session_state.upgrade_payment_monitoring
+                        )
                         if order_id in upgrade_mon:
                             del upgrade_mon[order_id]
                         order_key = f'upgrade_order_{order_id}'
