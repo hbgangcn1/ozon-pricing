@@ -7,6 +7,11 @@
 from typing import Dict, Any, Optional
 import time
 
+# ==================== 测试模式配置 ====================
+# 设置为 True 启用测试价格，False 使用正式价格
+TEST_MODE = True
+# =====================================================
+
 
 # 套餐配置
 SUBSCRIPTION_PLANS = {
@@ -19,7 +24,7 @@ SUBSCRIPTION_PLANS = {
     },
     'efficiency_promo': {
         'name': '效率版首月优惠',
-        'price_month': 1.0,  # 首月1元
+        'price_month': 1.0,  # 首月1元（测试和正式都是1元）
         'price_year': None,  # 首月优惠没有年付
         'features': ['无限计算', '3个物流模板'],
         'level': 1,
@@ -28,15 +33,15 @@ SUBSCRIPTION_PLANS = {
     },
     'efficiency': {
         'name': '效率版',
-        'price_month': 14.9,
-        'price_year': 149.0,
+        'price_month': 1.1 if TEST_MODE else 14.9,
+        'price_year': 1.2 if TEST_MODE else 149.0,
         'features': ['无限计算', '3个物流模板'],
         'level': 1
     },
     'professional': {
         'name': '专业版',
-        'price_month': 149.0,
-        'price_year': 1499.0,
+        'price_month': 1.3 if TEST_MODE else 149.0,
+        'price_year': 1.4 if TEST_MODE else 1499.0,
         'features': ['无限计算', '无限物流模板', '多物流比价'],
         'level': 2
     },

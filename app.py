@@ -5614,14 +5614,18 @@ def subscription_management_page():
 
     user_id = current_user_id()
 
-    # 添加状态刷新按钮
-    col1, col2 = st.columns([3, 1])
+    # 添加状态刷新和返回按钮
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col2:
         if st.button("🔄 刷新状态", key="refresh_subscription_status"):
             # 清除可能的缓存状态
             if 'subscription_status' in st.session_state:
                 del st.session_state['subscription_status']
             st.success("✅ 状态已刷新")
+            st.rerun()
+    with col3:
+        if st.button("🏠 返回主页", key="back_to_main_from_subscription"):
+            st.session_state["current_page"] = "main"
             st.rerun()
 
     # 获取用户信息 - 优先使用subscription_type字段

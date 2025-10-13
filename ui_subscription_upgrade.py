@@ -18,8 +18,19 @@ import base64
 def show_subscription_upgrade_page():
     """显示套餐升级页面"""
 
-    st.title("📈 套餐升级")
-    st.write("升级享受更多功能，剩余时间自动折抵")
+    # 页面头部：标题和返回按钮
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.title("📈 套餐升级")
+        st.write("升级享受更多功能，剩余时间自动折抵")
+    with col2:
+        st.write("")  # 空行对齐
+        if st.button("🏠 返回主页", key="back_to_main_from_upgrade"):
+            # 清理升级相关状态
+            if 'target_upgrade_plan' in st.session_state:
+                del st.session_state['target_upgrade_plan']
+            st.session_state["current_page"] = "main"
+            st.rerun()
 
     # 检查用户登录
     user_id = current_user_id()
@@ -93,11 +104,34 @@ def show_subscription_upgrade_page():
                 # 显示手动检查按钮作为备选
                 st.markdown("---")
                 st.info("💡 也可以点击下方按钮立即检查支付状态")
-                if st.button(
-                    "🔄 立即检查支付状态",
-                    key=f"recheck_upgrade_payment_{order_id}"
-                ):
-                    monitor_upgrade_payment_status(order_id)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(
+                        "🔄 立即检查支付状态",
+                        key=f"recheck_upgrade_payment_{order_id}",
+                        use_container_width=True
+                    ):
+                        monitor_upgrade_payment_status(order_id)
+                with col2:
+                    if st.button(
+                        "❌ 取消支付",
+                        key=f"cancel_upgrade_payment_{order_id}",
+                        use_container_width=True
+                    ):
+                        # 清理订单状态
+                        upgrade_mon = st.session_state.upgrade_payment_monitoring
+                        if order_id in upgrade_mon:
+                            del upgrade_mon[order_id]
+                        order_key = f'upgrade_order_{order_id}'
+                        if order_key in st.session_state:
+                            del st.session_state[order_key]
+                        qr_key = f'upgrade_payment_qr_{order_id}'
+                        if qr_key in st.session_state:
+                            del st.session_state[qr_key]
+                        st.warning("⚠️ 已取消支付")
+                        time.sleep(1)
+                        st.rerun()
 
                 # 更新检查次数
                 monitoring_info['auto_check_count'] = check_count + 1
@@ -459,11 +493,34 @@ def handle_paid_upgrade(user_id: int, option: dict):
         # 显示手动检查按钮作为备选
         st.markdown("---")
         st.info("💡 也可以点击下方按钮立即检查支付状态")
-        if st.button(
-            "🔄 立即检查支付状态",
-            key=f"start_check_upgrade_{order_id}"
-        ):
-            monitor_upgrade_payment_status(order_id)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(
+                "🔄 立即检查支付状态",
+                key=f"start_check_upgrade_{order_id}",
+                use_container_width=True
+            ):
+                monitor_upgrade_payment_status(order_id)
+        with col2:
+            if st.button(
+                "❌ 取消支付",
+                key=f"cancel_new_upgrade_payment_{order_id}",
+                use_container_width=True
+            ):
+                # 清理订单状态
+                upgrade_mon = st.session_state.upgrade_payment_monitoring
+                if order_id in upgrade_mon:
+                    del upgrade_mon[order_id]
+                order_key = f'upgrade_order_{order_id}'
+                if order_key in st.session_state:
+                    del st.session_state[order_key]
+                qr_key = f'upgrade_payment_qr_{order_id}'
+                if qr_key in st.session_state:
+                    del st.session_state[qr_key]
+                st.warning("⚠️ 已取消支付")
+                time.sleep(1)
+                st.rerun()
 
         # 更新检查次数
         monitoring_info['auto_check_count'] = check_count + 1
