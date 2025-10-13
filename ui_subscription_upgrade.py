@@ -314,7 +314,7 @@ def show_single_upgrade_option(
                 "🎁 免费升级",
                 key=button_key,
                 type="primary",
-                use_column_width=True
+                use_container_width=True
             ):
                 handle_free_upgrade(user_id, option)
         else:
@@ -322,7 +322,7 @@ def show_single_upgrade_option(
                 f"💳 立即升级 - ¥{actual_payment:.2f}",
                 key=button_key,
                 type="primary",
-                use_column_width=True
+                use_container_width=True
             ):
                 handle_paid_upgrade(user_id, option)
 
