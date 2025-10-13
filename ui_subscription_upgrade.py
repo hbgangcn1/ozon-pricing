@@ -9,10 +9,7 @@ import time
 from subscription_upgrade import SubscriptionUpgrade
 from payment_handler import PaymentHandler
 from db_utils import current_user_id, get_db_connection
-from payment_auto_refresh import (
-    inject_smart_auto_refresh,
-    show_enhanced_auto_check_indicator
-)
+from payment_auto_refresh import show_enhanced_auto_check_indicator
 import qrcode
 import io
 import base64
@@ -69,24 +66,38 @@ def show_subscription_upgrade_page():
                             use_container_width=True
                         )
 
-                st.info("💡 支付完成后将自动跳转到订阅管理页面")
-
                 # 获取自动检查次数
                 monitoring = st.session_state.upgrade_payment_monitoring
                 monitoring_info = monitoring.get(order_id, {})
                 check_count = monitoring_info.get('auto_check_count', 0)
 
-                # 注入自动刷新（每5秒检查一次，最多60次即5分钟）
-                inject_smart_auto_refresh(
-                    check_interval_seconds=5,
-                    max_checks=60
-                )
-
                 # 显示自动检查指示器
+                max_checks = 60
                 show_enhanced_auto_check_indicator(
                     check_count=check_count,
-                    max_checks=60
+                    max_checks=max_checks
                 )
+
+                # 提示信息
+                if check_count >= max_checks:
+                    st.warning(
+                        "⏰ 已达到最大检查次数。"
+                        "如已支付成功但未跳转，请点击下方按钮检查支付状态"
+                    )
+                else:
+                    st.info(
+                        "💡 支付完成后将自动跳转，无需手动操作"
+                        "（最多等待5分钟）"
+                    )
+
+                # 显示手动检查按钮作为备选
+                st.markdown("---")
+                st.info("💡 也可以点击下方按钮立即检查支付状态")
+                if st.button(
+                    "🔄 立即检查支付状态",
+                    key=f"recheck_upgrade_payment_{order_id}"
+                ):
+                    monitor_upgrade_payment_status(order_id)
 
                 # 更新检查次数
                 monitoring_info['auto_check_count'] = check_count + 1
@@ -94,14 +105,12 @@ def show_subscription_upgrade_page():
                     monitoring_info
                 )
 
-                # 显示手动检查按钮作为备选
-                st.markdown("---")
-                st.info("💡 也可以点击下方按钮手动检查支付状态")
-                if st.button(
-                    "🔄 立即检查支付状态",
-                    key=f"recheck_upgrade_payment_{order_id}"
-                ):
-                    monitor_upgrade_payment_status(order_id)
+                # 关键：使用Python自动刷新（每5秒检查一次）
+                if check_count < max_checks:
+                    print(f"⏰ 准备在5秒后自动刷新（第{check_count}次检查）")
+                    time.sleep(5)
+                    print("🔄 执行Python自动刷新")
+                    st.rerun()
 
                 return
 
@@ -413,8 +422,6 @@ def handle_paid_upgrade(user_id: int, option: dict):
                 use_container_width=True
             )
 
-        st.info("💡 支付完成后将自动跳转到订阅管理页面（无需手动操作）")
-
         # 初始化监控状态
         if 'upgrade_payment_monitoring' not in st.session_state:
             st.session_state.upgrade_payment_monitoring = {}
@@ -430,21 +437,24 @@ def handle_paid_upgrade(user_id: int, option: dict):
         monitoring_info = st.session_state.upgrade_payment_monitoring[order_id]
         check_count = monitoring_info.get('auto_check_count', 0)
 
-        # 注入自动刷新（每5秒检查一次，最多60次即5分钟）
-        inject_smart_auto_refresh(
-            check_interval_seconds=5,
-            max_checks=60
-        )
-
         # 显示自动检查指示器
+        max_checks = 60
         show_enhanced_auto_check_indicator(
             check_count=check_count,
-            max_checks=60
+            max_checks=max_checks
         )
 
-        # 更新检查次数
-        monitoring_info['auto_check_count'] = check_count + 1
-        st.session_state.upgrade_payment_monitoring[order_id] = monitoring_info
+        # 提示信息
+        if check_count >= max_checks:
+            st.warning(
+                "⏰ 已达到最大检查次数。"
+                "如已支付成功但未跳转，请点击下方按钮检查支付状态"
+            )
+        else:
+            st.info(
+                "💡 支付完成后将自动跳转，无需手动操作"
+                "（最多等待5分钟）"
+            )
 
         # 显示手动检查按钮作为备选
         st.markdown("---")
@@ -454,6 +464,17 @@ def handle_paid_upgrade(user_id: int, option: dict):
             key=f"start_check_upgrade_{order_id}"
         ):
             monitor_upgrade_payment_status(order_id)
+
+        # 更新检查次数
+        monitoring_info['auto_check_count'] = check_count + 1
+        st.session_state.upgrade_payment_monitoring[order_id] = monitoring_info
+
+        # 关键：使用Python自动刷新（每5秒检查一次）
+        if check_count < max_checks:
+            print(f"⏰ 准备在5秒后自动刷新（第{check_count}次检查）")
+            time.sleep(5)
+            print("🔄 执行Python自动刷新")
+            st.rerun()
 
     else:
         st.error(f"❌ 订单创建失败: {result.get('message')}")
