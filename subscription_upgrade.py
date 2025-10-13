@@ -293,8 +293,13 @@ class SubscriptionUpgrade:
 
             # 3. 更新用户订阅信息
             current_time = int(time.time())
-            target_days = 365 if target_cycle == 'year' else 30
+            # duration可能是 "year", "1_year", "month", "1_month"
+            is_year = target_cycle in ['year', '1_year']
+            target_days = 365 if is_year else 30
             new_end_time = current_time + target_days * 24 * 3600
+
+            print(f"🔧 计算新到期时间: target_cycle={target_cycle}, "
+                  f"is_year={is_year}, days={target_days}")
 
             # 处理 efficiency_promo：实际订阅类型是 efficiency
             actual_subscription_type = target_plan
@@ -302,6 +307,9 @@ class SubscriptionUpgrade:
             if target_plan == 'efficiency_promo':
                 actual_subscription_type = 'efficiency'
                 efficiency_promo_used = 1
+
+            # 规范化 billing_cycle 为 "year" 或 "month"
+            billing_cycle = 'year' if is_year else 'month'
 
             with get_db_connection() as (conn, cursor):
                 # 更新订阅信息
@@ -317,7 +325,7 @@ class SubscriptionUpgrade:
                     WHERE id = ?
                 """, (
                     actual_subscription_type, actual_subscription_type,
-                    new_end_time, target_cycle, upgrade_info['target_price'],
+                    new_end_time, billing_cycle, upgrade_info['target_price'],
                     current_time, efficiency_promo_used, user_id
                 ))
 
@@ -333,7 +341,7 @@ class SubscriptionUpgrade:
                     current_sub['subscription_type'],
                     target_plan,
                     current_sub['billing_cycle'],
-                    target_cycle,
+                    billing_cycle,  # 使用规范化的 billing_cycle
                     current_time,
                     upgrade_info['remaining_value'],
                     upgrade_info['actual_payment'],
