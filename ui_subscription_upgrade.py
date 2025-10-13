@@ -63,7 +63,7 @@ def show_subscription_upgrade_page():
                     with col2:
                         st.image(
                             f"data:image/png;base64,{qr_data}",
-                            use_container_width=True
+                            width='stretch'
                         )
 
                 # 获取自动检查次数
@@ -314,7 +314,7 @@ def show_single_upgrade_option(
                 "🎁 免费升级",
                 key=button_key,
                 type="primary",
-                use_container_width=True
+                use_column_width=True
             ):
                 handle_free_upgrade(user_id, option)
         else:
@@ -322,7 +322,7 @@ def show_single_upgrade_option(
                 f"💳 立即升级 - ¥{actual_payment:.2f}",
                 key=button_key,
                 type="primary",
-                use_container_width=True
+                use_column_width=True
             ):
                 handle_paid_upgrade(user_id, option)
 
@@ -419,7 +419,7 @@ def handle_paid_upgrade(user_id: int, option: dict):
         with col2:
             st.image(
                 f"data:image/png;base64,{img_str}",
-                use_container_width=True
+                width='stretch'
             )
 
         # 初始化监控状态
