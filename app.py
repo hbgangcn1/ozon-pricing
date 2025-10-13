@@ -5600,33 +5600,35 @@ def payment_center_page():
 
 def subscription_management_page():
     """订阅管理页面"""
-    st.markdown(
-        """
-        <div style="text-align: center; margin-bottom: 2rem;">
-            <h1 class="main-title">💎 订阅管理</h1>
-            <p style="color: #718096; font-size: 1.1rem; margin: 0;">
-                选择最适合您的套餐，享受更多功能
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # 检查是否刚刚支付成功
+    if st.session_state.get('payment_just_succeeded', False):
+        st.success("🎉 支付成功！您的订阅已更新")
+        del st.session_state['payment_just_succeeded']
+
+    # 检查是否在独立页面模式（没有标签页）
+    is_standalone = st.session_state.get("current_page") == "subscription"
+
+    if is_standalone:
+        st.markdown(
+            """
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <h1 class="main-title">💎 订阅管理</h1>
+                <p style="color: #718096; font-size: 1.1rem; margin: 0;">
+                    选择最适合您的套餐，享受更多功能
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # 只在独立页面模式显示返回按钮
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("🏠 返回主页", key="back_to_main_from_subscription"):
+                st.session_state["current_page"] = "main"
+                st.rerun()
 
     user_id = current_user_id()
-
-    # 添加状态刷新和返回按钮
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col2:
-        if st.button("🔄 刷新状态", key="refresh_subscription_status"):
-            # 清除可能的缓存状态
-            if 'subscription_status' in st.session_state:
-                del st.session_state['subscription_status']
-            st.success("✅ 状态已刷新")
-            st.rerun()
-    with col3:
-        if st.button("🏠 返回主页", key="back_to_main_from_subscription"):
-            st.session_state["current_page"] = "main"
-            st.rerun()
 
     # 获取用户信息 - 优先使用subscription_type字段
     with get_db_connection() as (conn, c):

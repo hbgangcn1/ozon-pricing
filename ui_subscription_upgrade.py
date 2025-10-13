@@ -564,7 +564,7 @@ def check_payment_status_in_db(order_id: str) -> bool:
 def handle_upgrade_payment_success(order_id: str):
     """处理升级支付成功后的跳转逻辑"""
     print(f"🔧 handle_upgrade_payment_success 开始: 订单ID={order_id}")
-    st.success("🎉 支付成功！正在跳转到订阅管理页面...")
+    st.success("🎉 支付成功！正在跳转到主页面...")
 
     # 清除监控状态
     if 'upgrade_payment_monitoring' not in st.session_state:
@@ -582,11 +582,14 @@ def handle_upgrade_payment_success(order_id: str):
         del st.session_state[f'upgrade_payment_qr_{order_id}']
         print(f"🔧 已清除二维码状态: {order_id}")
 
-    # 跳转到订阅管理页面
-    print("🔧 准备跳转到订阅管理页面")
+    # 设置支付成功标记
+    st.session_state['payment_just_succeeded'] = True
+
+    # 跳转到主页面（有标签页导航）
+    print("🔧 准备跳转到主页面")
     time.sleep(2)
-    st.session_state["current_page"] = "subscription"
-    print("🔧 已设置页面路由: subscription")
+    st.session_state["current_page"] = "main"
+    print("🔧 已设置页面路由: main")
     st.rerun()
 
 
