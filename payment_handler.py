@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 from wechat_pay_v3_api import wechat_pay_v3
 from wechat_pay_config import wechat_config
 from db_utils import get_db_connection
+from rate_limiter import get_limiter
 
 
 class PaymentHandler:
@@ -30,7 +31,7 @@ class PaymentHandler:
                              upgrade_info: Optional[Dict[str, Any]] = None
                              ) -> Dict[str, Any]:
         """
-        创建支付订单
+        创建支付订单（带限流保护）
 
         Args:
             user_id: 用户ID
@@ -44,6 +45,17 @@ class PaymentHandler:
         Returns:
             Dict[str, Any]: 订单创建结果
         """
+        # 限流检查：每分钟最多10次支付请求
+        payment_limiter = get_limiter("payment_create", rate=10, per=60)
+        limiter_key = f"payment_{user_id}"
+        
+        if not payment_limiter.is_allowed(limiter_key):
+            retry_after = int(payment_limiter.get_retry_after(limiter_key)) + 1
+            return {
+                'success': False,
+                'message': f'订单创建过于频繁，请 {retry_after} 秒后重试（每分钟最多 10 次）'
+            }
+        
         # 生成订单号
         order_id = f"PAY_{int(time.time())}_{uuid.uuid4().hex[:8]}"
 

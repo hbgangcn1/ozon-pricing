@@ -6,7 +6,9 @@ import bcrypt
 import threading
 import atexit
 import queue
-from typing import Optional, Tuple
+import json
+import time
+from typing import Optional, Tuple, Dict, Any
 try:
     from .password_utils import validate_password_strength
 except ImportError:  # pragma: no cover - fallback for non-package execution
@@ -742,6 +744,18 @@ def _upgrade_products_return_rate():
         conn.commit()
 
 
+def _upgrade_products_vat_rate():
+    """升级：新增产品增值税率字段"""
+    with get_db_connection() as (conn, c):
+        cols = [col[1] for col in c.execute(
+            "PRAGMA table_info(products)").fetchall()]
+        if "vat_rate" not in cols:
+            c.execute(
+                "ALTER TABLE products ADD COLUMN vat_rate REAL DEFAULT 0"
+            )
+        conn.commit()
+
+
 def _upgrade_payment_orders_duration():
     """升级：新增支付订单时长字段"""
     with get_db_connection() as (conn, c):
@@ -808,6 +822,109 @@ def _upgrade_subscription_upgrade_system():
                 created_at INTEGER DEFAULT (strftime('%s', 'now')),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
+        """)
+
+        conn.commit()
+
+
+def _upgrade_statistics_tables():
+    """升级：添加统计与运营看板相关表"""
+    with get_db_connection() as (conn, c):
+        # 1. 创建用户登录日志表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS user_login_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                login_time INTEGER NOT NULL,
+                ip_address TEXT,
+                user_agent TEXT,
+                device_type TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+        # 为登录日志创建索引以提升查询性能
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_login_log_user_id
+            ON user_login_log(user_id)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_login_log_login_time
+            ON user_login_log(login_time)
+        """)
+
+        # 2. 创建管理员操作日志表（增强版）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS admin_action_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id INTEGER NOT NULL,
+                action_type TEXT NOT NULL,
+                action_detail TEXT,
+                target_user_id INTEGER,
+                target_type TEXT,
+                ip_address TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                FOREIGN KEY (admin_id) REFERENCES admin_users(id),
+                FOREIGN KEY (target_user_id) REFERENCES users(id)
+            )
+        """)
+
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_action_log_admin_id
+            ON admin_action_log(admin_id)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_action_log_created_at
+            ON admin_action_log(created_at)
+        """)
+
+        # 3. 创建异常告警记录表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS alert_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alert_type TEXT NOT NULL,
+                alert_level TEXT NOT NULL,
+                description TEXT NOT NULL,
+                threshold_value REAL,
+                actual_value REAL,
+                status TEXT DEFAULT 'unhandled',
+                handled_by INTEGER,
+                handled_at INTEGER,
+                handle_note TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                FOREIGN KEY (handled_by) REFERENCES admin_users(id)
+            )
+        """)
+
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alert_records_created_at
+            ON alert_records(created_at)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alert_records_status
+            ON alert_records(status)
+        """)
+
+        # 4. 创建统计数据缓存表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS statistics_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cache_key TEXT UNIQUE NOT NULL,
+                cache_data TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_statistics_cache_key
+            ON statistics_cache(cache_key)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_statistics_cache_expires_at
+            ON statistics_cache(expires_at)
         """)
 
         conn.commit()
@@ -982,7 +1099,8 @@ def init_db():
                 commission_rate        REAL DEFAULT 0.17,
                 withdrawal_fee_rate    REAL DEFAULT 0.01,
                 payment_processing_fee REAL DEFAULT 0.01,
-                return_rate            REAL DEFAULT 0
+                return_rate            REAL DEFAULT 0,
+                vat_rate               REAL DEFAULT 0
             )
             """
         )
@@ -1084,9 +1202,11 @@ def init_db():
         _upgrade_products_new_fields()
         _upgrade_logistics_price_min()
         _upgrade_products_return_rate()
+        _upgrade_products_vat_rate()
         _upgrade_users_subscription_fields()
         _upgrade_payment_orders_duration()
         _upgrade_subscription_upgrade_system()
+        _upgrade_statistics_tables()
         # 3. 初始管理员（避免递归调用）
         admin_user = c.execute(
             "SELECT * FROM users WHERE username = ?",
@@ -2162,7 +2282,7 @@ def update_user_subscription_admin(user_id, updates, admin_id):
         c.execute(query, values)
 
         if c.rowcount > 0:
-            # 记录审计日志
+            # 记录审计日志（保留兼容性）
             details_pairs = [f"{k}={v}" for k, v in updates.items()]
             action_details = (
                 "管理员更新用户订阅: " + ", ".join(details_pairs)
@@ -2176,6 +2296,19 @@ def update_user_subscription_admin(user_id, updates, admin_id):
             )
 
             conn.commit()
+
+            # 记录新的操作日志
+            try:
+                log_admin_action(
+                    admin_id=admin_id,
+                    action_type='更新订阅',
+                    action_detail=action_details,
+                    target_user_id=user_id,
+                    target_type='subscription'
+                )
+            except Exception as e:
+                print(f"记录管理员操作日志失败: {e}")
+
             return True
 
         return False
@@ -2187,13 +2320,26 @@ def freeze_user(user_id, admin_id):
         c.execute("UPDATE users SET is_frozen = 1 WHERE id = ?", (user_id,))
 
         if c.rowcount > 0:
-            # 记录审计日志
+            # 记录审计日志（保留兼容性）
             c.execute("""
             INSERT INTO audit_logs (admin_id, user_id, action, details)
             VALUES (?, ?, ?, ?)
             """, (admin_id, user_id, 'freeze_user', '管理员冻结用户'))
 
             conn.commit()
+
+            # 记录新的操作日志
+            try:
+                log_admin_action(
+                    admin_id=admin_id,
+                    action_type='冻结用户',
+                    action_detail=f'管理员冻结了用户ID: {user_id}',
+                    target_user_id=user_id,
+                    target_type='user'
+                )
+            except Exception as e:
+                print(f"记录管理员操作日志失败: {e}")
+
             return True
 
         return False
@@ -2205,13 +2351,26 @@ def unfreeze_user(user_id, admin_id):
         c.execute("UPDATE users SET is_frozen = 0 WHERE id = ?", (user_id,))
 
         if c.rowcount > 0:
-            # 记录审计日志
+            # 记录审计日志（注意：原代码有bug，参数数量不对）
             c.execute("""
             INSERT INTO audit_logs (admin_id, user_id, action, details)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?)
             """, (admin_id, user_id, 'unfreeze_user', '管理员解冻用户'))
 
             conn.commit()
+
+            # 记录新的操作日志
+            try:
+                log_admin_action(
+                    admin_id=admin_id,
+                    action_type='解冻用户',
+                    action_detail=f'管理员解冻了用户ID: {user_id}',
+                    target_user_id=user_id,
+                    target_type='user'
+                )
+            except Exception as e:
+                print(f"记录管理员操作日志失败: {e}")
+
             return True
 
         return False
@@ -2220,6 +2379,13 @@ def unfreeze_user(user_id, admin_id):
 def delete_user_admin(user_id, admin_id):
     """管理员删除用户"""
     with get_db_connection() as (conn, c):
+        # 获取用户信息用于日志
+        user = c.execute(
+            "SELECT username FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        username = user[0] if user else f"ID:{user_id}"
+
         # 先删除用户相关的数据
         c.execute("DELETE FROM logistics WHERE user_id = ?", (user_id,))
         c.execute("DELETE FROM products WHERE user_id = ?", (user_id,))
@@ -2228,13 +2394,26 @@ def delete_user_admin(user_id, admin_id):
         c.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
         if c.rowcount > 0:
-            # 记录审计日志
+            # 记录审计日志（保留兼容性）
             c.execute("""
             INSERT INTO audit_logs (admin_id, user_id, action, details)
             VALUES (?, ?, ?, ?)
             """, (admin_id, user_id, 'delete_user', '管理员删除用户'))
 
             conn.commit()
+
+            # 记录新的操作日志
+            try:
+                log_admin_action(
+                    admin_id=admin_id,
+                    action_type='删除用户',
+                    action_detail=f'管理员删除了用户: {username} (ID: {user_id})',
+                    target_user_id=user_id,
+                    target_type='user'
+                )
+            except Exception as e:
+                print(f"记录管理员操作日志失败: {e}")
+
             return True
 
         return False
@@ -2376,7 +2555,7 @@ def reset_user_password(user_id, admin_id):
         )
 
         if c.rowcount > 0:
-            # 记录审计日志
+            # 记录审计日志（保留兼容性）
             details_text = f'管理员重置密码: {new_password}'
             c.execute(
                 """
@@ -2392,6 +2571,251 @@ def reset_user_password(user_id, admin_id):
             )
 
             conn.commit()
+
+            # 记录新的操作日志（不记录密码）
+            try:
+                log_admin_action(
+                    admin_id=admin_id,
+                    action_type='重置密码',
+                    action_detail=f'管理员重置了用户ID: {user_id} 的密码',
+                    target_user_id=user_id,
+                    target_type='user'
+                )
+            except Exception as e:
+                print(f"记录管理员操作日志失败: {e}")
+
             return new_password
 
         return None
+
+
+# ============= 统计与运营看板相关函数 =============
+
+
+def log_user_login(user_id: int, ip_address: Optional[str] = None,
+                   user_agent: Optional[str] = None) -> bool:
+    """记录用户登录日志"""
+    with get_db_connection() as (conn, c):
+        try:
+            # 简单的设备类型判断
+            device_type = 'unknown'
+            if user_agent:
+                user_agent_lower = user_agent.lower()
+                if ('mobile' in user_agent_lower or
+                        'android' in user_agent_lower):
+                    device_type = 'mobile'
+                elif ('tablet' in user_agent_lower or
+                        'ipad' in user_agent_lower):
+                    device_type = 'tablet'
+                else:
+                    device_type = 'desktop'
+
+            login_time = int(time.time())
+            c.execute("""
+                INSERT INTO user_login_log
+                (user_id, login_time, ip_address, user_agent, device_type)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, login_time, ip_address, user_agent, device_type))
+
+            # 更新用户的最后登录时间
+            c.execute("""
+                UPDATE users
+                SET last_login = datetime('now')
+                WHERE id = ?
+            """, (user_id,))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"记录用户登录日志失败: {e}")
+            return False
+
+
+def log_admin_action(admin_id: int, action_type: str, action_detail: str,
+                     target_user_id: Optional[int] = None,
+                     target_type: Optional[str] = None,
+                     ip_address: Optional[str] = None) -> bool:
+    """记录管理员操作日志"""
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("""
+                INSERT INTO admin_action_log
+                (admin_id, action_type, action_detail, target_user_id,
+                 target_type, ip_address)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (admin_id, action_type, action_detail, target_user_id,
+                  target_type, ip_address))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"记录管理员操作日志失败: {e}")
+            return False
+
+
+def create_alert(alert_type: str, alert_level: str, description: str,
+                 threshold_value: Optional[float] = None,
+                 actual_value: Optional[float] = None) -> bool:
+    """创建异常告警记录"""
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("""
+                INSERT INTO alert_records
+                (alert_type, alert_level, description,
+                 threshold_value, actual_value)
+                VALUES (?, ?, ?, ?, ?)
+            """, (alert_type, alert_level, description,
+                  threshold_value, actual_value))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"创建告警记录失败: {e}")
+            return False
+
+
+def get_statistics_cache(cache_key: str) -> Optional[Dict[str, Any]]:
+    """获取统计缓存数据"""
+    with get_db_connection() as (conn, c):
+        try:
+            current_time = int(time.time())
+            result = c.execute("""
+                SELECT cache_data FROM statistics_cache
+                WHERE cache_key = ? AND expires_at > ?
+            """, (cache_key, current_time)).fetchone()
+
+            if result:
+                return json.loads(result[0])
+            return None
+        except Exception as e:
+            print(f"获取缓存失败: {e}")
+            return None
+
+
+def set_statistics_cache(cache_key: str, cache_data: Dict[str, Any],
+                         ttl: int = 300) -> bool:
+    """设置统计缓存数据
+
+    Args:
+        cache_key: 缓存键
+        cache_data: 缓存数据
+        ttl: 过期时间（秒），默认5分钟
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            current_time = int(time.time())
+            expires_at = current_time + ttl
+            cache_json = json.dumps(cache_data, ensure_ascii=False)
+
+            c.execute("""
+                INSERT OR REPLACE INTO statistics_cache
+                (cache_key, cache_data, expires_at, updated_at)
+                VALUES (?, ?, ?, ?)
+            """, (cache_key, cache_json, expires_at, current_time))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"设置缓存失败: {e}")
+            return False
+
+
+def clear_expired_cache() -> int:
+    """清理过期的缓存数据"""
+    with get_db_connection() as (conn, c):
+        try:
+            current_time = int(time.time())
+            c.execute("""
+                DELETE FROM statistics_cache WHERE expires_at < ?
+            """, (current_time,))
+            conn.commit()
+            return c.rowcount
+        except Exception as e:
+            print(f"清理缓存失败: {e}")
+            return 0
+
+
+def get_dashboard_stats() -> Dict[str, Any]:
+    """获取总览看板数据"""
+    # 先尝试从缓存获取
+    cache_key = "dashboard_stats"
+    cached = get_statistics_cache(cache_key)
+    if cached:
+        return cached
+
+    with get_db_connection() as (conn, c):
+        try:
+            current_time = int(time.time())
+            today_start = current_time - (current_time % 86400)
+            yesterday_start = today_start - 86400
+            month_start = current_time - (current_time % (30 * 86400))
+
+            # 今日活跃用户数（今日登录的用户）
+            active_users_today = c.execute("""
+                SELECT COUNT(DISTINCT user_id)
+                FROM user_login_log
+                WHERE login_time >= ?
+            """, (today_start,)).fetchone()[0]
+
+            # 今日新增用户数
+            new_users_today = c.execute("""
+                SELECT COUNT(*) FROM users
+                WHERE created_at >= datetime(?, 'unixepoch')
+            """, (today_start,)).fetchone()[0]
+
+            # 累计注册用户数
+            total_users = c.execute("""
+                SELECT COUNT(*) FROM users WHERE role != 'admin'
+            """).fetchone()[0]
+
+            # 总收入（所有成功支付的订单）
+            total_revenue = c.execute("""
+                SELECT COALESCE(SUM(amount), 0) / 100.0
+                FROM payment_orders
+                WHERE status = 'SUCCESS'
+            """).fetchone()[0]
+
+            # 今日收入
+            revenue_today = c.execute("""
+                SELECT COALESCE(SUM(amount), 0) / 100.0
+                FROM payment_orders
+                WHERE status = 'SUCCESS' AND created_at >= ?
+            """, (today_start,)).fetchone()[0]
+
+            # 昨日收入
+            revenue_yesterday = c.execute("""
+                SELECT COALESCE(SUM(amount), 0) / 100.0
+                FROM payment_orders
+                WHERE status = 'SUCCESS'
+                AND created_at >= ? AND created_at < ?
+            """, (yesterday_start, today_start)).fetchone()[0]
+
+            # 本月收入
+            revenue_month = c.execute("""
+                SELECT COALESCE(SUM(amount), 0) / 100.0
+                FROM payment_orders
+                WHERE status = 'SUCCESS' AND created_at >= ?
+            """, (month_start,)).fetchone()[0]
+
+            # 实时在线用户数（过去5分钟有登录记录的用户）
+            online_users = c.execute("""
+                SELECT COUNT(DISTINCT user_id)
+                FROM user_login_log
+                WHERE login_time >= ?
+            """, (current_time - 300,)).fetchone()[0]
+
+            result = {
+                'active_users_today': active_users_today,
+                'new_users_today': new_users_today,
+                'total_users': total_users,
+                'total_revenue': round(total_revenue, 2),
+                'revenue_today': round(revenue_today, 2),
+                'revenue_yesterday': round(revenue_yesterday, 2),
+                'revenue_month': round(revenue_month, 2),
+                'online_users': online_users,
+                'timestamp': current_time
+            }
+
+            # 缓存5分钟
+            set_statistics_cache(cache_key, result, 300)
+            return result
+        except Exception as e:
+            print(f"获取总览数据失败: {e}")
+            return {}

@@ -323,6 +323,46 @@ def create_efficiency_payment(payment_handler: PaymentHandler):
         st.error(f"❌ 订单创建失败：{result.get('message', '未知错误')}")
 
 
+def check_and_restore_payment_status():
+    """检查并恢复支付状态（在页面加载时调用）
+    
+    Returns:
+        bool: 如果有正在进行的支付返回True，否则返回False
+    """
+    if ('payment_monitoring' in st.session_state and
+            st.session_state.payment_monitoring):
+        # 有正在进行的支付，恢复显示
+        for order_id in list(st.session_state.payment_monitoring.keys()):
+            restore_payment_display(order_id)
+            
+            # 显示当前状态和手动检查按钮
+            monitoring_info = st.session_state.payment_monitoring[order_id]
+            if not monitoring_info.get('first_check_done', False):
+                # 第一次检查还没完成，继续等待
+                st.info("⏳ 等待微信支付系统处理订单...")
+                st.progress(0, text="等待中...")
+            else:
+                # 已经开始检查，显示当前状态
+                current_status = st.session_state.get(
+                    f'payment_status_{order_id}', "⏳ 正在检查支付状态..."
+                )
+                st.info(current_status)
+                
+                # 显示手动检查按钮
+                st.info("💡 请点击下方按钮手动检查支付状态")
+                if st.button(
+                    "🔄 检查支付状态", key=f"check_payment_{order_id}"
+                ):
+                    # 用户点击按钮时，启动监控
+                    payment_handler = PaymentHandler()
+                    plan_name = monitoring_info.get('plan_name', '未知套餐')
+                    monitor_payment_status(
+                        payment_handler, order_id, plan_name
+                    )
+            return True
+    return False
+
+
 def show_payment_page():
     """显示支付页面"""
     st.title("💳 支付中心")

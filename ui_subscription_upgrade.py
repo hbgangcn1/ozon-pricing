@@ -110,14 +110,14 @@ def show_subscription_upgrade_page():
                     if st.button(
                         "🔄 立即检查支付状态",
                         key=f"recheck_upgrade_payment_{order_id}",
-                        use_container_width=True
+                        width='stretch'
                     ):
                         monitor_upgrade_payment_status(order_id)
                 with col2:
                     if st.button(
                         "❌ 取消支付",
                         key=f"cancel_upgrade_payment_{order_id}",
-                        use_container_width=True
+                        width='stretch'
                     ):
                         # 清理订单状态
                         upgrade_mon = (
@@ -350,7 +350,7 @@ def show_single_upgrade_option(
                 "🎁 免费升级",
                 key=button_key,
                 type="primary",
-                use_container_width=True
+                width='stretch'
             ):
                 handle_free_upgrade(user_id, option)
         else:
@@ -358,7 +358,7 @@ def show_single_upgrade_option(
                 f"💳 立即升级 - ¥{actual_payment:.2f}",
                 key=button_key,
                 type="primary",
-                use_container_width=True
+                width='stretch'
             ):
                 handle_paid_upgrade(user_id, option)
 
@@ -501,14 +501,14 @@ def handle_paid_upgrade(user_id: int, option: dict):
             if st.button(
                 "🔄 立即检查支付状态",
                 key=f"start_check_upgrade_{order_id}",
-                use_container_width=True
+                width='stretch'
             ):
                 monitor_upgrade_payment_status(order_id)
         with col2:
             if st.button(
                 "❌ 取消支付",
                 key=f"cancel_new_upgrade_payment_{order_id}",
-                use_container_width=True
+                width='stretch'
             ):
                 # 清理订单状态
                 upgrade_mon = st.session_state.upgrade_payment_monitoring

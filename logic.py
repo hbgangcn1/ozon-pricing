@@ -477,6 +477,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         commission_rate_input,
                         withdrawal_rate_input,
                         payment_rate_input,
+                        vat_rate_input,
                         rate_input,
                         max_iter=3):
                     """计算浮动代理费价格"""
@@ -491,6 +492,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                             - commission_rate_input
                             - withdrawal_rate_input
                             - payment_rate_input
+                            - vat_rate_input
                         )
                         price = (
                             calc_total_cost / (1 - target_margin_input)
@@ -522,12 +524,14 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     "withdrawal_fee_rate", 0.02)
                 filter_payment_rate = product_dict.get(
                     "payment_processing_fee", 0)
+                filter_vat_rate = product_dict.get("vat_rate", 0)
 
                 # 计算浮动代理费
                 rough, actual_commission = calc_floating_price(
                     base_cost_calc, filter_target_margin,
                     filter_promotion_rate, filter_commission_rate,
-                    filter_withdrawal_rate, filter_payment_rate, rate
+                    filter_withdrawal_rate, filter_payment_rate,
+                    filter_vat_rate, rate
                 )
 
                 # 根据代理费范围决定定价公式
@@ -544,6 +548,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         - filter_withdrawal_rate
                         - filter_payment_rate
                         - filter_promotion_discount
+                        - filter_vat_rate
                     )
                     rough = filter_total_cost / denominator
                     pricing_mode = "代理费在分子中"
@@ -558,6 +563,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         - filter_payment_rate
                         - filter_promotion_discount
                         - 0.02
+                        - filter_vat_rate
                     )
                     rough = base_cost_calc / denominator
                     pricing_mode = "代理费在分母中"
@@ -695,6 +701,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     withdrawal_rate_input,
                     payment_rate_input,
                     return_rate_input,
+                    vat_rate_input,
                     rate_input,
                     max_iter=5):
                 """计算最终价格的浮动代理费"""
@@ -711,6 +718,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         - withdrawal_rate_input
                         - payment_rate_input
                         - return_rate_input
+                        - vat_rate_input
                     )
                     price = iter_total_cost / final_price_denominator
 
@@ -735,12 +743,13 @@ def calculate_pricing(product, land_logistics, air_logistics,
             final_payment_rate = product.get(
                 "payment_processing_fee", 0)
             final_return_rate = product.get("return_rate", 0)
+            final_vat_rate = product.get("vat_rate", 0)
 
             # 计算浮动代理费
             final_price, actual_commission = calc_final_commission(
                 base_cost_calc, final_target_margin, final_promotion_rate,
                 final_commission_rate, final_withdrawal_rate,
-                final_payment_rate, final_return_rate, rate
+                final_payment_rate, final_return_rate, final_vat_rate, rate
             )
 
             # 根据代理费范围决定定价公式
@@ -758,6 +767,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     - final_payment_rate
                     - final_return_rate
                     - final_promotion_discount
+                    - final_vat_rate
                 )
                 final_price = final_total_cost / denominator
                 pricing_mode = "代理费在分子中"
@@ -773,6 +783,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     - final_return_rate
                     - final_promotion_discount
                     - 0.02
+                    - final_vat_rate
                 )
                 final_price = base_cost_calc / denominator
                 pricing_mode = "代理费在分母中"
@@ -789,6 +800,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         - final_withdrawal_rate
                         - final_payment_rate
                         - final_return_rate
+                        - final_vat_rate
                     )
                     debug_list.append(
                         f"新分母: {original_denominator - 0.02:.4f}"
@@ -871,7 +883,15 @@ def calculate_pricing(product, land_logistics, air_logistics,
         # 分别计算陆运和空运的预期利润
         land_expected_profit = 0
         air_expected_profit = 0
+        land_profit_margin = 0
+        air_profit_margin = 0
         target_margin = product.get("target_profit_margin", 0.2)
+        promotion_rate = product.get("promotion_cost_rate", 0)
+        commission_rate = product.get("commission_rate", 0.08)
+        withdrawal_rate = product.get("withdrawal_fee_rate", 0.02)
+        payment_rate = product.get("payment_processing_fee", 0)
+        return_rate = product.get("return_rate", 0)
+        vat_rate = product.get("vat_rate", 0)
 
         if land_price and land_cost is not None:
             # 计算陆运的浮动代理费
@@ -885,14 +905,28 @@ def calculate_pricing(product, land_logistics, air_logistics,
             if land_actual_commission <= 15 or land_actual_commission >= 200:
                 # 代理费在分子中
                 land_total_cost = land_base_cost + land_commission_fee
-                land_expected_profit = land_price * target_margin
+                # 实际收入 = 售价 × (1 - 所有扣费率)
+                actual_revenue = land_price * (
+                    1 - promotion_rate - commission_rate
+                    - withdrawal_rate - payment_rate
+                    - return_rate - vat_rate
+                )
+                land_expected_profit = actual_revenue - land_total_cost
                 profit_mode = "代理费在分子中"
             else:
                 # 代理费在分母中
                 land_total_cost = land_base_cost  # 不包含代理费
-                land_expected_profit = land_price * target_margin
+                # 实际收入 = 售价 × (1 - 所有扣费率 - 2%)
+                actual_revenue = land_price * (
+                    1 - promotion_rate - commission_rate
+                    - withdrawal_rate - payment_rate
+                    - return_rate - vat_rate - 0.02
+                )
+                land_expected_profit = actual_revenue - land_total_cost
                 profit_mode = "代理费在分母中"
             # 添加陆运预期利润计算调试信息
+            land_profit_margin = (land_expected_profit / land_price * 100
+                                  if land_price > 0 else 0)
             land_debug.append("陆运预期利润计算:")
             land_debug.append(f"  产品成本: {unit_price}")
             land_debug.append(f"  贴标费: {labeling_fee}")
@@ -905,10 +939,12 @@ def calculate_pricing(product, land_logistics, air_logistics,
             )
             land_debug.append(f"  定价模式: {profit_mode}")
             land_debug.append(f"  陆运总成本(用于利润计算): {land_total_cost}")
-            land_debug.append(f"  运营利润率: {target_margin}")
+            land_debug.append(f"  陆运售价: {land_price}")
             land_debug.append(
-                f"  陆运预期利润 = {land_price} × {target_margin} = "
-                f"{land_expected_profit:.2f}"
+                f"  陆运预期利润: {land_expected_profit:.2f} CNY"
+            )
+            land_debug.append(
+                f"  陆运利润率: {land_profit_margin:.2f}%"
             )
         if air_price and air_cost is not None:
             # 计算空运的浮动代理费
@@ -920,14 +956,28 @@ def calculate_pricing(product, land_logistics, air_logistics,
             if air_actual_commission <= 15 or air_actual_commission >= 200:
                 # 代理费在分子中
                 air_total_cost = air_base_cost + air_commission_fee
-                air_expected_profit = air_price * target_margin
+                # 实际收入 = 售价 × (1 - 所有扣费率)
+                actual_revenue = air_price * (
+                    1 - promotion_rate - commission_rate
+                    - withdrawal_rate - payment_rate
+                    - return_rate - vat_rate
+                )
+                air_expected_profit = actual_revenue - air_total_cost
                 profit_mode = "代理费在分子中"
             else:
                 # 代理费在分母中
                 air_total_cost = air_base_cost  # 不包含代理费
-                air_expected_profit = air_price * target_margin
+                # 实际收入 = 售价 × (1 - 所有扣费率 - 2%)
+                actual_revenue = air_price * (
+                    1 - promotion_rate - commission_rate
+                    - withdrawal_rate - payment_rate
+                    - return_rate - vat_rate - 0.02
+                )
+                air_expected_profit = actual_revenue - air_total_cost
                 profit_mode = "代理费在分母中"
             # 添加空运预期利润计算调试信息
+            air_profit_margin = (air_expected_profit / air_price * 100
+                                 if air_price > 0 else 0)
             air_debug.append("空运预期利润计算:")
             air_debug.append(f"  产品成本: {unit_price}")
             air_debug.append(f"  贴标费: {labeling_fee}")
@@ -940,26 +990,27 @@ def calculate_pricing(product, land_logistics, air_logistics,
             )
             air_debug.append(f"  定价模式: {profit_mode}")
             air_debug.append(f"  空运总成本(用于利润计算): {air_total_cost}")
-            air_debug.append(f"  运营利润率: {target_margin}")
+            air_debug.append(f"  空运售价: {air_price}")
             air_debug.append(
-                f"  空运预期利润 = {air_price} × {target_margin} = "
-                f"{air_expected_profit:.2f}"
+                f"  空运预期利润: {air_expected_profit:.2f} CNY"
             )
-        # 使用建议售价对应的预期利润
+            air_debug.append(
+                f"  空运利润率: {air_profit_margin:.2f}%"
+            )
+        # 使用建议售价对应的预期利润和利润率
         if suggested_price:
             if land_price and land_price == suggested_price:
                 expected_profit = land_expected_profit
+                calculated_profit_margin = land_profit_margin
             elif air_price and air_price == suggested_price:
                 expected_profit = air_expected_profit
+                calculated_profit_margin = air_profit_margin
             else:
                 expected_profit = 0
+                calculated_profit_margin = 0
         else:
             expected_profit = 0
-
-        # 利润率就是用户输入的目标利润率，不需要重新计算
-        calculated_profit_margin = (
-            product.get("target_profit_margin", 0.2) * 100
-        )
+            calculated_profit_margin = 0
 
         return {
             "land_price": land_price,

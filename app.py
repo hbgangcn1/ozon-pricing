@@ -33,6 +33,7 @@ try:
         update_user_preferred_mode,
         migrate_user_preferences,
         decrement_user_calculations,
+        get_dashboard_stats,
     )
 
     from .ui_user import (
@@ -57,6 +58,18 @@ try:
         check_session_security, SessionSecurity, secure_logout,
     )
     from .exchange_service import ExchangeRateService, get_usd_rate
+    from .rate_limiter import get_limiter
+
+    # 导入统计服务
+    from .statistics_service import (
+        get_retention_analysis,
+        get_user_activity_stats,
+        get_revenue_stats,
+        get_user_retention_details,
+        get_plan_stats,
+        get_admin_action_logs,
+        get_alert_records,
+    )
 except ImportError:  # Fallback when run as a top-level module
     from db_utils import (
         init_db,
@@ -71,6 +84,7 @@ except ImportError:  # Fallback when run as a top-level module
         update_user_preferred_mode,
         migrate_user_preferences,
         decrement_user_calculations,
+        get_dashboard_stats,
     )
 
     from ui_user import (
@@ -92,6 +106,18 @@ except ImportError:  # Fallback when run as a top-level module
         check_session_security, SessionSecurity, secure_logout,
     )
     from exchange_service import ExchangeRateService, get_usd_rate
+    from rate_limiter import get_limiter
+
+    # 导入统计服务
+    from statistics_service import (
+        get_retention_analysis,
+        get_user_activity_stats,
+        get_revenue_stats,
+        get_user_retention_details,
+        get_plan_stats,
+        get_admin_action_logs,
+        get_alert_records,
+    )
 
 # 设置页面配置
 st.set_page_config(
@@ -808,7 +834,7 @@ def show_main_interface():
 
         with welcome_cols[1]:
             # 退出按钮
-            if st.button("🚪 退出", key="logout", use_container_width=False):
+            if st.button("🚪 退出", key="logout", width='content'):
                 secure_logout()
 
     # 根据模式显示不同的界面
@@ -827,7 +853,7 @@ def show_fast_mode_interface(current_user):
     if current_user["role"] == "admin":
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
                 [
                     "💰 定价计算",
                     "🚚 物流管理",
@@ -836,13 +862,15 @@ def show_fast_mode_interface(current_user):
                     "💳 支付中心",
                     "⚙️ 系统设置",
                     "👥 用户管理",
+                    "📈 数据统计",
                     "ℹ️ 关于我们",
                 ]
             )
             user_management_tab = tab7
-            about_us_tab = tab8
+            statistics_tab = tab8
+            about_us_tab = tab9
         else:
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
                 [
                     "💰 定价计算",
                     "🚚 物流管理",
@@ -850,11 +878,13 @@ def show_fast_mode_interface(current_user):
                     "💳 支付中心",
                     "⚙️ 系统设置",
                     "👥 用户管理",
+                    "📈 数据统计",
                     "ℹ️ 关于我们",
                 ]
             )
             user_management_tab = tab6
-            about_us_tab = tab7
+            statistics_tab = tab7
+            about_us_tab = tab8
         with tab1:
             st.markdown(
                 """
@@ -961,6 +991,10 @@ def show_fast_mode_interface(current_user):
                 admin_subscription_management_page()
             else:
                 user_management_page()
+
+        # 数据统计标签页（管理员专属）
+        with statistics_tab:
+            show_admin_statistics()
     else:
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
@@ -1174,7 +1208,7 @@ def show_precise_mode_interface(current_user):
     if current_user["role"] == "admin":
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
                 [
                     "💰 定价计算",
                     "🚚 物流管理",
@@ -1182,24 +1216,28 @@ def show_precise_mode_interface(current_user):
                     "💎 订阅管理",
                     "⚙️ 系统设置",
                     "👥 用户管理",
+                    "📈 数据统计",
                     "ℹ️ 关于我们",
                 ]
             )
             user_management_tab = tab6
-            about_us_tab = tab7
+            statistics_tab = tab7
+            about_us_tab = tab8
         else:
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
                 [
                     "💰 定价计算",
                     "🚚 物流管理",
                     "🔐 账户管理",
                     "⚙️ 系统设置",
                     "👥 用户管理",
+                    "📈 数据统计",
                     "ℹ️ 关于我们",
                 ]
             )
             user_management_tab = tab5
-            about_us_tab = tab6
+            statistics_tab = tab6
+            about_us_tab = tab7
         with tab1:
             st.markdown(
                 """
@@ -1293,6 +1331,10 @@ def show_precise_mode_interface(current_user):
                 admin_subscription_management_page()
             else:
                 user_management_page()
+
+        # 数据统计标签页（管理员专属）
+        with statistics_tab:
+            show_admin_statistics()
     else:
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
@@ -1614,7 +1656,7 @@ def fast_pricing_calculator():
             / 100.0
         )
 
-    # 第五行：历史退货率(%)
+    # 第五行：历史退货率(%)、增值税率(%)
     col1, col2 = st.columns(2)
     with col1:
         return_rate = (
@@ -1628,13 +1670,23 @@ def fast_pricing_calculator():
             / 100.0
         )
     with col2:
-        pass
+        vat_rate = (
+            st.number_input(
+                "增值税率（%）",
+                min_value=0.0,
+                max_value=30.0,
+                value=0.0,
+                step=0.1,
+                help="增值税率，根据实际情况填写",
+            )
+            / 100.0
+        )
 
     # 开始计算按钮
     if st.button(
         "🚀 开始计算",
         type="primary",
-        use_container_width=True,
+        width='stretch',
         key="fast_calc_button",
     ):
         if unit_price <= 0 or weight_g <= 0:
@@ -1676,6 +1728,7 @@ def fast_pricing_calculator():
             withdrawal_fee_rate,
             payment_processing_fee,
             return_rate,
+            vat_rate,
             logistics_rules,
         )
 
@@ -1822,25 +1875,22 @@ def precise_products_page():
         # 产品名称和进货单价在一行中分两个列显示
             col1, col2 = st.columns(2)
             with col1:
-                # 如果session state中没有该key，使用默认值；否则保持用户输入的值
-                if "precise_product_name" not in st.session_state:
+                # 记录当前选择的产品ID，只有产品ID改变时才更新表单值
+                current_product_id = selected_data.get("id") if selected_data else None
+                last_product_id = st.session_state.get("last_selected_product_id")
+                
+                # 如果是首次加载或选择了不同的产品，更新表单值
+                if "precise_product_name" not in st.session_state or current_product_id != last_product_id:
                     st.session_state.precise_product_name = default_name
-                elif (selected_data and
-                      st.session_state.precise_product_name != default_name):
-                    # 如果选择了新产品，更新表单值
-                    st.session_state.precise_product_name = default_name
+                    st.session_state.last_selected_product_id = current_product_id
 
                 name = st.text_input(
                     "产品名称*",
                     key="precise_product_name",
                 )
             with col2:
-                # 如果session state中没有该key，使用默认值；否则保持用户输入的值
-                if "precise_unit_price" not in st.session_state:
-                    st.session_state.precise_unit_price = default_price
-                elif (selected_data and
-                      st.session_state.precise_unit_price != default_price):
-                    # 如果选择了新产品，更新表单值
+                # 只有产品ID改变时才更新表单值
+                if "precise_unit_price" not in st.session_state or current_product_id != last_product_id:
                     st.session_state.precise_unit_price = default_price
 
                 unit_price = st.number_input(
@@ -2120,8 +2170,8 @@ def precise_products_page():
                 )
                 / 100.0
             )
-    # 第五行：历史退货率(%)和保存产品按钮
-        col1, col2 = st.columns(2, vertical_alignment="bottom")
+    # 第五行：历史退货率(%)、增值税率(%)
+        col1, col2 = st.columns(2)
         with col1:
             return_rate = (
                 st.number_input(
@@ -2138,87 +2188,104 @@ def precise_products_page():
                 / 100.0
             )
         with col2:
-            if st.button(
-                "💾 保存产品",
-                use_container_width=True,
-                key="save_product_inside",
-            ):
-                if not subscription_status.get("valid", True):
-                    st.error("账号到期，请联系客服续费")
-                    return
-            # 确保is_cylinder变量被正确定义
-                is_cylinder = package_type == "圆柱包装"
-            # 检查必填字段
-                missing_fields = []
-                if not name or name.strip() == "":
-                    missing_fields.append("产品名称")
-                if weight_g <= 0:
-                    missing_fields.append("重量")
-                if unit_price <= 0:
-                    missing_fields.append("进货单价")
-                if not is_cylinder:
-                    if length_cm <= 0:
-                        missing_fields.append("长度")
-                    if width_cm <= 0:
-                        missing_fields.append("宽度")
-                    if height_cm <= 0:
-                        missing_fields.append("高度")
-                else:
-                    if cylinder_diameter <= 0:
-                        missing_fields.append("圆柱直径")
-                    if cylinder_length <= 0:
-                        missing_fields.append("圆柱长度")
-
-                if missing_fields:
-                    st.error(
-                        f"请填写以下必填字段：{', '.join(missing_fields)}"
+            vat_rate = (
+                st.number_input(
+                    "增值税率(%)",
+                    min_value=0.0,
+                    max_value=30.0,
+                    value=float(
+                        selected_data.get("vat_rate", 0.0)
                     )
-                else:
-                    # 确保name不为None
-                    product_name = name.strip() if name else ""
-                    if not product_name:
-                        st.error("产品名称不能为空")
-                        return
+                    * 100.0,
+                    step=0.1,
+                    format="%.1f",
+                    help="增值税率，根据实际情况填写",
+                )
+                / 100.0
+            )
+    # 保存产品按钮
+        if st.button(
+            "💾 保存产品",
+            width='stretch',
+            key="save_product_inside",
+        ):
+            if not subscription_status.get("valid", True):
+                st.error("账号到期，请联系客服续费")
+                return
+        # 确保is_cylinder变量被正确定义
+            is_cylinder = package_type == "圆柱包装"
+        # 检查必填字段
+            missing_fields = []
+            if not name or name.strip() == "":
+                missing_fields.append("产品名称")
+            if weight_g <= 0:
+                missing_fields.append("重量")
+            if unit_price <= 0:
+                missing_fields.append("进货单价")
+            if not is_cylinder:
+                if length_cm <= 0:
+                    missing_fields.append("长度")
+                if width_cm <= 0:
+                    missing_fields.append("宽度")
+                if height_cm <= 0:
+                    missing_fields.append("高度")
+            else:
+                if cylinder_diameter <= 0:
+                    missing_fields.append("圆柱直径")
+                if cylinder_length <= 0:
+                    missing_fields.append("圆柱长度")
 
-                # 保存产品逻辑
-                    if save_product_to_db(
-                        product_name,
-                        russian_name,
-                        category,
-                        model,
-                        unit_price,
-                        weight_g,
-                        is_cylinder,
-                        length_cm,
-                        width_cm,
-                        height_cm,
-                        cylinder_diameter,
-                        cylinder_length,
-                        has_battery,
-                        battery_capacity_wh,
-                        battery_capacity_mah,
-                        battery_voltage,
-                        has_msds,
-                        has_flammable,
-                        labeling_fee,
-                        shipping_fee,
-                        promotion_discount,
-                        promotion_cost_rate,
-                        target_profit_margin,
-                        commission_rate,
-                        withdrawal_fee_rate,
-                        payment_processing_fee,
-                        return_rate,
-                    ):
-                        st.success("产品保存成功！")
-                        st.rerun()
+            if missing_fields:
+                st.error(
+                    f"请填写以下必填字段：{', '.join(missing_fields)}"
+                )
+            else:
+                # 确保name不为None
+                product_name = name.strip() if name else ""
+                if not product_name:
+                    st.error("产品名称不能为空")
+                    return
+
+            # 保存产品逻辑
+                if save_product_to_db(
+                    product_name,
+                    russian_name,
+                    category,
+                    model,
+                    unit_price,
+                    weight_g,
+                    is_cylinder,
+                    length_cm,
+                    width_cm,
+                    height_cm,
+                    cylinder_diameter,
+                    cylinder_length,
+                    has_battery,
+                    battery_capacity_wh,
+                    battery_capacity_mah,
+                    battery_voltage,
+                    has_msds,
+                    has_flammable,
+                    labeling_fee,
+                    shipping_fee,
+                    promotion_discount,
+                    promotion_cost_rate,
+                    target_profit_margin,
+                    commission_rate,
+                    withdrawal_fee_rate,
+                    payment_processing_fee,
+                    return_rate,
+                    vat_rate,
+                ):
+                    st.success("产品保存成功！")
+                    st.rerun()
     # 开始计算按钮
         st.markdown("---")
         st.markdown("### 🚀 开始计算")
         if st.button(
             "🚀 开始计算",
             type="primary",
-            use_container_width=True,
+            width='stretch',
             key="start_calc_inside",
         ):
             # 调用计算函数
@@ -2247,6 +2314,7 @@ def precise_products_page():
                 withdrawal_fee_rate=withdrawal_fee_rate,
                 payment_processing_fee=payment_processing_fee,
                 return_rate=return_rate,
+                vat_rate=vat_rate,
             )
 
 
@@ -2280,7 +2348,7 @@ def precise_pricing_calculator():
         if st.button(
             "🚀 开始计算",
             type="primary",
-            use_container_width=True,
+            width='stretch',
             key="precise_calc_from_select",
         ):
             # 调用现有的定价计算逻辑
@@ -2458,6 +2526,7 @@ def calculate_fast_pricing_with_params(
     withdrawal_fee_rate: float,
     payment_processing_fee: float,
     return_rate: float,
+    vat_rate: float,
     logistics_rules: List[Dict[str, Any]],
 ):
     """极速模式定价计算 - 使用参数直接计算，显示精准模式样式的结果"""
@@ -2498,6 +2567,7 @@ def calculate_fast_pricing_with_params(
         'withdrawal_fee_rate': withdrawal_fee_rate,
         'payment_processing_fee': payment_processing_fee,
         'return_rate': return_rate,
+        'vat_rate': vat_rate,
         'promotion_cost_rate': promotion_rate + promotion_rate_extra,
         'length_cm': 0.0,  # 极速模式不设置尺寸
         'width_cm': 0.0,   # 极速模式不设置尺寸
@@ -2628,6 +2698,126 @@ def display_fast_pricing_results(results: List[Dict[str, Any]]):
                 st.write(f"¥{result['profit']:.2f}")
             with col4:
                 st.write(f"{result['profit_margin']:.1f}%")
+
+
+def _create_cost_breakdown_chart(
+    product: Dict[str, Any],
+    logistics_cost: float,
+    final_price: float,
+) -> Any:
+    """创建成本分解饼状图"""
+    import plotly.graph_objects as go
+    from exchange_service import get_fallback_exchange_rate
+    
+    # 获取产品参数
+    unit_price = float(product.get("unit_price", 0))
+    labeling_fee = float(product.get("labeling_fee", 0))
+    shipping_fee = float(product.get("shipping_fee", 0))
+    
+    target_margin = float(product.get("target_profit_margin", 0.2))
+    promotion_rate = float(product.get("promotion_cost_rate", 0))
+    commission_rate = float(product.get("commission_rate", 0.08))
+    withdrawal_rate = float(product.get("withdrawal_fee_rate", 0.02))
+    payment_rate = float(product.get("payment_processing_fee", 0))
+    return_rate = float(product.get("return_rate", 0))
+    vat_rate = float(product.get("vat_rate", 0))
+    
+    # 计算代理费
+    rate = get_fallback_exchange_rate()
+    price_rub = final_price / rate
+    actual_commission_rub = max(15, min(200, price_rub * 0.02))
+    commission_fee = actual_commission_rub * rate
+    
+    # 计算各项费用的绝对值
+    base_cost = unit_price + labeling_fee + shipping_fee + logistics_cost
+    
+    # 根据代理费范围判断计费模式
+    if actual_commission_rub <= 15 or actual_commission_rub >= 200:
+        # 代理费在分子中
+        total_cost_with_commission = base_cost + commission_fee
+        actual_revenue = final_price * (
+            1 - promotion_rate - commission_rate - withdrawal_rate 
+            - payment_rate - return_rate - vat_rate
+        )
+    else:
+        # 代理费在分母中 (2%在分母)
+        total_cost_with_commission = base_cost
+        actual_revenue = final_price * (
+            1 - promotion_rate - commission_rate - withdrawal_rate 
+            - payment_rate - return_rate - vat_rate - 0.02
+        )
+    
+    # 计算各项费用占售价的绝对金额
+    promotion_cost = final_price * promotion_rate
+    commission_cost = final_price * commission_rate
+    withdrawal_cost = final_price * withdrawal_rate
+    payment_cost = final_price * payment_rate
+    return_cost = final_price * return_rate
+    vat_cost = final_price * vat_rate
+    
+    # 计算实际利润
+    profit = actual_revenue - total_cost_with_commission
+    
+    # 准备饼图数据 - 只显示非零项
+    labels = []
+    values = []
+    colors = []
+    
+    cost_items = [
+        ("进货单价", unit_price, "#FF6B6B"),
+        ("贴标费用", labeling_fee, "#4ECDC4"),
+        ("供货运费", shipping_fee, "#45B7D1"),
+        ("物流运费", logistics_cost, "#FFA07A"),
+        ("代理费", commission_fee, "#98D8C8"),
+        ("推广费", promotion_cost, "#F7DC6F"),
+        ("佣金", commission_cost, "#BB8FCE"),
+        ("提现费", withdrawal_cost, "#85C1E2"),
+        ("收单费", payment_cost, "#F8B739"),
+        ("退货损失", return_cost, "#EB984E"),
+        ("增值税", vat_cost, "#A569BD"),
+        ("运营利润", profit, "#52BE80"),
+    ]
+    
+    for label, value, color in cost_items:
+        if value > 0.01:  # 只显示大于0.01的项
+            labels.append(label)
+            values.append(value)
+            colors.append(color)
+    
+    # 创建饼图
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.3,
+        marker=dict(colors=colors),
+        textinfo='label+percent',
+        textposition='auto',
+        hovertemplate='<b>%{label}</b><br>金额: ¥%{value:.2f}<br>占比: %{percent}<extra></extra>'
+    )])
+    
+    fig.update_layout(
+        title={
+            'text': '定价因素构成',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 16, 'color': '#2c3e50', 'family': 'Arial, sans-serif'}
+        },
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.05,
+            font=dict(size=10)
+        ),
+        margin=dict(l=30, r=150, t=60, b=100),
+        height=550,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)'
+    )
+    
+    return fig
 
 
 def _render_pricing_card(
@@ -2956,6 +3146,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_low.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_low.get('land_cost', 0),
+                pricing_result_low.get("land_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_land_low_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -3024,6 +3223,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_low_home.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_low_home.get('land_cost', 0),
+                pricing_result_low_home.get("land_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_land_low_home")
         else:
             st.info("暂无可用物流")
 
@@ -3103,6 +3311,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_low.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_low.get('air_cost', 0),
+                pricing_result_low.get("air_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_air_low_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -3171,6 +3388,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_low_home.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_low_home.get('air_cost', 0),
+                pricing_result_low_home.get("air_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_air_low_home")
         else:
             st.info("暂无可用物流")
 
@@ -3264,6 +3490,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_fast.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_fast.get('land_cost', 0),
+                pricing_result_fast.get("land_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_land_fast_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -3331,6 +3566,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_fast_home.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_fast_home.get('land_cost', 0),
+                pricing_result_fast_home.get("land_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_land_fast_home")
         else:
             st.info("暂无可用物流")
 
@@ -3408,6 +3652,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_fast.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_fast.get('air_cost', 0),
+                pricing_result_fast.get("air_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_air_fast_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -3476,6 +3729,15 @@ def display_fast_pricing_results_precise_style(
                 time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info = pricing_result_fast_home.get("product_info", virtual_product)
+            fig = _create_cost_breakdown_chart(
+                product_info,
+                pricing_result_fast_home.get('air_cost', 0),
+                pricing_result_fast_home.get("air_price", 0)
+            )
+            st.plotly_chart(fig, use_container_width=True, key="fast_air_fast_home")
         else:
             st.info("暂无可用物流")
 
@@ -3542,11 +3804,22 @@ def calculate_precise_pricing_from_form(
     withdrawal_fee_rate,
     payment_processing_fee,
     return_rate,
+    vat_rate,
 ):
-    """精准模式定价计算（从表单数据）"""
+    """精准模式定价计算（从表单数据，带限流保护）"""
+    
+    # 限流检查：每分钟最多20次计算
+    user_id = current_user_id()
+    pricing_limiter = get_limiter("pricing_calculation", rate=20, per=60, burst=5)
+    limiter_key = f"pricing_{user_id}"
+    
+    if not pricing_limiter.is_allowed(limiter_key):
+        retry_after = int(pricing_limiter.get_retry_after(limiter_key)) + 1
+        st.error(f"⚠️ 计算请求过于频繁，请 {retry_after} 秒后重试")
+        st.warning("限流规则: 每分钟最多 20 次计算，突发允许 5 次")
+        return
 
     # 检查用户订阅状态和计算权限
-    user_id = current_user_id()
     subscription_status = check_user_subscription_status(user_id)
 
     if not subscription_status.get('valid', False):
@@ -3622,6 +3895,7 @@ def calculate_precise_pricing_from_form(
         'withdrawal_fee_rate': withdrawal_fee_rate,
         'payment_processing_fee': payment_processing_fee,
         'return_rate': return_rate,
+        'vat_rate': vat_rate,
         'promotion_cost_rate': promotion_cost_rate,
         'promotion_discount': promotion_discount,
         'length_cm': length_cm if not is_cylinder else cylinder_diameter,
@@ -3857,7 +4131,19 @@ def calculate_precise_pricing():
 
 
 def calculate_precise_pricing_with_product(product: Dict[str, Any]):
-    """精准模式定价计算（选择产品）"""
+    """精准模式定价计算（选择产品，带限流保护）"""
+    
+    # 限流检查：每分钟最多20次计算
+    user_id = current_user_id()
+    pricing_limiter = get_limiter("pricing_calculation", rate=20, per=60, burst=5)
+    limiter_key = f"pricing_{user_id}"
+    
+    if not pricing_limiter.is_allowed(limiter_key):
+        retry_after = int(pricing_limiter.get_retry_after(limiter_key)) + 1
+        st.error(f"⚠️ 计算请求过于频繁，请 {retry_after} 秒后重试")
+        st.warning("限流规则: 每分钟最多 20 次计算，突发允许 5 次")
+        return
+    
     st.info(f"正在计算产品 '{product['name']}' 的定价...")
 
     # 获取物流规则
@@ -3982,10 +4268,27 @@ def save_product_to_db(
     withdrawal_fee_rate: float,
     payment_processing_fee: float,
     return_rate: float,
+    vat_rate: float,
 ):
-    """保存产品到数据库"""
+    """保存产品到数据库（带重名检查）"""
     try:
         with get_db_connection() as (conn, c):
+            # 检查产品名称是否重复
+            user_id = current_user_id()
+            existing_product = c.execute(
+                """
+                SELECT id, name FROM products
+                WHERE user_id = ? AND name = ?
+                """,
+                (user_id, name)
+            ).fetchone()
+            
+            if existing_product:
+                st.error(f"❌ 产品名称重复！已存在同名产品：'{name}'")
+                st.warning("💡 请更改产品名称后再保存")
+                return False
+            
+            # 名称不重复，继续保存
             c.execute(
                 """
                 INSERT INTO products (
@@ -3998,14 +4301,14 @@ def save_product_to_db(
                     target_profit_margin,
                     commission_rate, withdrawal_fee_rate,
                     payment_processing_fee,
-                    return_rate
+                    return_rate, vat_rate
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
         """,
                 (
-                    current_user_id(),
+                    user_id,
                     name,
                     russian_name,
                     category,
@@ -4033,6 +4336,7 @@ def save_product_to_db(
                     withdrawal_fee_rate,
                     payment_processing_fee,
                     return_rate,
+                    vat_rate,
                 ),
             )
             conn.commit()
@@ -4044,6 +4348,8 @@ def save_product_to_db(
 
 def user_management_page_fast_mode():
     """极速模式用户管理页面 - 使用不同的表单key避免冲突"""
+    from datetime import datetime, timedelta
+
     # 检查管理员权限
     try:
         require_admin()
@@ -4140,7 +4446,6 @@ def user_management_page_fast_mode():
                             test_days_remaining = 7
                         # 新建测试版：默认7天有效期
                             try:
-                                from datetime import datetime, timedelta
                                 expiry_date = (
                                     datetime.now() + timedelta(days=7)
                                 ).isoformat()
@@ -4154,7 +4459,6 @@ def user_management_page_fast_mode():
                             remaining_calculations = -1
                         # 新建效率版：默认30天有效期
                             try:
-                                from datetime import datetime, timedelta
                                 expiry_date = (
                                     datetime.now() + timedelta(days=30)
                                 ).isoformat()
@@ -4164,7 +4468,6 @@ def user_management_page_fast_mode():
                             remaining_calculations = -1
                         # 新建专业版：默认30天有效期
                             try:
-                                from datetime import datetime, timedelta
                                 expiry_date = (
                                     datetime.now() + timedelta(days=30)
                                 ).isoformat()
@@ -4174,7 +4477,6 @@ def user_management_page_fast_mode():
                             remaining_calculations = -1
                         # 新建企业版：默认30天有效期
                             try:
-                                from datetime import datetime, timedelta
                                 expiry_date = (
                                     datetime.now() + timedelta(days=30)
                                 ).isoformat()
@@ -4662,7 +4964,7 @@ def show_product_list_page(uid):
                 st.divider()
 
     # 底部操作按钮
-        if st.button("❌ 关闭列表", use_container_width=True):
+        if st.button("❌ 关闭列表", width='stretch'):
             st.session_state.show_product_list = False
             st.rerun()
 
@@ -5066,6 +5368,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_low.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_low.get('land_cost', 0),
+                    pricing_result_low.get("land_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_land_low_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -5122,6 +5434,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_low_home.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_low_home.get('land_cost', 0),
+                    pricing_result_low_home.get("land_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_land_low_home")
         else:
             st.info("暂无可用物流")
 
@@ -5189,6 +5511,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_low.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_low.get('air_cost', 0),
+                    pricing_result_low.get("air_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_air_low_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -5245,6 +5577,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_low_home.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_low_home.get('air_cost', 0),
+                    pricing_result_low_home.get("air_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_air_low_home")
         else:
             st.info("暂无可用物流")
 
@@ -5328,6 +5670,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_fast.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_fast.get('land_cost', 0),
+                    pricing_result_fast.get("land_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_land_fast_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -5385,6 +5737,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_fast_home.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_fast_home.get('land_cost', 0),
+                    pricing_result_fast_home.get("land_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_land_fast_home")
         else:
             st.info("暂无可用物流")
 
@@ -5452,6 +5814,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display,
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_fast.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_fast.get('air_cost', 0),
+                    pricing_result_fast.get("air_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_air_fast_pickup")
         else:
             st.info("暂无可用物流")
 
@@ -5508,6 +5880,16 @@ def display_precise_pricing_results(
                 avg_cost, cost_saving, avg_time_stats, time_saving_display
             )
             st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 显示定价因素饼状图
+            product_info_chart = pricing_result_fast_home.get("product_info", {})
+            if product_info_chart:
+                fig = _create_cost_breakdown_chart(
+                    product_info_chart,
+                    pricing_result_fast_home.get('air_cost', 0),
+                    pricing_result_fast_home.get("air_price", 0)
+                )
+                st.plotly_chart(fig, use_container_width=True, key="precise_air_fast_home")
         else:
             st.info("暂无可用物流")
 
@@ -5575,7 +5957,7 @@ def payment_center_page():
                     '支付时间': order[5] if order[5] else '-'
                 })
             df = pd.DataFrame(orders_data)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
         else:
             st.info("暂无订单记录")
 
@@ -5788,7 +6170,7 @@ def subscription_management_page():
                 "📈 查看升级选项",
                 key="view_upgrade_options",
                 type="primary",
-                use_container_width=True
+                width='stretch'
             ):
                 st.session_state["current_page"] = "upgrade"
                 st.rerun()
@@ -6179,6 +6561,476 @@ def start_wechat_callback_server():
             print(f"⚠️ 启动微信支付回调服务器失败: {ex}")
 
 
+def show_admin_statistics():
+    """显示管理员统计功能（集成在主应用中）"""
+    st.markdown(
+        """
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h1 class="main-title">📈 数据统计</h1>
+            <p style="color: #718096; font-size: 1.1rem; margin: 0;">
+                系统运营统计与数据分析
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # 使用二级标签页展示不同的统计模块
+    (stats_tab1, stats_tab2, stats_tab3, stats_tab4,
+     stats_tab5, stats_tab6, stats_tab7, stats_tab8) = st.tabs([
+        "总览", "留存分析", "用户活跃", "充值与收入",
+        "留存明细", "套餐分析", "操作日志", "异常监控"
+     ])
+
+    with stats_tab1:
+        # 总览
+        show_statistics_dashboard()
+
+    with stats_tab2:
+        # 留存分析
+        show_statistics_retention()
+
+    with stats_tab3:
+        # 用户活跃
+        show_statistics_activity()
+
+    with stats_tab4:
+        # 充值与收入
+        show_statistics_revenue()
+
+    with stats_tab5:
+        # 留存明细
+        show_statistics_user_details()
+
+    with stats_tab6:
+        # 套餐分析
+        show_statistics_plan()
+
+    with stats_tab7:
+        # 操作日志
+        show_statistics_admin_logs()
+
+    with stats_tab8:
+        # 异常监控
+        show_statistics_alerts()
+
+
+def show_statistics_dashboard():
+    """总览页面"""
+    st.subheader("📊 核心指标")
+
+    # 刷新按钮
+    col1, col2 = st.columns([10, 1])
+    with col2:
+        if st.button("🔄", key="refresh_dashboard", help="刷新数据"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取统计数据
+    stats = get_dashboard_stats()
+
+    if not stats:
+        st.warning("暂无统计数据")
+        return
+
+    # 核心指标卡片
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            label="今日活跃用户",
+            value=stats.get('active_users_today', 0),
+            delta=f"+{stats.get('new_users_today', 0)} 新增"
+        )
+
+    with col2:
+        st.metric(
+            label="累计注册用户",
+            value=stats.get('total_users', 0)
+        )
+
+    with col3:
+        revenue_delta = (stats.get('revenue_today', 0) -
+                         stats.get('revenue_yesterday', 0))
+        st.metric(
+            label="今日收入（元）",
+            value=f"¥{stats.get('revenue_today', 0):.2f}",
+            delta=f"¥{revenue_delta:.2f}" if revenue_delta != 0 else None
+        )
+
+    with col4:
+        st.metric(
+            label="实时在线",
+            value=stats.get('online_users', 0),
+            help="过去5分钟有登录记录的用户"
+        )
+
+    st.divider()
+
+    # 收入统计
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("💰 收入概况")
+        st.write(f"**昨日收入:** ¥{stats.get('revenue_yesterday', 0):.2f}")
+        st.write(f"**本月收入:** ¥{stats.get('revenue_month', 0):.2f}")
+        st.write(f"**历史总收入:** ¥{stats.get('total_revenue', 0):.2f}")
+
+    with col2:
+        st.subheader("📈 用户增长")
+        st.write(f"**今日新增:** {stats.get('new_users_today', 0)} 人")
+        st.write(f"**今日活跃:** {stats.get('active_users_today', 0)} 人")
+        st.write(f"**累计用户:** {stats.get('total_users', 0)} 人")
+
+
+def show_statistics_retention():
+    """留存分析页面"""
+    from datetime import datetime, timedelta
+
+    st.subheader("📈 留存率分析")
+
+    # 日期选择
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        start_date = st.date_input(
+            "开始日期",
+            value=datetime.now() - timedelta(days=30),
+            key="retention_start"
+        )
+    with col2:
+        end_date = st.date_input(
+            "结束日期",
+            value=datetime.now(),
+            key="retention_end"
+        )
+    with col3:
+        if st.button("🔄", key="refresh_retention", help="刷新数据"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取留存数据
+    retention_data = get_retention_analysis(
+        start_date.isoformat(),
+        end_date.isoformat()
+    )
+
+    if not retention_data:
+        st.info("暂无留存数据，请确保有用户登录记录")
+        return
+
+    # 平均留存率
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("D1 留存率", f"{retention_data.get('d1_retention', 0):.2f}%")
+    with col2:
+        st.metric("D3 留存率", f"{retention_data.get('d3_retention', 0):.2f}%")
+    with col3:
+        st.metric("D7 留存率", f"{retention_data.get('d7_retention', 0):.2f}%")
+    with col4:
+        st.metric("D30 留存率", f"{retention_data.get('d30_retention', 0):.2f}%")
+
+    # 留存趋势图
+    daily_trend = retention_data.get('daily_trend', [])
+    if daily_trend:
+        st.subheader("📊 留存趋势图")
+        df = pd.DataFrame(daily_trend)
+        st.line_chart(df.set_index('date')[['d1', 'd3', 'd7', 'd30']])
+
+        # 详细数据表格
+        with st.expander("查看详细数据"):
+            st.dataframe(df, width='stretch', hide_index=True)
+
+
+def show_statistics_activity():
+    """用户活跃页面"""
+    st.subheader("👥 用户活跃统计")
+
+    # 刷新按钮
+    col1, col2 = st.columns([10, 1])
+    with col2:
+        if st.button("🔄", key="refresh_activity", help="刷新数据"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取活跃数据
+    activity_data = get_user_activity_stats()
+
+    if not activity_data:
+        st.info("暂无活跃数据")
+        return
+
+    # 核心指标
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("DAU（日活）", activity_data.get('dau', 0))
+    with col2:
+        st.metric("WAU（周活）", activity_data.get('wau', 0))
+    with col3:
+        st.metric("MAU（月活）", activity_data.get('mau', 0))
+
+    st.divider()
+
+    # Top 10 活跃用户
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.subheader("⭐ Top 10 活跃用户")
+        top_users = activity_data.get('top_active_users', [])
+        if top_users:
+            for idx, user in enumerate(top_users, 1):
+                st.write(
+                    f"{idx}. **{user['username']}** "
+                    f"({user['user_type']}) - {user['login_count']} 次登录"
+                )
+        else:
+            st.info("暂无数据")
+
+    with col2:
+        st.subheader("📈 30天活跃趋势")
+        trend = activity_data.get('trend', [])
+        if trend:
+            df = pd.DataFrame(trend)
+            st.line_chart(df.set_index('date')['active_users'])
+        else:
+            st.info("暂无数据")
+
+
+def show_statistics_revenue():
+    """充值与收入页面"""
+    from datetime import datetime, timedelta
+
+    st.subheader("💰 充值与收入统计")
+
+    # 日期选择
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        start_date = st.date_input(
+            "开始日期",
+            value=datetime.now() - timedelta(days=30),
+            key="revenue_start"
+        )
+    with col2:
+        end_date = st.date_input(
+            "结束日期",
+            value=datetime.now(),
+            key="revenue_end"
+        )
+    with col3:
+        if st.button("🔄", key="refresh_revenue", help="刷新数据"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取收入数据
+    revenue_data = get_revenue_stats(
+        start_date.isoformat(),
+        end_date.isoformat()
+    )
+
+    if not revenue_data:
+        st.info("暂无收入数据")
+        return
+
+    # 核心指标
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("订单总数", revenue_data.get('total_orders', 0))
+    with col2:
+        st.metric("总金额", f"¥{revenue_data.get('total_amount', 0):.2f}")
+    with col3:
+        st.metric("平均客单价", f"¥{revenue_data.get('avg_order_value', 0):.2f}")
+
+    st.divider()
+
+    # 收入趋势图和套餐分布
+    col1, col2 = st.columns([3, 2])
+
+    with col1:
+        st.subheader("📊 收入趋势")
+        trend = revenue_data.get('revenue_trend', [])
+        if trend:
+            df = pd.DataFrame(trend)
+            st.line_chart(df.set_index('date')['revenue'])
+        else:
+            st.info("暂无数据")
+
+    with col2:
+        st.subheader("🥧 套餐分布")
+        plan_dist = revenue_data.get('plan_distribution', [])
+        if plan_dist:
+            for plan in plan_dist:
+                st.write(
+                    f"**{plan['plan_type']}**: {plan['count']} 单 "
+                    f"(¥{plan['total_amount']:.2f})"
+                )
+        else:
+            st.info("暂无数据")
+
+    # 订单列表
+    st.subheader("📋 订单列表")
+    orders = revenue_data.get('order_list', [])
+    if orders:
+        df = pd.DataFrame(orders)
+        st.dataframe(df, width='stretch', hide_index=True)
+    else:
+        st.info("暂无订单数据")
+
+
+def show_statistics_user_details():
+    """留存明细页面"""
+    st.subheader("📋 用户留存明细")
+
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        sort_by = st.selectbox(
+            "排序方式",
+            [
+                ("login_count_desc", "登录次数（降序）"),
+                ("login_count_asc", "登录次数（升序）"),
+                ("created_at_desc", "注册时间（最新）"),
+                ("created_at_asc", "注册时间（最早）"),
+            ],
+            format_func=lambda x: x[1]
+        )[0]
+
+    with col2:
+        per_page = st.selectbox("每页显示", [10, 20, 50], index=1)
+
+    with col3:
+        if st.button("🔄", key="refresh_user_details", help="刷新数据"):
+            st.rerun()
+
+    # 获取数据
+    page = st.session_state.get('user_retention_page', 1)
+    data = get_user_retention_details(page, per_page, sort_by)
+
+    if not data or not data.get('users'):
+        st.info("暂无用户数据")
+        return
+
+    users_data = []
+    for user in data['users']:
+        users_data.append({
+            'ID': user['user_id'],
+            '用户名': user['username'],
+            '邮箱': user['email'] or '无',
+            '套餐': user['user_type'],
+            '注册日期': user['created_at'][:10] if user['created_at'] else '未知',
+            '最近登录': user['last_login'][:10] if user['last_login'] else '从未',
+            '登录次数': user['login_count'],
+            '留存天数': user['retention_days'],
+        })
+
+    df = pd.DataFrame(users_data)
+    st.dataframe(df, width='stretch', hide_index=True)
+
+
+def show_statistics_plan():
+    """套餐分析页面"""
+    st.subheader("📦 套餐分析")
+
+    col1, col2 = st.columns([10, 1])
+    with col2:
+        if st.button("🔄", key="refresh_plan", help="刷新数据"):
+            st.cache_data.clear()
+            st.rerun()
+
+    plan_data = get_plan_stats()
+
+    if not plan_data:
+        st.info("暂无套餐数据")
+        return
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.subheader("📊 各套餐用户数量")
+        plan_count = plan_data.get('plan_count', [])
+        if plan_count:
+            for plan in plan_count:
+                st.write(f"**{plan['plan_type']}**: {plan['user_count']} 人")
+
+    with col2:
+        st.subheader("💰 套餐收入贡献")
+        plan_revenue = plan_data.get('plan_revenue', [])
+        if plan_revenue:
+            for plan in plan_revenue:
+                revenue = plan['total_revenue']
+                st.write(f"**{plan['plan_type']}**: ¥{revenue:.2f}")
+
+
+def show_statistics_admin_logs():
+    """操作日志页面"""
+    st.subheader("📜 管理员操作日志")
+
+    col1, col2 = st.columns([10, 1])
+    with col2:
+        if st.button("🔄", key="refresh_admin_logs", help="刷新数据"):
+            st.rerun()
+
+    per_page = st.selectbox(
+        "每页显示", [20, 50, 100], key="admin_logs_per_page"
+    )
+    page = st.session_state.get('admin_logs_page', 1)
+
+    logs_data = get_admin_action_logs(page, per_page)
+
+    if not logs_data or not logs_data.get('logs'):
+        st.info("暂无日志数据，管理员操作后会自动记录")
+        return
+
+    log_list = []
+    for log in logs_data['logs']:
+        log_list.append({
+            '时间': log['created_at'],
+            '管理员': log['admin_username'] or '未知',
+            '操作类型': log['action_type'],
+            '操作详情': log['action_detail'],
+            '目标用户': log['target_username'] or '-'
+        })
+
+    df = pd.DataFrame(log_list)
+    st.dataframe(df, width='stretch', hide_index=True)
+
+
+def show_statistics_alerts():
+    """异常监控页面"""
+    st.subheader("🚨 异常监控与告警")
+
+    col1, col2 = st.columns([10, 1])
+    with col2:
+        if st.button("🔄", key="refresh_alerts", help="刷新数据"):
+            st.rerun()
+
+    alert_data = get_alert_records()
+
+    if not alert_data:
+        st.info("暂无告警数据")
+        return
+
+    st.metric("告警总数", alert_data.get('total_alerts', 0))
+
+    st.divider()
+
+    alerts = alert_data.get('alerts', [])
+    if alerts:
+        for alert in alerts:
+            level_color = {
+                'high': '🔴',
+                'medium': '🟠',
+                'low': '🟡'
+            }.get(alert['alert_level'], '⚪')
+
+            with st.expander(
+                f"{level_color} {alert['description']} - "
+                f"{alert['created_at']}"
+            ):
+                st.write(f"**类型:** {alert['alert_type']}")
+                st.write(f"**级别:** {alert['alert_level']}")
+                st.write(f"**状态:** {alert['status']}")
+    else:
+        st.info("暂无告警记录")
+
+
 def main():
     # 启动自动备份服务（只在第一次调用时启动）
     # 使用 session_state 标记，因为 backup_system.is_running 会在线程中持久化
@@ -6191,6 +7043,16 @@ def main():
         except Exception as backup_exc:
             print(f"⚠️ 自动备份服务启动失败: {backup_exc}")
         st.session_state['_backup_init_attempted'] = True
+    
+    # 启动告警检查定时任务（只在第一次调用时启动）
+    if not st.session_state.get('_alert_scheduler_init_attempted', False):
+        try:
+            from scheduled_tasks import start_scheduler_thread
+            start_scheduler_thread()
+            print("🚀 告警检查定时任务已启动")
+        except Exception as alert_exc:
+            print(f"⚠️ 告警检查定时任务启动失败: {alert_exc}")
+        st.session_state['_alert_scheduler_init_attempted'] = True
 
     # 启动微信支付回调服务器（后台线程）
     # 检查是否禁用内置回调服务器（当使用独立Gunicorn回调服务时）

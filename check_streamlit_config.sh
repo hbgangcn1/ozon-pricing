@@ -38,3 +38,4 @@ echo "1. 如果fileWatcherType设置正确但仍频繁重启，请检查systemd�
 echo "2. 确保命令中包含 --server.fileWatcherType=none"
 echo "3. 或者在~/.streamlit/config.toml中也添加此配置"
 
+

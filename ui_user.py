@@ -356,7 +356,7 @@ def user_management_page():
                 if st.button(
                     "📋 订阅管理",
                     key=f"subscription_{uid}",
-                    use_container_width=True
+                    width='stretch'
                 ):
                     st.session_state.selected_user_for_subscription = uid
                     st.rerun()
@@ -364,14 +364,14 @@ def user_management_page():
                 if st.button(
                     "🔒 重置密码",
                     key=f"show_reset_pwd_{uid}",
-                    use_container_width=True
+                    width='stretch'
                 ):
                     st.session_state[f"show_reset_password_{uid}"] = True
             with col3:
                 if st.button(
                     "🗑️ 删除用户",
                     key=f"del_user_{uid}",
-                    use_container_width=True
+                    width='stretch'
                 ):
                     if uid == st.session_state.user["id"]:
                         st.error("不能删除当前登录用户")
@@ -576,7 +576,7 @@ def subscription_management_page():
             if st.button(
                 "➕ 增加30天",
                 key="add_30_days",
-                use_container_width=True
+                width='stretch'
             ):
                 current_expiry = user_info.get('expiry_date')
                 from datetime import date
@@ -605,7 +605,7 @@ def subscription_management_page():
             if st.button(
                 "➕ 增加365天",
                 key="add_365_days",
-                use_container_width=True
+                width='stretch'
             ):
                 current_expiry = user_info.get('expiry_date')
                 from datetime import date
@@ -843,12 +843,12 @@ def _show_register_form():
         with col1:
             submitted = st.form_submit_button(
                 "注册并登录",
-                use_container_width=True
+                width='stretch'
             )
         with col2:
             view_terms = st.form_submit_button(
                 "📋 查看协议",
-                use_container_width=True
+                width='stretch'
             )
         # col3 留空用于压缩前两个按钮的间距
 
@@ -989,7 +989,7 @@ def _show_terms_modal():
             if st.button(
                 "✖ 关闭协议",
                 key="close_terms_modal",
-                use_container_width=True
+                width='stretch'
             ):
                 st.session_state.show_terms_modal = False
                 st.rerun()

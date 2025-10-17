@@ -10,12 +10,14 @@ try:
         update_user_subscription,
         get_user_subscription_info,
     )
+    from .rate_limiter import get_limiter
 except ImportError:  # Fallback when executed as top-level module
     from db_utils import (
         verify_user,
         update_user_subscription,
         get_user_subscription_info,
     )
+    from rate_limiter import get_limiter
 
 
 class SessionSecurity:
@@ -377,7 +379,17 @@ class SessionSecurity:
 
 
 def secure_login(username_or_email: str, password: str) -> bool:
-    """安全登录函数"""
+    """安全登录函数（带限流保护）"""
+    
+    # 限流检查：每分钟最多5次登录尝试
+    login_limiter = get_limiter("login", rate=5, per=60)
+    limiter_key = f"login_{username_or_email}"
+    
+    if not login_limiter.is_allowed(limiter_key):
+        retry_after = int(login_limiter.get_retry_after(limiter_key)) + 1
+        st.error(f"⚠️ 登录尝试过于频繁，请 {retry_after} 秒后重试")
+        st.warning("限流规则: 每分钟最多 5 次登录尝试")
+        return False
 
     # 检查用户是否被锁定
     if SessionSecurity.is_user_locked(username_or_email):
@@ -391,6 +403,22 @@ def secure_login(username_or_email: str, password: str) -> bool:
         # 登录成功，清除旧的session state
         SessionSecurity.invalidate_session()
         SessionSecurity.record_login_attempt(username_or_email, True)
+
+        # 记录用户登录日志
+        try:
+            from db_utils import log_user_login
+            from logger_config import logger
+            log_user_login(
+                user_id=user['id'],
+                ip_address=None,  # 可选：如需要可通过request获取
+                user_agent=None   # 可选：如需要可通过request获取
+            )
+        except Exception as e:
+            try:
+                from logger_config import logger
+                logger.error(f"记录用户登录日志失败: {e}")
+            except ImportError:
+                pass  # 如果logger不可用，静默失败
 
         # 首次登录后再开始计时：
         # 对 monthly/enterprise/test/efficiency/professional 首次登录生效

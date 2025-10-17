@@ -124,7 +124,7 @@ def show_duration_selection(plan_name: str):
             if st.button(
                 "购买1个月" if promo_used else "首月仅需¥1",
                 key="duration_1_month",
-                use_container_width=True,
+                width='stretch',
                 type="primary" if not promo_used else "secondary"
             ):
                 st.session_state[f"payment_duration_{plan_name}"] = "1_month"
@@ -158,7 +158,7 @@ def show_duration_selection(plan_name: str):
             if st.button(
                 "购买1年",
                 key="duration_1_year",
-                use_container_width=True
+                width='stretch'
             ):
                 st.session_state[f"payment_duration_{plan_name}"] = "1_year"
                 st.rerun()
@@ -210,7 +210,7 @@ def show_duration_selection(plan_name: str):
             if st.button(
                 "购买1个月",
                 key="duration_1_month",
-                use_container_width=True
+                width='stretch'
             ):
                 st.session_state[f"payment_duration_{plan_name}"] = "1_month"
                 st.rerun()
@@ -243,7 +243,7 @@ def show_duration_selection(plan_name: str):
             if st.button(
                 "购买1年",
                 key="duration_1_year",
-                use_container_width=True
+                width='stretch'
             ):
                 st.session_state[f"payment_duration_{plan_name}"] = "1_year"
                 st.rerun()
@@ -534,7 +534,7 @@ def show_existing_payment(
             "🔍 检查支付状态",
             key="check_payment_status",
             type="primary",
-            use_container_width=True
+            width='stretch'
         ):
             with st.spinner("正在检查支付状态..."):
                 # 1) 优先查询数据库（可靠、低延迟）
