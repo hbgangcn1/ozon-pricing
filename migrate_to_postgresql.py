@@ -149,7 +149,7 @@ def migrate_table(
     # 找出共同字段
     common_columns = [col for col in sqlite_columns if col in pg_schema]
     if not common_columns:
-        print(f"  ⚠️  没有共同字段，跳过")
+        print("  ⚠️  没有共同字段，跳过")
         return
 
     print(f"  PostgreSQL字段: {len(pg_schema)}个")
