@@ -72,6 +72,38 @@ def get_table_data(sqlite_conn, table_name: str) -> List[Tuple]:
     return cursor.fetchall()
 
 
+def get_pg_table_schema(pg_conn, table_name: str):
+    """获取PostgreSQL表结构"""
+    try:
+        pg_cursor = pg_conn.cursor()
+        # PostgreSQL表名查询需要指定schema
+        pg_cursor.execute(f"""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = '{table_name}'
+            ORDER BY ordinal_position
+        """)
+        result = {row[0]: row[1] for row in pg_cursor.fetchall()}
+        return result
+    except Exception as e:
+        print(f"    调试: 获取表结构失败 - {e}")
+        return {}
+
+
+def convert_value_for_pg(value, column_name: str, pg_type: str):
+    """转换SQLite值为PostgreSQL兼容格式"""
+    if value is None:
+        return None
+
+    # 布尔类型转换
+    if pg_type == 'boolean':
+        return bool(value)
+
+    # 其他类型保持原样
+    return value
+
+
 def migrate_table(
     sqlite_conn,
     pg_conn,
@@ -79,7 +111,7 @@ def migrate_table(
     dry_run: bool = False
 ):
     """
-    迁移单个表
+    迁移单个表（支持类型转换和字段匹配）
 
     Args:
         sqlite_conn: SQLite连接
@@ -89,11 +121,31 @@ def migrate_table(
     """
     print(f"\n{'[试运行]' if dry_run else ''}正在迁移表: {table_name}")
 
-    # 获取表结构
-    schema = get_table_schema(sqlite_conn, table_name)
-    columns = [col[1] for col in schema]
+    # 获取SQLite表结构
+    sqlite_schema = get_table_schema(sqlite_conn, table_name)
+    sqlite_columns = [col[1] for col in sqlite_schema]
 
-    print(f"  字段: {', '.join(columns)}")
+    print(f"  SQLite字段: {', '.join(sqlite_columns)}")
+
+    # 获取PostgreSQL表结构（先回滚可能的失败事务）
+    try:
+        pg_conn.rollback()
+    except Exception:
+        pass
+
+    pg_schema = get_pg_table_schema(pg_conn, table_name)
+    if not pg_schema:
+        print(f"  ⚠️  PostgreSQL中不存在表 {table_name}，跳过")
+        return
+
+    # 找出共同字段
+    common_columns = [col for col in sqlite_columns if col in pg_schema]
+    if not common_columns:
+        print(f"  ⚠️  没有共同字段，跳过")
+        return
+
+    print(f"  PostgreSQL字段: {len(pg_schema)}个")
+    print(f"  匹配字段: {len(common_columns)}个")
 
     # 获取数据
     rows = get_table_data(sqlite_conn, table_name)
@@ -107,33 +159,41 @@ def migrate_table(
         print("  ✓ 试运行模式，不执行实际迁移")
         return
 
-    # 清空PostgreSQL中的表（可选）
+    # 清空PostgreSQL中的表
     pg_cursor = pg_conn.cursor()
     try:
         pg_cursor.execute(f"TRUNCATE TABLE {table_name} CASCADE")
         print("  已清空目标表")
     except Exception as e:
         print(f"  ⚠️  清空表失败: {e}，继续插入...")
+        # 回滚失败的事务
+        pg_conn.rollback()
 
     # 插入数据
-    placeholders = ', '.join(['%s'] * len(columns))
+    placeholders = ', '.join(['%s'] * len(common_columns))
     insert_sql = (
-        f"INSERT INTO {table_name} ({', '.join(columns)}) "
+        f"INSERT INTO {table_name} ({', '.join(common_columns)}) "
         f"VALUES ({placeholders})"
     )
 
     success_count = 0
     error_count = 0
 
+    # 获取字段在原始数据中的索引
+    column_indices = {col: sqlite_columns.index(col)
+                      for col in common_columns}
+
     for row in rows:
         try:
-            # 转换数据类型
+            # 只提取共同字段的值，并进行类型转换
             values = []
-            for val in row:
-                if val is None:
-                    values.append(None)
-                else:
-                    values.append(val)
+            for col in common_columns:
+                idx = column_indices[col]
+                val = row[idx]
+                # 转换值
+                pg_type = pg_schema.get(col, '')
+                converted_val = convert_value_for_pg(val, col, pg_type)
+                values.append(converted_val)
 
             pg_cursor.execute(insert_sql, values)
             success_count += 1
@@ -141,8 +201,16 @@ def migrate_table(
             error_count += 1
             if error_count <= 3:  # 只显示前3个错误
                 print(f"  ❌ 插入失败: {e}")
+            # 回滚当前失败的事务
+            pg_conn.rollback()
 
-    pg_conn.commit()
+    # 提交成功的事务
+    try:
+        pg_conn.commit()
+    except Exception as e:
+        print(f"  ⚠️  提交事务失败: {e}")
+        pg_conn.rollback()
+
     print(f"  ✓ 成功: {success_count}, 失败: {error_count}")
 
 
