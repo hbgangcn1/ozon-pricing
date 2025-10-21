@@ -1,6 +1,6 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 # 导入数据库函数
 try:
@@ -25,6 +25,10 @@ try:
         get_admin_action_logs,
         get_alert_records,
         handle_alert,
+        get_user_segmentation,
+        get_conversion_funnel,
+        get_feature_usage_stats,
+        get_enhanced_revenue_stats,
     )
 except ImportError:
     from .db_utils import (
@@ -48,6 +52,10 @@ except ImportError:
         get_admin_action_logs,
         get_alert_records,
         handle_alert,
+        get_user_segmentation,
+        get_conversion_funnel,
+        get_feature_usage_stats,
+        get_enhanced_revenue_stats,
     )
 
 # 页面配置
@@ -184,7 +192,9 @@ def admin_sidebar():
                 [
                     "总览", "留存分析", "用户活跃",
                     "充值与收入", "留存明细", "套餐分析",
-                    "操作日志", "异常监控"
+                    "操作日志", "异常监控",
+                    "用户分群", "转化漏斗",
+                    "功能使用", "增强收入"
                 ],
                 key="stats_submenu"
             )
@@ -908,7 +918,11 @@ def statistics_activity_page():
     col1, col2 = st.columns([10, 1])
     with col2:
         if st.button("🔄 刷新", key="refresh_activity"):
+            # 清除Streamlit缓存
             st.cache_data.clear()
+            # 清除统计数据库缓存
+            from db_utils import clear_all_statistics_cache
+            clear_all_statistics_cache()
             st.rerun()
 
     # 获取活跃数据
@@ -1351,6 +1365,415 @@ def statistics_alerts_page():
         st.info("暂无告警记录")
 
 
+def statistics_user_segmentation_page():
+    """用户分群分析页面"""
+    st.markdown("""
+    <div class="main-header">
+        <h1>👥 用户分群分析</h1>
+        <p>新用户、活跃用户、沉默用户、流失用户分析</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 刷新按钮
+    col1, col2, col3 = st.columns([5, 1, 1])
+    with col3:
+        if st.button("🔄 刷新", key="refresh_segmentation"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取用户分群数据
+    segmentation_data = get_user_segmentation()
+
+    if not segmentation_data:
+        st.error("无法获取用户分群数据")
+        return
+
+    # 核心指标卡片
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            label="新用户",
+            value=segmentation_data.get('new_users', 0),
+            help="7天内注册的用户"
+        )
+
+    with col2:
+        st.metric(
+            label="活跃用户",
+            value=segmentation_data.get('active_users', 0),
+            help="7天内有活动的用户"
+        )
+
+    with col3:
+        st.metric(
+            label="沉默用户",
+            value=segmentation_data.get('silent_users', 0),
+            help="30天未活跃的用户"
+        )
+
+    with col4:
+        st.metric(
+            label="流失用户",
+            value=segmentation_data.get('lost_users', 0),
+            help="60天未活跃的用户"
+        )
+
+    st.divider()
+
+    # 用户分群分布饼图
+    segments = segmentation_data.get('segments', [])
+    if segments:
+        col1, col2 = st.columns([2, 3])
+
+        with col1:
+            st.subheader("📊 用户分群分布")
+            for seg in segments:
+                st.write(
+                    f"**{seg['label']}:** {seg['count']} 人 "
+                    f"({seg['percentage']}%)"
+                )
+
+        with col2:
+            st.subheader("📈 分布占比")
+            import plotly.graph_objects as go
+
+            fig = go.Figure(data=[go.Pie(
+                labels=[s['label'] for s in segments],
+                values=[s['count'] for s in segments],
+                hole=0.3,
+                marker=dict(
+                    colors=['#4CAF50', '#2196F3', '#FF9800', '#F44336']
+                )
+            )])
+            fig.update_layout(height=400)
+            st.plotly_chart(
+                fig, width='stretch', config={'displayModeBar': False}
+            )
+    else:
+        st.info("暂无数据")
+
+
+def statistics_conversion_funnel_page():
+    """转化漏斗分析页面"""
+    st.markdown("""
+    <div class="main-header">
+        <h1>🎯 用户转化漏斗</h1>
+        <p>注册 → 登录 → 计算 → 充值 → 升级转化路径分析</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 日期筛选和刷新
+    col1, col2, col3 = st.columns([3, 2, 1])
+    with col1:
+        date_range = st.date_input(
+            "选择日期范围",
+            value=(
+                date.today() - timedelta(days=30),
+                date.today()
+            ),
+            key="funnel_date_range"
+        )
+    with col3:
+        if st.button("🔄 刷新", key="refresh_funnel"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取日期范围
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start_date = date_range[0].isoformat()
+        end_date = date_range[1].isoformat()
+    else:
+        start_date = (date.today() - timedelta(days=30)).isoformat()
+        end_date = date.today().isoformat()
+
+    # 获取转化漏斗数据
+    funnel_data = get_conversion_funnel(start_date, end_date)
+
+    if not funnel_data:
+        st.error("无法获取转化漏斗数据")
+        return
+
+    funnel = funnel_data.get('funnel', [])
+    conversion_rates = funnel_data.get('conversion_rates', {})
+
+    if funnel:
+        # 漏斗可视化
+        st.subheader("📊 用户转化漏斗")
+
+        import plotly.graph_objects as go
+
+        fig = go.Figure(go.Funnel(
+            y=[step['step'] for step in funnel],
+            x=[step['count'] for step in funnel],
+            textinfo="value+percent initial",
+            marker=dict(
+                color=['#4CAF50', '#2196F3', '#FF9800', '#FF5722', '#9C27B0']
+            )
+        ))
+        fig.update_layout(height=500)
+        st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
+
+        st.divider()
+
+        # 详细数据表格
+        col1, col2 = st.columns([3, 2])
+
+        with col1:
+            st.subheader("📋 漏斗详细数据")
+            funnel_df = pd.DataFrame(funnel)
+            funnel_df.columns = ['阶段', '用户数', '转化率(%)']
+            st.dataframe(funnel_df, width='stretch')
+
+        with col2:
+            st.subheader("📈 阶段转化率")
+            for key, value in conversion_rates.items():
+                label_map = {
+                    'register_to_login': '注册→登录',
+                    'login_to_calculate': '登录→计算',
+                    'calculate_to_pay': '计算→充值',
+                    'pay_to_upgrade': '充值→升级'
+                }
+                st.write(f"**{label_map.get(key, key)}:** {value}%")
+
+    else:
+        st.info("暂无数据")
+
+
+def statistics_feature_usage_page():
+    """功能使用分析页面"""
+    st.markdown("""
+    <div class="main-header">
+        <h1>⚡ 功能使用分析</h1>
+        <p>极速模式 vs 完整模式使用统计</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 日期筛选和刷新
+    col1, col2, col3 = st.columns([3, 2, 1])
+    with col1:
+        date_range = st.date_input(
+            "选择日期范围",
+            value=(
+                date.today() - timedelta(days=30),
+                date.today()
+            ),
+            key="feature_date_range"
+        )
+    with col3:
+        if st.button("🔄 刷新", key="refresh_feature"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取日期范围
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start_date = date_range[0].isoformat()
+        end_date = date_range[1].isoformat()
+    else:
+        start_date = (date.today() - timedelta(days=30)).isoformat()
+        end_date = date.today().isoformat()
+
+    # 获取功能使用数据
+    usage_data = get_feature_usage_stats(start_date, end_date)
+
+    if not usage_data:
+        st.error("无法获取功能使用数据")
+        return
+
+    # 核心指标卡片
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            label="极速模式",
+            value=usage_data.get('fast_mode_count', 0),
+            help="极速模式使用次数"
+        )
+
+    with col2:
+        st.metric(
+            label="完整模式",
+            value=usage_data.get('complete_mode_count', 0),
+            help="完整模式使用次数"
+        )
+
+    with col3:
+        st.metric(
+            label="总计算次数",
+            value=usage_data.get('total_count', 0)
+        )
+
+    with col4:
+        st.metric(
+            label="极速模式偏好",
+            value=f"{usage_data.get('mode_preference', 0):.1f}%",
+            help="极速模式占比"
+        )
+
+    st.divider()
+
+    # 使用趋势图
+    st.subheader("📈 使用趋势（30天）")
+    daily_trend = usage_data.get('daily_trend', [])
+
+    if daily_trend:
+        df = pd.DataFrame(daily_trend)
+        df_chart = df.set_index('date')[['fast', 'complete']]
+        df_chart.columns = ['极速模式', '完整模式']
+        st.line_chart(df_chart)
+
+        # 用户偏好统计
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("👥 用户偏好分布")
+            mode_users = usage_data.get('mode_users', {})
+            if mode_users:
+                st.write(f"**极速模式用户:** {mode_users.get('fast', 0)} 人")
+                st.write(
+                    f"**完整模式用户:** {mode_users.get('complete', 0)} 人"
+                )
+
+        with col2:
+            st.subheader("📊 模式对比")
+            if usage_data.get('total_count', 0) > 0:
+                fast_pct = usage_data.get('mode_preference', 0)
+                complete_pct = 100 - fast_pct
+                st.write(f"**极速模式占比:** {fast_pct:.1f}%")
+                st.write(f"**完整模式占比:** {complete_pct:.1f}%")
+    else:
+        st.info("暂无数据")
+
+
+def statistics_enhanced_revenue_page():
+    """增强收入统计页面"""
+    st.markdown("""
+    <div class="main-header">
+        <h1>💰 增强收入统计</h1>
+        <p>首充、续费、升级订单分类分析</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 日期筛选和刷新
+    col1, col2, col3 = st.columns([3, 2, 1])
+    with col1:
+        date_range = st.date_input(
+            "选择日期范围",
+            value=(
+                date.today() - timedelta(days=30),
+                date.today()
+            ),
+            key="revenue_enhanced_date_range"
+        )
+    with col3:
+        if st.button("🔄 刷新", key="refresh_revenue_enhanced"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # 获取日期范围
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start_date = date_range[0].isoformat()
+        end_date = date_range[1].isoformat()
+    else:
+        start_date = (date.today() - timedelta(days=30)).isoformat()
+        end_date = date.today().isoformat()
+
+    # 获取增强收入数据
+    revenue_data = get_enhanced_revenue_stats(start_date, end_date)
+
+    if not revenue_data:
+        st.error("无法获取增强收入数据")
+        return
+
+    # 核心指标卡片
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        first_payment = revenue_data.get('first_payment', {})
+        st.metric(
+            label="首充订单",
+            value=first_payment.get('count', 0),
+            delta=f"¥{first_payment.get('amount', 0):.2f}"
+        )
+
+    with col2:
+        renewal = revenue_data.get('renewal', {})
+        st.metric(
+            label="续费订单",
+            value=renewal.get('count', 0),
+            delta=f"¥{renewal.get('amount', 0):.2f}"
+        )
+
+    with col3:
+        upgrade = revenue_data.get('upgrade', {})
+        st.metric(
+            label="升级订单",
+            value=upgrade.get('count', 0),
+            delta=f"¥{upgrade.get('amount', 0):.2f}"
+        )
+
+    with col4:
+        total = revenue_data.get('total', {})
+        st.metric(
+            label="总订单",
+            value=total.get('count', 0),
+            delta=f"¥{total.get('amount', 0):.2f}"
+        )
+
+    st.divider()
+
+    # 订单类型分布
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📊 订单类型分布")
+        order_dist = revenue_data.get('order_distribution', [])
+        if order_dist:
+            import plotly.graph_objects as go
+
+            fig = go.Figure(data=[go.Pie(
+                labels=[d['type'] for d in order_dist],
+                values=[d['count'] for d in order_dist],
+                hole=0.4,
+                marker=dict(
+                    colors=['#4CAF50', '#2196F3', '#FF9800', '#9E9E9E']
+                )
+            )])
+            fig.update_layout(height=400)
+            st.plotly_chart(
+                fig, width='stretch', config={'displayModeBar': False}
+            )
+
+    with col2:
+        st.subheader("💹 转化率分析")
+        conversion_rate = revenue_data.get('conversion_rate', {})
+        if conversion_rate:
+            st.write(
+                f"**免费转付费率:** "
+                f"{conversion_rate.get('free_to_paid', 0)}%"
+            )
+            st.write(
+                f"**效率版升级率:** "
+                f"{conversion_rate.get('efficiency_to_pro', 0)}%"
+            )
+
+        st.divider()
+        st.subheader("📋 订单类型详情")
+        if order_dist:
+            dist_df = pd.DataFrame(order_dist)
+            dist_df.columns = ['类型', '订单数', '占比(%)']
+            st.dataframe(dist_df, width='stretch')
+
+    # 未标记订单提示
+    unmarked = revenue_data.get('unmarked', {})
+    if unmarked.get('count', 0) > 0:
+        st.warning(
+            f"⚠️ 发现 {unmarked['count']} 个未标记订单，"
+            f"金额 ¥{unmarked['amount']:.2f}。"
+            f"这些订单是在订单类型标记功能实施之前创建的。"
+        )
+
+
 def main():
     """主函数"""
     init_session_state()
@@ -1391,6 +1814,14 @@ def main():
         statistics_admin_logs_page()
     elif page == "统计-异常监控":
         statistics_alerts_page()
+    elif page == "统计-用户分群":
+        statistics_user_segmentation_page()
+    elif page == "统计-转化漏斗":
+        statistics_conversion_funnel_page()
+    elif page == "统计-功能使用":
+        statistics_feature_usage_page()
+    elif page == "统计-增强收入":
+        statistics_enhanced_revenue_page()
 
 
 if __name__ == "__main__":

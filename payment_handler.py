@@ -14,6 +14,73 @@ from db_utils import get_db_connection
 from rate_limiter import get_limiter
 
 
+def determine_order_type(user_id: int, target_plan: str,
+                         is_upgrade: bool = False) -> str:
+    """
+    判断订单类型
+
+    Args:
+        user_id: 用户ID
+        target_plan: 目标套餐类型
+        is_upgrade: 是否标记为升级
+
+    Returns:
+        'first_payment': 首充
+        'renewal': 续费
+        'upgrade': 升级
+    """
+    with get_db_connection() as (conn, c):
+        # 1. 如果明确标记为升级，直接返回
+        if is_upgrade:
+            return 'upgrade'
+
+        # 2. 查询用户历史成功订单数
+        history_count = c.execute("""
+            SELECT COUNT(*) FROM payment_orders
+            WHERE user_id = ? AND status = 'SUCCESS'
+        """, (user_id,)).fetchone()[0]
+
+        # 3. 查询当前用户类型
+        user_info = c.execute("""
+            SELECT user_type FROM users WHERE id = ?
+        """, (user_id,)).fetchone()
+
+        if not user_info:
+            return 'first_payment'
+
+        current_user_type = user_info[0]
+
+        # 4. 判断逻辑
+        if history_count == 0:
+            # 无历史订单，首充
+            return 'first_payment'
+
+        if current_user_type == 'free':
+            # 从免费版升级，视为首充
+            return 'first_payment'
+
+        # 定义套餐层级
+        hierarchy = {
+            'free': 0,
+            'efficiency': 1,
+            'efficiency_promo': 1,
+            'professional': 2,
+            'enterprise': 3,
+            'gratitude': 2
+        }
+
+        current_level = hierarchy.get(current_user_type, 0)
+        # 从description中提取套餐类型
+        target_level = hierarchy.get(target_plan, 0)
+
+        if target_level > current_level:
+            # 更高层级，升级
+            return 'upgrade'
+        else:
+            # 同级或更低，续费
+            return 'renewal'
+
+
 class PaymentHandler:
     """支付处理类"""
 
@@ -48,14 +115,14 @@ class PaymentHandler:
         # 限流检查：每分钟最多10次支付请求
         payment_limiter = get_limiter("payment_create", rate=10, per=60)
         limiter_key = f"payment_{user_id}"
-        
+
         if not payment_limiter.is_allowed(limiter_key):
             retry_after = int(payment_limiter.get_retry_after(limiter_key)) + 1
             return {
                 'success': False,
                 'message': f'订单创建过于频繁，请 {retry_after} 秒后重试（每分钟最多 10 次）'
             }
-        
+
         # 生成订单号
         order_id = f"PAY_{int(time.time())}_{uuid.uuid4().hex[:8]}"
 
@@ -67,29 +134,49 @@ class PaymentHandler:
                 if not cursor.fetchone():
                     return {"success": False, "message": f"用户ID {user_id} 不存在"}
 
+                # 判断订单类型
+                target_plan_type = 'unknown'
+                # 尝试从description中提取套餐类型
+                desc_lower = description.lower()
+                if '效率版' in description or 'efficiency' in desc_lower:
+                    target_plan_type = 'efficiency'
+                elif '专业版' in description or 'professional' in desc_lower:
+                    target_plan_type = 'professional'
+                elif '企业版' in description or 'enterprise' in desc_lower:
+                    target_plan_type = 'enterprise'
+                elif '首月优惠' in description:
+                    target_plan_type = 'efficiency_promo'
+
+                order_type = determine_order_type(
+                    user_id,
+                    target_plan_type,
+                    is_upgrade
+                )
+
                 # 保存订单信息（包含升级信息）
                 if is_upgrade and upgrade_info:
                     cursor.execute("""
                         INSERT INTO payment_orders
                         (order_id, user_id, amount, description, duration,
                          status, created_at, is_upgrade, upgrade_from_plan,
-                         upgrade_to_plan, remaining_value)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         upgrade_to_plan, remaining_value, order_type)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         order_id, user_id, amount, description, duration,
                         'PENDING', int(time.time()), 1,
                         upgrade_info.get('current_plan'),
                         upgrade_info.get('target_plan'),
-                        upgrade_info.get('remaining_value', 0)
+                        upgrade_info.get('remaining_value', 0),
+                        order_type
                     ))
                 else:
                     cursor.execute("""
                         INSERT INTO payment_orders
                         (order_id, user_id, amount, description, duration,
-                         status, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                         status, created_at, order_type)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (order_id, user_id, amount, description, duration,
-                          'PENDING', int(time.time())))
+                          'PENDING', int(time.time()), order_type))
 
                 conn.commit()
 
@@ -225,7 +312,7 @@ class PaymentHandler:
 
                 # 这里可以添加业务逻辑，比如开通会员、增加计算次数等
                 print(f"🔧 开始处理支付成功业务逻辑: {order_id}")
-                PaymentHandler._handle_payment_success(order_id)
+                PaymentHandler.handle_payment_success(order_id)
             else:
                 print("❌ 未获取到订单ID")
         else:
@@ -234,8 +321,15 @@ class PaymentHandler:
         return result
 
     @staticmethod
-    def _handle_payment_success(order_id: str):
-        """处理支付成功后的业务逻辑"""
+    def handle_payment_success(order_id: str):
+        """
+        处理支付成功后的业务逻辑（带事务回滚机制）
+
+        这是一个公开方法，可被补偿服务等外部模块调用
+
+        Args:
+            order_id: 订单ID
+        """
         print(f"🔧 开始处理支付成功逻辑: 订单ID={order_id}")
         try:
             with get_db_connection() as (conn, cursor):
@@ -436,6 +530,7 @@ class PaymentHandler:
             print(f"❌ 处理支付成功逻辑失败: {e}")
             import traceback
             print(f"❌ 错误详情: {traceback.format_exc()}")
+            # 数据库连接已自动回滚（由get_db_connection的上下文管理器处理）
 
     @staticmethod
     def _handle_upgrade_payment_success(
@@ -535,7 +630,7 @@ def show_payment_page():
                     st.write(f"**{record['description']}**")
                     st.caption(f"订单号: {record['order_id']}")
                 with col2:
-                    st.write(f"¥{record['amount']/100:.2f}")
+                    st.write(f"¥{record['amount'] / 100:.2f}")
                 with col3:
                     status_color = {"PAID": "✅", "PENDING": "⏳",
                                     "FAILED": "❌"}

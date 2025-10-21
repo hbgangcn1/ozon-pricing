@@ -261,16 +261,16 @@ def delete_backup(backup_filename):
 def main():
     """主菜单界面"""
     while True:
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("📦 备份管理系统")
-        print("="*50)
+        print("=" * 50)
         print("1. 列出备份文件")
         print("2. 查看备份详情")
         print("3. 恢复备份")
         print("4. 清理旧备份")
         print("5. 创建新备份")
         print("6. 退出")
-        print("-"*50)
+        print("-" * 50)
 
         try:
             choice = input("请选择操作 (1-6): ").strip()

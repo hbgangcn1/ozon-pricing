@@ -140,3 +140,7 @@ cert_env_config.txt
 .env.production
 *_secret.py
 *_private.py
+
+# 保留配置模板文件（不包含敏感信息）
+!env.template
+!cert_env_config.template.txt

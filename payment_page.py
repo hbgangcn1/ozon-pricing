@@ -9,8 +9,12 @@ import qrcode
 import io
 import base64
 from payment_handler import PaymentHandler
-from db_utils import get_db_connection
-from db_utils import current_user_id
+from db_utils import (
+    get_db_connection,
+    current_user_id,
+    get_plan_price,
+    get_plan_by_code,
+)
 from payment_auto_refresh import (
     show_enhanced_auto_check_indicator
 )
@@ -685,32 +689,71 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
                 if result and result[0]:
                     promo_used = True
 
-        # 根据计划名称和时长确定价格和描述
-        if "效率版" in plan_name:
-            if duration == "1_month":
-                if not promo_used:
-                    amount = 100  # 首月1元 = 100分
-                    description = "物流系统效率版订阅 - 首月优惠(1个月)"
-                else:
-                    # 【临时测试】原价 990 (9.9元)，测试改为 110 (1.1元)
-                    amount = 110  # 测试价 1.1元 = 110分
-                    description = "物流系统效率版订阅 - 月付(1个月)"
-            else:  # 1_year
-                # 【临时测试】原价 9900 (99元)，测试改为 120 (1.2元)
-                amount = 120  # 测试价 1.2元 = 120分
-                description = "物流系统效率版订阅 - 年付(12个月)"
-        elif "专业版" in plan_name:
-            if duration == "1_month":
-                # 【临时测试】原价 14900 (149元)，测试改为 130 (1.3元)
-                amount = 130  # 测试价 1.3元 = 130分
-                description = "物流系统专业版订阅 - 月付(1个月)"
-            else:  # 1_year
-                # 【临时测试】原价 149900 (1499元)，测试改为 140 (1.4元)
-                amount = 140  # 测试价 1.4元 = 140分
-                description = "物流系统专业版订阅 - 年付(12个月)"
-        else:
+        # 从数据库获取价格配置
+        # 映射plan_name到plan_code
+        plan_code_map = {
+            "效率版": "efficiency",
+            "专业版": "professional",
+            "企业版": "enterprise",
+        }
+
+        plan_code = None
+        for key, value in plan_code_map.items():
+            if key in plan_name:
+                plan_code = value
+                break
+
+        if not plan_code:
             st.error("❌ 未知的订阅计划")
             return
+
+        # 获取套餐配置
+        plan_config = get_plan_by_code(plan_code)
+        if not plan_config:
+            st.error("❌ 套餐配置不存在")
+            return
+
+        # 检查套餐是否上架
+        if not plan_config['is_active']:
+            st.error("❌ 该套餐暂未开放")
+            return
+
+        # 判断用户是否为管理员
+        is_user_admin = False
+        with get_db_connection() as (conn, c):
+            user_role = c.execute(
+                "SELECT role FROM users WHERE id = ?",
+                (user_id,)
+            ).fetchone()
+            if user_role and user_role[0] == 'admin':
+                is_user_admin = True
+
+        # 根据duration映射到month/year
+        duration_map = {
+            "1_month": "month",
+            "1_year": "year"
+        }
+        price_duration = duration_map.get(duration, "month")
+
+        # 获取价格（根据用户角色）
+        price = get_plan_price(
+            plan_code, price_duration, use_test_price=is_user_admin
+        )
+
+        # 特殊处理：效率版首月优惠
+        is_efficiency_promo = (
+            plan_code == "efficiency" and
+            duration == "1_month" and
+            not promo_used
+        )
+        if is_efficiency_promo:
+            amount = 100  # 首月1元优惠
+            description = f"物流系统{plan_name}订阅 - 首月优惠(1个月)"
+        else:
+            # 转换为分（微信支付单位）
+            amount = int(price * 100)
+            duration_text = "1个月" if duration == "1_month" else "12个月"
+            description = f"物流系统{plan_name}订阅 - {duration_text}"
 
         # 创建支付订单
         result = payment_handler.create_payment_order(

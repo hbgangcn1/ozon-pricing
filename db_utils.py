@@ -8,6 +8,7 @@ import atexit
 import queue
 import json
 import time
+from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
 try:
     from .password_utils import validate_password_strength
@@ -712,11 +713,73 @@ def _upgrade_users_subscription_fields():
             "test_days_remaining": "INTEGER DEFAULT 0",
             "subscription_type": "TEXT DEFAULT 'free'",
             "subscription_expires": "INTEGER",
-            "efficiency_promo_used": "INTEGER DEFAULT 0"  # 记录是否使用过效率版首月1元优惠
+            "efficiency_promo_used": "INTEGER DEFAULT 0",  # 记录是否使用过效率版首月1元优惠
+            "created_at": "TEXT DEFAULT ''",  # 注册时间
+            "last_login": "TEXT"  # 最后登录时间
         }
         for col, def_sql in new_cols.items():
             if col not in cols:
                 c.execute(f"ALTER TABLE users ADD COLUMN {col} {def_sql}")
+        conn.commit()
+
+
+def _upgrade_users_test_flag():
+    """升级：新增用户测试标记字段"""
+    with get_db_connection() as (conn, c):
+        cols = [col[1]
+                for col in c.execute("PRAGMA table_info(users)").fetchall()]
+        if "is_test_user" not in cols:
+            c.execute(
+                "ALTER TABLE users ADD COLUMN is_test_user "
+                "INTEGER DEFAULT 0"
+            )
+        conn.commit()
+
+
+def _upgrade_performance_indexes():
+    """升级：添加复合索引优化查询性能"""
+    with get_db_connection() as (conn, c):
+        # 检查索引是否已存在
+        existing_indexes = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'"
+        ).fetchall()
+        existing_index_names = [idx[0] for idx in existing_indexes]
+
+        # 1. payment_orders表 - 用户+状态复合索引（支付历史查询）
+        if "idx_payment_orders_user_status" not in existing_index_names:
+            c.execute("""
+                CREATE INDEX idx_payment_orders_user_status
+                ON payment_orders(user_id, status)
+            """)
+
+        # 2. user_login_log表 - 用户+时间复合索引（活跃度统计）
+        if "idx_user_login_log_user_time" not in existing_index_names:
+            c.execute("""
+                CREATE INDEX idx_user_login_log_user_time
+                ON user_login_log(user_id, login_time DESC)
+            """)
+
+        # 3. user_behavior_log表 - 用户+类型复合索引（行为分析）
+        if "idx_user_behavior_log_user_type" not in existing_index_names:
+            c.execute("""
+                CREATE INDEX idx_user_behavior_log_user_type
+                ON user_behavior_log(user_id, behavior_type)
+            """)
+
+        # 4. payment_orders表 - 创建时间+状态索引（收入统计）
+        if "idx_payment_orders_time_status" not in existing_index_names:
+            c.execute("""
+                CREATE INDEX idx_payment_orders_time_status
+                ON payment_orders(created_at DESC, status)
+            """)
+
+        # 5. products表 - 用户+名称索引（产品搜索）
+        if "idx_products_user_name" not in existing_index_names:
+            c.execute("""
+                CREATE INDEX idx_products_user_name
+                ON products(user_id, name)
+            """)
+
         conn.commit()
 
 
@@ -927,22 +990,222 @@ def _upgrade_statistics_tables():
             ON statistics_cache(expires_at)
         """)
 
+        # 5. 创建用户行为记录表（新增）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS user_behavior_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                behavior_type TEXT NOT NULL,
+                behavior_detail TEXT,
+                calculation_mode TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_behavior_user_id
+            ON user_behavior_log(user_id)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_behavior_type
+            ON user_behavior_log(behavior_type)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_behavior_created_at
+            ON user_behavior_log(created_at)
+        """)
+
+        # 6. 创建预警配置表（新增）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS alert_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                metric_name TEXT NOT NULL,
+                threshold_value REAL,
+                comparison_type TEXT,
+                is_enabled INTEGER DEFAULT 1,
+                notification_method TEXT DEFAULT 'system',
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alert_config_metric_name
+            ON alert_config(metric_name)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alert_config_is_enabled
+            ON alert_config(is_enabled)
+        """)
+
+        # 7. 为payment_orders表添加order_type字段（如果不存在）
+        try:
+            c.execute("""
+                SELECT order_type FROM payment_orders LIMIT 1
+            """)
+        except sqlite3.OperationalError:
+            # 字段不存在，添加它
+            c.execute("""
+                ALTER TABLE payment_orders
+                ADD COLUMN order_type TEXT DEFAULT NULL
+            """)
+            # 创建索引
+            c.execute("""
+                CREATE INDEX IF NOT EXISTS idx_payment_orders_order_type
+                ON payment_orders(order_type)
+            """)
+
+        # 8. 创建套餐配置表（新增）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_code TEXT UNIQUE NOT NULL,
+                plan_name TEXT NOT NULL,
+                display_price_month REAL NOT NULL,
+                display_price_year REAL NOT NULL,
+                actual_price_month REAL NOT NULL,
+                actual_price_year REAL NOT NULL,
+                test_price_month REAL NOT NULL DEFAULT 0,
+                test_price_year REAL NOT NULL DEFAULT 0,
+                calc_limit INTEGER NOT NULL DEFAULT -1,
+                logistics_limit INTEGER NOT NULL DEFAULT 1,
+                description TEXT,
+                features TEXT,
+                is_active INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        # 为plans表创建索引
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_plans_code
+            ON plans(plan_code)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_plans_active
+            ON plans(is_active)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_plans_sort_order
+            ON plans(sort_order)
+        """)
+
+        # 9. 初始化默认套餐数据（如果表为空）
+        count = c.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
+        if count == 0:
+            # 免费版
+            c.execute("""
+                INSERT INTO plans (
+                    plan_code, plan_name,
+                    display_price_month, display_price_year,
+                    actual_price_month, actual_price_year,
+                    test_price_month, test_price_year,
+                    calc_limit, logistics_limit,
+                    description, features, sort_order
+                ) VALUES (
+                    'free', '免费版',
+                    0, 0,
+                    0, 0,
+                    0, 0,
+                    10, 1,
+                    '适合初次体验的用户',
+                    '每日10次计算|1个物流模板|基础功能',
+                    1
+                )
+            """)
+
+            # 效率版
+            c.execute("""
+                INSERT INTO plans (
+                    plan_code, plan_name,
+                    display_price_month, display_price_year,
+                    actual_price_month, actual_price_year,
+                    test_price_month, test_price_year,
+                    calc_limit, logistics_limit,
+                    description, features, sort_order
+                ) VALUES (
+                    'efficiency', '效率版',
+                    9.9, 99,
+                    9.9, 99,
+                    1.1, 1.2,
+                    500, 3,
+                    '适合中小规模卖家',
+                    '每月500次计算|3个物流模板|优先客服',
+                    2
+                )
+            """)
+
+            # 专业版
+            c.execute("""
+                INSERT INTO plans (
+                    plan_code, plan_name,
+                    display_price_month, display_price_year,
+                    actual_price_month, actual_price_year,
+                    test_price_month, test_price_year,
+                    calc_limit, logistics_limit,
+                    description, features, sort_order
+                ) VALUES (
+                    'professional', '专业版',
+                    149, 1499,
+                    149, 1499,
+                    1.3, 1.4,
+                    -1, 10,
+                    '适合大规模专业卖家',
+                    '无限次计算|10个物流模板|专属客服|数据导出',
+                    3
+                )
+            """)
+
+            # 企业版
+            c.execute("""
+                INSERT INTO plans (
+                    plan_code, plan_name,
+                    display_price_month, display_price_year,
+                    actual_price_month, actual_price_year,
+                    test_price_month, test_price_year,
+                    calc_limit, logistics_limit,
+                    description, features, sort_order
+                ) VALUES (
+                    'enterprise', '企业版',
+                    299, 2988,
+                    299, 2988,
+                    1.5, 1.6,
+                    -1, -1,
+                    '适合企业团队使用',
+                    '无限次计算|无限物流模板|API接口|定制开发|7x24服务',
+                    4
+                )
+            """)
+
         conn.commit()
 
 
-def create_user(username, password, role="user", email=None, user_type="free"):
-    """创建用户"""
+def create_user(username, password, role="user", email=None,
+                user_type="free", is_test_user=False):
+    """创建用户，返回user_id或None
+
+    Args:
+        username: 用户名
+        password: 密码
+        role: 角色 (user/admin)
+        email: 邮箱 (可选)
+        user_type: 用户类型 (free/efficiency/professional/enterprise)
+        is_test_user: 是否为测试用户，测试用户会在测试结束后自动清理
+    """
     # 确保数据库已初始化
     init_db()
 
     # 验证用户名
     if not username or len(username.strip()) == 0:
-        return False
+        return None
 
     # 验证密码强度
     password_validation = validate_password_strength(password)
     if not password_validation['is_valid']:
-        return False
+        return None
 
     with get_db_connection() as (conn, c):
 
@@ -953,7 +1216,7 @@ def create_user(username, password, role="user", email=None, user_type="free"):
         ).fetchone()
 
         if existing_user:
-            return False  # 用户名已存在
+            return None  # 用户名已存在
 
         # 检查邮箱是否已存在（如果提供了邮箱）
         if email:
@@ -963,7 +1226,7 @@ def create_user(username, password, role="user", email=None, user_type="free"):
             ).fetchone()
 
             if existing_email:
-                return False  # 邮箱已存在
+                return None  # 邮箱已存在
 
         # 使用bcrypt加盐哈希密码
         hashed_password = hash_password(password)
@@ -979,26 +1242,39 @@ def create_user(username, password, role="user", email=None, user_type="free"):
             remaining_calculations = 10  # 默认为免费版
 
         try:
+            # 设置注册时间为当前时间
+            from datetime import datetime
+            created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # 转换is_test_user为整数
+            is_test = 1 if is_test_user else 0
+
             if email:
                 c.execute(
                     "INSERT INTO users (username, password, role, email, "
-                    "user_type, remaining_calculations) VALUES "
-                    "(?, ?, ?, ?, ?, ?)",
+                    "user_type, subscription_type, "
+                    "remaining_calculations, "
+                    "created_at, is_test_user) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (username, hashed_password, role, email, user_type,
-                     remaining_calculations),
+                     user_type, remaining_calculations, created_at, is_test),
                 )
             else:
                 c.execute(
                     "INSERT INTO users (username, password, role, "
-                    "user_type, remaining_calculations) VALUES "
-                    "(?, ?, ?, ?, ?)",
-                    (username, hashed_password, role, user_type,
-                     remaining_calculations),
+                    "user_type, subscription_type, "
+                    "remaining_calculations, "
+                    "created_at, is_test_user) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (username, hashed_password, role, user_type, user_type,
+                     remaining_calculations, created_at, is_test),
                 )
             conn.commit()
-            return True
+            # 返回新创建用户的ID
+            user_id = c.lastrowid
+            return user_id
         except sqlite3.IntegrityError:
-            return False
+            return None
 
 
 def verify_user(identifier, password):
@@ -1204,9 +1480,11 @@ def init_db():
         _upgrade_products_return_rate()
         _upgrade_products_vat_rate()
         _upgrade_users_subscription_fields()
+        _upgrade_users_test_flag()
         _upgrade_payment_orders_duration()
         _upgrade_subscription_upgrade_system()
         _upgrade_statistics_tables()
+        _upgrade_performance_indexes()
         # 3. 初始管理员（避免递归调用）
         admin_user = c.execute(
             "SELECT * FROM users WHERE username = ?",
@@ -1243,7 +1521,7 @@ def add_product(product_data):
             'has_battery',
             'battery_capacity_wh', 'battery_capacity_mah', 'battery_voltage',
             'has_msds', 'has_flammable', 'shipping_fee', 'labeling_fee',
-            'promotion_discount', 'promotion_cost_rate',
+            'promotion_cost_rate',
             'target_profit_margin',
             'commission_rate', 'withdrawal_fee_rate',
             'payment_processing_fee', 'return_rate'
@@ -1825,6 +2103,32 @@ def decrement_user_calculations(user_id):
             return c.rowcount > 0
 
         return False
+
+
+def reset_free_users_daily_calculations():
+    """每日重置免费用户的计算次数为10次"""
+    with get_db_connection() as (conn, c):
+        try:
+            # 重置所有免费用户的计算次数为10
+            c.execute(
+                """
+                UPDATE users
+                SET remaining_calculations = 10
+                WHERE user_type = 'free'
+                """
+            )
+            affected_rows = c.rowcount
+            conn.commit()
+
+            # 记录日志
+            from logger_config import logger
+            logger.info(f"每日计算次数重置完成：重置了 {affected_rows} 个免费用户的计算次数")
+
+            return affected_rows
+        except Exception as e:
+            from logger_config import logger
+            logger.error(f"重置免费用户计算次数失败: {e}")
+            return 0
 
 
 def update_user_password(user_id, current_password, new_password):
@@ -2631,6 +2935,35 @@ def log_user_login(user_id: int, ip_address: Optional[str] = None,
             return False
 
 
+def log_user_behavior(user_id: int, behavior_type: str,
+                      behavior_detail: Optional[str] = None,
+                      calculation_mode: Optional[str] = None) -> bool:
+    """
+    记录用户行为日志
+
+    Args:
+        user_id: 用户ID
+        behavior_type: 行为类型 (calculation/mode_switch/export等)
+        behavior_detail: 行为详细信息（JSON格式）
+        calculation_mode: 计算模式（fast/complete）
+
+    Returns:
+        bool: 记录是否成功
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("""
+                INSERT INTO user_behavior_log
+                (user_id, behavior_type, behavior_detail, calculation_mode)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, behavior_type, behavior_detail, calculation_mode))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"记录用户行为日志失败: {e}")
+            return False
+
+
 def log_admin_action(admin_id: int, action_type: str, action_detail: str,
                      target_user_id: Optional[int] = None,
                      target_type: Optional[str] = None,
@@ -2732,6 +3065,18 @@ def clear_expired_cache() -> int:
             return 0
 
 
+def clear_all_statistics_cache() -> int:
+    """清除所有统计缓存数据"""
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("DELETE FROM statistics_cache")
+            conn.commit()
+            return c.rowcount
+        except Exception as e:
+            print(f"清除所有缓存失败: {e}")
+            return 0
+
+
 def get_dashboard_stats() -> Dict[str, Any]:
     """获取总览看板数据"""
     # 先尝试从缓存获取
@@ -2755,10 +3100,14 @@ def get_dashboard_stats() -> Dict[str, Any]:
             """, (today_start,)).fetchone()[0]
 
             # 今日新增用户数
+            # 将时间戳转换为日期字符串来与created_at比较
+            today_start_str = datetime.fromtimestamp(today_start).strftime(
+                '%Y-%m-%d 00:00:00'
+            )
             new_users_today = c.execute("""
                 SELECT COUNT(*) FROM users
-                WHERE created_at >= datetime(?, 'unixepoch')
-            """, (today_start,)).fetchone()[0]
+                WHERE created_at >= ?
+            """, (today_start_str,)).fetchone()[0]
 
             # 累计注册用户数
             total_users = c.execute("""
@@ -2819,3 +3168,293 @@ def get_dashboard_stats() -> Dict[str, Any]:
         except Exception as e:
             print(f"获取总览数据失败: {e}")
             return {}
+
+
+# ============================================================================
+# 套餐管理CRUD函数
+# ============================================================================
+
+def get_plans(active_only=False, include_free=True):
+    """
+    获取所有套餐列表
+
+    Args:
+        active_only: 是否只获取上架的套餐
+        include_free: 是否包含免费版
+
+    Returns:
+        list: 套餐列表，每个套餐为dict
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            query = "SELECT * FROM plans WHERE 1=1"
+            params = []
+
+            if active_only:
+                query += " AND is_active = 1"
+
+            if not include_free:
+                query += " AND plan_code != 'free'"
+
+            query += " ORDER BY sort_order"
+
+            c.execute(query, params)
+            columns = [col[0] for col in c.description]
+            rows = c.fetchall()
+
+            plans = []
+            for row in rows:
+                plan = dict(zip(columns, row))
+                plans.append(plan)
+
+            return plans
+        except Exception as e:
+            print(f"获取套餐列表失败: {e}")
+            return []
+
+
+def get_plan_by_code(plan_code: str):
+    """
+    根据套餐代码获取套餐详情
+
+    Args:
+        plan_code: 套餐代码
+
+    Returns:
+        dict: 套餐详情，不存在返回None
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("SELECT * FROM plans WHERE plan_code = ?", (plan_code,))
+            row = c.fetchone()
+
+            if row:
+                columns = [col[0] for col in c.description]
+                return dict(zip(columns, row))
+            return None
+        except Exception as e:
+            print(f"获取套餐详情失败: {e}")
+            return None
+
+
+def get_plan_by_id(plan_id: int):
+    """
+    根据ID获取套餐详情
+
+    Args:
+        plan_id: 套餐ID
+
+    Returns:
+        dict: 套餐详情，不存在返回None
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("SELECT * FROM plans WHERE id = ?", (plan_id,))
+            row = c.fetchone()
+
+            if row:
+                columns = [col[0] for col in c.description]
+                return dict(zip(columns, row))
+            return None
+        except Exception as e:
+            print(f"获取套餐详情失败: {e}")
+            return None
+
+
+def create_plan(
+    plan_code: str,
+    plan_name: str,
+    display_price_month: float,
+    display_price_year: float,
+    actual_price_month: float,
+    actual_price_year: float,
+    test_price_month: float = 0.0,
+    test_price_year: float = 0.0,
+    calc_limit: int = -1,
+    logistics_limit: int = 1,
+    description: str = "",
+    features: str = "",
+    is_active: int = 1,
+    sort_order: int = 0
+):
+    """
+    创建新套餐
+
+    Returns:
+        bool: 成功返回True，失败返回False
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            # 检查代码是否已存在
+            existing = c.execute(
+                "SELECT id FROM plans WHERE plan_code = ?",
+                (plan_code,)
+            ).fetchone()
+
+            if existing:
+                print(f"套餐代码 {plan_code} 已存在")
+                return False
+
+            c.execute("""
+                INSERT INTO plans (
+                    plan_code, plan_name,
+                    display_price_month, display_price_year,
+                    actual_price_month, actual_price_year,
+                    test_price_month, test_price_year,
+                    calc_limit, logistics_limit,
+                    description, features,
+                    is_active, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                plan_code, plan_name,
+                display_price_month, display_price_year,
+                actual_price_month, actual_price_year,
+                test_price_month, test_price_year,
+                calc_limit, logistics_limit,
+                description, features,
+                is_active, sort_order
+            ))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"创建套餐失败: {e}")
+            return False
+
+
+def update_plan(
+    plan_id: int,
+    **kwargs
+):
+    """
+    更新套餐信息
+
+    Args:
+        plan_id: 套餐ID
+        **kwargs: 要更新的字段
+
+    Returns:
+        bool: 成功返回True，失败返回False
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            # 允许更新的字段
+            allowed_fields = [
+                'plan_name', 'display_price_month', 'display_price_year',
+                'actual_price_month', 'actual_price_year',
+                'test_price_month', 'test_price_year',
+                'calc_limit', 'logistics_limit',
+                'description', 'features',
+                'is_active', 'sort_order'
+            ]
+
+            # 过滤并构建SET子句
+            updates = []
+            values = []
+            for field, value in kwargs.items():
+                if field in allowed_fields:
+                    updates.append(f"{field} = ?")
+                    values.append(value)
+
+            if not updates:
+                return False
+
+            # 添加updated_at
+            updates.append("updated_at = strftime('%s', 'now')")
+
+            query = f"UPDATE plans SET {', '.join(updates)} WHERE id = ?"
+            values.append(plan_id)
+
+            c.execute(query, values)
+            conn.commit()
+
+            return c.rowcount > 0
+        except Exception as e:
+            print(f"更新套餐失败: {e}")
+            return False
+
+
+def delete_plan(plan_id: int):
+    """
+    删除套餐
+
+    Args:
+        plan_id: 套餐ID
+
+    Returns:
+        bool: 成功返回True，失败返回False
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            # 检查是否为免费版（不允许删除）
+            plan = c.execute(
+                "SELECT plan_code FROM plans WHERE id = ?",
+                (plan_id,)
+            ).fetchone()
+
+            if plan and plan[0] == 'free':
+                print("不允许删除免费版套餐")
+                return False
+
+            c.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+            conn.commit()
+
+            return c.rowcount > 0
+        except Exception as e:
+            print(f"删除套餐失败: {e}")
+            return False
+
+
+def toggle_plan_active(plan_id: int):
+    """
+    切换套餐上下架状态
+
+    Args:
+        plan_id: 套餐ID
+
+    Returns:
+        bool: 成功返回True，失败返回False
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute("""
+                UPDATE plans
+                SET is_active = 1 - is_active,
+                    updated_at = strftime('%s', 'now')
+                WHERE id = ?
+            """, (plan_id,))
+            conn.commit()
+
+            return c.rowcount > 0
+        except Exception as e:
+            print(f"切换套餐状态失败: {e}")
+            return False
+
+
+def get_plan_price(plan_code: str, duration: str,
+                   use_test_price: bool = False):
+    """
+    获取套餐价格（根据用户角色）
+
+    Args:
+        plan_code: 套餐代码
+        duration: 时长 ('month' 或 'year')
+        use_test_price: 是否使用测试价格（管理员使用测试价）
+
+    Returns:
+        float: 价格（元），如果套餐不存在返回0
+    """
+    plan = get_plan_by_code(plan_code)
+    if not plan:
+        return 0
+
+    if use_test_price:
+        # 管理员使用测试价
+        if duration == 'year':
+            return plan['test_price_year']
+        return plan['test_price_month']
+    else:
+        # 普通用户使用实际价
+        if duration == 'year':
+            return plan['actual_price_year']
+        return plan['actual_price_month']

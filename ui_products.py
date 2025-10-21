@@ -169,17 +169,6 @@ def products_page():
             )
             st.subheader("定价参数")
             col1, col2 = st.columns(2)
-            promotion_discount = (
-                col2.number_input(
-                    "活动折扣率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=5.0,
-                    step=0.1,
-                    format="%.1f",
-                )
-                / 100.0
-            )
             promotion_cost_rate = (
                 col1.number_input(
                     "推广费用率(%)",
@@ -323,13 +312,13 @@ def products_page():
                         "is_cylinder, cylinder_diameter, has_battery, "
                         "battery_capacity_wh, battery_capacity_mah, "
                         "battery_voltage, has_msds, has_flammable, "
-                        "shipping_fee, labeling_fee, promotion_discount, "
+                        "shipping_fee, labeling_fee, "
                         "promotion_cost_rate, target_profit_margin, "
                         "commission_rate, withdrawal_fee_rate, "
                         "payment_processing_fee, \"return_rate\", "
                         "cylinder_length) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-                        "?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             uid,
                             name,
@@ -351,7 +340,6 @@ def products_page():
                             int(has_flammable),
                             shipping_fee,
                             labeling_fee,
-                            promotion_discount,
                             promotion_cost_rate,
                             target_profit_margin,
                             commission_rate,
@@ -556,12 +544,12 @@ def edit_product_form():
         "has_flammable",
         "shipping_fee",
         "labeling_fee",
-        "promotion_discount",
         "promotion_cost_rate",
         "target_profit_margin",
         "commission_rate",
         "withdrawal_fee_rate",
         "payment_processing_fee",
+        "vat_rate",
     ]
     for field in required_fields:
         if field not in vals:
@@ -777,21 +765,9 @@ def edit_product_form():
             / 100.0
         )
 
-    # 第三行：活动折扣率(%)、推广费率（%）
+    # 第三行：推广费率（%）、打款提现费率(%)
     col1, col2 = st.columns(2)
     with col1:
-        promotion_discount = (
-            st.number_input(
-                "活动折扣率(%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=max(0.0, float(vals["promotion_discount"])) * 100.0,
-                step=0.1,
-                format="%.1f",
-            )
-            / 100.0
-        )
-    with col2:
         promotion_cost_rate = (
             st.number_input(
                 "推广费率(%)",
@@ -803,9 +779,7 @@ def edit_product_form():
             )
             / 100.0
         )
-    # 第四行：打款提现费率(%)、收单手续费率(%)
-    col1, col2 = st.columns(2)
-    with col1:
+    with col2:
         withdrawal_fee_rate = (
             st.number_input(
                 "打款提现费率(%)",
@@ -817,7 +791,10 @@ def edit_product_form():
             )
             / 100.0
         )
-    with col2:
+
+    # 第四行：收单手续费率(%)、历史退货率(%)
+    col1, col2 = st.columns(2)
+    with col1:
         payment_processing_fee = (
             st.number_input(
                 "收单手续费率(%)",
@@ -829,16 +806,29 @@ def edit_product_form():
             )
             / 100.0
         )
+    with col2:
+        return_rate = (
+            st.number_input(
+                "历史退货率(%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=max(0.0, float(vals.get("return_rate", 0))) * 100.0,
+                step=0.1,
+                format="%.1f",
+            )
+            / 100.0
+        )
 
-    # 第五行：历史退货率(%)
-    return_rate = (
+    # 第五行：增值税率(%)
+    vat_rate = (
         st.number_input(
-            "历史退货率(%)",
+            "增值税率(%)",
             min_value=0.0,
-            max_value=100.0,
-            value=max(0.0, float(vals.get("return_rate", 0))) * 100.0,
+            max_value=30.0,
+            value=max(0.0, float(vals.get("vat_rate", 0))) * 100.0,
             step=0.1,
             format="%.1f",
+            help="增值税率，根据实际情况填写",
         )
         / 100.0
     )
@@ -923,10 +913,11 @@ def edit_product_form():
                         battery_capacity_mah=?, battery_voltage=?,
                         has_msds=?, has_flammable=?,
                         unit_price=?, shipping_fee=?, labeling_fee=?,
-                        promotion_discount=?, promotion_cost_rate=?,
+                        promotion_cost_rate=?,
                         target_profit_margin=?, commission_rate=?,
                         withdrawal_fee_rate=?, payment_processing_fee=?,
-                        "return_rate"=? WHERE id=? AND user_id=?""",
+                        "return_rate"=?, vat_rate=?
+                        WHERE id=? AND user_id=?""",
                         (
                             name,
                             russian_name,
@@ -948,13 +939,13 @@ def edit_product_form():
                             unit_price,
                             shipping_fee,
                             labeling_fee,
-                            promotion_discount,
                             promotion_cost_rate,
                             target_profit_margin,
                             commission_rate,
                             withdrawal_fee_rate,
                             payment_processing_fee,
                             return_rate,
+                            vat_rate,
                             pid,
                             uid,
                         ),
@@ -1008,7 +999,6 @@ def batch_edit_pricing_form():
         avg_params = c.execute(
             f"""
             SELECT
-                AVG(promotion_discount) as avg_promotion_discount,
                 AVG(promotion_cost_rate) as avg_promotion_cost_rate,
                 AVG(target_profit_margin) as avg_target_profit_margin,
                 AVG(commission_rate) as avg_commission_rate,
@@ -1030,7 +1020,7 @@ def batch_edit_pricing_form():
                     "推广费用率(%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=float(avg_params[1] or 0.0) * 100.0,
+                    value=float(avg_params[0] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -1042,7 +1032,7 @@ def batch_edit_pricing_form():
                     "运营利润率(%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=float(avg_params[2] or 0.0) * 100.0,
+                    value=float(avg_params[1] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -1054,7 +1044,7 @@ def batch_edit_pricing_form():
                     "打款提现费率(%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=float(avg_params[4] or 0.0) * 100.0,
+                    value=float(avg_params[3] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -1065,7 +1055,7 @@ def batch_edit_pricing_form():
                     "历史退货率(%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=float(avg_params[6] or 0.0) * 100.0,
+                    value=float(avg_params[5] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -1073,24 +1063,12 @@ def batch_edit_pricing_form():
             )
 
         with col2:
-            promotion_discount = (
-                st.number_input(
-                    "活动折扣率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(avg_params[0] or 0.0) * 100.0,
-                    step=0.1,
-                    format="%.1f",
-                )
-                / 100.0
-            )
-
             commission_rate = (
                 st.number_input(
                     "佣金率(%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=float(avg_params[3] or 0.0) * 100.0,
+                    value=float(avg_params[2] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -1102,7 +1080,7 @@ def batch_edit_pricing_form():
                     "收单手续费率(%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=float(avg_params[5] or 0.0) * 100.0,
+                    value=float(avg_params[4] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
                 )
@@ -1122,7 +1100,6 @@ def batch_edit_pricing_form():
                 placeholders = ",".join(["?" for _ in product_ids])
                 update_query = f"""
                     UPDATE products SET
-                        promotion_discount = ?,
                         promotion_cost_rate = ?,
                         target_profit_margin = ?,
                         commission_rate = ?,
@@ -1135,7 +1112,6 @@ def batch_edit_pricing_form():
                 c.execute(
                     update_query,
                     (
-                        promotion_discount,
                         promotion_cost_rate,
                         target_profit_margin,
                         commission_rate,

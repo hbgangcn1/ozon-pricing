@@ -369,143 +369,163 @@ def logistics_page():
                         # 检查是否达到上限（严格按套餐限制）
                         if (effective_limit != -1 and
                                 current_count >= effective_limit):
-                            st.error(
-                                "❌ 物流模板数量已达上限"
-                                f"（当前：{current_count}个）"
+                            # 使用toast显示临时消息（5秒后自动消失）
+                            st.toast(
+                                f"❌ 物流模板数量已达上限（当前：{current_count}个）",
+                                icon="❌"
                             )
-                            st.info(
-                                "💡 请升级套餐以获得更多物流模板"
+                            st.toast(
+                                "💡 请升级套餐以获得更多物流模板",
+                                icon="💡"
                             )
-                            return
-                # 检查必填字段
-                missing_fields = []
-                if not name:
-                    missing_fields.append("物流名称")
+                            # 不return，继续显示物流列表
+                        else:
+                            # 只有在未达到上限时才继续检查和保存
+                            # 检查必填字段
+                            missing_fields = []
+                            if not name:
+                                missing_fields.append("物流名称")
 
-                if missing_fields:
-                    st.error(
-                        f"请填写以下必填字段：{', '.join(missing_fields)}"
-                    )
-                else:
-                    # 货币转换 - 用户计算时只使用兜底汇率，不调用API
-                    if price_currency == "卢布":
-                        try:
-                            rub_rate = get_fallback_exchange_rate()
-                        except (KeyError, TypeError, ValueError):
-                            rub_rate = 0.0904  # 默认兜底汇率
-                        price_limit_cny = (
-                            round(price_limit * rub_rate, 4)
-                            if price_limit > 0
-                            else 0
-                        )
-                        price_limit_rub = price_limit
-                        price_min_rub = price_min
-                    else:  # 美元
-                        try:
-                            usd_rate = get_fallback_usd_rate()
-                        except (KeyError, TypeError, ValueError):
-                            usd_rate = 7.2  # 默认美元汇率
-                        price_limit_cny = (
-                            round(price_limit * usd_rate, 4)
-                            if price_limit > 0
-                            else 0
-                        )
-                        price_limit_rub = price_limit
-                        price_min_rub = price_min
+                            if missing_fields:
+                                st.error(
+                                    f"请填写以下必填字段：{', '.join(missing_fields)}"
+                                )
+                            else:
+                                # 货币转换 - 用户计算时只使用兜底汇率，不调用API
+                                if price_currency == "卢布":
+                                    try:
+                                        rub_rate = get_fallback_exchange_rate()
+                                    except (KeyError, TypeError, ValueError):
+                                        rub_rate = 0.0904  # 默认兜底汇率
+                                    price_limit_cny = (
+                                        round(price_limit * rub_rate, 4)
+                                        if price_limit > 0
+                                        else 0
+                                    )
+                                    price_limit_rub = price_limit
+                                    price_min_rub = price_min
+                                else:  # 美元
+                                    try:
+                                        usd_rate = get_fallback_usd_rate()
+                                    except (KeyError, TypeError, ValueError):
+                                        usd_rate = 7.2  # 默认美元汇率
+                                    price_limit_cny = (
+                                        round(price_limit * usd_rate, 4)
+                                        if price_limit > 0
+                                        else 0
+                                    )
+                                    price_limit_rub = price_limit
+                                    price_min_rub = price_min
 
-                    type_en = {"陆运": "land", "空运": "air"}[logistic_type]
-                    fee_mode_key = (
-                        "base_plus_continue"
-                        if fee_mode == "基础费用+续重费用"
-                        else "first_plus_continue"
-                    )
-                    continue_unit_val = unit_map[continue_unit]
+                                type_en = {
+                                    "陆运": "land", "空运": "air"
+                                }[logistic_type]
+                                fee_mode_key = (
+                                    "base_plus_continue"
+                                    if fee_mode == "基础费用+续重费用"
+                                    else "first_plus_continue"
+                                )
+                                continue_unit_val = unit_map[continue_unit]
 
-                    # 送货方式映射
-                    delivery_method_map = {
-                        "送货上门": "home_delivery",
-                        "送货到取货点": "pickup_point",
-                        "未知": "unknown",
-                    }
+                                # 送货方式映射
+                                delivery_method_map = {
+                                    "送货上门": "home_delivery",
+                                    "送货到取货点": "pickup_point",
+                                    "未知": "unknown",
+                                }
 
-                    placeholders = ",".join(["?"] * 35)
-                    insert_sql = (
-                        "INSERT INTO logistics ("
-                        "user_id, name, type, min_days, max_days, "
-                        "price_limit, price_limit_rub, price_min_rub, "
-                        "base_fee, min_weight, max_weight, "
-                        "max_sum_of_sides, max_longest_side, max_second_side, "
-                        "min_second_side, min_length, max_cylinder_sum, "
-                        "min_cylinder_sum, max_cylinder_length, "
-                        "min_cylinder_length, volume_mode, "
-                        "longest_side_threshold, volume_coefficient, "
-                        "allow_battery, allow_flammable, "
-                        "battery_capacity_limit_wh, require_msds, fee_mode, "
-                        "first_fee, first_weight_g, continue_fee, "
-                        "continue_unit, delivery_method, "
-                        "price_limit_currency, price_min_currency) "
-                        f"VALUES ({placeholders})"
-                    )
-                    c.execute(
-                        insert_sql,
-                        (
-                            uid,
-                            name,
-                            type_en,
-                            min_days,
-                            max_days,
-                            price_limit_cny,
-                            price_limit_rub,
-                            price_min_rub,
-                            base_fee,
-                            min_weight,
-                            max_weight,
-                            max_sum_of_sides,
-                            max_longest_side,
-                            max_second_side,
-                            min_second_side,
-                            min_length,
-                            max_cylinder_sum,
-                            min_cylinder_sum,
-                            max_cylinder_length,
-                            min_cylinder_length,
-                            volume_mode,
-                            longest_side_threshold,
-                            volume_coefficient,
-                            int(allow_battery),
-                            int(allow_flammable),
-                            battery_capacity_limit_wh,
-                            int(require_msds),
-                            fee_mode_key,
-                            (
-                                first_fee
-                                if fee_mode_key == "first_plus_continue"
-                                else 0.0
-                            ),
-                            (
-                                first_weight_g
-                                if fee_mode_key == "first_plus_continue"
-                                else 0
-                            ),
-                            continue_fee,
-                            continue_unit_val,
-                            delivery_method_map[delivery_method],
-                            "USD" if price_currency == "美元" else "RUB",
-                            "USD" if price_currency == "美元" else "RUB",
-                        ),
-                    )
-                    conn.commit()
+                                placeholders = ",".join(["?"] * 35)
+                                insert_sql = (
+                                    "INSERT INTO logistics ("
+                                    "user_id, name, type, min_days, max_days, "
+                                    "price_limit, price_limit_rub, "
+                                    "price_min_rub, "
+                                    "base_fee, min_weight, max_weight, "
+                                    "max_sum_of_sides, max_longest_side, "
+                                    "max_second_side, "
+                                    "min_second_side, min_length, "
+                                    "max_cylinder_sum, "
+                                    "min_cylinder_sum, max_cylinder_length, "
+                                    "min_cylinder_length, volume_mode, "
+                                    "longest_side_threshold, "
+                                    "volume_coefficient, "
+                                    "allow_battery, allow_flammable, "
+                                    "battery_capacity_limit_wh, require_msds, "
+                                    "fee_mode, "
+                                    "first_fee, first_weight_g, continue_fee, "
+                                    "continue_unit, delivery_method, "
+                                    "price_limit_currency, "
+                                    "price_min_currency) "
+                                    f"VALUES ({placeholders})"
+                                )
+                                c.execute(
+                                    insert_sql,
+                                    (
+                                        uid,
+                                        name,
+                                        type_en,
+                                        min_days,
+                                        max_days,
+                                        price_limit_cny,
+                                        price_limit_rub,
+                                        price_min_rub,
+                                        base_fee,
+                                        min_weight,
+                                        max_weight,
+                                        max_sum_of_sides,
+                                        max_longest_side,
+                                        max_second_side,
+                                        min_second_side,
+                                        min_length,
+                                        max_cylinder_sum,
+                                        min_cylinder_sum,
+                                        max_cylinder_length,
+                                        min_cylinder_length,
+                                        volume_mode,
+                                        longest_side_threshold,
+                                        volume_coefficient,
+                                        int(allow_battery),
+                                        int(allow_flammable),
+                                        battery_capacity_limit_wh,
+                                        int(require_msds),
+                                        fee_mode_key,
+                                        (
+                                            first_fee
+                                            if fee_mode_key
+                                            == "first_plus_continue"
+                                            else 0.0
+                                        ),
+                                        (
+                                            first_weight_g
+                                            if fee_mode_key
+                                            == "first_plus_continue"
+                                            else 0
+                                        ),
+                                        continue_fee,
+                                        continue_unit_val,
+                                        delivery_method_map[delivery_method],
+                                        (
+                                            "USD" if price_currency == "美元"
+                                            else "RUB"
+                                        ),
+                                        (
+                                            "USD" if price_currency == "美元"
+                                            else "RUB"
+                                        ),
+                                    ),
+                                )
+                                conn.commit()
 
-                    # 重新计算优先级分组
-                    calculate_and_update_priority_groups(uid)
+                                # 重新计算优先级分组
+                                calculate_and_update_priority_groups(uid)
 
-                    # 清除物流数据缓存
-                    cache_key = f"logistics_data_{uid}"
-                    if cache_key in st.session_state:
-                        del st.session_state[cache_key]
+                                # 清除物流数据缓存
+                                cache_key = f"logistics_data_{uid}"
+                                if cache_key in st.session_state:
+                                    del st.session_state[cache_key]
 
-                    st.success("物流规则添加成功！")
-                    st.rerun()
+                                st.success("物流规则添加成功！")
+                                st.rerun()
         # ------------------------------------------------------------------
         # 物流列表
         # ------------------------------------------------------------------

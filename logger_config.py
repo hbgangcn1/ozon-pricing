@@ -15,26 +15,26 @@ logger = _logger
 
 class SensitiveFormatter:
     """敏感信息格式化器"""
-    
+
     @staticmethod
-    def mask_password(password: str) -> str:
-        """脱敏密码"""
+    def mask_password(_password: str) -> str:
+        """脱敏密码 - 完全隐藏以保护安全"""
         return "****"
-    
+
     @staticmethod
     def mask_card(card_number: str) -> str:
         """脱敏卡号"""
         if len(card_number) > 8:
             return f"{card_number[:4]}****{card_number[-4:]}"
         return "****"
-    
+
     @staticmethod
     def mask_phone(phone: str) -> str:
         """脱敏手机号"""
         if len(phone) == 11:
             return f"{phone[:3]}****{phone[-4:]}"
         return "****"
-    
+
     @staticmethod
     def mask_email(email: str) -> str:
         """脱敏邮箱"""
@@ -55,7 +55,7 @@ def configure_logger(
 ):
     """
     配置全局日志器
-    
+
     Args:
         app_name: 应用名称
         log_level: 日志级别
@@ -63,14 +63,14 @@ def configure_logger(
         enable_file: 是否输出到文件
         log_dir: 日志目录
     """
-    
+
     # 移除默认处理器
     logger.remove()
-    
+
     # 创建日志目录
     log_path = Path(log_dir)
     log_path.mkdir(exist_ok=True)
-    
+
     # 日志格式
     log_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
@@ -78,7 +78,7 @@ def configure_logger(
         "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
         "<level>{message}</level>"
     )
-    
+
     # 控制台输出（开发环境）
     if enable_console:
         logger.add(
@@ -88,12 +88,12 @@ def configure_logger(
             level="DEBUG",
             enqueue=True  # 异步写入，避免阻塞
         )
-    
+
     # 文件输出（所有级别）
     if enable_file:
         logger.add(
             f"{log_dir}/{app_name}_{{time:YYYY-MM-DD}}.log",
-            rotation="00:00",          # 每天午夜轮转
+            rotation="100 MB",         # 每100MB轮转
             retention="30 days",       # 保留30天
             compression="zip",         # 压缩旧日志
             encoding="utf-8",
@@ -103,7 +103,7 @@ def configure_logger(
             backtrace=True,            # 显示完整堆栈
             diagnose=True              # 显示变量值（注意敏感信息）
         )
-    
+
     # 错误日志单独文件
     if enable_file:
         logger.add(
@@ -118,7 +118,7 @@ def configure_logger(
             backtrace=True,
             diagnose=True
         )
-    
+
     logger.info(f"日志系统初始化完成: {app_name}")
     logger.info(f"日志级别: {log_level}")
     logger.info(f"日志目录: {log_dir}")
@@ -163,6 +163,5 @@ configure_logger(
 )
 
 # 确保 logger 可被正确导入
-__all__ = ['logger', 'configure_logger', 'SensitiveFormatter', 
+__all__ = ['logger', 'configure_logger', 'SensitiveFormatter',
            'log_info', 'log_error', 'log_warning', 'log_debug']
-

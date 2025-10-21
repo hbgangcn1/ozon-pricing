@@ -12,6 +12,11 @@ maxUploadSize = 200
 # 自动打开浏览器（生产环境建议设为 false）
 gatherUsageStats = false
 
+[logger]
+# 日志级别设置（过滤警告信息）
+level = "error"
+messageFormat = "%(asctime)s %(message)s"
+
 [theme]
 # 主题设置
 primaryColor = "#FF6B6B"

@@ -2,6 +2,11 @@
 """
 证书文件处理脚本
 用于安全地设置微信支付证书文件
+
+⚠️ 安全提醒：
+- 不要硬编码证书路径
+- 使用环境变量管理证书位置
+- 确保证书文件已添加到 .gitignore
 """
 
 import os
@@ -14,14 +19,17 @@ def setup_certificates():
     print("🔐 微信支付证书设置工具")
     print("=" * 50)
 
+    # 从环境变量读取源证书目录（如果设置）
+    source_cert_dir = os.getenv("SOURCE_CERT_DIR", "cert")
+
     # 检查源证书文件
     cert_files = {
-        "apiclient_key.pem": ("C:\\Users\\hbgan\\OneDrive\\Robert\\learn\\"
-                              "logistics\\cert\\apiclient_key.pem"),
-        "apiclient_cert.pem": ("C:\\Users\\hbgan\\OneDrive\\Robert\\learn\\"
-                               "logistics\\cert\\apiclient_cert.pem"),
-        "apiclient_cert.p12": ("C:\\Users\\hbgan\\OneDrive\\Robert\\learn\\"
-                               "logistics\\cert\\apiclient_cert.p12")
+        "apiclient_key.pem": os.path.join(source_cert_dir,
+                                          "apiclient_key.pem"),
+        "apiclient_cert.pem": os.path.join(source_cert_dir,
+                                           "apiclient_cert.pem"),
+        "apiclient_cert.p12": os.path.join(source_cert_dir,
+                                           "apiclient_cert.p12")
     }
 
     # 创建目标目录
@@ -62,31 +70,38 @@ def setup_certificates():
 
 
 def generate_env_config(cert_files):
-    """生成环境变量配置"""
+    """生成环境变量配置模板（不包含敏感信息）"""
     _ = cert_files  # 消除未使用参数警告
-    print("\n📝 生成环境变量配置...")
+    print("\n📝 生成环境变量配置模板...")
 
     env_config = f"""# 微信支付证书配置
 # 请在生产服务器上设置这些环境变量
 
 # 证书文件路径（请根据实际服务器路径调整）
 WECHAT_PRIVATE_KEY_PATH={os.path.abspath('cert/apiclient_key.pem')}
-WECHAT_CERT_PATH={os.path.abspath('cert/apiclient_cert.pem')}
+WECHAT_PUBLIC_KEY_PATH={os.path.abspath('cert/apiclient_cert.pem')}
 
-# 其他配置
-WECHAT_APP_ID=wx85196df61679da0b
-WECHAT_MCH_ID=1727894157
-WECHAT_API_V3_KEY=oQuF4Vk71gYZbGtuJGL3YoG5H84iCymh
-WECHAT_CERT_SERIAL_NO=7DE8E0220B96CDB6E19587BAD0BA672E819EA619
+# 其他配置（请替换为您的实际值）
+WECHAT_APP_ID=your_app_id_here
+WECHAT_MCH_ID=your_merchant_id_here
+WECHAT_API_V3_KEY=your_32_character_api_v3_key_here
+WECHAT_CERT_SERIAL_NO=your_cert_serial_no_here
 PRODUCTION_MODE=true
 WECHAT_SANDBOX=false
+
+# 配置说明：
+# 1. 请将上述占位符替换为您的实际配置
+# 2. 生产环境建议使用绝对路径指定证书位置
+# 3. 不要将包含真实密钥的配置文件提交到版本控制
 """
 
-    with open("cert_env_config.txt", "w", encoding="utf-8") as f:
+    output_file = "cert_env_config.template.txt"
+    with open(output_file, "w", encoding="utf-8") as f:
         f.write(env_config)
 
-    print("✅ 环境变量配置已生成: cert_env_config.txt")
-    print("⚠️  请将此文件内容添加到服务器的环境变量中")
+    print(f"✅ 环境变量配置模板已生成: {output_file}")
+    print("⚠️  这是一个模板文件，请根据实际情况修改")
+    print("⚠️  切勿将包含真实密钥的配置文件提交到Git")
 
 
 def check_gitignore():

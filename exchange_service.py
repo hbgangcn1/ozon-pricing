@@ -10,6 +10,17 @@ from abc import ABC, abstractmethod
 logging.basicConfig(level=logging.INFO)
 
 
+# ==================== 限流器配置 ====================
+# 导入限流器
+try:
+    from rate_limiter import get_limiter
+    RATE_LIMITER_AVAILABLE = True
+except ImportError:
+    RATE_LIMITER_AVAILABLE = False
+    get_limiter = None  # type: ignore
+# ===================================================
+
+
 # ---------- 抽象接口
 class ExchangeRateProvider(ABC):
     @abstractmethod
@@ -17,25 +28,92 @@ class ExchangeRateProvider(ABC):
         pass
 
 
-# ---------- 中国银行官网实时抓取
-class BocProvider(ExchangeRateProvider):
+# ---------- 多源汇率提供者
+class MultiSourceRubProvider(ExchangeRateProvider):
     """
-    使用 exchangerate-api.com 免费接口
-    直接返回 1 RUB → CNY 的实时汇率
+    多数据源卢布汇率提供者，支持自动切换
+    数据源优先级：
+    1. exchangerate-api.com (主源)
+    2. MOEX API (莫斯科交易所)
+    3. fixer.io API (备用)
     """
     def __init__(self):
-        self.url = "https://api.exchangerate-api.com/v4/latest/RUB"
+        self.sources = [
+            {
+                'name': 'ExchangeRate-API',
+                'url': 'https://api.exchangerate-api.com/v4/latest/RUB',
+                'parser': self._parse_exchangerate_api
+            },
+            {
+                'name': 'MOEX',
+                'url': (
+                    'https://iss.moex.com/iss/statistics/engines/currency'
+                    '/markets/selt/rates.json'
+                ),
+                'parser': self._parse_moex_api
+            },
+        ]
+
+    @staticmethod
+    def _parse_exchangerate_api(data):
+        """解析exchangerate-api.com的响应"""
+        return float(data["rates"]["CNY"])
+
+    @staticmethod
+    def _parse_moex_api(data):
+        """解析MOEX API的响应"""
+        # MOEX返回USD/RUB，需要结合USD/CNY计算RUB/CNY
+        # 简化实现：如果MOEX数据可用，使用其CNY/RUB比率
+        if "statistics" in data and "data" in data["statistics"]:
+            for item in data["statistics"]["data"]:
+                if "CNYRUBTOM" in str(item):
+                    return float(item[2])  # 汇率值
+        raise ValueError("MOEX数据格式错误")
 
     def get_rate(self) -> float:
-        try:
-            r = requests.get(self.url, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            # rates.CNY 即 1 RUB 兑多少 CNY
-            return float(data["rates"]["CNY"])
-        except requests.RequestException as e:
-            logging.warning("第三方汇率接口失败: %s", e)
-        raise ValueError("第三方接口未返回卢布汇率")
+        """尝试所有数据源，返回第一个成功的汇率（带限流保护）"""
+        # 限流检查：每分钟最多30次汇率请求
+        if RATE_LIMITER_AVAILABLE and get_limiter:
+            exchange_limiter = get_limiter(
+                "exchange_rate_api", rate=30, per=60
+            )
+            limiter_key = "global_exchange_rate"
+
+            if not exchange_limiter.is_allowed(limiter_key):
+                retry_after = int(
+                    exchange_limiter.get_retry_after(limiter_key)
+                ) + 1
+                logging.warning(
+                    f"汇率API请求过于频繁，需等待 {retry_after} 秒"
+                )
+                # 限流时不抛异常，而是让调用者使用缓存值
+                raise ValueError(
+                    f"汇率API限流中，请 {retry_after} 秒后重试"
+                )
+
+        last_error = None
+
+        for source in self.sources:
+            try:
+                r = requests.get(source['url'], timeout=10)
+                r.raise_for_status()
+                data = r.json()
+                rate = source['parser'](data)
+                logging.info(f"汇率获取成功 - 来源: {source['name']}, 汇率: {rate}")
+                return rate
+            except Exception as e:
+                logging.warning(f"{source['name']} 汇率获取失败: {e}")
+                last_error = e
+                continue
+
+        # 所有数据源都失败
+        raise ValueError(f"所有汇率数据源失败，最后错误: {last_error}")
+
+
+# 保持向后兼容
+class BocProvider(MultiSourceRubProvider):
+    """向后兼容的别名"""
+    pass
 
 
 # ---------- 兜底实现：固定值
@@ -73,7 +151,7 @@ class ExchangeRateService:
         return cls._instance
 
     def _init(self):
-        self._provider = BocProvider()
+        self._provider = MultiSourceRubProvider()
         self._fallback = FallbackProvider()
         self._rate: float = 9.02
         self._last: float = 0
@@ -159,6 +237,23 @@ class UsdProvider(ExchangeRateProvider):
         self.url = "https://api.exchangerate-api.com/v4/latest/USD"
 
     def get_rate(self) -> float:
+        """获取美元汇率（带限流保护）"""
+        # 限流检查：每分钟最多30次美元汇率请求
+        if RATE_LIMITER_AVAILABLE and get_limiter:
+            usd_limiter = get_limiter("usd_rate_api", rate=30, per=60)
+            limiter_key = "global_usd_rate"
+
+            if not usd_limiter.is_allowed(limiter_key):
+                retry_after = int(
+                    usd_limiter.get_retry_after(limiter_key)
+                ) + 1
+                logging.warning(
+                    f"美元汇率API请求过于频繁，需等待 {retry_after} 秒"
+                )
+                raise ValueError(
+                    f"美元汇率API限流中，请 {retry_after} 秒后重试"
+                )
+
         try:
             r = requests.get(self.url, timeout=10)
             r.raise_for_status()

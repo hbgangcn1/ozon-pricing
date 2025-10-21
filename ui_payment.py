@@ -50,10 +50,10 @@ def handle_payment_success(order_id: str):
         print(f"🔧 已清除二维码状态: {order_id}")
 
     # 跳转到订阅管理页面
-    print(f"🔧 准备跳转到订阅管理页面")
+    print("🔧 准备跳转到订阅管理页面")
     time.sleep(2)
     st.session_state["current_page"] = "subscription"
-    print(f"🔧 已设置页面路由: subscription")
+    print("🔧 已设置页面路由: subscription")
     st.rerun()
 
 
@@ -62,12 +62,12 @@ def monitor_payment_status(
 ):
     """监控支付状态"""
     print(f"🔧 monitor_payment_status 开始: 订单ID={order_id}")
-    
+
     # 首先检查数据库中的支付状态
     print(f"🔧 开始检查数据库支付状态: {order_id}")
     payment_success = check_payment_status_in_db(order_id)
     print(f"🔧 数据库支付状态检查结果: {payment_success}")
-    
+
     if payment_success:
         print(f"🔧 支付成功，准备跳转: {order_id}")
         handle_payment_success(order_id)
@@ -325,7 +325,7 @@ def create_efficiency_payment(payment_handler: PaymentHandler):
 
 def check_and_restore_payment_status():
     """检查并恢复支付状态（在页面加载时调用）
-    
+
     Returns:
         bool: 如果有正在进行的支付返回True，否则返回False
     """
@@ -334,7 +334,7 @@ def check_and_restore_payment_status():
         # 有正在进行的支付，恢复显示
         for order_id in list(st.session_state.payment_monitoring.keys()):
             restore_payment_display(order_id)
-            
+
             # 显示当前状态和手动检查按钮
             monitoring_info = st.session_state.payment_monitoring[order_id]
             if not monitoring_info.get('first_check_done', False):
@@ -347,7 +347,7 @@ def check_and_restore_payment_status():
                     f'payment_status_{order_id}', "⏳ 正在检查支付状态..."
                 )
                 st.info(current_status)
-                
+
                 # 显示手动检查按钮
                 st.info("💡 请点击下方按钮手动检查支付状态")
                 if st.button(

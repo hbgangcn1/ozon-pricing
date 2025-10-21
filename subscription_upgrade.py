@@ -8,8 +8,10 @@ from typing import Dict, Any, Optional
 import time
 
 # ==================== 测试模式配置 ====================
-# 设置为 True 启用测试价格，False 使用正式价格
-TEST_MODE = True
+# 从环境变量读取，默认为False（正式价格）
+# 设置环境变量 TEST_MODE=true 启用测试价格
+import os
+TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
 # =====================================================
 
 

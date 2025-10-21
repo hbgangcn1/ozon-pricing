@@ -4,6 +4,13 @@ import secrets
 import hashlib
 import streamlit as st
 from datetime import datetime, timedelta
+
+# 导入logger（可选，如果不可用则静默失败）
+try:
+    from logger_config import logger
+except ImportError:
+    logger = None
+
 try:
     from .db_utils import (
         verify_user,
@@ -380,11 +387,11 @@ class SessionSecurity:
 
 def secure_login(username_or_email: str, password: str) -> bool:
     """安全登录函数（带限流保护）"""
-    
+
     # 限流检查：每分钟最多5次登录尝试
     login_limiter = get_limiter("login", rate=5, per=60)
     limiter_key = f"login_{username_or_email}"
-    
+
     if not login_limiter.is_allowed(limiter_key):
         retry_after = int(login_limiter.get_retry_after(limiter_key)) + 1
         st.error(f"⚠️ 登录尝试过于频繁，请 {retry_after} 秒后重试")
@@ -407,18 +414,21 @@ def secure_login(username_or_email: str, password: str) -> bool:
         # 记录用户登录日志
         try:
             from db_utils import log_user_login
-            from logger_config import logger
-            log_user_login(
-                user_id=user['id'],
-                ip_address=None,  # 可选：如需要可通过request获取
-                user_agent=None   # 可选：如需要可通过request获取
-            )
-        except Exception as e:
+        except ImportError:
+            # 如果模块不可用，静默失败
+            log_user_login = None
+
+        if log_user_login:
             try:
-                from logger_config import logger
-                logger.error(f"记录用户登录日志失败: {e}")
-            except ImportError:
-                pass  # 如果logger不可用，静默失败
+                log_user_login(
+                    user_id=user['id'],
+                    ip_address=None,  # 可选：如需要可通过request获取
+                    user_agent=None   # 可选：如需要可通过request获取
+                )
+            except Exception as e:
+                # 使用全局导入的logger（如果可用）
+                if logger:
+                    logger.error(f"记录用户登录日志失败: {e}")
 
         # 首次登录后再开始计时：
         # 对 monthly/enterprise/test/efficiency/professional 首次登录生效
