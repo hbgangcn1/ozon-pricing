@@ -10,6 +10,14 @@ import sqlite3
 import time
 from typing import List, Tuple
 
+# 尝试导入psycopg2
+try:
+    import psycopg2  # type: ignore[import]
+    from psycopg2 import Error as Psycopg2Error  # type: ignore[import]
+except ImportError:
+    psycopg2 = None  # type: ignore
+    Psycopg2Error = Exception  # type: ignore
+
 
 def check_postgresql_available():
     """检查PostgreSQL驱动是否可用"""
@@ -30,11 +38,11 @@ def get_sqlite_connection(db_path: str):
     return conn
 
 
-def get_postgresql_connection(psycopg2):
+def get_postgresql_connection(pg_module):
     """获取PostgreSQL连接"""
     from db_config import POSTGRES_CONFIG
 
-    conn = psycopg2.connect(
+    conn = pg_module.connect(
         host=POSTGRES_CONFIG['host'],
         port=POSTGRES_CONFIG['port'],
         database=POSTGRES_CONFIG['database'],
@@ -86,12 +94,12 @@ def get_pg_table_schema(pg_conn, table_name: str):
         """)
         result = {row[0]: row[1] for row in pg_cursor.fetchall()}
         return result
-    except Exception as e:
+    except (Psycopg2Error, KeyError, ValueError) as e:
         print(f"    调试: 获取表结构失败 - {e}")
         return {}
 
 
-def convert_value_for_pg(value, column_name: str, pg_type: str):
+def convert_value_for_pg(value, pg_type: str):
     """转换SQLite值为PostgreSQL兼容格式"""
     if value is None:
         return None
@@ -130,7 +138,7 @@ def migrate_table(
     # 获取PostgreSQL表结构（先回滚可能的失败事务）
     try:
         pg_conn.rollback()
-    except Exception:
+    except (Psycopg2Error, AttributeError):
         pass
 
     pg_schema = get_pg_table_schema(pg_conn, table_name)
@@ -164,7 +172,7 @@ def migrate_table(
     try:
         pg_cursor.execute(f"TRUNCATE TABLE {table_name} CASCADE")
         print("  已清空目标表")
-    except Exception as e:
+    except Psycopg2Error as e:
         print(f"  ⚠️  清空表失败: {e}，继续插入...")
         # 回滚失败的事务
         pg_conn.rollback()
@@ -192,12 +200,12 @@ def migrate_table(
                 val = row[idx]
                 # 转换值
                 pg_type = pg_schema.get(col, '')
-                converted_val = convert_value_for_pg(val, col, pg_type)
+                converted_val = convert_value_for_pg(val, pg_type)
                 values.append(converted_val)
 
             pg_cursor.execute(insert_sql, values)
             success_count += 1
-        except Exception as e:
+        except (Psycopg2Error, ValueError, TypeError) as e:
             error_count += 1
             if error_count <= 3:  # 只显示前3个错误
                 print(f"  ❌ 插入失败: {e}")
@@ -207,7 +215,7 @@ def migrate_table(
     # 提交成功的事务
     try:
         pg_conn.commit()
-    except Exception as e:
+    except Psycopg2Error as e:
         print(f"  ⚠️  提交事务失败: {e}")
         pg_conn.rollback()
 
@@ -232,7 +240,7 @@ def reset_sequences(pg_conn, table_name: str, id_column: str = 'id'):
 
         pg_conn.commit()
         print(f"  ✓ 序列已重置: {sequence_name} -> {max_id + 1}")
-    except Exception as e:
+    except Psycopg2Error as e:
         print(f"  ⚠️  重置序列失败: {e}")
 
 
@@ -249,7 +257,7 @@ def main():
 
     # 1. 检查PostgreSQL驱动
     print("\n[1/6] 检查PostgreSQL驱动...")
-    available, psycopg2 = check_postgresql_available()
+    available, pg_module = check_postgresql_available()
     if not available:
         print("❌ 错误: psycopg2未安装")
         print("请运行: pip install psycopg2-binary")
@@ -262,16 +270,16 @@ def main():
     try:
         sqlite_conn = get_sqlite_connection(sqlite_path)
         print(f"✓ 已连接: {sqlite_path}")
-    except Exception as e:
+    except (sqlite3.Error, FileNotFoundError, OSError) as e:
         print(f"❌ SQLite连接失败: {e}")
         sys.exit(1)
 
     # 3. 连接PostgreSQL
     print("\n[3/6] 连接PostgreSQL数据库...")
     try:
-        pg_conn = get_postgresql_connection(psycopg2)
+        pg_conn = get_postgresql_connection(pg_module)
         print("✓ PostgreSQL连接成功")
-    except Exception as e:
+    except Psycopg2Error as e:
         print(f"❌ PostgreSQL连接失败: {e}")
         print("\n请检查:")
         print("  1. PostgreSQL是否已启动")
@@ -294,7 +302,7 @@ def main():
             # 恢复原始设置
             if original_db_type:
                 os.environ['DB_TYPE'] = original_db_type
-        except Exception as e:
+        except (ImportError, Psycopg2Error, OSError) as e:
             print(f"❌ 初始化表结构失败: {e}")
             sys.exit(1)
     else:
@@ -342,7 +350,8 @@ def main():
                 ]:
                     reset_sequences(pg_conn, table)
 
-            except Exception as e:
+            except (Psycopg2Error, sqlite3.Error,
+                    ValueError, TypeError) as e:
                 print(f"  ❌ 迁移失败: {e}")
                 import traceback
                 traceback.print_exc()
@@ -352,7 +361,8 @@ def main():
     for table in other_tables:
         try:
             migrate_table(sqlite_conn, pg_conn, table, dry_run)
-        except Exception as e:
+        except (Psycopg2Error, sqlite3.Error,
+                ValueError, TypeError) as e:
             print(f"  ❌ 迁移失败: {e}")
 
     elapsed = time.time() - start_time
