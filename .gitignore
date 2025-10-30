@@ -84,11 +84,16 @@ GIT_CLEANUP_REPORT.md
 PROJECT_IMPROVEMENT_ANALYSIS.md
 BACKUP_README.md
 
-# 统一忽略：测试套件与所有 Markdown 文档
+# 统一忽略：测试套件与所有 Markdown 文档（保留README.md和核心文档）
 tests/
 test_*.py
 *_test.py
 *.md
+!README.md
+!LICENSE
+!*.部署指南.md
+!*.说明.md
+!*.README.md
 
 # 项目特定文件
 pyrightconfig.json

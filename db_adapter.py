@@ -44,8 +44,8 @@ def init_connection_pool():
                 raise RuntimeError("PostgreSQL pool模块未正确加载")
 
             _connection_pool = pool.ThreadedConnectionPool(
-                minconn=5,
-                maxconn=20,
+                minconn=5,  # 最小连接数
+                maxconn=20,  # 最大连接数
                 host=POSTGRES_CONFIG['host'],
                 port=POSTGRES_CONFIG['port'],
                 database=POSTGRES_CONFIG['database'],
@@ -158,10 +158,9 @@ def adapt_placeholders(sql: str, param_count: int) -> str:
         适配后的SQL
     """
     if DB_TYPE == 'postgresql':
-        # 将?替换为$1, $2, $3...
-        result = sql
-        for i in range(param_count, 0, -1):
-            result = result.replace('?', f'${i}', 1)
+        # psycopg2使用%s占位符，不需要转换
+        # 只需确保SQL中没有?
+        result = sql.replace('?', '%s')
         return result
     return sql
 
@@ -169,6 +168,9 @@ def adapt_placeholders(sql: str, param_count: int) -> str:
 def get_last_insert_id(cursor) -> Optional[int]:
     """获取最后插入的ID"""
     if DB_TYPE == 'postgresql':
-        return cursor.fetchone()[0] if cursor.rowcount > 0 else None
+        # PostgreSQL需要先执行查询获取lastval()
+        cursor.execute("SELECT lastval()")
+        result = cursor.fetchone()
+        return result[0] if result else None
     else:
         return cursor.lastrowid

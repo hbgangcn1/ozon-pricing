@@ -30,14 +30,15 @@ class PaymentCompensationService:
     def get_pending_orders(self) -> List[Dict[str, Any]]:
         """获取需要补偿的pending订单"""
         try:
-            from db_utils import get_db_connection
+            from db_adapter import get_db_connection
 
             current_time = int(time.time())
             check_start_time = current_time - self.max_check_age
             pending_threshold = current_time - self.pending_timeout
 
             with get_db_connection() as (conn, cursor):
-                cursor.execute("""
+                from db_adapter import adapt_placeholders
+                sql = """
                     SELECT order_id, user_id, amount, description,
                            created_at, duration
                     FROM payment_orders
@@ -45,7 +46,9 @@ class PaymentCompensationService:
                       AND created_at >= ?
                       AND created_at <= ?
                     ORDER BY created_at ASC
-                """, (check_start_time, pending_threshold))
+                """
+                adapted_sql = adapt_placeholders(sql, 2)
+                cursor.execute(adapted_sql, (check_start_time, pending_threshold))
 
                 results = cursor.fetchall()
 

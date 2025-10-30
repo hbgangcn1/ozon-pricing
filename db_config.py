@@ -7,6 +7,17 @@
 import os
 from typing import Literal, cast
 
+# 加载.env文件（必须在读取环境变量之前）
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    # 如果没有python-dotenv，定义一个占位函数
+    def load_dotenv() -> bool:
+        return False
+
+# 调用load_dotenv（无论是真实函数还是占位函数）
+load_dotenv()
+
 # 数据库类型配置
 _db_type_raw = os.getenv('DB_TYPE', 'sqlite').lower()
 
