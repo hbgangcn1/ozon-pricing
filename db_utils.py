@@ -1097,7 +1097,7 @@ def _upgrade_statistics_tables():
                 target_type TEXT,
                 ip_address TEXT,
                 created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                FOREIGN KEY (admin_id) REFERENCES admin_users(id),
+                FOREIGN KEY (admin_id) REFERENCES users(id),
                 FOREIGN KEY (target_user_id) REFERENCES users(id)
             )
         """)
@@ -1125,7 +1125,7 @@ def _upgrade_statistics_tables():
                 handled_at INTEGER,
                 handle_note TEXT,
                 created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                FOREIGN KEY (handled_by) REFERENCES admin_users(id)
+                FOREIGN KEY (handled_by) REFERENCES users(id)
             )
         """)
 
@@ -2510,9 +2510,9 @@ def authenticate_admin(username, password):
     with get_db_connection() as (conn, c):
         c.execute(
             (
-                "SELECT id, username, password_hash, role, email "
-                "FROM admin_users "
-                "WHERE username = ? AND is_active = 1"
+                "SELECT id, username, password, role, email "
+                "FROM users "
+                "WHERE username = ? AND role = 'admin'"
             ),
             (username,),
         )
@@ -2527,7 +2527,7 @@ def authenticate_admin(username, password):
                 # 更新最后登录时间
                 c.execute(
                     (
-                        "UPDATE admin_users SET last_login = datetime('now') "
+                        "UPDATE users SET last_login = datetime('now') "
                         "WHERE id = ?"
                     ),
                     (admin_id,),
@@ -2856,6 +2856,15 @@ def unfreeze_user(user_id, admin_id):
 def delete_user_admin(user_id, admin_id):
     """管理员删除用户"""
     with get_db_connection() as (conn, c):
+        # 保护管理员账号：禁止删除 admin 及其数据
+        user_role_row = c.execute(
+            "SELECT role, username FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        if user_role_row and user_role_row[0] == 'admin':
+            print("删除失败: 不允许删除管理员账号及其数据")
+            return False
+
         # 获取用户信息用于日志
         user = c.execute(
             "SELECT username FROM users WHERE id = ?",
@@ -2975,11 +2984,12 @@ def get_audit_logs(
         query = (
             "SELECT audit_logs.id, audit_logs.admin_id, audit_logs.user_id, "
             "audit_logs.action, audit_logs.details, audit_logs.timestamp, "
-            "admin_users.username as admin_username, "
-            "users.username as user_username "
+            "a.username as admin_username, "
+            "u.username as user_username "
             "FROM audit_logs "
-            "LEFT JOIN admin_users ON audit_logs.admin_id = admin_users.id "
-            "LEFT JOIN users ON audit_logs.user_id = users.id "
+            "LEFT JOIN users a ON audit_logs.admin_id = a.id "
+            "AND a.role = 'admin' "
+            "LEFT JOIN users u ON audit_logs.user_id = u.id "
             f"WHERE {where_clause} "
             "ORDER BY audit_logs.timestamp DESC "
             "LIMIT ? OFFSET ?"

@@ -1308,13 +1308,33 @@ def show_precise_mode_interface(current_user):
     if current_user["role"] == "admin":
         # 根据开放注册状态决定标签页
         if should_show_subscription_management():
-            (tab1, tab2, tab3, tab4, tab5, tab6, tab7,
-             tab8, tab9) = st.tabs(
+            (tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9,
+             tab10) = st.tabs(
                 [
                     "💰 定价计算",
                     "🚚 物流管理",
                     "🔐 账户管理",
                     "💎 订阅管理",
+                    "💳 支付中心",
+                    "⚙️ 系统设置",
+                    "👥 用户管理",
+                    "🎁 套餐管理",
+                    "📈 数据统计",
+                    "ℹ️ 关于我们",
+                ]
+            )
+            user_management_tab = tab7
+            plan_management_tab = tab8
+            statistics_tab = tab9
+            about_us_tab = tab10
+            payment_tab = tab5
+        else:
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
+                [
+                    "💰 定价计算",
+                    "🚚 物流管理",
+                    "🔐 账户管理",
+                    "💳 支付中心",
                     "⚙️ 系统设置",
                     "👥 用户管理",
                     "🎁 套餐管理",
@@ -1326,23 +1346,7 @@ def show_precise_mode_interface(current_user):
             plan_management_tab = tab7
             statistics_tab = tab8
             about_us_tab = tab9
-        else:
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
-                [
-                    "💰 定价计算",
-                    "🚚 物流管理",
-                    "🔐 账户管理",
-                    "⚙️ 系统设置",
-                    "👥 用户管理",
-                    "🎁 套餐管理",
-                    "📈 数据统计",
-                    "ℹ️ 关于我们",
-                ]
-            )
-            user_management_tab = tab5
-            plan_management_tab = tab6
-            statistics_tab = tab7
-            about_us_tab = tab8
+            payment_tab = tab4
         with tab1:
             st.markdown(
                 """
@@ -1402,8 +1406,15 @@ def show_precise_mode_interface(current_user):
                 )
                 subscription_management_page()
 
+    # 支付中心标签页
+        with payment_tab:
+            payment_center_page()
+
     # 系统设置标签页 - 根据开放注册状态调整索引
-        system_tab = tab5 if should_show_subscription_management() else tab4
+        if should_show_subscription_management():
+            system_tab = tab6
+        else:
+            system_tab = tab5
         with system_tab:
             st.markdown(
                 """
@@ -1988,7 +1999,7 @@ def precise_products_page():
             if selected_data:
                 # 确保表单控件使用选中的产品数据
                 default_name = selected_data.get("name", "")
-                default_price = float(selected_data.get("unit_price", 0.0))
+                default_price = float(selected_data.get("unit_price") or 0.0)
             else:
                 default_name = ""
                 default_price = 0.0
@@ -2054,28 +2065,28 @@ def precise_products_page():
                     weight_g = st.number_input(
                         "重量（克）*",
                         min_value=0.0,
-                        value=float(selected_data.get("weight_g", 0.0)),
+                        value=float(selected_data.get("weight_g") or 0.0),
                         step=0.1,
                     )
                 with col2:
                     length_cm = st.number_input(
                         "长度（厘米）*",
                         min_value=0.0,
-                        value=float(selected_data.get("length_cm", 0.0)),
+                        value=float(selected_data.get("length_cm") or 0.0),
                         step=0.1,
                     )
                 with col3:
                     width_cm = st.number_input(
                         "宽度（厘米）*",
                         min_value=0.0,
-                        value=float(selected_data.get("width_cm", 0.0)),
+                        value=float(selected_data.get("width_cm") or 0.0),
                         step=0.1,
                     )
                 with col4:
                     height_cm = st.number_input(
                         "高度（厘米）*",
                         min_value=0.0,
-                        value=float(selected_data.get("height_cm", 0.0)),
+                        value=float(selected_data.get("height_cm") or 0.0),
                         step=0.1,
                     )
             # 初始化圆柱包装的变量
@@ -2088,7 +2099,7 @@ def precise_products_page():
                     weight_g = st.number_input(
                         "重量（克）*",
                         min_value=0.0,
-                        value=float(selected_data.get("weight_g", 0.0)),
+                        value=float(selected_data.get("weight_g") or 0.0),
                         step=0.1,
                     )
                 with col2:
@@ -2301,7 +2312,7 @@ def precise_products_page():
                     min_value=0.0,
                     max_value=30.0,
                     value=float(
-                        selected_data.get("vat_rate", 0.0)
+                        selected_data.get("vat_rate") or 0.0
                     ) * 100.0,
                     step=0.1,
                     format="%.1f",
@@ -2849,16 +2860,16 @@ def _create_cost_breakdown_chart(
     from exchange_service import get_fallback_exchange_rate
 
     # 获取产品参数
-    unit_price = float(product.get("unit_price", 0))
-    labeling_fee = float(product.get("labeling_fee", 0))
-    shipping_fee = float(product.get("shipping_fee", 0))
+    unit_price = float(product.get("unit_price") or 0)
+    labeling_fee = float(product.get("labeling_fee") or 0)
+    shipping_fee = float(product.get("shipping_fee") or 0)
 
-    promotion_rate = float(product.get("promotion_cost_rate", 0))
-    commission_rate = float(product.get("commission_rate", 0.08))
-    withdrawal_rate = float(product.get("withdrawal_fee_rate", 0.02))
-    payment_rate = float(product.get("payment_processing_fee", 0))
-    return_rate = float(product.get("return_rate", 0))
-    vat_rate = float(product.get("vat_rate", 0))
+    promotion_rate = float(product.get("promotion_cost_rate") or 0)
+    commission_rate = float(product.get("commission_rate") or 0.08)
+    withdrawal_rate = float(product.get("withdrawal_fee_rate") or 0.02)
+    payment_rate = float(product.get("payment_processing_fee") or 0)
+    return_rate = float(product.get("return_rate") or 0)
+    vat_rate = float(product.get("vat_rate") or 0)
 
     # 计算代理费
     rate = get_fallback_exchange_rate()
@@ -2876,8 +2887,6 @@ def _create_cost_breakdown_chart(
             pricing_mode = "代理费在分子中"
         else:
             pricing_mode = "代理费在分母中"
-
-    print(f"  📌 使用定价模式: {pricing_mode}")
 
     # 根据定价模式决定成本和收入计算
     if pricing_mode == "代理费在分子中":
@@ -2906,36 +2915,8 @@ def _create_cost_breakdown_chart(
     # 计算实际利润 - 如果提供了expected_profit参数，直接使用；否则重新计算
     if expected_profit is not None:
         profit = expected_profit
-        print(f"🎨 饼状图使用传入的利润: ¥{profit:.2f}")
     else:
         profit = actual_revenue - total_cost_with_commission
-        print(
-            f"🎨 饼状图重新计算利润: ¥{profit:.2f} "
-            f"(收入: {actual_revenue:.2f} - 成本: "
-            f"{total_cost_with_commission:.2f})"
-        )
-
-    # 打印饼状图调试信息
-    print("\n📊 饼状图计算详情:")
-    print(f"  售价: ¥{final_price:.2f}")
-    print(f"  代理费(RUB): {actual_commission_rub:.2f}")
-    print(
-        f"  代理费模式: "
-        f"{'在分子中' if actual_commission_rub <= 15 or actual_commission_rub >= 200 else '在分母中'}"  # noqa: E501
-    )
-    print(f"  进货单价: ¥{unit_price:.2f}")
-    print(f"  物流成本: ¥{logistics_cost:.2f}")
-    print(f"  代理费(CNY): ¥{commission_fee:.2f}")
-    print(f"  推广费({promotion_rate * 100:.1f}%): "
-          f"¥{final_price * promotion_rate:.2f}")
-    print(f"  佣金({commission_rate * 100:.1f}%): "
-          f"¥{final_price * commission_rate:.2f}")
-    print(f"  提现费({withdrawal_rate * 100:.1f}%): "
-          f"¥{final_price * withdrawal_rate:.2f}")
-    print(f"  收单费({payment_rate * 100:.1f}%): "
-          f"¥{final_price * payment_rate:.2f}")
-    print(f"  运营利润: ¥{profit:.2f}")
-    print(f"  利润率: {(profit / final_price * 100):.2f}%\n")
 
     # 准备饼图数据 - 只显示非零项
     labels = []
@@ -2961,60 +2942,103 @@ def _create_cost_breakdown_chart(
         ("运营利润", profit, "#52BE80"),
     ]
 
-    print(
-        f"  代理费显示: ¥{commission_fee_display:.2f} "
-        f"({actual_commission_rub:.2f} RUB)"
-    )
-    print(f"  定价模式: {pricing_mode}")
-
-    print("\n📋 饼状图各项明细:")
     for label, value, color in cost_items:
         if value > 0.01:  # 只显示大于0.01的项
             labels.append(label)
             values.append(value)
             colors.append(color)
-            percentage = (value / final_price * 100) if final_price > 0 else 0
-            print(f"  {label}: ¥{value:.2f} ({percentage:.1f}%)")
 
-    # 创建饼图
+    # 创建饼图（默认内置文字，悬浮显示明细）
+    # 当项目较多时，避免外侧标注被遮挡
+    item_count = len(labels)
+    many_items = item_count >= 10
+
     fig = go.Figure(data=[go.Pie(
         labels=labels,
         values=values,
         hole=0.3,
         marker=dict(colors=colors),
-        textinfo='label+percent',
-        textposition='auto',
+        # 多项时放扇区内，仅显示百分比；少量项放外侧单行“名称：占比”
+        textinfo='percent' if many_items else 'none',
+        texttemplate=None if many_items else '%{label}: %{percent}',
+        textposition='inside' if many_items else 'outside',
         hovertemplate=(
             '<b>%{label}</b><br>金额: ¥%{value:.2f}<br>'
             '占比: %{percent}<extra></extra>'
         )
     )])
 
-    fig.update_layout(
-        title={
-            'text': '定价因素构成',
-            'x': 0.5,
-            'xanchor': 'center',
-            'font': {
-                'size': 16,
-                'color': '#2c3e50',
-                'family': 'Arial, sans-serif'
-            }
-        },
-        showlegend=True,
-        legend=dict(
-            orientation="v",
-            yanchor="middle",
-            y=0.5,
-            xanchor="left",
-            x=1.05,
-            font=dict(size=10)
-        ),
-        margin=dict(l=30, r=150, t=60, b=100),
-        height=550,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
-    )
+    # 根据项目数量动态调整布局：
+    # - 少量项目：右侧垂直图例 + 右边距动态
+    # - 大量项目：底部横向多行图例 + 底部边距和高度动态
+    if not many_items:
+        dynamic_height = max(550, 400 + (item_count * 18))
+        dynamic_right_margin = max(150, 130 + (item_count * 10))
+        fig.update_layout(
+            title={
+                'text': '定价因素构成',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {
+                    'size': 16,
+                    'color': '#2c3e50',
+                    'family': 'Arial, sans-serif'
+                }
+            },
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1.0,
+                xanchor="left",
+                x=1.02,
+                font=dict(size=10),
+                itemwidth=30,
+                traceorder="normal",
+            ),
+            margin=dict(l=30, r=dynamic_right_margin, t=60, b=100),
+            height=dynamic_height,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
+    else:
+        # 估计每行可放置的图例项数量（按平均 4 个/行 近似）
+        # 并按行数增加图高，保证所有文字显示完全
+        import math
+        items_per_row = 4
+        legend_rows = max(1, math.ceil(item_count / items_per_row))
+        base_height = 480
+        row_height = 26
+        dynamic_height = base_height + legend_rows * row_height
+        dynamic_bottom_margin = 40 + legend_rows * 24
+
+        fig.update_layout(
+            title={
+                'text': '定价因素构成',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {
+                    'size': 16,
+                    'color': '#2c3e50',
+                    'family': 'Arial, sans-serif'
+                }
+            },
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.02,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=10),
+                itemwidth=60,
+                traceorder="normal",
+            ),
+            margin=dict(l=30, r=40, t=60, b=dynamic_bottom_margin),
+            height=dynamic_height,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
 
     return fig
 
@@ -3200,28 +3224,6 @@ def display_fast_pricing_results_precise_style(
         ),
         unsafe_allow_html=True,
     )
-
-    # 添加调试信息
-    with st.expander("🔧 计算调试信息", expanded=False):
-        st.markdown("### 预期利润计算调试")
-        land_debug = pricing_result_low.get('land_debug', [])
-        air_debug = pricing_result_low.get('air_debug', [])
-
-        if land_debug:
-            st.markdown("#### 陆运预期利润计算")
-            for debug_line in land_debug:
-                st.write(debug_line)
-
-        if air_debug:
-            st.markdown("#### 空运预期利润计算")
-            for debug_line in air_debug:
-                st.write(debug_line)
-
-        # 检查all_costs_debug中的详细信息
-        all_costs_debug = pricing_result_low.get('all_costs_debug', [])
-        if all_costs_debug:
-            st.markdown("### 物流筛选过程")
-            st.write(f"**筛选的物流规则数量:** {len(all_costs_debug)}")
 
     #     # 查找运费为0的物流规则
     #     zero_cost_rules = []
@@ -5124,9 +5126,9 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
             def get_fallback_exchange_rate():
                 return 0.0904  # 默认兜底汇率
         rate = get_fallback_exchange_rate()  # 1 CNY = x RUB
-        unit_price = float(product.get("unit_price", 0))
-        labeling_fee = float(product.get("labeling_fee", 0))
-        shipping_fee = float(product.get("shipping_fee", 0))
+        unit_price = float(product.get("unit_price") or 0)
+        labeling_fee = float(product.get("labeling_fee") or 0)
+        shipping_fee = float(product.get("shipping_fee") or 0)
 
     # 先计算运费（复用与正式计算完全一致的公式）
     # 使用上面已经计算好的重量 w
@@ -6292,37 +6294,6 @@ def display_precise_pricing_results(
         else:
             st.info("暂无可用物流")
 
-    # 添加利润率计算调试信息（在所有结果显示之后）
-    with st.expander("🔧 利润率计算调试信息", expanded=False):
-        st.markdown("### 低价优先 - 送到取货点")
-        land_debug_low = pricing_result_low.get('land_debug', [])
-        air_debug_low = pricing_result_low.get('air_debug', [])
-
-        if land_debug_low:
-            st.markdown("#### 陆运利润率计算")
-            for debug_line in land_debug_low:
-                st.text(debug_line)
-
-        if air_debug_low:
-            st.markdown("#### 空运利润率计算")
-            for debug_line in air_debug_low:
-                st.text(debug_line)
-
-        st.markdown("---")
-        st.markdown("### 低价优先 - 送货上门")
-        land_debug_low_home = pricing_result_low_home.get('land_debug', [])
-        air_debug_low_home = pricing_result_low_home.get('air_debug', [])
-
-        if land_debug_low_home:
-            st.markdown("#### 陆运利润率计算")
-            for debug_line in land_debug_low_home:
-                st.text(debug_line)
-
-        if air_debug_low_home:
-            st.markdown("#### 空运利润率计算")
-            for debug_line in air_debug_low_home:
-                st.text(debug_line)
-
 
 def payment_center_page():
     """支付中心页面"""
@@ -6387,9 +6358,14 @@ def payment_center_page():
                 df = pd.DataFrame(orders_data)
                 st.dataframe(df, width='stretch')
             else:
-                st.info("暂无订单记录")
+                st.info("当前无订单")
     except Exception as e:
-        st.error(f"查询订单失败: {str(e)}")
+        # 检查是否是表不存在的错误
+        error_msg = str(e).lower()
+        if 'no such table' in error_msg or 'subscription_orders' in error_msg:
+            st.info("当前无订单")
+        else:
+            st.error(f"查询订单失败: {str(e)}")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -6569,10 +6545,15 @@ def subscription_management_page():
         else:
             st.error(plan_status)
 
-    # 非免费版用户不显示"已用完"，统一视为无限次
-        if user_type != 'free':
-            st.success("无限次计算")
+    # 显示计算次数信息
+        if st.session_state.user.get('role') == 'admin':
+            # 管理员用户显示"计算次数无限"
+            st.success("计算次数无限")
+        elif user_type != 'free':
+            # 非免费版用户统一视为无限次
+            st.success("计算次数无限")
         else:
+            # 免费版用户显示剩余次数
             if (subscription_status and
                     subscription_status.get('remaining_calculations', 0) > 0):
                 st.info(
@@ -6581,7 +6562,7 @@ def subscription_management_page():
                 )
             elif (subscription_status and
                   subscription_status.get('remaining_calculations') == -1):
-                st.success("无限次计算")
+                st.success("计算次数无限")
             else:
                 st.error("今日次数已用完")
 
