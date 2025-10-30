@@ -1677,6 +1677,16 @@ def init_db():
             )
             conn.commit()
 
+        # 4. 数据保护策略调整：允许管理员手动删除其产品
+        # 取消历史触发器，改为通过业务逻辑防止“非手动路径”误删
+        try:
+            c.execute(
+                "DROP TRIGGER IF EXISTS trg_prevent_delete_admin_products"
+            )
+            conn.commit()
+        except sqlite3.Error:
+            pass
+
 
 def add_product(product_data):
     """添加新产品"""
@@ -1720,6 +1730,22 @@ def get_all_products_for_user(user_id):
             (user_id,)
         ).fetchall()
         return [dict(product) for product in products]
+
+
+def ensure_admin_product_deletion_allowed() -> None:
+    """确保不存在阻止删除管理员产品的触发器。
+
+    某些历史环境可能残留触发器，导致手动删除被阻断。
+    本函数幂等，若不存在该触发器则忽略。
+    """
+    with get_db_connection() as (conn, c):
+        try:
+            c.execute(
+                "DROP TRIGGER IF EXISTS trg_prevent_delete_admin_products"
+            )
+            conn.commit()
+        except sqlite3.Error:
+            pass
 
 
 def get_product_by_id(product_id, user_id):
@@ -2121,11 +2147,21 @@ def check_user_subscription_status(user_id):
 
         # 免费版用户：不检查到期时间，仅依据每日计算次数
         if user_type == 'free':
-            # 计算次数显示
+            # 兼容历史数据：免费版不应为-1，若为-1则按10次处理并尝试纠正
             if remaining_calculations == -1:
-                calculations_display = "无限次"
-            else:
-                calculations_display = f"{remaining_calculations}次"
+                try:
+                    with get_db_connection() as (fix_conn, fix_cur):
+                        fix_cur.execute(
+                            "UPDATE users SET remaining_calculations = 10 "
+                            "WHERE id = ?",
+                            (user_id,)
+                        )
+                        fix_conn.commit()
+                except (sqlite3.Error, OSError, ValueError, TypeError):
+                    pass
+                remaining_calculations = 10
+
+            calculations_display = f"{remaining_calculations}次"
             return {
                 'valid': True,
                 'message': (
@@ -2216,13 +2252,13 @@ def check_user_subscription_status(user_id):
 
 
 def decrement_user_calculations(user_id):
-    """减少用户计算次数"""
+    """减少用户计算次数（以 subscription_type 优先判定用户类型）。"""
     with get_db_connection() as (conn, c):
-        # 获取当前用户信息
+        # 获取当前用户信息（包含 subscription_type 用于优先判断）
         user = c.execute(
             (
-                "SELECT user_type, remaining_calculations FROM users"
-                " WHERE id = ?"
+                "SELECT user_type, subscription_type, "
+                "remaining_calculations FROM users WHERE id = ?"
             ),
             (user_id, ),
         ).fetchone()
@@ -2230,8 +2266,12 @@ def decrement_user_calculations(user_id):
         if not user:
             return False
 
-        user_type = user[0]  # user_type在第一列
-        remaining = user[1] if len(user) > 1 else -1
+        db_user_type = user[0]
+        db_subscription_type = user[1] if len(user) > 1 else None
+        remaining = user[2] if len(user) > 2 else -1
+
+        # 以 subscription_type 优先，其次回退到 user_type
+        user_type = (db_subscription_type or db_user_type or '').strip()
 
         # admin用户、永久用户、企业用户、感谢版用户、效率版用户、专业版用户不限制次数
         if user_type in [
@@ -2396,13 +2436,32 @@ def delete_user(user_id):
             )
             print(f"删除锁定记录: {result.rowcount} 条")
 
-            # 5. 删除用户的物流规则
+            # 5. 删除用户的登录/行为日志（统计表中的外键）
+            try:
+                result = c.execute(
+                    "DELETE FROM user_login_log WHERE user_id = ?",
+                    (user_id,)
+                )
+                print(f"删除登录日志: {result.rowcount} 条")
+            except sqlite3.OperationalError:
+                print("登录日志表不存在，跳过")
+
+            try:
+                result = c.execute(
+                    "DELETE FROM user_behavior_log WHERE user_id = ?",
+                    (user_id,)
+                )
+                print(f"删除行为日志: {result.rowcount} 条")
+            except sqlite3.OperationalError:
+                print("行为日志表不存在，跳过")
+
+            # 6. 删除用户的物流规则
             result = c.execute(
                 "DELETE FROM logistics WHERE user_id = ?", (user_id,)
             )
             print(f"删除物流规则: {result.rowcount} 条")
 
-            # 6. 删除用户的升级历史（如果表存在）
+            # 7. 删除用户的升级历史（如果表存在）
             try:
                 result = c.execute(
                     "DELETE FROM subscription_upgrade_history "
@@ -2412,13 +2471,34 @@ def delete_user(user_id):
             except sqlite3.OperationalError:
                 print("升级历史表不存在，跳过")
 
-            # 7. 删除用户的支付订单
+            # 8. 删除用户的支付订单
             result = c.execute(
                 "DELETE FROM payment_orders WHERE user_id = ?", (user_id,)
             )
             print(f"删除支付订单: {result.rowcount} 条")
 
-            # 8. 删除用户本身
+            # 9. 清理与用户相关的管理员操作日志/告警记录
+            try:
+                result = c.execute(
+                    "DELETE FROM admin_action_log WHERE admin_id = ? "
+                    "OR target_user_id = ?",
+                    (user_id, user_id)
+                )
+                print(f"删除管理员操作日志: {result.rowcount} 条")
+            except sqlite3.OperationalError:
+                print("管理员操作日志表不存在，跳过")
+
+            try:
+                result = c.execute(
+                    "UPDATE alert_records SET handled_by = NULL "
+                    "WHERE handled_by = ?",
+                    (user_id,)
+                )
+                print(f"置空告警处理人: {result.rowcount} 条")
+            except sqlite3.OperationalError:
+                print("告警记录表不存在，跳过")
+
+            # 10. 删除用户本身
             result = c.execute("DELETE FROM users WHERE id = ?", (user_id,))
             print(f"删除用户: {result.rowcount} 条")
 

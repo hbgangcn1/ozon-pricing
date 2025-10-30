@@ -219,6 +219,7 @@ def user_management_page():
                             pass
                         hashed = hash_password(password)
                         expiry_date = None
+                        subscription_expires = None
                         remaining_calculations = 0
                         first_login_date = None
                         test_days_remaining = 0
@@ -231,23 +232,49 @@ def user_management_page():
                             remaining_calculations = 10
                         elif user_type == "efficiency":
                             remaining_calculations = -1
+                            # 默认赠送30天有效期
+                            try:
+                                expiry_date = (
+                                    datetime.now() + timedelta(days=30)
+                                ).isoformat()
+                                import time as _t
+                                subscription_expires = (
+                                    int(_t.time()) + 30 * 86400
+                                )
+                            except (ValueError, TypeError, OSError):
+                                expiry_date = None
+                                subscription_expires = None
                         elif user_type == "professional":
                             remaining_calculations = -1
+                            # 默认赠送30天有效期
+                            try:
+                                expiry_date = (
+                                    datetime.now() + timedelta(days=30)
+                                ).isoformat()
+                                import time as _t
+                                subscription_expires = (
+                                    int(_t.time()) + 30 * 86400
+                                )
+                            except (ValueError, TypeError, OSError):
+                                expiry_date = None
+                                subscription_expires = None
                         elif user_type == "enterprise":
                             remaining_calculations = -1
                         try:
                             c.execute(
                                 (
                                     "INSERT INTO users (username, password, "
-                                    "role, user_type, expiry_date, "
+                                    "role, user_type, subscription_type, "
+                                    "expiry_date, subscription_expires, "
                                     "remaining_calculations, "
-                                    "first_login_date, "
-                                    "test_days_remaining) VALUES ("
-                                    "?, ?, ?, ?, ?, ?, ?, ?)"
+                                    "first_login_date, test_days_remaining) "
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                                 ),
                                 (
                                     username, hashed, role, user_type,
-                                    expiry_date, remaining_calculations,
+                                    user_type, expiry_date,
+                                    subscription_expires,
+                                    remaining_calculations,
                                     first_login_date, test_days_remaining,
                                 ),
                             )
@@ -502,6 +529,18 @@ def subscription_management_page():
     st.subheader("用户信息")
     st.write(f"**用户名称：** {user_info['username']}")
 
+    # 显示该用户的产品数量
+    try:
+        with get_db_connection() as (conn, c):
+            prod_cnt = c.execute(
+                "SELECT COUNT(*) FROM products WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()[0]
+        st.write(f"**产品数量：** {prod_cnt} 个")
+    except (sqlite3.Error, ValueError, TypeError, OSError):
+        # 安全兜底，不阻断订阅管理页面
+        st.write("**产品数量：** 获取失败")
+
     # 检查是否为admin用户
     with get_db_connection() as (conn, cursor):
         cursor.execute("SELECT role FROM users WHERE id = ?", (user_id,))
@@ -521,9 +560,14 @@ def subscription_management_page():
             "professional": "专业版用户",
             "gratitude": "感谢版用户"
         }
+        # 以 subscription_type 为准，兼容历史 user_type 数据不一致
+        effective_type = str(
+            user_info.get('subscription_type') or
+            user_info.get('user_type') or ''
+        )
         st.write(
             f"**用户类型：** "
-            f"{user_type_names.get(user_info['user_type'], '未知')}"
+            f"{user_type_names.get(effective_type, '未知')}"
         )
 
     # 显示订阅状态

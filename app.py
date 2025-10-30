@@ -2958,10 +2958,11 @@ def _create_cost_breakdown_chart(
         values=values,
         hole=0.3,
         marker=dict(colors=colors),
-        # 多项时放扇区内，仅显示百分比；少量项放外侧单行“名称：占比”
+        # 多项时放扇区内，仅显示百分比；少量项自动布局“名称：占比”
+        # auto: 能放内则内，放不下自动转到外侧
         textinfo='percent' if many_items else 'none',
         texttemplate=None if many_items else '%{label}: %{percent}',
-        textposition='inside' if many_items else 'outside',
+        textposition='inside' if many_items else 'auto',
         hovertemplate=(
             '<b>%{label}</b><br>金额: ¥%{value:.2f}<br>'
             '占比: %{percent}<extra></extra>'
@@ -5288,15 +5289,41 @@ def show_product_list_page(uid):
 
                 with col4:
                     if st.button("🗑️ 删除", key=f"delete_{product['id']}"):
-                        # 删除产品
-                        c.execute(
-                            "DELETE FROM products WHERE id = ? AND "
-                            "user_id = ?",
-                            (product['id'], uid),
-                        )
-                        conn.commit()
-                        st.success(f"产品 '{product['name']}' 已删除")
-                        st.rerun()
+                        # 删除产品（兼容历史触发器残留）
+                        try:
+                            c.execute(
+                                "DELETE FROM products WHERE id = ? AND "
+                                "user_id = ?",
+                                (product['id'], uid),
+                            )
+                            conn.commit()
+                            st.success(f"产品 '{product['name']}' 已删除")
+                            st.rerun()
+                        except sqlite3.IntegrityError as del_err:
+                            msg = str(del_err)
+                            if "禁止删除管理员的产品" in msg:
+                                try:
+                                    # 移除历史触发器并重试一次
+                                    from db_utils import (
+                                        ensure_admin_product_deletion_allowed
+                                    )
+                                except ImportError:
+                                    from db_utils import (
+                                        ensure_admin_product_deletion_allowed
+                                    )
+                                ensure_admin_product_deletion_allowed()
+                                c.execute(
+                                    "DELETE FROM products WHERE id = ? AND "
+                                    "user_id = ?",
+                                    (product['id'], uid),
+                                )
+                                conn.commit()
+                                st.success(
+                                    f"产品 '{product['name']}' 已删除"
+                                )
+                                st.rerun()
+                            else:
+                                st.error(f"删除失败: {del_err}")
 
                 st.divider()
 
