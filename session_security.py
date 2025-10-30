@@ -438,8 +438,8 @@ def secure_login(username_or_email: str, password: str) -> bool:
                 user_type = info.get('user_type')
                 first_login = info.get('first_login_date')
                 if (
-                    not first_login
-                    and user_type in (
+                    not first_login and
+                    user_type in (
                         'monthly', 'enterprise', 'test',
                         'efficiency', 'professional',
                     )

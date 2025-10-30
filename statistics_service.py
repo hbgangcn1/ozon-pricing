@@ -5,6 +5,7 @@
 
 import time
 import sqlite3
+import streamlit as st
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any
 
@@ -12,12 +13,29 @@ try:
     from .db_utils import (
         get_db_connection, get_statistics_cache, set_statistics_cache
     )
+    from .intelligent_cache_manager import cache_result, get_cache_stats
 except ImportError:
     from db_utils import (
         get_db_connection, get_statistics_cache, set_statistics_cache
     )
+    try:
+        from intelligent_cache_manager import cache_result, get_cache_stats
+    except ImportError:
+        # 如果智能缓存不可用，使用简单的缓存装饰器
+        def cache_result(category='default', ttl=None):
+            # 参数保留用于接口一致性，fallback实现不使用这些参数
+            _ = category, ttl  # 明确使用参数以消除警告
+
+            def decorator(func):
+                return func
+            return decorator
+
+        def get_cache_stats():
+            return {'status': 'unavailable'}
 
 
+@cache_result('statistics', ttl=600)  # 智能缓存10分钟
+@st.cache_data(ttl=600)  # 缓存10分钟，留存分析计算复杂
 def get_retention_analysis(start_date: Optional[str] = None,
                            end_date: Optional[str] = None) -> Dict[str, Any]:
     """获取留存分析数据
@@ -150,6 +168,8 @@ def get_retention_analysis(start_date: Optional[str] = None,
             return {}
 
 
+@cache_result('statistics', ttl=300)  # 智能缓存5分钟
+@st.cache_data(ttl=300)  # 缓存5分钟
 def get_user_activity_stats(start_date: Optional[str] = None,
                             end_date: Optional[str] = None) -> Dict[str, Any]:
     """获取用户活跃统计数据
@@ -260,6 +280,8 @@ def get_user_activity_stats(start_date: Optional[str] = None,
             return {}
 
 
+@cache_result('statistics', ttl=300)  # 智能缓存5分钟
+@st.cache_data(ttl=300)  # 缓存5分钟
 def get_revenue_stats(start_date: Optional[str] = None,
                       end_date: Optional[str] = None) -> Dict[str, Any]:
     """获取充值与收入统计数据

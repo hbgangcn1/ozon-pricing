@@ -8,8 +8,16 @@ import atexit
 import queue
 import json
 import time
+import signal
+import sys
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
+
+# 导入错误处理模块
+try:
+    from .enhanced_error_handler import handle_database_error
+except ImportError:
+    from enhanced_error_handler import handle_database_error
 try:
     from .password_utils import validate_password_strength
 except ImportError:  # pragma: no cover - fallback for non-package execution
@@ -99,22 +107,77 @@ def get_connection_stats():
 
 
 def _check_connections_at_exit():
-    """程序退出时检查连接数"""
+    """程序退出时检查并强制关闭所有连接"""
     count = get_connection_count()
     if count > 0:
         print(f"⚠️  警告: 程序退出时仍有 {count} 个数据库连接未关闭")
+        print("🔧 正在强制关闭所有连接...")
 
-        # 尝试清理连接池
-        try:
-            while not _CONNECTION_POOL.empty():
-                conn = _CONNECTION_POOL.get_nowait()
+    # 1. 清理SQLite连接池
+    closed_count = 0
+    try:
+        while not _CONNECTION_POOL.empty():
+            conn = _CONNECTION_POOL.get_nowait()
+            try:
                 conn.close()
-        except (Exception,) as e:
-            print(f"清理连接池时出错: {e}")
+                closed_count += 1
+            except Exception as e:
+                print(f"关闭SQLite连接时出错: {e}")
+    except Exception as e:
+        print(f"清理SQLite连接池时出错: {e}")
+
+    if closed_count > 0:
+        print(f"✅ 已关闭 {closed_count} 个SQLite连接")
+
+    # 2. 关闭PostgreSQL连接池（如果使用）
+    try:
+        from db_adapter import close_connection_pool
+    except ImportError:
+        # 如果db_adapter不存在，定义占位函数
+        def close_connection_pool():
+            pass
+
+    try:
+        close_connection_pool()
+        print("✅ PostgreSQL连接池已关闭")
+    except Exception as e:
+        print(f"关闭PostgreSQL连接池时出错: {e}")
+
+    # 3. 重置计数器
+    global _connection_counter
+    with _connection_lock:
+        if _connection_counter > 0:
+            print(f"⚠️  仍有 {_connection_counter} 个连接未通过正常流程关闭")
+            _connection_counter = 0
+
+
+def _cleanup_on_interrupt():
+    """优雅关闭处理器（用于信号处理）"""
+    print("\n🛑 收到中断信号，正在优雅关闭...")
+    _check_connections_at_exit()
+    print("✅ 数据库连接已清理完成")
 
 
 # 注册退出检查
 atexit.register(_check_connections_at_exit)
+
+
+def signal_handler(signum, frame):
+    """处理SIGINT和SIGTERM信号"""
+    # 明确标记未使用的参数
+    _ = signum, frame
+    _cleanup_on_interrupt()
+    # 退出程序
+    sys.exit(0)
+
+
+# 注册信号处理（优雅关闭）
+try:
+    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # kill命令
+except (ValueError, OSError):
+    # Windows上某些信号不支持，忽略
+    pass
 
 
 def monitor_connections():
@@ -163,6 +226,47 @@ def _get_connection_from_pool():
     except queue.Empty:
         # 池中没有可用连接，创建新连接
         return _create_db_connection()
+
+
+def _get_connection_with_retry(max_retries=3):
+    """
+    从连接池获取连接（带重试机制）
+
+    Args:
+        max_retries: 最大重试次数
+
+    Returns:
+        数据库连接对象
+
+    Raises:
+        sqlite3.OperationalError: 重试后仍然失败
+    """
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            conn = _get_connection_from_pool()
+            # 测试连接是否可用
+            conn.execute("SELECT 1")
+            return conn
+        except sqlite3.OperationalError as e:
+            last_error = e
+            if 'locked' in str(e).lower() and attempt < max_retries - 1:
+                # 指数退避：0.1s, 0.2s, 0.4s
+                wait_time = 0.1 * (2 ** attempt)
+                print(f"数据库锁定，{wait_time}秒后重试 "
+                      f"(尝试 {attempt + 1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+            raise
+        except Exception as e:
+            # 其他异常直接抛出
+            print(f"获取数据库连接失败: {e}")
+            raise
+
+    # 所有重试都失败
+    raise last_error if last_error else sqlite3.OperationalError(
+        "无法获取数据库连接"
+    )
 
 
 def _return_connection_to_pool(conn):
@@ -280,36 +384,72 @@ def get_db():
 
 
 class DBConnection:
-    """显式上下文管理器，提供 (conn, cursor) 二元组"""
+    """显式上下文管理器，提供 (conn, cursor) 二元组（带重试机制）"""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, max_retries=3):
         self._db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
         self._cursor: Optional[sqlite3.Cursor] = None
+        self._max_retries = max_retries
 
     def __enter__(self) -> Tuple[sqlite3.Connection, sqlite3.Cursor]:
-        conn = sqlite3.connect(
-            self._db_path,
-            check_same_thread=False,
-            timeout=5.0,
+        last_error = None
+        conn = None  # 初始化conn，避免未绑定变量错误
+
+        for attempt in range(self._max_retries):
+            try:
+                conn = sqlite3.connect(
+                    self._db_path,
+                    check_same_thread=False,
+                    timeout=5.0,
+                )
+                # 并发与锁优化：启用 WAL、设置超时与同步级别
+                try:
+                    conn.execute("PRAGMA journal_mode=WAL")
+                    conn.execute("PRAGMA synchronous=NORMAL")
+                    conn.execute("PRAGMA busy_timeout=5000")
+                    conn.execute("PRAGMA foreign_keys=ON")
+                except sqlite3.Error:
+                    pass
+                conn.row_factory = sqlite3.Row
+
+                # 测试连接是否可用
+                conn.execute("SELECT 1")
+
+                cursor = conn.cursor()
+                self._conn = conn
+                self._cursor = cursor
+
+                # 增加连接计数
+                _increment_connection_counter()
+
+                return conn, cursor
+
+            except sqlite3.OperationalError as e:
+                last_error = e
+                locked = 'locked' in str(e).lower()
+                if locked and attempt < self._max_retries - 1:
+                    # 指数退避：0.1s, 0.2s, 0.4s
+                    wait_time = 0.1 * (2 ** attempt)
+                    print(f"数据库锁定，{wait_time}秒后重试 "
+                          f"(尝试 {attempt + 1}/{self._max_retries})")
+                    time.sleep(wait_time)
+                    if conn is not None:
+                        conn.close()
+                    continue
+                if conn is not None:
+                    conn.close()
+                raise
+            except (sqlite3.Error, OSError, ValueError):
+                # 其他数据库或系统异常直接抛出
+                if conn is not None:
+                    conn.close()
+                raise
+
+        # 所有重试都失败
+        raise last_error if last_error else sqlite3.OperationalError(
+            "无法获取数据库连接"
         )
-        # 并发与锁优化：启用 WAL、设置超时与同步级别
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA busy_timeout=5000")
-            conn.execute("PRAGMA foreign_keys=ON")
-        except sqlite3.Error:
-            pass
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        self._conn = conn
-        self._cursor = cursor
-
-        # 增加连接计数
-        _increment_connection_counter()
-
-        return conn, cursor
 
     def __exit__(self, exc_type, exc, tb) -> None:
         if self._conn is not None:
@@ -319,15 +459,16 @@ class DBConnection:
 
 
 class PooledDBConnection:
-    """连接池上下文管理器"""
+    """连接池上下文管理器（带重试机制）"""
 
-    def __init__(self):
+    def __init__(self, max_retries=3):
         self._conn: Optional[sqlite3.Connection] = None
         self._cursor: Optional[sqlite3.Cursor] = None
+        self._max_retries = max_retries
 
     def __enter__(self) -> Tuple[sqlite3.Connection, sqlite3.Cursor]:
-        # 从池中获取连接
-        self._conn = _get_connection_from_pool()
+        # 从池中获取连接（带重试）
+        self._conn = _get_connection_with_retry(self._max_retries)
         self._cursor = self._conn.cursor()
 
         # 增加连接计数
@@ -347,6 +488,7 @@ class PooledDBConnection:
             self._cursor = None
 
 
+@handle_database_error
 def get_db_connection() -> DBConnection:
     """返回一个可用于 with 语句的数据库连接管理器"""
     db_path = os.path.join(os.path.dirname(__file__), "pricing_system.db")
@@ -356,6 +498,33 @@ def get_db_connection() -> DBConnection:
 def get_pooled_db_connection() -> PooledDBConnection:
     """返回一个使用连接池的数据库连接管理器"""
     return PooledDBConnection()
+
+
+def get_enhanced_db_connection():
+    """
+    获取增强的数据库连接（推荐使用）
+    提供连接泄露检测和自动修复功能
+    """
+    try:
+        from .enhanced_connection_manager import get_enhanced_db_connection
+        return get_enhanced_db_connection()
+    except ImportError:
+        # 如果增强连接管理器不可用，回退到标准连接
+        print("警告: 增强连接管理器不可用，使用标准连接")
+        return get_pooled_db_connection()
+
+
+def get_enhanced_connection_stats():
+    """获取增强连接池统计信息"""
+    try:
+        from .enhanced_connection_manager import (
+            get_connection_stats as enhanced_stats
+        )
+        return enhanced_stats()
+    except ImportError:
+        # 如果增强连接管理器不可用，回退到标准连接统计
+        # 调用模块级别的 get_connection_stats 函数
+        return get_connection_stats()
 
 
 def current_user_id():
@@ -1542,6 +1711,7 @@ def add_product(product_data):
         return c.lastrowid
 
 
+# @st.cache_resource(ttl=600)  # 缓存10分钟 - 临时禁用
 def get_all_products_for_user(user_id):
     """获取用户的所有产品"""
     with get_db_connection() as (conn, c):
@@ -1762,6 +1932,7 @@ def calculate_and_update_priority_groups(user_id):
         conn.commit()
 
 
+# @st.cache_resource(ttl=300)  # 缓存5分钟 - 临时禁用
 def get_user_subscription_info(user_id):
     """获取用户订阅信息"""
     with get_db_connection() as (conn, c):
@@ -1798,6 +1969,7 @@ def update_user_subscription(user_id, updates):
         return c.rowcount > 0
 
 
+# @st.cache_resource(ttl=300)  # 缓存5分钟 - 临时禁用
 def check_user_subscription_status(user_id):
     """检查用户订阅状态"""
     from datetime import datetime, date
@@ -2370,6 +2542,7 @@ def authenticate_admin(username, password):
         return None
 
 
+@st.cache_data(ttl=60)  # 缓存1分钟，用户列表变化不频繁
 def get_all_users(
         page=1,
         per_page=20,
@@ -3077,6 +3250,7 @@ def clear_all_statistics_cache() -> int:
             return 0
 
 
+# @st.cache_resource(ttl=300)  # 缓存5分钟 - 临时禁用
 def get_dashboard_stats() -> Dict[str, Any]:
     """获取总览看板数据"""
     # 先尝试从缓存获取
@@ -3174,6 +3348,7 @@ def get_dashboard_stats() -> Dict[str, Any]:
 # 套餐管理CRUD函数
 # ============================================================================
 
+@st.cache_data(ttl=300)  # 缓存5分钟，套餐数据变化不频繁
 def get_plans(active_only=False, include_free=True):
     """
     获取所有套餐列表
@@ -3213,6 +3388,7 @@ def get_plans(active_only=False, include_free=True):
             return []
 
 
+# @st.cache_data(ttl=300)  # 缓存5分钟 - 暂时禁用以修复测试
 def get_plan_by_code(plan_code: str):
     """
     根据套餐代码获取套餐详情

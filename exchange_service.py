@@ -4,7 +4,36 @@ import os
 import requests
 import threading
 import time
+import asyncio
 from abc import ABC, abstractmethod
+from typing import Optional
+
+# 导入streamlit用于缓存
+try:
+    import streamlit as st
+except ImportError:
+    # 如果streamlit不可用，定义占位装饰器
+    def cache_data(ttl=None):
+        # 使用ttl参数避免PyCharm警告，但在Mock实现中不需要实际使用
+        _ = ttl  # 明确表示我们知道这个参数存在但不需要使用
+
+        def decorator(func):
+            return func
+        return decorator
+
+    class MockStreamlit:
+        def __init__(self):
+            self.cache_data = cache_data
+
+    st = MockStreamlit()
+
+# 异步HTTP客户端（可选依赖）
+try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    AIOHTTP_AVAILABLE = False
+    aiohttp = None  # type: ignore
 
 
 logging.basicConfig(level=logging.INFO)
@@ -70,8 +99,109 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                     return float(item[2])  # 汇率值
         raise ValueError("MOEX数据格式错误")
 
-    def get_rate(self) -> float:
-        """尝试所有数据源，返回第一个成功的汇率（带限流保护）"""
+    @staticmethod
+    async def _fetch_source_async(
+        source: dict,
+        timeout: int = 3
+    ) -> Optional[float]:
+        """异步获取单个数据源的汇率（静态方法）"""
+        if not AIOHTTP_AVAILABLE:
+            return None
+
+        try:
+            async with aiohttp.ClientSession() as session:  # type: ignore
+                timeout_obj = aiohttp.ClientTimeout(  # type: ignore
+                    total=timeout
+                )
+                async with session.get(
+                    source['url'],
+                    timeout=timeout_obj
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    rate = source['parser'](data)
+                    logging.info(
+                        f"异步汇率获取成功 - 来源: {source['name']}, "
+                        f"汇率: {rate}"
+                    )
+                    return rate
+        except Exception as e:
+            logging.debug(f"{source['name']} 异步获取失败: {e}")
+            return None
+
+    async def get_rate_async(self) -> float:
+        """
+        异步并发获取汇率（优化版）
+        同时请求所有数据源，返回最快响应的结果
+        """
+        if not AIOHTTP_AVAILABLE:
+            # 降级到同步方法
+            logging.warning("aiohttp 未安装，使用同步方法获取汇率")
+            return self.get_rate_sync()
+
+        # 限流检查
+        if RATE_LIMITER_AVAILABLE and get_limiter:
+            exchange_limiter = get_limiter(
+                "exchange_rate_api", rate=30, per=60
+            )
+            limiter_key = "global_exchange_rate"
+
+            if not exchange_limiter.is_allowed(limiter_key):
+                retry_after = int(
+                    exchange_limiter.get_retry_after(limiter_key)
+                ) + 1
+                logging.warning(
+                    f"汇率API请求过于频繁，需等待 {retry_after} 秒"
+                )
+                raise ValueError(
+                    f"汇率API限流中，请 {retry_after} 秒后重试"
+                )
+
+        # 并发请求所有数据源
+        tasks = [
+            asyncio.create_task(
+                MultiSourceRubProvider._fetch_source_async(source)
+            )
+            for source in self.sources
+        ]
+
+        try:
+            # 使用 as_completed 获取第一个成功的结果
+            for coro in asyncio.as_completed(tasks):
+                try:
+                    rate = await coro
+                    if rate is not None:
+                        # 成功获取汇率，取消并收尾剩余任务
+                        for task in tasks:
+                            if not task.done():
+                                task.cancel()
+                        # 等待所有任务完成取消，避免悬挂任务
+                        try:
+                            await asyncio.gather(
+                                *tasks, return_exceptions=True
+                            )
+                        except asyncio.CancelledError:
+                            # 忽略取消过程中的异常
+                            pass
+                        return rate
+                except Exception as e:
+                    logging.debug(f"并发获取汇率异常: {e}")
+                    continue
+        finally:
+            # 确保所有任务被取消并完成收尾（即使抛出异常）
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            try:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            except asyncio.CancelledError:
+                pass
+
+        # 所有数据源都失败
+        raise ValueError("所有汇率数据源失败（异步模式）")
+
+    def get_rate_sync(self) -> float:
+        """同步获取汇率（保持原有逻辑，作为兜底）"""
         # 限流检查：每分钟最多30次汇率请求
         if RATE_LIMITER_AVAILABLE and get_limiter:
             exchange_limiter = get_limiter(
@@ -86,7 +216,6 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 logging.warning(
                     f"汇率API请求过于频繁，需等待 {retry_after} 秒"
                 )
-                # 限流时不抛异常，而是让调用者使用缓存值
                 raise ValueError(
                     f"汇率API限流中，请 {retry_after} 秒后重试"
                 )
@@ -95,19 +224,48 @@ class MultiSourceRubProvider(ExchangeRateProvider):
 
         for source in self.sources:
             try:
-                r = requests.get(source['url'], timeout=10)
+                r = requests.get(source['url'], timeout=5)  # 缩短超时到5秒
                 r.raise_for_status()
                 data = r.json()
                 rate = source['parser'](data)
-                logging.info(f"汇率获取成功 - 来源: {source['name']}, 汇率: {rate}")
+                logging.info(
+                    f"同步汇率获取成功 - 来源: {source['name']}, 汇率: {rate}"
+                )
                 return rate
             except Exception as e:
-                logging.warning(f"{source['name']} 汇率获取失败: {e}")
+                logging.warning(f"{source['name']} 同步获取失败: {e}")
                 last_error = e
                 continue
 
         # 所有数据源都失败
         raise ValueError(f"所有汇率数据源失败，最后错误: {last_error}")
+
+    def get_rate(self) -> float:
+        """
+        获取汇率（智能选择同步/异步）
+        优先使用异步方法，失败时降级到同步方法
+        """
+        if AIOHTTP_AVAILABLE:
+            try:
+                # 尝试获取或创建事件循环
+                try:
+                    # 尝试获取正在运行的事件循环
+                    asyncio.get_running_loop()
+                    # 如果事件循环正在运行，无法使用 run_until_complete
+                    return self.get_rate_sync()
+                except RuntimeError:
+                    # 没有运行中的事件循环，创建新的并运行
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        return loop.run_until_complete(self.get_rate_async())
+                    finally:
+                        loop.close()
+            except Exception as e:
+                logging.warning(f"异步获取汇率失败，降级到同步: {e}")
+
+        # 降级到同步方法
+        return self.get_rate_sync()
 
 
 # 保持向后兼容
@@ -125,10 +283,10 @@ class FallbackProvider(ExchangeRateProvider):
         return self.default
 
 
-# ---------- 双缓存服务（单例）
+# ---------- 双缓存服务（单例，使用读写锁优化并发）
 class ExchangeRateService:
     _instance = None
-    _lock = threading.Lock()
+    _lock = threading.Lock()  # 用于单例创建的锁
     _fallback_file = os.path.join(
         os.path.dirname(__file__),
         "rate_fallback.json"
@@ -142,6 +300,8 @@ class ExchangeRateService:
             self._rate = 9.02
             self._last = 0.0
             self._refresher_started = False
+            self._read_lock = threading.RLock()  # 读锁（可重入）
+            self._write_lock = threading.Lock()  # 写锁
 
     def __new__(cls):
         with cls._lock:
@@ -155,6 +315,9 @@ class ExchangeRateService:
         self._fallback = FallbackProvider()
         self._rate: float = 9.02
         self._last: float = 0
+        # 初始化读写锁
+        self._read_lock = threading.RLock()  # 读锁（可重入）
+        self._write_lock = threading.Lock()  # 写锁
         self._load_fallback()
         self._start_async_refresh()
 
@@ -170,15 +333,21 @@ class ExchangeRateService:
         self._rate = 9.02  # 重置为默认值
 
     def _load_fallback(self):
+        """从本地文件加载兜底汇率（使用写锁）"""
         try:
             with open(self._fallback_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._rate = data["rate"]
-            self._last = data["ts"]
+            # 写入汇率数据时使用写锁
+            with self._write_lock:
+                with self._read_lock:
+                    self._rate = data["rate"]
+                    self._last = data["ts"]
             logging.info("兜底汇率已加载: %.5f", self._rate)
         except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            self._rate = self._fallback.get_rate()
-            self._last = time.time()
+            with self._write_lock:
+                with self._read_lock:
+                    self._rate = self._fallback.get_rate()
+                    self._last = time.time()
             logging.warning("兜底文件缺失，使用默认值: %.5f", self._rate)
 
     def _save_fallback(self, rate: float):
@@ -194,37 +363,57 @@ class ExchangeRateService:
             self._refresher_started = True
 
     def _async_refresh(self):
+        """异步刷新汇率（使用写锁）"""
         while True:
             try:
+                # 使用优化后的获取方法（支持并发）
                 new_rate = self._provider.get_rate()
-                self._rate = new_rate
-                self._last = time.time()
+                # 使用写锁更新汇率
+                with self._write_lock:
+                    with self._read_lock:
+                        self._rate = new_rate
+                        self._last = time.time()
                 self._save_fallback(new_rate)
-                logging.info("异步刷新汇率: %.5f", new_rate)
-            except (requests.RequestException, ValueError):
-                logging.exception("异步获取汇率失败，继续使用旧值")
+                logging.info("后台刷新汇率成功: %.5f", new_rate)
+            except (requests.RequestException, ValueError, Exception) as e:
+                logging.warning("后台获取汇率失败，继续使用旧值: %s", e)
             time.sleep(3600)  # 60 分钟
 
     def get_exchange_rate(self) -> float:
+        """获取汇率（带缓存和读写锁优化）"""
         # 检查是否需要刷新（避免每次都发起网络请求）
-        current_time = time.time()
-        # 如果距离上次刷新不到60分钟，直接返回缓存值
-        if current_time - self._last < 3600:  # 60分钟缓存
-            return self._rate
+        with self._read_lock:
+            current_time = time.time()
+            # 如果距离上次刷新不到60分钟，直接返回缓存值
+            if current_time - self._last < 3600:  # 60分钟缓存
+                return self._rate
 
-        # 尝试即时刷新（测试可通过mock requests.get 控制返回）
-        try:
-            new_rate = self._provider.get_rate()
-            self._rate = new_rate
-            self._last = current_time
-            self._save_fallback(new_rate)
-        except (requests.RequestException, ValueError):
-            pass
-        return self._rate
+        # 需要刷新：获取写锁
+        with self._write_lock:
+            # 双重检查：可能其他线程已经刷新了
+            with self._read_lock:
+                if time.time() - self._last < 3600:
+                    return self._rate
+
+            # 尝试即时刷新（支持并发请求）
+            try:
+                new_rate = self._provider.get_rate()
+                # 更新时需要写锁保护
+                with self._read_lock:
+                    self._rate = new_rate
+                    self._last = time.time()
+                self._save_fallback(new_rate)
+            except (requests.RequestException, ValueError, Exception):
+                # 刷新失败，使用旧值
+                pass
+
+            with self._read_lock:
+                return self._rate
 
     def get_cached_rate(self) -> float:
-        """返回当前缓存的卢布兑人民币汇率，不触发刷新"""
-        return self._rate
+        """返回当前缓存的卢布兑人民币汇率，不触发刷新（只读操作）"""
+        with self._read_lock:
+            return self._rate
 
 
 # ---------- 美元汇率提供者
@@ -371,6 +560,7 @@ def get_exchange_rate() -> float:
     return ExchangeRateService().get_exchange_rate()
 
 
+# @st.cache_resource(ttl=3600)  # 缓存1小时，汇率变化不频繁 - 临时禁用
 def get_usd_rate() -> float:
     """获取美元兑人民币汇率"""
     return UsdExchangeRateService().get_exchange_rate()

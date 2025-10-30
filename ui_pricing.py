@@ -213,16 +213,16 @@ def pricing_calculator_page():
         # 处理None值，为数值字段提供默认值
         if pd.isna(value):
             if (
-                "price" in column.lower()
-                or "fee" in column.lower()
-                or "rate" in column.lower()
+                "price" in column.lower() or
+                "fee" in column.lower() or
+                "rate" in column.lower()
             ):
                 product[column] = 0.0
             elif (
-                "weight" in column.lower()
-                or "length" in column.lower()
-                or "width" in column.lower()
-                or "height" in column.lower()
+                "weight" in column.lower() or
+                "length" in column.lower() or
+                "width" in column.lower() or
+                "height" in column.lower()
             ):
                 product[column] = 0
             elif "has_" in column.lower() or "is_" in column.lower():
@@ -400,9 +400,9 @@ def _display_calculation_results():
         land_empty = getattr(land_logistics, "empty", True)
         land_cols = list(getattr(land_logistics, "columns", []))
         if (
-            land_is_df
-            and (not land_empty)
-            and ("delivery_method" in land_cols)
+            land_is_df and
+            (not land_empty) and
+            ("delivery_method" in land_cols)
         ):
             land_pickup = land_logistics.loc[
                 land_logistics["delivery_method"] == "pickup_point"
@@ -435,17 +435,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
 
@@ -494,9 +494,9 @@ def _display_calculation_results():
         land_empty = getattr(land_logistics, "empty", True)
         land_cols = list(getattr(land_logistics, "columns", []))
         if (
-            land_is_df
-            and (not land_empty)
-            and ("delivery_method" in land_cols)
+            land_is_df and
+            (not land_empty) and
+            ("delivery_method" in land_cols)
         ):
             land_home = land_logistics.loc[
                 land_logistics["delivery_method"] == "home_delivery"
@@ -529,17 +529,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
                 cost_display = (
@@ -597,9 +597,9 @@ def _display_calculation_results():
         air_empty = getattr(air_logistics, "empty", True)
         air_cols = list(getattr(air_logistics, "columns", []))
         if (
-            air_is_df
-            and (not air_empty)
-            and ("delivery_method" in air_cols)
+            air_is_df and
+            (not air_empty) and
+            ("delivery_method" in air_cols)
         ):
             air_pickup = air_logistics.loc[
                 air_logistics["delivery_method"] == "pickup_point"
@@ -632,17 +632,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
                 cost_display = (
@@ -690,9 +690,9 @@ def _display_calculation_results():
         air_empty = getattr(air_logistics, "empty", True)
         air_cols = list(getattr(air_logistics, "columns", []))
         if (
-            air_is_df
-            and (not air_empty)
-            and ("delivery_method" in air_cols)
+            air_is_df and
+            (not air_empty) and
+            ("delivery_method" in air_cols)
         ):
             air_home = air_logistics.loc[
                 air_logistics["delivery_method"] == "home_delivery"
@@ -725,17 +725,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
                 cost_display = (
@@ -804,9 +804,9 @@ def _display_calculation_results():
         land_empty = getattr(land_logistics, "empty", True)
         land_cols = list(getattr(land_logistics, "columns", []))
         if (
-            land_is_df
-            and (not land_empty)
-            and ("delivery_method" in land_cols)
+            land_is_df and
+            (not land_empty) and
+            ("delivery_method" in land_cols)
         ):
             land_pickup = land_logistics.loc[
                 land_logistics["delivery_method"] == "pickup_point"
@@ -839,17 +839,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
                 cost_display = (
@@ -893,9 +893,9 @@ def _display_calculation_results():
         land_empty = getattr(land_logistics, "empty", True)
         land_cols = list(getattr(land_logistics, "columns", []))
         if (
-            land_is_df
-            and (not land_empty)
-            and ("delivery_method" in land_cols)
+            land_is_df and
+            (not land_empty) and
+            ("delivery_method" in land_cols)
         ):
             land_home = land_logistics.loc[
                 land_logistics["delivery_method"] == "home_delivery"
@@ -928,17 +928,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
                 cost_display = (
@@ -995,9 +995,9 @@ def _display_calculation_results():
         air_empty = getattr(air_logistics, "empty", True)
         air_cols = list(getattr(air_logistics, "columns", []))
         if (
-            air_is_df
-            and (not air_empty)
-            and ("delivery_method" in air_cols)
+            air_is_df and
+            (not air_empty) and
+            ("delivery_method" in air_cols)
         ):
             air_pickup = air_logistics.loc[
                 air_logistics["delivery_method"] == "pickup_point"
@@ -1030,17 +1030,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
                 cost_display = (
@@ -1084,9 +1084,9 @@ def _display_calculation_results():
         air_empty = getattr(air_logistics, "empty", True)
         air_cols = list(getattr(air_logistics, "columns", []))
         if (
-            air_is_df
-            and (not air_empty)
-            and ("delivery_method" in air_cols)
+            air_is_df and
+            (not air_empty) and
+            ("delivery_method" in air_cols)
         ):
             air_home = air_logistics.loc[
                 air_logistics["delivery_method"] == "home_delivery"
@@ -1119,17 +1119,17 @@ def _display_calculation_results():
 
                 time_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else (f"{best.get('min_days', 0)}-"
                           f"{best.get('max_days', 0)}天")
                 )
                 time_saving_display = (
                     "该物流未填写时效"
-                    if best
-                    and best.get("min_days", 0) == 0
-                    and best.get("max_days", 0) == 0
+                    if best and
+                    best.get("min_days", 0) == 0 and
+                    best.get("max_days", 0) == 0
                     else f"{time_saving:+.1f}天"
                 )
                 cost_display = (

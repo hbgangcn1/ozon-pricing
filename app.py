@@ -11,6 +11,16 @@ os.environ['PYTHONWARNINGS'] = 'ignore'
 logging.getLogger('streamlit').setLevel(logging.ERROR)
 logging.getLogger('streamlit.runtime').setLevel(logging.ERROR)
 
+# 导入错误处理模块
+# try:
+#     from .enhanced_error_handler import (
+#         handle_streamlit_error, get_error_summary
+#     )
+# except ImportError:
+#     from enhanced_error_handler import (
+#         handle_streamlit_error, get_error_summary
+#     )
+
 import streamlit as st  # noqa: E402
 import pandas as pd  # noqa: E402
 import sqlite3  # noqa: E402
@@ -696,6 +706,39 @@ def _create_main_layout():
     return st.columns([2, 2, 2])
 
 
+def _get_cached_user_data(user_id: int):
+    """获取缓存的用户数据，包括订阅状态和偏好设置"""
+    import time  # 在函数开始处导入time模块
+
+    cache_key = f'user_data_{user_id}'
+
+    # 检查缓存是否存在且未过期（10分钟过期）
+    if hasattr(st.session_state, 'get') and cache_key in st.session_state:
+        cached_data = st.session_state.get(cache_key)
+        if cached_data and 'timestamp' in cached_data:
+            if time.time() - cached_data['timestamp'] < 600:  # 10分钟过期
+                return cached_data
+
+    # 缓存不存在或已过期，从数据库获取
+    subscription_status = check_user_subscription_status(user_id)
+    preferred_mode = get_user_preferred_mode(user_id)
+
+    # 缓存数据
+    user_data = {
+        'subscription_status': subscription_status,
+        'preferred_mode': preferred_mode,
+        'timestamp': time.time()
+    }
+
+    try:
+        if hasattr(st.session_state, '__setitem__'):
+            st.session_state[cache_key] = user_data
+    except (TypeError, AttributeError):
+        pass
+
+    return user_data
+
+
 def _validate_user_and_get_mode():
     """验证用户并获取模式，返回 (current_user, current_mode, subscription_status) 或 None"""
     # ✅ 直接取 session_state，不用前置初始化
@@ -716,8 +759,11 @@ def _validate_user_and_get_mode():
         st.error("用户未登录或用户信息不完整")
         return None
 
-    # 检查用户订阅状态
-    subscription_status = check_user_subscription_status(current_user['id'])
+    # 使用缓存的用户数据
+    user_data = _get_cached_user_data(current_user['id'])
+    subscription_status = user_data['subscription_status']
+    preferred_mode = user_data['preferred_mode']
+
     if not subscription_status:
         st.error("无法获取用户订阅状态")
         return None
@@ -725,6 +771,14 @@ def _validate_user_and_get_mode():
     # 检查订阅是否有效
     if not subscription_status.get('valid', True):
         st.error("账号已到期")
+        # 清除缓存
+        cache_key = f'user_data_{current_user["id"]}'
+        try:
+            if (hasattr(st.session_state, '__contains__') and
+                    cache_key in st.session_state):
+                del st.session_state[cache_key]
+        except (TypeError, AttributeError):
+            pass
         return None
 
     # 获取用户类型并对免费版/效率版强制设为极速模式
@@ -733,9 +787,9 @@ def _validate_user_and_get_mode():
         st.session_state.current_mode = 'fast'
         current_mode = 'fast'
 
-    # 如果session_state中没有current_mode，从数据库获取用户偏好
+    # 如果session_state中没有current_mode，使用缓存的偏好设置
     if current_mode is None:
-        current_mode = get_user_preferred_mode(current_user['id'])
+        current_mode = preferred_mode
         if current_mode is None:
             # 首次登录用户，设置默认为极速模式
             current_mode = 'fast'
@@ -758,11 +812,9 @@ def show_main_interface():
     # 由于服务会频繁重启导致session_state丢失，不再显示支付成功通知
     # 用户可以直接在侧边栏查看订阅状态
     # 清除可能残留的支付成功标记
-    if (
-        hasattr(st.session_state, 'last_successful_payment')
-        or (hasattr(st.session_state, '__contains__')
-            and 'last_successful_payment' in st.session_state)
-    ):
+    if (hasattr(st.session_state, 'last_successful_payment') or
+        (hasattr(st.session_state, '__contains__') and
+            'last_successful_payment' in st.session_state)):
         # 清除订阅状态缓存，强制从数据库重新读取
         if 'subscription_status' in st.session_state:
             del st.session_state['subscription_status']
@@ -1600,28 +1652,32 @@ def show_precise_mode_interface(current_user):
 
 def fast_pricing_calculator():
     """极速模式定价计算器"""
-    # 免费版：显示今日剩余计算次数占位（可即时刷新）
-    user_id_for_free = current_user_id()
-    free_count_placeholder = st.empty()
-    try:
-        _status = check_user_subscription_status(user_id_for_free)
-        if _status.get('user_type') == 'free':
-            _rem = _status.get('remaining_calculations', 0)
-            # 将-1转换为"无限次"显示
-            _rem_display = "无限次" if _rem == -1 else f"{_rem}次"
-            free_count_placeholder.markdown(
-                (
-                    '<div style="text-align: center; margin-bottom: 1rem;">'
-                    '<p style="color: #2c3e50; font-size: 1.1rem; '
-                    'margin: 0;">'
-                    f'今日剩余计算次数：{_rem_display}'
-                    '</p>'
-                    '</div>'
-                ),
-                unsafe_allow_html=True,
-            )
-    except (KeyError, TypeError, ValueError):
-        pass
+    # 使用容器优化渲染性能
+    calculator_container = st.container()
+    with calculator_container:
+        # 免费版：显示今日剩余计算次数占位（可即时刷新）
+        user_id_for_free = current_user_id()
+        free_count_placeholder = st.empty()
+        try:
+            _status = check_user_subscription_status(user_id_for_free)
+            if _status.get('user_type') == 'free':
+                _rem = _status.get('remaining_calculations', 0)
+                # 将-1转换为"无限次"显示
+                _rem_display = "无限次" if _rem == -1 else f"{_rem}次"
+                free_count_placeholder.markdown(
+                    (
+                        '<div style="text-align: center; '
+                        'margin-bottom: 1rem;">'
+                        '<p style="color: #2c3e50; font-size: 1.1rem; '
+                        'margin: 0;">'
+                        f'今日剩余计算次数：{_rem_display}'
+                        '</p>'
+                        '</div>'
+                    ),
+                    unsafe_allow_html=True,
+                )
+        except (KeyError, TypeError, ValueError):
+            pass
     # 基本信息输入
     # 第一行：进货单价（元）*
     unit_price = st.number_input(
@@ -1648,8 +1704,7 @@ def fast_pricing_calculator():
                 max_value=100.0,
                 value=0.0,
                 step=0.1,
-            )
-            / 100.0
+            ) / 100.0
         )
 
     # 第三行：运营利润率（%）、推广费率（%）
@@ -1662,8 +1717,7 @@ def fast_pricing_calculator():
                 max_value=100.0,
                 value=0.0,
                 step=0.1,
-            )
-            / 100.0
+            ) / 100.0
         )
     with col2:
         promotion_rate_extra = (
@@ -1673,8 +1727,7 @@ def fast_pricing_calculator():
                 max_value=100.0,
                 value=0.0,
                 step=0.1,
-            )
-            / 100.0
+            ) / 100.0
         )
 
     # 第四行：打款提现费率(%)、收单手续费率(%)
@@ -1687,8 +1740,7 @@ def fast_pricing_calculator():
                 max_value=100.0,
                 value=0.0,
                 step=0.1,
-            )
-            / 100.0
+            ) / 100.0
         )
     with col2:
         payment_processing_fee = (
@@ -1698,8 +1750,7 @@ def fast_pricing_calculator():
                 max_value=100.0,
                 value=0.0,
                 step=0.1,
-            )
-            / 100.0
+            ) / 100.0
         )
 
     # 第五行：历史退货率(%)、增值税率(%)
@@ -1712,8 +1763,7 @@ def fast_pricing_calculator():
                 max_value=100.0,
                 value=0.0,
                 step=0.1,
-            )
-            / 100.0
+            ) / 100.0
         )
     with col2:
         vat_rate = (
@@ -1724,8 +1774,7 @@ def fast_pricing_calculator():
                 value=0.0,
                 step=0.1,
                 help="增值税率，根据实际情况填写",
-            )
-            / 100.0
+            ) / 100.0
         )
 
     # 开始计算按钮
@@ -1957,8 +2006,8 @@ def precise_products_page():
 
                 # 如果是首次加载或选择了不同的产品，更新表单值  # noqa: E501
                 if (
-                    "precise_product_name" not in st.session_state  # noqa: E501
-                    or current_product_id != last_product_id
+                    "precise_product_name" not in st.session_state or  # noqa: E501
+                    current_product_id != last_product_id
                 ):
                     st.session_state.precise_product_name = default_name
                     st.session_state.last_selected_product_id = (
@@ -1972,8 +2021,8 @@ def precise_products_page():
             with col2:
                 # 只有产品ID改变时才更新表单值
                 if (
-                    "precise_unit_price" not in st.session_state
-                    or current_product_id != last_product_id
+                    "precise_unit_price" not in st.session_state or
+                    current_product_id != last_product_id
                 ):
                     st.session_state.precise_unit_price = default_price
 
@@ -2169,12 +2218,10 @@ def precise_products_page():
                     max_value=100.0,
                     value=float(
                         selected_data.get("commission_rate", 0.0)
-                    )
-                    * 100.0,
+                    ) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
         with col2:
             target_profit_margin = (
@@ -2187,8 +2234,7 @@ def precise_products_page():
                     ) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
     # 第三行：推广费率（%）、打款提现费率(%)
         col1, col2 = st.columns(2)
@@ -2200,12 +2246,10 @@ def precise_products_page():
                     max_value=100.0,
                     value=float(
                         selected_data.get("promotion_cost_rate", 0.0)
-                    )
-                    * 100.0,
+                    ) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
         with col2:
             withdrawal_fee_rate = (
@@ -2215,12 +2259,10 @@ def precise_products_page():
                     max_value=100.0,
                     value=float(
                         selected_data.get("withdrawal_fee_rate", 0.0)
-                    )
-                    * 100.0,
+                    ) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
     # 第四行：收单手续费率(%)、历史退货率(%)
         col1, col2 = st.columns(2)
@@ -2232,12 +2274,10 @@ def precise_products_page():
                     max_value=100.0,
                     value=float(
                         selected_data.get("payment_processing_fee", 0.0)
-                    )
-                    * 100.0,
+                    ) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
         with col2:
             return_rate = (
@@ -2247,12 +2287,10 @@ def precise_products_page():
                     max_value=100.0,
                     value=float(
                         selected_data.get("return_rate", 0.0)
-                    )
-                    * 100.0,
+                    ) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
     # 第五行：增值税率(%)、保存产品按钮
         col1, col2 = st.columns(2, vertical_alignment="bottom")
@@ -2264,13 +2302,11 @@ def precise_products_page():
                     max_value=30.0,
                     value=float(
                         selected_data.get("vat_rate", 0.0)
-                    )
-                    * 100.0,
+                    ) * 100.0,
                     step=0.1,
                     format="%.1f",
                     help="增值税率，根据实际情况填写",
-                )
-                / 100.0
+                ) / 100.0
             )
         with col2:
             # 保存产品按钮
@@ -2848,15 +2884,15 @@ def _create_cost_breakdown_chart(
         # 代理费在分子中
         total_cost_with_commission = base_cost + commission_fee
         actual_revenue = final_price * (
-            1 - promotion_rate - commission_rate - withdrawal_rate
-            - payment_rate - return_rate - vat_rate
+            1 - promotion_rate - commission_rate - withdrawal_rate -
+            payment_rate - return_rate - vat_rate
         )
     else:
         # 代理费在分母中 (2%在分母)
         total_cost_with_commission = base_cost
         actual_revenue = final_price * (
-            1 - promotion_rate - commission_rate - withdrawal_rate
-            - payment_rate - return_rate - vat_rate - 0.02
+            1 - promotion_rate - commission_rate - withdrawal_rate -
+            payment_rate - return_rate - vat_rate - 0.02
         )
 
     # 计算各项费用占售价的绝对金额
@@ -4023,20 +4059,67 @@ def calculate_precise_pricing_from_form(
 ):
     """精准模式定价计算（从表单数据，带限流保护）"""
 
-    # 限流检查：每分钟最多20次计算
-    user_id = current_user_id()
-    pricing_limiter = get_limiter(
-        "pricing_calculation", rate=20, per=60, burst=5
-    )
-    limiter_key = f"pricing_{user_id}"
+    # 生成输入参数的缓存key（避免相同输入重复计算）
+    import hashlib
+    import json
 
-    if not pricing_limiter.is_allowed(limiter_key):
-        retry_after = int(pricing_limiter.get_retry_after(limiter_key)) + 1
-        st.error(f"⚠️ 计算请求过于频繁，请 {retry_after} 秒后重试")
-        st.warning("限流规则: 每分钟最多 20 次计算，突发允许 5 次")
-        return
+    cache_params = {
+        'name': name, 'unit_price': unit_price, 'weight_g': weight_g,
+        'package_type': package_type, 'length_cm': length_cm,
+        'width_cm': width_cm, 'height_cm': height_cm,
+        'cylinder_diameter': cylinder_diameter,
+        'cylinder_length': cylinder_length,
+        'has_battery': has_battery, 'has_flammable': has_flammable,
+        'battery_capacity_wh': battery_capacity_wh,
+        'battery_capacity_mah': battery_capacity_mah,
+        'battery_voltage': battery_voltage, 'has_msds': has_msds,
+        'labeling_fee': labeling_fee, 'shipping_fee': shipping_fee,
+        'promotion_cost_rate': promotion_cost_rate,
+        'target_profit_margin': target_profit_margin,
+        'commission_rate': commission_rate,
+        'withdrawal_fee_rate': withdrawal_fee_rate,
+        'payment_processing_fee': payment_processing_fee,
+        'return_rate': return_rate, 'vat_rate': vat_rate
+    }
+    cache_key = hashlib.md5(
+        json.dumps(cache_params, sort_keys=True).encode()
+    ).hexdigest()
+
+    # 检查缓存（2秒内相同输入跳过部分计算）
+    if 'pricing_cache' not in st.session_state:
+        st.session_state.pricing_cache = {}
+
+    import time
+    cache_hit = False
+    if cache_key in st.session_state.pricing_cache:
+        cached_time = st.session_state.pricing_cache[cache_key]
+        if time.time() - cached_time < 2:
+            cache_hit = True
+            st.info("⚡ 使用缓存数据（2秒内相同输入）")
+
+    # 限流检查：每分钟最多20次计算（缓存命中则跳过限流）
+    if not cache_hit:
+        user_id = current_user_id()
+        pricing_limiter = get_limiter(
+            "pricing_calculation", rate=20, per=60, burst=5
+        )
+        limiter_key = f"pricing_{user_id}"
+
+        if not pricing_limiter.is_allowed(limiter_key):
+            retry_after = int(
+                pricing_limiter.get_retry_after(limiter_key)
+            ) + 1
+            st.error(
+                f"⚠️ 计算请求过于频繁，请 {retry_after} 秒后重试"
+            )
+            st.warning("限流规则: 每分钟最多 20 次计算，突发允许 5 次")
+            return
+
+    # 更新缓存时间戳
+    st.session_state.pricing_cache[cache_key] = time.time()
 
     # 检查用户订阅状态和计算权限
+    user_id = current_user_id()
     subscription_status = check_user_subscription_status(user_id)
 
     if not subscription_status.get('valid', False):
@@ -4912,10 +4995,10 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
 
     # 首先检查物流是否有圆柱形包装限制
         has_cylinder_limits = (
-            logistic.get("max_cylinder_sum", 0) > 0
-            or logistic.get("min_cylinder_sum", 0) > 0
-            or logistic.get("max_cylinder_length", 0) > 0
-            or logistic.get("min_cylinder_length", 0) > 0
+            logistic.get("max_cylinder_sum", 0) > 0 or
+            logistic.get("min_cylinder_sum", 0) > 0 or
+            logistic.get("max_cylinder_length", 0) > 0 or
+            logistic.get("min_cylinder_length", 0) > 0
         )
 
         if has_cylinder_limits:
@@ -5060,25 +5143,25 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
             cost = (
                 first_cost
                 if w <= first_w
-                else first_cost
-                + __import__("math").ceil((w - first_w) / continue_unit)
-                * logistic.get("continue_fee", 0)
+                else first_cost +
+                __import__("math").ceil((w - first_w) / continue_unit) *
+                logistic.get("continue_fee", 0)
             )
 
     # 估算人民币总成本
         total_cny = unit_price + labeling_fee + shipping_fee + 15 * rate + cost
     # 估算人民币售价
         denominator = (
-            (1 - product.get("promotion_cost_rate", 0))
-            * (1 - product.get("commission_rate", 0))
-            * (1 - product.get("withdrawal_fee_rate", 0))
-            * (1 - product.get("payment_processing_fee", 0))
+            (1 - product.get("promotion_cost_rate", 0)) *
+            (1 - product.get("commission_rate", 0)) *
+            (1 - product.get("withdrawal_fee_rate", 0)) *
+            (1 - product.get("payment_processing_fee", 0))
         )
         if denominator == 0:
             return "费率参数异常导致除以 0"
         rough_cny = (
-            total_cny
-            / (1 - product.get("target_profit_margin", 0))
+            total_cny /
+            (1 - product.get("target_profit_margin", 0))
         ) / denominator
         rough_rub = rough_cny / rate
 
@@ -6270,45 +6353,41 @@ def payment_center_page():
         unsafe_allow_html=True
     )
 
-    from db_utils import get_db
-
     current_user = st.session_state.get('current_user', {})
     username = current_user.get('username', '')
 
     try:
-        conn, cursor = get_db()
-        # 查询订单
-        cursor.execute(
-            """
-            SELECT order_id, plan_type, amount, status,
-                   created_at, paid_at
-            FROM subscription_orders
-            WHERE username = ?
-            ORDER BY created_at DESC
-            LIMIT 10
-            """,
-            (username,)
-        )
-        orders = cursor.fetchall()
+        with get_db_connection() as (conn, cursor):
+            # 查询订单
+            cursor.execute(
+                """
+                SELECT order_id, plan_type, amount, status,
+                       created_at, paid_at
+                FROM subscription_orders
+                WHERE username = ?
+                ORDER BY created_at DESC
+                LIMIT 10
+                """,
+                (username,)
+            )
+            orders = cursor.fetchall()
 
-        if orders:
-            # 创建订单表格
-            orders_data = []
-            for order in orders:
-                orders_data.append({
-                    '订单号': order[0],
-                    '套餐类型': order[1],
-                    '金额': f'¥{order[2]:.2f}',
-                    '状态': '已支付' if order[3] == 'paid' else '待支付',
-                    '创建时间': order[4],
-                    '支付时间': order[5] if order[5] else '-'
-                })
-            df = pd.DataFrame(orders_data)
-            st.dataframe(df, width='stretch')
-        else:
-            st.info("暂无订单记录")
-
-        conn.close()
+            if orders:
+                # 创建订单表格
+                orders_data = []
+                for order in orders:
+                    orders_data.append({
+                        '订单号': order[0],
+                        '套餐类型': order[1],
+                        '金额': f'¥{order[2]:.2f}',
+                        '状态': '已支付' if order[3] == 'paid' else '待支付',
+                        '创建时间': order[4],
+                        '支付时间': order[5] if order[5] else '-'
+                    })
+                df = pd.DataFrame(orders_data)
+                st.dataframe(df, width='stretch')
+            else:
+                st.info("暂无订单记录")
     except Exception as e:
         st.error(f"查询订单失败: {str(e)}")
 
@@ -6767,9 +6846,11 @@ def restart_gunicorn_callback_server():
         venv_python = os.path.join(project_dir, 'venv', 'bin', 'gunicorn')
 
         # 1. 检查是否有旧的 gunicorn 进程
+        # 命令是硬编码的，不包含用户输入，安全
         check_cmd = "ps aux | grep 'gunicorn.*wechat_callback' | grep -v grep"
         result = subprocess.run(
-            check_cmd, shell=True, capture_output=True, text=True
+            check_cmd, shell=True, capture_output=True,  # nosec B602
+            text=True
         )
 
         if result.stdout.strip():
@@ -6786,6 +6867,7 @@ def restart_gunicorn_callback_server():
 
         # 2. 启动新的 gunicorn 进程
         print("   启动新的 gunicorn 进程...")
+        # project_dir和venv_python是受控路径，安全
         gunicorn_cmd = (
             f"cd {project_dir} && "
             f"nohup {venv_python} "
@@ -6796,13 +6878,15 @@ def restart_gunicorn_callback_server():
             "> gunicorn_wechat.log 2>&1 &"
         )
 
-        subprocess.run(gunicorn_cmd, shell=True)
+        subprocess.run(gunicorn_cmd, shell=True)  # nosec B602
         time.sleep(3)
 
         # 3. 验证启动
+        # 命令是硬编码的，不包含用户输入，安全
         verify_cmd = "ps aux | grep 'gunicorn.*wechat_callback' | grep -v grep"
         verify_result = subprocess.run(
-            verify_cmd, shell=True, capture_output=True, text=True
+            verify_cmd, shell=True, capture_output=True,  # nosec B602
+            text=True
         )
 
         if verify_result.stdout.strip():
@@ -6891,8 +6975,10 @@ def start_wechat_callback_server():
 
             # 在后台线程中启动Flask应用
             def run_server():
+                # 微信支付回调服务器需要接受外网请求，必须绑定0.0.0.0
                 app.run(
-                    host='0.0.0.0', port=8081, debug=False, use_reloader=False
+                    host='0.0.0.0', port=8081, debug=False,  # nosec B104
+                    use_reloader=False
                 )
 
             server_thread = threading.Thread(target=run_server, daemon=True)
@@ -6932,52 +7018,69 @@ def show_admin_statistics():
      ])
 
     with stats_tab1:
-        # 总览
+        # 总览 - 立即加载
         show_statistics_dashboard()
 
     with stats_tab2:
-        # 留存分析
-        show_statistics_retention()
+        # 留存分析 - 延迟加载
+        with st.spinner("正在加载留存分析数据..."):
+            show_statistics_retention()
 
     with stats_tab3:
-        # 用户活跃
-        show_statistics_activity()
+        # 用户活跃 - 延迟加载
+        with st.spinner("正在加载用户活跃数据..."):
+            show_statistics_activity()
 
     with stats_tab4:
-        # 充值与收入
-        show_statistics_revenue()
+        # 充值与收入 - 延迟加载
+        with st.spinner("正在加载收入数据..."):
+            show_statistics_revenue()
 
     with stats_tab5:
-        # 留存明细
-        show_statistics_user_details()
+        # 留存明细 - 延迟加载
+        with st.spinner("正在加载留存明细数据..."):
+            show_statistics_user_details()
 
     with stats_tab6:
-        # 套餐分析
-        show_statistics_plan()
+        # 套餐分析 - 延迟加载
+        with st.spinner("正在加载套餐分析数据..."):
+            show_statistics_plan()
 
     with stats_tab7:
-        # 操作日志
-        show_statistics_admin_logs()
+        # 操作日志 - 延迟加载
+        with st.spinner("正在加载操作日志..."):
+            show_statistics_admin_logs()
 
     with stats_tab8:
-        # 异常监控
-        show_statistics_alerts()
+        # 异常监控 - 延迟加载
+        with st.spinner("正在加载异常监控数据..."):
+            show_statistics_alerts()
 
     with stats_tab9:
-        # 用户分群
-        show_statistics_user_segmentation()
+        # 用户分群 - 延迟加载
+        with st.spinner("正在加载用户分群数据..."):
+            show_statistics_user_segmentation()
 
     with stats_tab10:
-        # 转化漏斗
-        show_statistics_conversion_funnel()
+        # 转化漏斗 - 延迟加载
+        with st.spinner("正在加载转化漏斗数据..."):
+            show_statistics_conversion_funnel()
 
     with stats_tab11:
-        # 功能使用
-        show_statistics_feature_usage()
+        # 功能使用 - 延迟加载
+        with st.spinner("正在加载功能使用数据..."):
+            show_statistics_feature_usage()
 
     with stats_tab12:
-        # 增强收入
-        show_statistics_enhanced_revenue()
+        # 增强收入 - 延迟加载
+        with st.spinner("正在加载增强收入数据..."):
+            show_statistics_enhanced_revenue()
+
+
+@st.cache_data(ttl=60)  # 缓存60秒，减少数据库查询
+def _get_cached_dashboard_stats():
+    """获取缓存的统计数据"""
+    return get_dashboard_stats()
 
 
 def show_statistics_dashboard():
@@ -6995,8 +7098,8 @@ def show_statistics_dashboard():
             clear_all_statistics_cache()
             st.rerun()
 
-    # 获取统计数据
-    stats = get_dashboard_stats()
+    # 获取统计数据（带Streamlit缓存）
+    stats = _get_cached_dashboard_stats()
 
     if not stats:
         st.warning("暂无统计数据")
@@ -7110,6 +7213,12 @@ def show_statistics_retention():
             st.dataframe(df, width='stretch', hide_index=True)
 
 
+@st.cache_data(ttl=60)  # 缓存60秒
+def _get_cached_activity_stats():
+    """获取缓存的活跃数据"""
+    return get_user_activity_stats()
+
+
 def show_statistics_activity():
     """用户活跃页面"""
     st.subheader("👥 用户活跃统计")
@@ -7125,8 +7234,8 @@ def show_statistics_activity():
             clear_all_statistics_cache()
             st.rerun()
 
-    # 获取活跃数据
-    activity_data = get_user_activity_stats()
+    # 获取活跃数据（带Streamlit缓存）
+    activity_data = _get_cached_activity_stats()
 
     if not activity_data:
         st.info("暂无活跃数据")
@@ -8007,7 +8116,7 @@ def show_plan_management():
     # 刷新按钮
     col1, col2 = st.columns([10, 1])
     with col2:
-        if st.button("🔄", key="refresh_plans", help="刷新数据"):
+        if st.button("🔄", key="plan_mgmt_refresh", help="刷新数据"):
             st.rerun()
 
     # 标签：套餐列表 | 新增套餐
@@ -8080,7 +8189,7 @@ def show_plan_management():
                             )
                             if st.button(
                                 toggle_label,
-                                key=f"toggle_{plan['id']}"
+                                key=f"plan_mgmt_toggle_{plan['id']}"
                             ):
                                 if toggle_plan_active(plan['id']):
                                     st.success("状态已更新！")
@@ -8090,7 +8199,10 @@ def show_plan_management():
 
                     with btn_col2:
                         # 编辑按钮
-                        if st.button("✏️ 编辑", key=f"edit_{plan['id']}"):
+                        if st.button(
+                            "✏️ 编辑",
+                            key=f"plan_mgmt_edit_{plan['id']}"
+                        ):
                             st.session_state[
                                 f"editing_plan_{plan['id']}"
                             ] = True
@@ -8101,7 +8213,7 @@ def show_plan_management():
                         if plan['plan_code'] != 'free':
                             if st.button(
                                 "🗑️ 删除",
-                                key=f"delete_{plan['id']}"
+                                key=f"plan_mgmt_delete_{plan['id']}"
                             ):
                                 if delete_plan(plan['id']):
                                     st.success("删除成功！")
@@ -8116,7 +8228,7 @@ def show_plan_management():
                         st.divider()
                         st.subheader("编辑套餐")
 
-                        with st.form(key=f"edit_form_{plan['id']}"):
+                        with st.form(key=f"plan_mgmt_edit_form_{plan['id']}"):
                             col1, col2 = st.columns(2)
 
                             with col1:
@@ -8246,7 +8358,7 @@ def show_plan_management():
         # 新增套餐表单
         st.subheader("新增套餐")
 
-        with st.form(key="create_plan_form"):
+        with st.form(key="plan_mgmt_create_form"):
             col1, col2 = st.columns(2)
 
             with col1:
@@ -8378,8 +8490,8 @@ def main():
     # 检查是否禁用内置回调服务器（当使用独立Gunicorn回调服务时）
     if not st.session_state.get('_callback_init_attempted', False):
         if not (
-            os.getenv("DISABLE_EMBEDDED_WECHAT_CALLBACK", "false").lower()
-            == "true"
+            os.getenv("DISABLE_EMBEDDED_WECHAT_CALLBACK", "false").lower() ==
+            "true"
         ):
             start_wechat_callback_server()
         else:

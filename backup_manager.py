@@ -101,6 +101,8 @@ def verify_backup(backup_path):
 
             for table_name in tables:
                 try:
+                    # table_name来自硬编码列表，安全
+                    # nosec B608
                     c.execute(f"SELECT COUNT(*) FROM {table_name}")
                     record_count = c.fetchone()[0]
                     stats[table_name] = record_count

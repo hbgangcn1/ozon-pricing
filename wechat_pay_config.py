@@ -113,9 +113,16 @@ def get_wechat_pay_config() -> WeChatPayConfig:
     if config.api_v3_key:
         print(f"  API_V3_KEY长度: {len(config.api_v3_key)}")
 
-    # 证书配置
-    config.private_key_path = os.getenv("WECHAT_PRIVATE_KEY_PATH")
-    config.public_key_path = os.getenv("WECHAT_PUBLIC_KEY_PATH")
+    # 证书配置（使用环境变量，支持多环境部署）
+    cert_dir = os.getenv('WECHAT_CERT_DIR', 'cert')
+    config.private_key_path = os.getenv(
+        "WECHAT_PRIVATE_KEY_PATH",
+        os.path.join(cert_dir, 'apiclient_key.pem')
+    )
+    config.public_key_path = os.getenv(
+        "WECHAT_PUBLIC_KEY_PATH",
+        os.path.join(cert_dir, 'apiclient_cert.pem')
+    )
     cert_serial_raw = os.getenv("WECHAT_CERT_SERIAL_NO")
 
     # 清理证书序列号格式（移除空格、冒号等）

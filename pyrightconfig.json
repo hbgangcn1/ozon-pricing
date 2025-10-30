@@ -1,10 +1,26 @@
 {
   "include": ["."],
+  "exclude": [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/htmlcov",
+    ".venv",
+    "backups",
+    "logs"
+  ],
   "executionEnvironments": [
     {
       "root": ".",
-      "extraPaths": [".."]
+      "extraPaths": [".."],
+      "pythonVersion": "3.13",
+      "pythonPlatform": "Windows"
     }
-  ]
+  ],
+  "venvPath": "C:\\Users\\hbgan\\anaconda3",
+  "venv": "",
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": false,
+  "reportOptionalMemberAccess": false,
+  "reportOptionalSubscript": false
 }
 

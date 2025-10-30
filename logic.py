@@ -98,8 +98,8 @@ def calculate_logistic_cost(logistic, product, debug=False):
                         return (None, debug_info) if debug else None
                     min_cylinder_sum = logistic.get("min_cylinder_sum", 0)
                     if (
-                        min_cylinder_sum > 0
-                        and cylinder_sum < min_cylinder_sum
+                        min_cylinder_sum > 0 and
+                        cylinder_sum < min_cylinder_sum
                     ):
                         debug_info.append(
                             (
@@ -212,8 +212,8 @@ def calculate_logistic_cost(logistic, product, debug=False):
             debug_info.append("极速模式，跳过所有特殊物品检查（电池、易燃液体、MSDS等）")
         else:
             if (
-                product.get("has_battery")
-                and not logistic.get("allow_battery")
+                product.get("has_battery") and
+                not logistic.get("allow_battery")
             ):
                 debug_info.append("产品含电池但物流不允许，返回 None")
                 return (None, debug_info) if debug else None
@@ -252,8 +252,8 @@ def calculate_logistic_cost(logistic, product, debug=False):
                                 debug_info.append("电池容量超限，返回 None")
                                 return (None, debug_info) if debug else None
                 if (
-                    logistic.get("require_msds")
-                    and not product.get("has_msds")
+                    logistic.get("require_msds") and
+                    not product.get("has_msds")
                 ):
                     debug_info.append("要求 MSDS 但产品未提供，返回 None")
                     return (None, debug_info) if debug else None
@@ -487,13 +487,13 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     for _ in range(max_iter):
                         calc_total_cost = cost_input + commission_fee
                         price_denominator = (
-                            1
-                            - target_margin_input
-                            - promotion_rate_input
-                            - commission_rate_input
-                            - withdrawal_rate_input
-                            - payment_rate_input
-                            - vat_rate_input
+                            1 -
+                            target_margin_input -
+                            promotion_rate_input -
+                            commission_rate_input -
+                            withdrawal_rate_input -
+                            payment_rate_input -
+                            vat_rate_input
                         )
                         price = calc_total_cost / price_denominator
 
@@ -538,27 +538,27 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         base_cost_calc + actual_commission * rate
                     )
                     denominator = (
-                        1
-                        - filter_target_margin
-                        - filter_promotion_rate
-                        - filter_commission_rate
-                        - filter_withdrawal_rate
-                        - filter_payment_rate
-                        - filter_vat_rate
+                        1 -
+                        filter_target_margin -
+                        filter_promotion_rate -
+                        filter_commission_rate -
+                        filter_withdrawal_rate -
+                        filter_payment_rate -
+                        filter_vat_rate
                     )
                     rough = filter_total_cost / denominator
                     pricing_mode = "代理费在分子中"
                 else:
                     # 情况2：代理费在分母中
                     denominator = (
-                        1
-                        - filter_target_margin
-                        - filter_promotion_rate
-                        - filter_commission_rate
-                        - filter_withdrawal_rate
-                        - filter_payment_rate
-                        - 0.02
-                        - filter_vat_rate
+                        1 -
+                        filter_target_margin -
+                        filter_promotion_rate -
+                        filter_commission_rate -
+                        filter_withdrawal_rate -
+                        filter_payment_rate -
+                        0.02 -
+                        filter_vat_rate
                     )
                     rough = base_cost_calc / denominator
                     pricing_mode = "代理费在分母中"
@@ -706,14 +706,14 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 for _ in range(max_iter):
                     iter_total_cost = cost_input + commission_fee
                     final_price_denominator = (
-                        1
-                        - target_margin_input
-                        - promotion_rate_input
-                        - commission_rate_input
-                        - withdrawal_rate_input
-                        - payment_rate_input
-                        - return_rate_input
-                        - vat_rate_input
+                        1 -
+                        target_margin_input -
+                        promotion_rate_input -
+                        commission_rate_input -
+                        withdrawal_rate_input -
+                        payment_rate_input -
+                        return_rate_input -
+                        vat_rate_input
                     )
                     price = iter_total_cost / final_price_denominator
 
@@ -768,37 +768,37 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 )
 
             if (
-                actual_commission_rounded <= 15
-                or actual_commission_rounded >= 200
+                actual_commission_rounded <= 15 or
+                actual_commission_rounded >= 200
             ):
                 # 情况1：代理费在分子中
                 final_total_cost = (
                     base_cost_calc + actual_commission * rate
                 )
                 denominator = (
-                    1
-                    - final_target_margin
-                    - final_promotion_rate
-                    - final_commission_rate
-                    - final_withdrawal_rate
-                    - final_payment_rate
-                    - final_return_rate
-                    - final_vat_rate
+                    1 -
+                    final_target_margin -
+                    final_promotion_rate -
+                    final_commission_rate -
+                    final_withdrawal_rate -
+                    final_payment_rate -
+                    final_return_rate -
+                    final_vat_rate
                 )
                 final_price = final_total_cost / denominator
                 pricing_mode = "代理费在分子中"
             else:
                 # 情况2：代理费在分母中
                 denominator = (
-                    1
-                    - final_target_margin
-                    - final_promotion_rate
-                    - final_commission_rate
-                    - final_withdrawal_rate
-                    - final_payment_rate
-                    - final_return_rate
-                    - 0.02
-                    - final_vat_rate
+                    1 -
+                    final_target_margin -
+                    final_promotion_rate -
+                    final_commission_rate -
+                    final_withdrawal_rate -
+                    final_payment_rate -
+                    final_return_rate -
+                    0.02 -
+                    final_vat_rate
                 )
                 final_price = base_cost_calc / denominator
                 pricing_mode = "代理费在分母中"
@@ -943,8 +943,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
         vat_rate = product.get("vat_rate", 0)
 
         if (
-            land_price and land_cost is not None
-            and land_commission_info is not None
+            land_price and land_cost is not None and
+            land_commission_info is not None
         ):
             # 使用定价阶段返回的代理费信息
             land_base_cost = (
@@ -960,9 +960,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 land_total_cost = land_base_cost + land_commission_fee
                 # 实际收入 = 售价 × (1 - 所有扣费率)
                 actual_revenue = land_price * (
-                    1 - promotion_rate - commission_rate
-                    - withdrawal_rate - payment_rate
-                    - return_rate - vat_rate
+                    1 - promotion_rate - commission_rate -
+                    withdrawal_rate - payment_rate -
+                    return_rate - vat_rate
                 )
                 land_expected_profit = actual_revenue - land_total_cost
                 profit_mode = "代理费在分子中"
@@ -971,9 +971,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 land_total_cost = land_base_cost  # 不包含代理费
                 # 实际收入 = 售价 × (1 - 所有扣费率 - 2%)
                 actual_revenue = land_price * (
-                    1 - promotion_rate - commission_rate
-                    - withdrawal_rate - payment_rate
-                    - return_rate - vat_rate - 0.02
+                    1 - promotion_rate - commission_rate -
+                    withdrawal_rate - payment_rate -
+                    return_rate - vat_rate - 0.02
                 )
                 land_expected_profit = actual_revenue - land_total_cost
                 profit_mode = "代理费在分母中"
@@ -1005,13 +1005,13 @@ def calculate_pricing(product, land_logistics, air_logistics,
             if profit_mode == "代理费在分母中":
                 land_debug.append("    代理费率: -2.00%")
                 revenue_factor = (
-                    1 - promotion_rate - commission_rate - withdrawal_rate
-                    - payment_rate - return_rate - vat_rate - 0.02
+                    1 - promotion_rate - commission_rate - withdrawal_rate -
+                    payment_rate - return_rate - vat_rate - 0.02
                 )
             else:
                 revenue_factor = (
-                    1 - promotion_rate - commission_rate - withdrawal_rate
-                    - payment_rate - return_rate - vat_rate
+                    1 - promotion_rate - commission_rate - withdrawal_rate -
+                    payment_rate - return_rate - vat_rate
                 )
             land_debug.append(f"    收入系数: {revenue_factor:.4f}")
             land_debug.append(
@@ -1032,8 +1032,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 f"  利润率差异: {land_profit_margin - target_margin * 100:+.2f}%"
             )
         if (
-            air_price and air_cost is not None
-            and air_commission_info is not None
+            air_price and air_cost is not None and
+            air_commission_info is not None
         ):
             # 使用定价阶段返回的代理费信息
             air_base_cost = unit_price + labeling_fee + shipping_fee + air_cost
@@ -1047,9 +1047,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 air_total_cost = air_base_cost + air_commission_fee
                 # 实际收入 = 售价 × (1 - 所有扣费率)
                 actual_revenue = air_price * (
-                    1 - promotion_rate - commission_rate
-                    - withdrawal_rate - payment_rate
-                    - return_rate - vat_rate
+                    1 - promotion_rate - commission_rate -
+                    withdrawal_rate - payment_rate -
+                    return_rate - vat_rate
                 )
                 air_expected_profit = actual_revenue - air_total_cost
                 profit_mode = "代理费在分子中"
@@ -1058,9 +1058,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 air_total_cost = air_base_cost  # 不包含代理费
                 # 实际收入 = 售价 × (1 - 所有扣费率 - 2%)
                 actual_revenue = air_price * (
-                    1 - promotion_rate - commission_rate
-                    - withdrawal_rate - payment_rate
-                    - return_rate - vat_rate - 0.02
+                    1 - promotion_rate - commission_rate -
+                    withdrawal_rate - payment_rate -
+                    return_rate - vat_rate - 0.02
                 )
                 air_expected_profit = actual_revenue - air_total_cost
                 profit_mode = "代理费在分母中"
@@ -1092,13 +1092,13 @@ def calculate_pricing(product, land_logistics, air_logistics,
             if profit_mode == "代理费在分母中":
                 air_debug.append("    代理费率: -2.00%")
                 air_revenue_factor = (
-                    1 - promotion_rate - commission_rate - withdrawal_rate
-                    - payment_rate - return_rate - vat_rate - 0.02
+                    1 - promotion_rate - commission_rate - withdrawal_rate -
+                    payment_rate - return_rate - vat_rate - 0.02
                 )
             else:
                 air_revenue_factor = (
-                    1 - promotion_rate - commission_rate - withdrawal_rate
-                    - payment_rate - return_rate - vat_rate
+                    1 - promotion_rate - commission_rate - withdrawal_rate -
+                    payment_rate - return_rate - vat_rate
                 )
             air_debug.append(f"    收入系数: {air_revenue_factor:.4f}")
             air_debug.append(
@@ -1367,12 +1367,12 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:
         total_cny = unit_price + labeling_fee + shipping_fee + 15 * rate + cost
         # 估算人民币售价
         denominator = (
-            1
-            - product.get("target_profit_margin", 0)
-            - product.get("promotion_cost_rate", 0)
-            - product.get("commission_rate", 0)
-            - product.get("withdrawal_fee_rate", 0)
-            - product.get("payment_processing_fee", 0)
+            1 -
+            product.get("target_profit_margin", 0) -
+            product.get("promotion_cost_rate", 0) -
+            product.get("commission_rate", 0) -
+            product.get("withdrawal_fee_rate", 0) -
+            product.get("payment_processing_fee", 0)
         )
         if denominator == 0:
             return "费率参数异常导致除以 0"

@@ -811,8 +811,8 @@ def statistics_dashboard_page():
         )
 
     with col3:
-        revenue_delta = (stats.get('revenue_today', 0) -
-                         stats.get('revenue_yesterday', 0))
+        revenue_delta = (stats.get('revenue_today', 0)
+                         - stats.get('revenue_yesterday', 0))
         st.metric(
             label="今日收入（元）",
             value=f"¥{stats.get('revenue_today', 0):.2f}",

@@ -328,10 +328,10 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
     """
     print(f"🔍 开始自动检查订单: {order_id}")
 
-    # 检查缓存（最近3秒内查过就不重复查询，减少数据库压力）
+    # 检查缓存（最近2秒内查过就不重复查询，减少数据库压力）
     cache_key = f"last_check_{order_id}"
     last_check = st.session_state.get(cache_key, 0)
-    if time.time() - last_check < 3:
+    if time.time() - last_check < 2:
         print("⏩ 跳过检查（缓存中）")
         return
 
@@ -610,8 +610,8 @@ def show_existing_payment(
                         error_msg = result.get("message", "未知错误")
                         # 对签名错误等短期不稳定情况，给温和提示
                         if (
-                            "签名错误" in error_msg
-                            or "signature" in error_msg.lower()
+                            "签名错误" in error_msg or
+                            "signature" in error_msg.lower()
                         ):
                             st.warning("⏳ 支付状态尚未同步，请稍后再试")
                         else:
@@ -646,10 +646,10 @@ def show_existing_payment(
             )
 
     # 关键：在所有UI显示完成后，添加Python自动刷新
-    # 这样用户能看到完整的页面，然后页面会在5秒后自动刷新检查
+    # 优化轮询间隔到3秒，提升支付体验
     if check_count < max_checks:
-        print(f"⏰ 准备在5秒后自动刷新（第{check_count}次检查）")
-        time.sleep(5)
+        print(f"⏰ 准备在3秒后自动刷新（第{check_count}次检查）")
+        time.sleep(3)
         print("🔄 执行Python自动刷新")
         st.rerun()
 

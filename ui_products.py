@@ -52,17 +52,20 @@ def products_page():
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
 
-        # 页面描述
-        st.markdown(
-            """
-            <div style="text-align: center; margin-bottom: 2rem;">
-                <p style="color: #718096; font-size: 1.1rem; margin: 0;">
-                    管理您的产品信息，为运费计算提供准确数据
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        # 使用容器优化渲染性能
+        header_container = st.container()
+        with header_container:
+            # 页面描述
+            st.markdown(
+                """
+                <div style="text-align: center; margin-bottom: 2rem;">
+                    <p style="color: #718096; font-size: 1.1rem; margin: 0;">
+                        管理您的产品信息，为运费计算提供准确数据
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         if st.session_state.get("edit_product_id"):
             edit_product_form()
@@ -72,14 +75,17 @@ def products_page():
             batch_edit_pricing_form()
             return
 
-        # 缓存产品表
-        products = pd.read_sql(
-            "SELECT id, name, category, weight_g "
-            "FROM products "
-            "WHERE user_id = ?",
-            conn,
-            params=(uid,),
-        )
+        # 使用容器包装产品数据查询
+        products_container = st.container()
+        with products_container:
+            # 缓存产品表
+            products = pd.read_sql(
+                "SELECT id, name, category, weight_g "
+                "FROM products "
+                "WHERE user_id = ?",
+                conn,
+                params=(uid,),
+            )
 
         # 添加/编辑产品
         with st.expander("➕ 添加新产品", expanded=True):
@@ -177,8 +183,7 @@ def products_page():
                     value=11.5,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
             target_profit_margin = (
                 col1.number_input(
@@ -188,8 +193,7 @@ def products_page():
                     value=50.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
             commission_rate = (
                 col2.number_input(
@@ -199,8 +203,7 @@ def products_page():
                     value=17.5,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
             withdrawal_fee_rate = (
                 col1.number_input(
@@ -210,8 +213,7 @@ def products_page():
                     value=1.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
             payment_processing_fee = (
                 col2.number_input(
@@ -221,8 +223,7 @@ def products_page():
                     value=1.3,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
             return_rate = (
                 col1.number_input(
@@ -232,8 +233,7 @@ def products_page():
                     value=0.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
             if st.button("添加产品"):
                 if not subscription_status.get("valid", True):
@@ -361,59 +361,63 @@ def products_page():
                     )
                     st.rerun()
 
-        # 产品列表
+        # 产品列表 - 延迟加载
         st.subheader("产品列表")
-        if not products.empty:
-            selected_list = []
-            for _, row in products.iterrows():
-                if st.checkbox(
-                    f"{row['id']} - {row['name']} "
-                    f"({row['category']}, {row['weight_g']}g)",
-                    key=f"product_checkbox_{row['id']}",
-                ):
-                    selected_list.append(row.to_dict())
 
-            if selected_list:
-                # 显示选中的产品数量
-                st.info(f"已选择 {len(selected_list)} 个产品")
+        # 使用容器优化渲染性能
+        products_list_container = st.container()
+        with products_list_container:
+            if not products.empty:
+                selected_list = []
+                for _, row in products.iterrows():
+                    if st.checkbox(
+                        f"{row['id']} - {row['name']} "
+                        f"({row['category']}, {row['weight_g']}g)",
+                        key=f"product_checkbox_{row['id']}",
+                    ):
+                        selected_list.append(row.to_dict())
 
-                col_edit, col_del = st.columns(2)
-                with col_edit:
-                    if st.button("编辑产品", key="edit_btn_batch"):
-                        if not subscription_status.get("valid", True):
-                            st.error("账号到期，请联系客服续费")
-                            return
+                if selected_list:
+                    # 显示选中的产品数量
+                    st.info(f"已选择 {len(selected_list)} 个产品")
+
+                    col_edit, col_del = st.columns(2)
+                    with col_edit:
+                        if st.button("编辑产品", key="edit_btn_batch"):
+                            if not subscription_status.get("valid", True):
+                                st.error("账号到期，请联系客服续费")
+                                return
+                            if len(selected_list) == 1:
+                                # 单个产品编辑
+                                st.session_state.edit_product_id = (
+                                    selected_list[0]["id"]
+                                )
+                                st.rerun()
+                            else:
+                                # 多个产品批量编辑定价参数
+                                st.session_state.batch_edit_products = (
+                                    selected_list
+                                )
+                                st.rerun()
+                    with col_del:
                         if len(selected_list) == 1:
-                            # 单个产品编辑
-                            st.session_state.edit_product_id = (
-                                selected_list[0]["id"]
-                            )
-                            st.rerun()
+                            if st.button("删除产品", key="del_btn_single"):
+                                if not subscription_status.get("valid", True):
+                                    st.error("账号到期，请联系客服续费")
+                                    return
+                                st.session_state.delete_confirm_product_id = (
+                                    selected_list[0]["id"]
+                                )
+                                st.rerun()
                         else:
-                            # 多个产品批量编辑定价参数
-                            st.session_state.batch_edit_products = (
-                                selected_list
-                            )
-                            st.rerun()
-                with col_del:
-                    if len(selected_list) == 1:
-                        if st.button("删除产品", key="del_btn_single"):
-                            if not subscription_status.get("valid", True):
-                                st.error("账号到期，请联系客服续费")
-                                return
-                            st.session_state.delete_confirm_product_id = (
-                                selected_list[0]["id"]
-                            )
-                            st.rerun()
-                    else:
-                        if st.button("批量删除", key="del_btn_batch"):
-                            if not subscription_status.get("valid", True):
-                                st.error("账号到期，请联系客服续费")
-                                return
-                            st.session_state.batch_delete_products = (
-                                selected_list
-                            )
-                            st.rerun()
+                            if st.button("批量删除", key="del_btn_batch"):
+                                if not subscription_status.get("valid", True):
+                                    st.error("账号到期，请联系客服续费")
+                                    return
+                                st.session_state.batch_delete_products = (
+                                    selected_list
+                                )
+                                st.rerun()
 
             # 删除确认对话框
             if st.session_state.get("delete_confirm_product_id"):
@@ -493,8 +497,8 @@ def products_page():
                     if st.button("取消", key="cancel_batch_delete"):
                         del st.session_state.batch_delete_products
                         st.rerun()
-        else:
-            st.info("暂无产品数据")
+            else:
+                st.info("暂无产品数据")
 
 
 def edit_product_form():
@@ -749,8 +753,7 @@ def edit_product_form():
                 value=max(0.0, float(vals["commission_rate"])) * 100.0,
                 step=0.1,
                 format="%.1f",
-            )
-            / 100.0
+            ) / 100.0
         )
     with col2:
         target_profit_margin = (
@@ -761,8 +764,7 @@ def edit_product_form():
                 value=max(0.0, float(vals["target_profit_margin"])) * 100.0,
                 step=0.1,
                 format="%.1f",
-            )
-            / 100.0
+            ) / 100.0
         )
 
     # 第三行：推广费率（%）、打款提现费率(%)
@@ -776,8 +778,7 @@ def edit_product_form():
                 value=max(0.0, float(vals["promotion_cost_rate"])) * 100.0,
                 step=0.1,
                 format="%.1f",
-            )
-            / 100.0
+            ) / 100.0
         )
     with col2:
         withdrawal_fee_rate = (
@@ -788,8 +789,7 @@ def edit_product_form():
                 value=max(0.0, float(vals["withdrawal_fee_rate"])) * 100.0,
                 step=0.1,
                 format="%.1f",
-            )
-            / 100.0
+            ) / 100.0
         )
 
     # 第四行：收单手续费率(%)、历史退货率(%)
@@ -803,8 +803,7 @@ def edit_product_form():
                 value=max(0.0, float(vals["payment_processing_fee"])) * 100.0,
                 step=0.1,
                 format="%.1f",
-            )
-            / 100.0
+            ) / 100.0
         )
     with col2:
         return_rate = (
@@ -815,8 +814,7 @@ def edit_product_form():
                 value=max(0.0, float(vals.get("return_rate", 0))) * 100.0,
                 step=0.1,
                 format="%.1f",
-            )
-            / 100.0
+            ) / 100.0
         )
 
     # 第五行：增值税率(%)
@@ -829,8 +827,7 @@ def edit_product_form():
             step=0.1,
             format="%.1f",
             help="增值税率，根据实际情况填写",
-        )
-        / 100.0
+        ) / 100.0
     )
 
     # 保存修改和取消按钮横向排列
@@ -1023,8 +1020,7 @@ def batch_edit_pricing_form():
                     value=float(avg_params[0] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
 
             target_profit_margin = (
@@ -1035,8 +1031,7 @@ def batch_edit_pricing_form():
                     value=float(avg_params[1] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
 
             withdrawal_fee_rate = (
@@ -1047,8 +1042,7 @@ def batch_edit_pricing_form():
                     value=float(avg_params[3] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
             return_rate = (
                 st.number_input(
@@ -1058,8 +1052,7 @@ def batch_edit_pricing_form():
                     value=float(avg_params[5] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
 
         with col2:
@@ -1071,8 +1064,7 @@ def batch_edit_pricing_form():
                     value=float(avg_params[2] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
 
             payment_processing_fee = (
@@ -1083,8 +1075,7 @@ def batch_edit_pricing_form():
                     value=float(avg_params[4] or 0.0) * 100.0,
                     step=0.1,
                     format="%.1f",
-                )
-                / 100.0
+                ) / 100.0
             )
 
         # 保存按钮

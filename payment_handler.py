@@ -198,7 +198,7 @@ class PaymentHandler:
 
         if result["success"]:
             # 更新订单状态
-            PaymentHandler._update_order_status(order_id, "CREATED")
+            PaymentHandler.update_order_status(order_id, "CREATED")
 
             return {
                 "success": True,
@@ -228,9 +228,9 @@ class PaymentHandler:
 
             # 更新本地订单状态
             if trade_state == "SUCCESS":
-                PaymentHandler._update_order_status(order_id, "PAID")
+                PaymentHandler.update_order_status(order_id, "PAID")
             elif trade_state in ["CLOSED", "REVOKED", "PAYERROR"]:
-                PaymentHandler._update_order_status(order_id, "FAILED")
+                PaymentHandler.update_order_status(order_id, "FAILED")
 
             return {
                 "success": True,
@@ -242,8 +242,8 @@ class PaymentHandler:
             return result
 
     @staticmethod
-    def _update_order_status(order_id: str, status: str):
-        """更新订单状态"""
+    def update_order_status(order_id: str, status: str):
+        """更新订单状态（公开方法）"""
         try:
             with get_db_connection() as (conn, cursor):
                 cursor.execute("""
@@ -308,7 +308,7 @@ class PaymentHandler:
             if order_id:
                 # 更新订单状态为已支付
                 print(f"🔧 开始更新订单状态: {order_id}")
-                PaymentHandler._update_order_status(order_id, "PAID")
+                PaymentHandler.update_order_status(order_id, "PAID")
 
                 # 这里可以添加业务逻辑，比如开通会员、增加计算次数等
                 print(f"🔧 开始处理支付成功业务逻辑: {order_id}")

@@ -10,6 +10,17 @@ import sqlite3
 import time
 from typing import List, Tuple
 
+# 加载环境变量（必须在导入db_config之前）
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    # 如果没有python-dotenv，定义占位函数
+    load_dotenv = None  # type: ignore
+
+# 执行环境变量加载
+if load_dotenv is not None:
+    load_dotenv()  # 从.env文件加载环境变量
+
 # 尝试导入psycopg2
 try:
     import psycopg2  # type: ignore[import]
@@ -76,7 +87,8 @@ def get_table_schema(sqlite_conn, table_name: str) -> List[Tuple]:
 def get_table_data(sqlite_conn, table_name: str) -> List[Tuple]:
     """获取表数据"""
     cursor = sqlite_conn.cursor()
-    cursor.execute(f"SELECT * FROM {table_name}")
+    # table_name来自预定义的TABLES常量，安全
+    cursor.execute(f"SELECT * FROM {table_name}")  # nosec B608
     return cursor.fetchall()
 
 
@@ -85,13 +97,14 @@ def get_pg_table_schema(pg_conn, table_name: str):
     try:
         pg_cursor = pg_conn.cursor()
         # PostgreSQL表名查询需要指定schema
+        # table_name来自预定义列表，安全
         pg_cursor.execute(f"""
             SELECT column_name, data_type
             FROM information_schema.columns
             WHERE table_schema = 'public'
               AND table_name = '{table_name}'
             ORDER BY ordinal_position
-        """)
+        """)  # nosec B608
         result = {row[0]: row[1] for row in pg_cursor.fetchall()}
         return result
     except (Psycopg2Error, KeyError, ValueError) as e:
@@ -267,128 +280,141 @@ def main():
     # 2. 连接SQLite
     print("\n[2/6] 连接SQLite数据库...")
     sqlite_path = os.getenv('SQLITE_DB_PATH', 'pricing_system.db')
-    try:
-        sqlite_conn = get_sqlite_connection(sqlite_path)
-        print(f"✓ 已连接: {sqlite_path}")
-    except (sqlite3.Error, FileNotFoundError, OSError) as e:
-        print(f"❌ SQLite连接失败: {e}")
-        sys.exit(1)
+    sqlite_conn = None
+    pg_conn = None
 
-    # 3. 连接PostgreSQL
-    print("\n[3/6] 连接PostgreSQL数据库...")
     try:
-        pg_conn = get_postgresql_connection(pg_module)
-        print("✓ PostgreSQL连接成功")
-    except Psycopg2Error as e:
-        print(f"❌ PostgreSQL连接失败: {e}")
-        print("\n请检查:")
-        print("  1. PostgreSQL是否已启动")
-        print("  2. .env文件中的配置是否正确")
-        print("  3. 数据库和用户是否已创建")
-        sys.exit(1)
-
-    # 4. 初始化PostgreSQL表结构
-    print("\n[4/6] 初始化PostgreSQL表结构...")
-    if not dry_run:
         try:
-            # 临时设置环境变量为PostgreSQL
-            original_db_type = os.getenv('DB_TYPE')
-            os.environ['DB_TYPE'] = 'postgresql'
-
-            from db_utils import init_db
-            init_db()
-            print("✓ 表结构已创建")
-
-            # 恢复原始设置
-            if original_db_type:
-                os.environ['DB_TYPE'] = original_db_type
-        except (ImportError, Psycopg2Error, OSError) as e:
-            print(f"❌ 初始化表结构失败: {e}")
+            sqlite_conn = get_sqlite_connection(sqlite_path)
+            print(f"✓ 已连接: {sqlite_path}")
+        except (sqlite3.Error, FileNotFoundError, OSError) as e:
+            print(f"❌ SQLite连接失败: {e}")
             sys.exit(1)
-    else:
-        print("✓ 试运行模式，跳过")
 
-    # 5. 获取所有表
-    print("\n[5/6] 获取表列表...")
-    tables = get_all_tables(sqlite_conn)
-    print(f"✓ 发现 {len(tables)} 个表")
-    print(f"  表列表: {', '.join(tables)}")
+        # 3. 连接PostgreSQL
+        print("\n[3/6] 连接PostgreSQL数据库...")
+        try:
+            pg_conn = get_postgresql_connection(pg_module)
+            print("✓ PostgreSQL连接成功")
+        except Psycopg2Error as e:
+            print(f"❌ PostgreSQL连接失败: {e}")
+            print("\n请检查:")
+            print("  1. PostgreSQL是否已启动")
+            print("  2. .env文件中的配置是否正确")
+            print("  3. 数据库和用户是否已创建")
+            sys.exit(1)
 
-    # 6. 迁移数据
-    print("\n[6/6] 开始迁移数据...")
-    print("-" * 60)
+        # 4. 初始化PostgreSQL表结构
+        print("\n[4/6] 初始化PostgreSQL表结构...")
+        if not dry_run:
+            try:
+                # 临时设置环境变量为PostgreSQL
+                original_db_type = os.getenv('DB_TYPE')
+                os.environ['DB_TYPE'] = 'postgresql'
 
-    start_time = time.time()
+                from db_utils import init_db
+                init_db()
+                print("✓ 表结构已创建")
 
-    # 按照依赖顺序迁移表
-    migration_order = [
-        'users',
-        'plans',
-        'products',
-        'logistics',
-        'payment_orders',
-        'subscription_upgrade_history',
-        'user_login_log',
-        'user_behavior_log',
-        'admin_action_log',
-        'alert_records',
-        'statistics_cache',
-        'alert_config',
-        'system_config',
-    ]
+                # 恢复原始设置
+                if original_db_type:
+                    os.environ['DB_TYPE'] = original_db_type
+            except (ImportError, Psycopg2Error, OSError) as e:
+                print(f"❌ 初始化表结构失败: {e}")
+                sys.exit(1)
+        else:
+            print("✓ 试运行模式，跳过")
 
-    # 先迁移已知顺序的表
-    for table in migration_order:
-        if table in tables:
+        # 5. 获取所有表
+        print("\n[5/6] 获取表列表...")
+        tables = get_all_tables(sqlite_conn)
+        print(f"✓ 发现 {len(tables)} 个表")
+        print(f"  表列表: {', '.join(tables)}")
+
+        # 6. 迁移数据
+        print("\n[6/6] 开始迁移数据...")
+        print("-" * 60)
+
+        start_time = time.time()
+
+        # 按照依赖顺序迁移表
+        migration_order = [
+            'users',
+            'plans',
+            'products',
+            'logistics',
+            'payment_orders',
+            'subscription_upgrade_history',
+            'user_login_log',
+            'user_behavior_log',
+            'admin_action_log',
+            'alert_records',
+            'statistics_cache',
+            'alert_config',
+            'system_config',
+        ]
+
+        # 先迁移已知顺序的表
+        for table in migration_order:
+            if table in tables:
+                try:
+                    migrate_table(sqlite_conn, pg_conn, table, dry_run)
+
+                    # 重置序列
+                    if not dry_run and table in [
+                        'users', 'plans', 'products',
+                        'logistics', 'payment_orders'
+                    ]:
+                        reset_sequences(pg_conn, table)
+
+                except (Psycopg2Error, sqlite3.Error,
+                        ValueError, TypeError) as e:
+                    print(f"  ❌ 迁移失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        # 迁移其他表
+        other_tables = [t for t in tables if t not in migration_order]
+        for table in other_tables:
             try:
                 migrate_table(sqlite_conn, pg_conn, table, dry_run)
-
-                # 重置序列
-                if not dry_run and table in [
-                    'users', 'plans', 'products',
-                    'logistics', 'payment_orders'
-                ]:
-                    reset_sequences(pg_conn, table)
-
             except (Psycopg2Error, sqlite3.Error,
                     ValueError, TypeError) as e:
                 print(f"  ❌ 迁移失败: {e}")
-                import traceback
-                traceback.print_exc()
 
-    # 迁移其他表
-    other_tables = [t for t in tables if t not in migration_order]
-    for table in other_tables:
-        try:
-            migrate_table(sqlite_conn, pg_conn, table, dry_run)
-        except (Psycopg2Error, sqlite3.Error,
-                ValueError, TypeError) as e:
-            print(f"  ❌ 迁移失败: {e}")
+        elapsed = time.time() - start_time
 
-    elapsed = time.time() - start_time
+        # 7. 完成
+        print("\n" + "=" * 60)
+        if dry_run:
+            print("✓ 试运行完成！")
+            print("\n如果检查无误，请运行以下命令执行实际迁移:")
+            print("  python migrate_to_postgresql.py")
+        else:
+            print("✓ 数据迁移完成！")
+            print(f"\n耗时: {elapsed:.2f} 秒")
+            print("\n后续步骤:")
+            print("  1. 修改 .env 文件: DB_TYPE=postgresql")
+            print("  2. 重启应用: python app.py")
+            print("  3. 测试所有功能是否正常")
+            print(
+                "  4. 备份SQLite数据库: "
+                "cp pricing_system.db pricing_system.db.backup"
+            )
+        print("=" * 60)
 
-    # 7. 完成
-    print("\n" + "=" * 60)
-    if dry_run:
-        print("✓ 试运行完成！")
-        print("\n如果检查无误，请运行以下命令执行实际迁移:")
-        print("  python migrate_to_postgresql.py")
-    else:
-        print("✓ 数据迁移完成！")
-        print(f"\n耗时: {elapsed:.2f} 秒")
-        print("\n后续步骤:")
-        print("  1. 修改 .env 文件: DB_TYPE=postgresql")
-        print("  2. 重启应用: python app.py")
-        print("  3. 测试所有功能是否正常")
-        print(
-            "  4. 备份SQLite数据库: "
-            "cp pricing_system.db pricing_system.db.backup"
-        )
-    print("=" * 60)
-
-    # 关闭连接
-    sqlite_conn.close()
-    pg_conn.close()
+    finally:
+        # 确保连接总是被关闭
+        if sqlite_conn:
+            try:
+                sqlite_conn.close()
+            except (sqlite3.Error, OSError) as e:
+                print(f"警告: 关闭SQLite连接时出错: {e}")
+        if pg_conn:
+            try:
+                pg_conn.close()
+            except (Psycopg2Error, OSError) as e:
+                print(f"警告: 关闭PostgreSQL连接时出错: {e}")
 
 
 if __name__ == "__main__":

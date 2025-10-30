@@ -7,53 +7,14 @@
 from typing import Dict, Any, Optional
 import time
 
-# ==================== 测试模式配置 ====================
-# 从环境变量读取，默认为False（正式价格）
-# 设置环境变量 TEST_MODE=true 启用测试价格
-import os
-TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
-# =====================================================
 
-
-# 套餐配置
-SUBSCRIPTION_PLANS = {
-    'free': {
-        'name': '免费版',
-        'price_month': 0,
-        'price_year': 0,
-        'features': ['每日10次计算', '1个物流模板'],
-        'level': 0
-    },
-    'efficiency_promo': {
-        'name': '效率版首月优惠',
-        'price_month': 1.0,  # 首月1元（测试和正式都是1元）
-        'price_year': None,  # 首月优惠没有年付
-        'features': ['无限计算', '3个物流模板'],
-        'level': 1,
-        'is_promo': True,
-        'next_plan': 'efficiency'  # 首月后自动转为正常效率版价格
-    },
-    'efficiency': {
-        'name': '效率版',
-        'price_month': 1.1 if TEST_MODE else 14.9,
-        'price_year': 1.2 if TEST_MODE else 149.0,
-        'features': ['无限计算', '3个物流模板'],
-        'level': 1
-    },
-    'professional': {
-        'name': '专业版',
-        'price_month': 1.3 if TEST_MODE else 149.0,
-        'price_year': 1.4 if TEST_MODE else 1499.0,
-        'features': ['无限计算', '无限物流模板', '多物流比价'],
-        'level': 2
-    },
-    'enterprise': {
-        'name': '企业版',
-        'price_month': 999.0,
-        'price_year': 9999.0,
-        'features': ['所有功能', '专属客服', '定制开发'],
-        'level': 3
-    }
+# 套餐层级映射（价格从数据库plans表读取）
+PLAN_LEVEL_MAP = {
+    'free': 0,
+    'efficiency_promo': 1,
+    'efficiency': 1,
+    'professional': 2,
+    'enterprise': 3
 }
 
 
@@ -132,24 +93,29 @@ class SubscriptionUpgrade:
             - can_upgrade: 是否可以升级
             - message: 提示信息
         """
-        # 检查套餐是否存在
-        if target_plan not in SUBSCRIPTION_PLANS:
+        # 从数据库获取套餐配置（避免硬编码价格）
+        from db_utils import get_plan_by_code
+
+        target_plan_config = get_plan_by_code(target_plan)
+        if not target_plan_config:
             return {
                 'can_upgrade': False,
                 'message': f'目标套餐不存在: {target_plan}'
             }
 
-        # 获取目标套餐价格
-        target_plan_config = SUBSCRIPTION_PLANS[target_plan]
+        # 从数据库读取价格
         if target_cycle == 'year':
-            target_price = target_plan_config.get('price_year')
+            target_price = target_plan_config.get('actual_price_year')
         else:
-            target_price = target_plan_config.get('price_month')
+            target_price = target_plan_config.get('actual_price_month')
 
-        if target_price is None:
+        if target_price is None or target_price == 0:
             return {
                 'can_upgrade': False,
-                'message': f'{target_plan_config["name"]}不支持{target_cycle}周期'
+                'message': (
+                    f'{target_plan_config["plan_name"]}'
+                    f'不支持{target_cycle}周期'
+                )
             }
 
         # 计算当前套餐剩余价值
@@ -176,7 +142,9 @@ class SubscriptionUpgrade:
         return {
             'can_upgrade': True,
             'target_plan': target_plan,
-            'target_plan_name': target_plan_config['name'],
+            'target_plan_name': target_plan_config.get(
+                'plan_name', target_plan
+            ),
             'target_cycle': target_cycle,
             'target_price': target_price,
             'current_plan': current_plan,
@@ -374,6 +342,8 @@ class SubscriptionUpgrade:
         Returns:
             所有可升级的套餐及对应的折抵信息
         """
+        from db_utils import get_plans, get_plan_by_code
+
         current_sub = SubscriptionUpgrade.get_current_subscription_info(
             user_id
         )
@@ -381,23 +351,40 @@ class SubscriptionUpgrade:
             return {'success': False, 'message': '无法获取订阅信息'}
 
         current_plan = current_sub['subscription_type']
-        current_plan_config = SUBSCRIPTION_PLANS.get(current_plan, {})
-        current_level = current_plan_config.get('level', 0)
 
-        # 计算所有可升级的套餐
+        # 从数据库获取当前套餐信息
+        current_plan_config = get_plan_by_code(current_plan)
+        if current_plan_config:
+            current_plan_name = current_plan_config['plan_name']
+            current_level = PLAN_LEVEL_MAP.get(current_plan, 0)
+        else:
+            current_plan_name = '未知'
+            current_level = 0
+
+        # 从数据库获取所有可用套餐
+        all_plans = get_plans()
         upgrade_options = []
 
-        for plan_key, plan_config in SUBSCRIPTION_PLANS.items():
-            target_level = plan_config.get('level', 0)
+        for plan_config in all_plans:
+            plan_code = plan_config['plan_code']
+
+            # 确定套餐层级
+            target_level = PLAN_LEVEL_MAP.get(plan_code, 0)
 
             # 只能升级到更高级的套餐
             if target_level <= current_level:
                 continue
 
+            # 检查套餐是否启用
+            if not plan_config.get('is_active', 0):
+                continue
+
             # 计算月付和年付的升级成本
             for cycle in ['month', 'year']:
-                price_key = f'price_{cycle}'
-                target_price = plan_config.get(price_key)
+                if cycle == 'year':
+                    target_price = plan_config.get('actual_price_year')
+                else:
+                    target_price = plan_config.get('actual_price_month')
 
                 if target_price is None or target_price == 0:
                     continue
@@ -408,28 +395,26 @@ class SubscriptionUpgrade:
                     current_cycle=current_sub['billing_cycle'],
                     current_paid=current_sub['last_paid_amount'],
                     current_end=current_sub.get('subscription_expires', 0),
-                    target_plan=plan_key,
+                    target_plan=plan_code,
                     target_cycle=cycle
                 )
 
                 if upgrade_cost['can_upgrade']:
                     upgrade_options.append({
-                        'plan_key': plan_key,
-                        'plan_name': plan_config['name'],
+                        'plan_key': plan_code,
+                        'plan_name': plan_config['plan_name'],
                         'cycle': cycle,
                         'cycle_display': '月付' if cycle == 'month' else '年付',
                         'target_price': target_price,
                         'remaining_value': upgrade_cost['remaining_value'],
                         'difference': upgrade_cost['difference'],
                         'actual_payment': upgrade_cost['actual_payment'],
-                        'features': plan_config['features']
+                        'features': plan_config.get('features', '[]')
                     })
 
         return {
             'success': True,
             'current_plan': current_plan,
-            'current_plan_name': SUBSCRIPTION_PLANS.get(
-                current_plan, {}
-            ).get('name', '未知'),
+            'current_plan_name': current_plan_name,
             'upgrade_options': upgrade_options
         }

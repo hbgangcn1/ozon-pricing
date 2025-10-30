@@ -102,7 +102,10 @@ class AutoBackupSystem:
                 # 检查关键表是否存在
                 tables = ['users', 'products', 'logistics']
                 for table_name in tables:
-                    c.execute(f"SELECT COUNT(*) FROM {table_name}")
+                    # table_name来自硬编码列表，安全
+                    c.execute(  # nosec B608
+                        f"SELECT COUNT(*) FROM {table_name}"
+                    )
                     record_count = c.fetchone()[0]
                     logging.info(f"备份验证 - {table_name}: {record_count} 条记录")
 
@@ -118,8 +121,8 @@ class AutoBackupSystem:
             backup_files = []
             for fname in os.listdir(self.backup_dir):
                 if (
-                    fname.startswith("auto_backup_")
-                    and fname.endswith(".db")
+                    fname.startswith("auto_backup_") and
+                    fname.endswith(".db")
                 ):
                     file_path = os.path.join(self.backup_dir, fname)
                     backup_files.append(
@@ -151,8 +154,8 @@ class AutoBackupSystem:
                 is_auto_backup = fname.startswith("auto_backup_")
                 is_manual_backup = fname.startswith("manual_backup_")
                 if (
-                    (is_auto_backup or is_manual_backup)
-                    and fname.endswith(".db")
+                    (is_auto_backup or is_manual_backup) and
+                    fname.endswith(".db")
                 ):
                     file_path = os.path.join(self.backup_dir, fname)
                     size = os.path.getsize(file_path)

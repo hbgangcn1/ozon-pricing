@@ -98,7 +98,7 @@ def show_subscription_upgrade_page():
                 else:
                     st.info(
                         "💡 支付完成后将自动跳转，无需手动操作"
-                        "（最多等待5分钟）"
+                        "（最多等待3分钟）"
                     )
 
                 # 显示手动检查按钮作为备选
@@ -143,8 +143,8 @@ def show_subscription_upgrade_page():
 
                 # 关键：使用Python自动刷新（每5秒检查一次）
                 if check_count < max_checks:
-                    print(f"⏰ 准备在5秒后自动刷新（第{check_count}次检查）")
-                    time.sleep(5)
+                    print(f"⏰ 准备在3秒后自动刷新（第{check_count}次检查）")
+                    time.sleep(3)
                     print("🔄 执行Python自动刷新")
                     st.rerun()
 
@@ -530,8 +530,8 @@ def handle_paid_upgrade(user_id: int, option: dict):
 
         # 关键：使用Python自动刷新（每5秒检查一次）
         if check_count < max_checks:
-            print(f"⏰ 准备在5秒后自动刷新（第{check_count}次检查）")
-            time.sleep(5)
+            print(f"⏰ 准备在3秒后自动刷新（第{check_count}次检查）")
+            time.sleep(3)
             print("🔄 执行Python自动刷新")
             st.rerun()
 

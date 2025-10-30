@@ -73,12 +73,9 @@ def format_logistics_name(
 
 def logistics_page():
     """物流规则页面"""
-    with get_db_connection() as (conn, c):
-        uid = current_user_id()
-
-        # 缓存订阅状态，避免在每个按钮中重复查询
-        subscription_status = check_user_subscription_status(uid)
-
+    # 使用容器优化渲染性能
+    header_container = st.container()
+    with header_container:
         # 页面描述
         st.markdown(
             """
@@ -90,6 +87,14 @@ def logistics_page():
             """,
             unsafe_allow_html=True,
         )
+
+    with get_db_connection() as (conn, c):
+        uid = current_user_id()
+
+        # 延迟加载：先显示加载状态
+        with st.spinner("正在加载物流数据..."):
+            # 缓存订阅状态，避免在每个按钮中重复查询
+            subscription_status = check_user_subscription_status(uid)
 
         # Check if we're in edit mode
         get_func = (st.session_state.get if hasattr(st.session_state, 'get')
@@ -333,8 +338,8 @@ def logistics_page():
                 # 到期拦截
                 # 免费版用户不检查到期时间
                 if (
-                    subscription_status.get("user_type") != "free"
-                    and not subscription_status.get("valid", True)
+                    subscription_status.get("user_type") != "free" and
+                    not subscription_status.get("valid", True)
                 ):
                     st.error("账号到期，请联系客服续费")
                     return
@@ -491,14 +496,14 @@ def logistics_page():
                                         fee_mode_key,
                                         (
                                             first_fee
-                                            if fee_mode_key
-                                            == "first_plus_continue"
+                                            if fee_mode_key ==
+                                            "first_plus_continue"
                                             else 0.0
                                         ),
                                         (
                                             first_weight_g
-                                            if fee_mode_key
-                                            == "first_plus_continue"
+                                            if fee_mode_key ==
+                                            "first_plus_continue"
                                             else 0
                                         ),
                                         continue_fee,
@@ -529,163 +534,180 @@ def logistics_page():
         # ------------------------------------------------------------------
         # 物流列表
         # ------------------------------------------------------------------
-        st.subheader("物流列表")
+        # 使用容器优化渲染性能
+        logistics_list_container = st.container()
+        with logistics_list_container:
+            st.subheader("物流列表")
 
-        # 使用session state缓存物流数据，避免重复查询
-        cache_key = f"logistics_data_{uid}"
+            # 使用session state缓存物流数据，避免重复查询
+            cache_key = f"logistics_data_{uid}"
 
-        # 检查缓存是否存在且未过期（5分钟过期）
-        has_cache = (hasattr(st.session_state, cache_key)
-                     if not hasattr(st.session_state, '__contains__')
-                     else cache_key in st.session_state)
-        if has_cache:
-            cached_data = (st.session_state[cache_key]
-                           if hasattr(st.session_state, '__getitem__')
-                           else getattr(st.session_state, cache_key))
-            cache_age = pd.Timestamp.now() - cached_data['timestamp']
-            if cache_age.total_seconds() > 300:  # 5分钟过期
-                del st.session_state[cache_key]
+            # 检查缓存是否存在且未过期（5分钟过期）
+            has_cache = (hasattr(st.session_state, cache_key)
+                         if not hasattr(st.session_state, '__contains__')
+                         else cache_key in st.session_state)
+            if has_cache:
+                cached_data = (st.session_state[cache_key]
+                               if hasattr(st.session_state, '__getitem__')
+                               else getattr(st.session_state, cache_key))
+                cache_age = pd.Timestamp.now() - cached_data['timestamp']
+                if cache_age.total_seconds() > 300:  # 5分钟过期
+                    del st.session_state[cache_key]
 
-        if not (hasattr(st.session_state, cache_key)
-                if not hasattr(st.session_state, '__contains__')
-                else cache_key in st.session_state):
-            land_query = (
-                "SELECT * FROM logistics WHERE type='land' "
-                "AND user_id = ?"
-            )
-            air_query = (
-                "SELECT * FROM logistics WHERE type='air' AND user_id = ?"
-            )
-
-            # 忽略pandas关于数据库连接类型的警告
-            import warnings
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", category=UserWarning, module="pandas.io.sql"
+            if not (hasattr(st.session_state, cache_key)
+                    if not hasattr(st.session_state, '__contains__')
+                    else cache_key in st.session_state):
+                land_query = (
+                    "SELECT * FROM logistics WHERE type='land' "
+                    "AND user_id = ?"
                 )
-                warnings.filterwarnings(
-                    "ignore", message="pandas only supports SQLAlchemy"
+                air_query = (
+                    "SELECT * FROM logistics WHERE type='air' AND user_id = ?"
                 )
-                land_df = pd.read_sql(land_query, conn, params=(uid,))
-                air_df = pd.read_sql(air_query, conn, params=(uid,))
 
-            # 缓存查询结果
-            cache_data = {
-                'land_df': land_df,
-                'air_df': air_df,
-                'timestamp': pd.Timestamp.now()
-            }
+                # 忽略pandas关于数据库连接类型的警告
+                import warnings
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", category=UserWarning, module="pandas.io.sql"
+                    )
+                    warnings.filterwarnings(
+                        "ignore", message="pandas only supports SQLAlchemy"
+                    )
+                    land_df = pd.read_sql(land_query, conn, params=(uid,))
+                    air_df = pd.read_sql(air_query, conn, params=(uid,))
+
+                # 缓存查询结果
+                cache_data = {
+                    'land_df': land_df,
+                    'air_df': air_df,
+                    'timestamp': pd.Timestamp.now()
+                }
+                # 测试环境兼容性处理
+                if hasattr(st.session_state, '__setitem__'):
+                    st.session_state[cache_key] = cache_data
+                else:
+                    setattr(st.session_state, cache_key, cache_data)
+
+            # 使用缓存的数据
             # 测试环境兼容性处理
-            if hasattr(st.session_state, '__setitem__'):
-                st.session_state[cache_key] = cache_data
+            if hasattr(st.session_state, '__getitem__'):
+                cached_data = st.session_state[cache_key]
             else:
-                setattr(st.session_state, cache_key, cache_data)
+                cached_data = getattr(st.session_state, cache_key)
+            land_df = cached_data['land_df']
+            air_df = cached_data['air_df']
 
-        # 使用缓存的数据
-        # 测试环境兼容性处理
-        if hasattr(st.session_state, '__getitem__'):
-            cached_data = st.session_state[cache_key]
-        else:
-            cached_data = getattr(st.session_state, cache_key)
-        land_df = cached_data['land_df']
-        air_df = cached_data['air_df']
+            # 使用列布局容器
+            columns_container = st.container()
+            with columns_container:
+                left, middle, right = st.columns([1, 0.2, 1])
 
-        left, middle, right = st.columns([1, 0.2, 1])
-        with left:
-            st.write("**陆运**")
+                with left:
+                    st.write("**陆运**")
 
-            if not land_df.empty:
-                # 使用容器来限制渲染区域
-                land_container = st.container()
-                with land_container:
-                    # 为每个物流项显示信息和按钮
-                    selected_land_ids = []
-                    for i, (_, row) in enumerate(land_df.iterrows()):
-                        # 格式化物流名称（显示时包含送货方式）
-                        formatted_name = format_logistics_name(
-                            str(row['name']),
-                            str(row["delivery_method"]),
-                            include_delivery=True
-                        )
-                        base_fee_str = (
-                            f"¥{row['base_fee']:.2f}".rstrip("0").rstrip(".")
-                        )
-                        continue_fee_str = (
-                            f"¥{row['continue_fee']:.5f}"
-                            .rstrip("0")
-                            .rstrip(".")
-                        )
+                    if not land_df.empty:
+                        # 使用容器来限制渲染区域
+                        land_container = st.container()
+                        with land_container:
+                            # 为每个物流项显示信息和按钮
+                            selected_land_ids = []
+                            for i, (_, row) in enumerate(land_df.iterrows()):
+                                # 格式化物流名称（显示时包含送货方式）
+                                formatted_name = format_logistics_name(
+                                    str(row['name']),
+                                    str(row["delivery_method"]),
+                                    include_delivery=True
+                                )
+                                base_fee_str = (
+                                    f"¥{row['base_fee']:.2f}"
+                                    .rstrip("0").rstrip(".")
+                                )
+                                continue_fee_str = (
+                                    f"¥{row['continue_fee']:.5f}"
+                                    .rstrip("0")
+                                    .rstrip(".")
+                                )
 
-                        # 特殊物品标识
-                        special_items = []
-                        if bool(row["allow_battery"]):
-                            special_items.append("电")
-                        if bool(row["allow_flammable"]):
-                            special_items.append("液")
-                        special_items_str = (
-                            f" | {' | '.join(special_items)}"
-                            if special_items else ""
-                        )
+                                # 特殊物品标识
+                                special_items = []
+                                if bool(row["allow_battery"]):
+                                    special_items.append("电")
+                                if bool(row["allow_flammable"]):
+                                    special_items.append("液")
+                                special_items_str = (
+                                    f" | {' | '.join(special_items)}"
+                                    if special_items else ""
+                                )
 
-                        logistics_info = (
-                            f"{i + 1} | {formatted_name} | "
-                            f"{row['min_days']}-{row['max_days']}天 | "
-                            f"{base_fee_str} | {continue_fee_str} | "
-                            f"{special_items_str}"
-                        )
+                                logistics_info = (
+                                    f"{i + 1} | {formatted_name} | "
+                                    f"{row['min_days']}-{row['max_days']}天 | "
+                                    f"{base_fee_str} | {continue_fee_str} | "
+                                    f"{special_items_str}"
+                                )
 
-                        # 显示复选框和物流信息
-                        col_check, col_info = st.columns(
-                            [1, 20], vertical_alignment="bottom"
-                        )
-                        with col_check:
-                            if st.checkbox(
-                                "选择",
-                                key=f"check_land_{row['id']}",
-                                label_visibility="collapsed"
-                            ):
-                                selected_land_ids.append(row['id'])
-                        with col_info:
-                            st.write(logistics_info)
+                                # 显示复选框和物流信息
+                                col_check, col_info = st.columns(
+                                    [1, 20], vertical_alignment="bottom"
+                                )
+                                with col_check:
+                                    if st.checkbox(
+                                        "选择",
+                                        key=f"check_land_{row['id']}",
+                                        label_visibility="collapsed"
+                                    ):
+                                        selected_land_ids.append(row['id'])
+                                with col_info:
+                                    st.write(logistics_info)
 
-                        # 在每条规则后面显示对应的编辑和删除按钮
-                        col_edit, col_del, col_space = st.columns([3, 3, 14])
-                        with col_edit:
-                            if st.button("编辑", key=f"edit_land_{row['id']}"):
-                                # 到期拦截
-                                if not subscription_status.get("valid", True):
-                                    st.error("账号到期，请联系客服续费")
-                                    return
-                                st.session_state.edit_logistic_id = row["id"]
-                                st.rerun()
-                        with col_del:
-                            if st.button("删除", key=f"del_land_{row['id']}"):
-                                # 到期拦截
-                                if not subscription_status.get("valid", True):
-                                    st.error("账号到期，请联系客服续费")
-                                    return
-                                st.session_state[
-                                    "delete_confirm_logistic_id"
-                                ] = row["id"]
-                                st.rerun()
+                                # 在每条规则后面显示对应的编辑和删除按钮
+                                col_edit, col_del, col_space = st.columns(
+                                    [3, 3, 14])
+                                with col_edit:
+                                    if st.button("编辑",
+                                                 key=f"edit_land_{row['id']}"):
+                                        # 到期拦截
+                                        if not subscription_status.get(
+                                                "valid", True):
+                                            st.error("账号到期，请联系客服续费")
+                                            return
+                                        st.session_state.edit_logistic_id = (
+                                            row["id"])
+                                        st.rerun()
+                                with col_del:
+                                    if st.button("删除",
+                                                 key=f"del_land_{row['id']}"):
+                                        # 到期拦截
+                                        if not subscription_status.get(
+                                                "valid", True):
+                                            st.error("账号到期，请联系客服续费")
+                                            return
+                                        st.session_state[
+                                            "delete_confirm_logistic_id"
+                                        ] = row["id"]
+                                        st.rerun()
 
-                        # 添加分隔线
-                        st.divider()
+                                # 添加分隔线
+                                st.divider()
 
-                    # 批量删除按钮
-                    if selected_land_ids:
-                        st.info(f"已选择 {len(selected_land_ids)} 个陆运物流规则")
-                        if st.button("批量删除", key="batch_delete_land"):
-                            if not subscription_status.get("valid", True):
-                                st.error("账号到期，请联系客服续费")
-                                return
-                            st.session_state.batch_delete_land_ids = (
-                                selected_land_ids
-                            )
-                            st.rerun()
-            else:
-                st.info("暂无陆运数据")
+                            # 批量删除按钮
+                            if selected_land_ids:
+                                st.info(
+                                    f"已选择 {len(selected_land_ids)} 个陆运物流规则")
+                                if st.button("批量删除",
+                                             key="batch_delete_land"):
+                                    if not subscription_status.get(
+                                            "valid", True):
+                                        st.error("账号到期，请联系客服续费")
+                                        return
+                                    st.session_state.batch_delete_land_ids = (
+                                        selected_land_ids
+                                    )
+                                    st.rerun()
+                    else:
+                        st.info("暂无陆运数据")
         with middle:
             # 空列，用于分隔陆运和空运
             pass
