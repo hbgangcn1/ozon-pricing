@@ -143,6 +143,7 @@ cert_env_config.txt
 .env
 .env.local
 .env.production
+.env.postgresql
 *_secret.py
 *_private.py
 
