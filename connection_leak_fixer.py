@@ -88,8 +88,9 @@ class ConnectionLeakFixer:
                 import psutil  # type: ignore  # noqa: F811
                 process = psutil.Process()
                 memory_before = process.memory_info()
+                memory_before_rss = memory_before.rss
             else:
-                memory_before = {'rss': 0}
+                memory_before_rss = 0
 
             # 执行垃圾回收
             collected = gc.collect()
@@ -98,9 +99,8 @@ class ConnectionLeakFixer:
                 import psutil  # type: ignore  # noqa: F811
                 process = psutil.Process()
                 memory_after = process.memory_info()
-                memory_freed = int(
-                    memory_before['rss'] - memory_after['rss']
-                )
+                memory_after_rss = memory_after.rss
+                memory_freed = int(memory_before_rss - memory_after_rss)
             else:
                 memory_freed = 0
 

@@ -655,7 +655,7 @@ def edit_product_form():
                 min_value=0.0,
                 value=max(
                     0.0,
-                    float(vals.get("cylinder_length", 0.0)),
+                    float(vals.get("cylinder_length") or 0.0),
                 ),
                 step=0.1,
             )
@@ -811,7 +811,7 @@ def edit_product_form():
                 "历史退货率(%)",
                 min_value=0.0,
                 max_value=100.0,
-                value=max(0.0, float(vals.get("return_rate", 0))) * 100.0,
+                value=max(0.0, float(vals.get("return_rate") or 0)) * 100.0,
                 step=0.1,
                 format="%.1f",
             ) / 100.0
@@ -823,7 +823,7 @@ def edit_product_form():
             "增值税率(%)",
             min_value=0.0,
             max_value=30.0,
-            value=max(0.0, float(vals.get("vat_rate", 0))) * 100.0,
+            value=max(0.0, float(vals.get("vat_rate") or 0)) * 100.0,
             step=0.1,
             format="%.1f",
             help="增值税率，根据实际情况填写",

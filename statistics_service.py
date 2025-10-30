@@ -625,7 +625,7 @@ def get_admin_action_logs(page: int = 1, per_page: int = 20) -> Dict[str, Any]:
                     a.username as admin_username,
                     u.username as target_username
                 FROM admin_action_log l
-                LEFT JOIN admin_users a ON l.admin_id = a.id
+                LEFT JOIN users a ON l.admin_id = a.id AND a.role = 'admin'
                 LEFT JOIN users u ON l.target_user_id = u.id
                 ORDER BY l.created_at DESC
                 LIMIT ? OFFSET ?
