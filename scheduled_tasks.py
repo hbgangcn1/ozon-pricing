@@ -29,17 +29,95 @@ def job_reset_free_calculations():
         logger.exception(f"定时任务异常：重置免费用户计算次数 - {e}")
 
 
+def job_recycle_idle_connections():
+    """定时任务：回收空闲数据库连接"""
+    logger.debug("定时任务开始：回收空闲数据库连接")
+    try:
+        from db_utils import monitor_connections
+        status = monitor_connections()
+        logger.debug(f"连接监控完成：状态={status}")
+    except ImportError:
+        logger.error("定时任务失败：无法导入 monitor_connections")
+    except Exception as e:  # noinspection PyBroadException
+        # 定时任务需要捕获所有异常以确保调度器继续运行
+        logger.exception(f"定时任务异常：回收空闲连接 - {e}")
+
+
+def _start_connection_monitor():
+    """启动连接监控"""
+    try:
+        from connection_monitor_enhanced import get_connection_monitor
+        monitor = get_connection_monitor()
+        if not monitor.monitoring:
+            monitor.start_monitoring()
+            logger.info("连接监控已启动")
+    except ImportError:
+        logger.warning("连接监控模块不可用")
+
+
+def _start_exchange_rate_monitor():
+    """启动汇率监控"""
+    try:
+        from exchange_rate_monitor_enhanced import (
+            get_exchange_rate_monitor
+        )
+        monitor = get_exchange_rate_monitor()
+        if not monitor.monitoring:
+            monitor.start_monitoring()
+            logger.info("汇率监控已启动")
+    except ImportError:
+        logger.warning("汇率监控模块不可用")
+
+
+def _start_payment_callback_monitor():
+    """启动支付回调监控"""
+    try:
+        from payment_callback_enhanced import (
+            get_payment_callback_monitor
+        )
+        monitor = get_payment_callback_monitor()
+        if not monitor.monitoring:
+            monitor.start_monitoring()
+            logger.info("支付回调监控已启动")
+    except ImportError:
+        logger.warning("支付回调监控模块不可用")
+
+
+def job_start_enhanced_monitors():
+    """定时任务：启动增强监控系统"""
+    logger.info("定时任务开始：启动增强监控系统")
+    try:
+        # 启动连接监控
+        _start_connection_monitor()
+
+        # 启动汇率监控
+        _start_exchange_rate_monitor()
+
+        # 启动支付回调监控
+        _start_payment_callback_monitor()
+
+    except Exception as e:
+        logger.exception(f"启动增强监控系统失败: {e}")
+
+
 def run_scheduler():
     """运行调度器"""
     logger.info("定时任务调度器启动")
 
     # 配置定时任务
-    # 每天凌晨0点执行
+    # 每天凌晨0点执行：重置免费用户计算次数
     schedule.every().day.at("00:00").do(job_reset_free_calculations)
+
+    # 每5分钟执行一次：回收空闲数据库连接
+    schedule.every(5).minutes.do(job_recycle_idle_connections)
 
     # 启动时立即执行一次
     logger.info("执行初始计算次数重置...")
     job_reset_free_calculations()
+
+    # 启动增强监控系统（启动时执行一次）
+    logger.info("启动增强监控系统...")
+    job_start_enhanced_monitors()
 
     # 持续运行
     while True:

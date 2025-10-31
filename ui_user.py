@@ -2,6 +2,7 @@ import warnings
 import streamlit as st
 import pandas as pd
 import sqlite3
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -95,15 +96,30 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
             columns = [col[1] for col in columns_info
                        if col[1] not in ['id', 'user_id']]
 
+            # 验证列名安全性（防止SQL注入）
+            try:
+                from security_utils import sanitize_column_name
+            except ImportError:
+                # 如果没有security_utils，使用简单验证
+                import re
+
+                def sanitize_column_name(column_name: str) -> str:
+                    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', column_name):
+                        raise ValueError(f"非法的列名: {column_name}")
+                    return column_name
+
+            # 验证并清理所有列名
+            validated_columns = [sanitize_column_name(col) for col in columns]
+
             # 复制每条物流规则到目标用户
             for logistics_rule in admin_logistics:
-                # 构建INSERT语句
-                placeholders = ','.join(['?' for _ in columns])
-                columns_str = ','.join(columns)
+                # 构建INSERT语句 - 使用验证后的列名
+                placeholders = ','.join(['?' for _ in validated_columns])
+                columns_str = ','.join(validated_columns)
 
                 # 准备数据（排除id和user_id列）
                 values = []
-                for col in columns:
+                for col in validated_columns:
                     # 根据列名获取对应的值
                     try:
                         col_index = [
@@ -116,7 +132,7 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
                     except (ValueError, IndexError):
                         values.append(None)  # 如果找不到列或索引超出范围，使用None
 
-                # 插入新记录
+                # 插入新记录 - 使用参数化查询，列名已验证安全
                 c.execute(
                     f"INSERT INTO logistics (user_id, {columns_str}) "
                     f"VALUES (?, {placeholders})",
@@ -278,7 +294,29 @@ def user_management_page():
                                     first_login_date, test_days_remaining,
                                 ),
                             )
+                            new_user_id = c.lastrowid
                             conn.commit()
+                            # 记录审计日志（admin创建用户）
+                            try:
+                                from app import is_admin, current_user_id
+                                if is_admin():
+                                    from db_utils import log_admin_action
+                                    admin_id = current_user_id()
+                                    log_admin_action(
+                                        admin_id=admin_id,
+                                        action_type='创建用户',
+                                        action_detail=(
+                                            "创建用户: "
+                                            f"{username} "
+                                            f"(类型: {user_type}, "
+                                            f"ID: {new_user_id})"
+                                        ),
+                                        target_user_id=new_user_id,
+                                        target_type='user'
+                                    )
+                            except (ImportError, AttributeError, TypeError,
+                                    ValueError, sqlite3.Error):
+                                pass  # 审计日志记录失败不影响主流程
                             st.success("用户添加成功！")
                             st.rerun()
                         except sqlite3.IntegrityError:
@@ -783,6 +821,11 @@ def login_or_register_page():
         # 不开放注册时只显示登录表单
         _show_login_form()
 
+    # 忘记密码页面
+    if st.session_state.get("show_forgot_password", False):
+        _show_forgot_password_page()
+        return
+
     # 用户协议弹窗
     if st.session_state.get("show_terms_modal", False):
         _show_terms_modal()
@@ -853,7 +896,18 @@ def _show_login_form():
     with st.form("login_form"):
         identifier = st.text_input("用户名或邮箱")
         pwd = st.text_input("密码", type="password")
-        submitted = st.form_submit_button("登录")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            submitted = st.form_submit_button("登录", use_container_width=True)
+        with col2:
+            forgot_pwd = st.form_submit_button(
+                "忘记密码？", use_container_width=True
+            )
+
+        if forgot_pwd:
+            st.session_state.show_forgot_password = True
+            st.rerun()
+
         if submitted:
             try:
                 from .session_security import secure_login
@@ -874,6 +928,46 @@ def _show_register_form():
         confirm_password = st.text_input(
             "确认密码", type="password", help="请再次输入密码"
         )
+
+        # 安全问题设置
+        st.markdown("---")
+        st.markdown("#### 🔒 安全问题设置（用于密码找回）")
+
+        try:
+            from .security_questions import get_security_questions
+        except ImportError:
+            from security_questions import get_security_questions
+
+        security_questions = get_security_questions()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            security_q1 = st.selectbox(
+                "安全问题1",
+                options=[""] + security_questions,
+                help="请选择一个安全问题"
+            )
+            security_a1 = st.text_input(
+                "答案1",
+                type="password",
+                help="请输入答案（不区分大小写）"
+            )
+
+        with col2:
+            # 过滤掉已选择的问题1
+            available_q2 = [
+                q for q in security_questions if q != security_q1
+            ]
+            security_q2 = st.selectbox(
+                "安全问题2",
+                options=[""] + available_q2,
+                help="请选择另一个安全问题（不能与问题1相同）"
+            )
+            security_a2 = st.text_input(
+                "答案2",
+                type="password",
+                help="请输入答案（不区分大小写）"
+            )
 
         # 用户协议复选框
         st.markdown("---")
@@ -918,14 +1012,44 @@ def _show_register_form():
                 from .password_utils import validate_password_strength
             except ImportError:
                 from password_utils import validate_password_strength
+            # 验证安全问题
+            try:
+                from .security_questions import (
+                    validate_security_questions,
+                    validate_security_answers
+                )
+            except ImportError:
+                from security_questions import (
+                    validate_security_questions,
+                    validate_security_answers
+                )
+
+            is_valid_q, error_msg_q = validate_security_questions(
+                security_q1, security_q2
+            )
+            if not is_valid_q:
+                st.error(f"❌ {error_msg_q}")
+                return
+
+            is_valid_a, error_msg_a = validate_security_answers(
+                security_a1, security_a2
+            )
+            if not is_valid_a:
+                st.error(f"❌ {error_msg_a}")
+                return
+
             if not validate_password_strength(password):
                 st.error("❌ 密码强度不够，请使用更复杂的密码")
                 return
+
             # 注册用户
             try:
                 from .db_utils import get_db_connection, hash_password
+                import bcrypt
             except ImportError:
                 from db_utils import get_db_connection, hash_password
+                import bcrypt
+
             with get_db_connection() as (conn, c):
                 try:
                     # 检查用户名是否已存在
@@ -936,13 +1060,29 @@ def _show_register_form():
                     if existing_user:
                         st.error("❌ 用户名已存在")
                         return
-                    # 创建新用户
+
+                    # 加密密码和安全答案
                     hashed_pwd = hash_password(password)
+                    # 答案不区分大小写，转换为小写后加密
+                    hashed_a1 = bcrypt.hashpw(
+                        security_a1.strip().lower().encode('utf-8'),
+                        bcrypt.gensalt()
+                    ).decode('utf-8')
+                    hashed_a2 = bcrypt.hashpw(
+                        security_a2.strip().lower().encode('utf-8'),
+                        bcrypt.gensalt()
+                    ).decode('utf-8')
+
+                    # 创建新用户（包含安全问题）
                     c.execute(
                         "INSERT INTO users (username, password, "
-                        "role, user_type, remaining_calculations) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (username, hashed_pwd, 'user', 'free', 10)
+                        "role, user_type, remaining_calculations, "
+                        "security_q1, security_a1, security_q2, security_a2) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            username, hashed_pwd, 'user', 'free', 10,
+                            security_q1, hashed_a1, security_q2, hashed_a2
+                        )
                     )
                     conn.commit()
                     # 注册成功后自动登录
@@ -961,6 +1101,163 @@ def _show_register_form():
                 except Exception as e:
                     st.error(f"❌ 注册失败: {str(e)}")
     # 数据库连接在get_db_connection上下文管理器中自动关闭
+
+
+def _show_forgot_password_page():
+    """显示忘记密码页面"""
+    st.markdown("### 🔐 密码找回")
+
+    # 返回登录按钮
+    if st.button("← 返回登录"):
+        st.session_state.show_forgot_password = False
+        st.rerun()
+
+    st.markdown("---")
+
+    try:
+        from .password_recovery import (
+            get_user_security_questions,
+            verify_security_answers,
+            reset_password
+        )
+    except ImportError:
+        from password_recovery import (
+            get_user_security_questions,
+            verify_security_answers,
+            reset_password
+        )
+
+    # 阶段1：输入用户名
+    if 'forgot_pwd_step' not in st.session_state:
+        st.session_state.forgot_pwd_step = 'username'
+
+    if st.session_state.forgot_pwd_step == 'username':
+        with st.form("forgot_password_username_form"):
+            username = st.text_input("请输入用户名")
+            submitted = st.form_submit_button("下一步")
+
+            if submitted:
+                if not username:
+                    st.error("❌ 请输入用户名")
+                else:
+                    # 获取用户的安全问题
+                    user_info = get_user_security_questions(username)
+
+                    if not user_info:
+                        st.error("❌ 用户不存在")
+                    elif not user_info.get('has_questions', False):
+                        st.error(
+                            "❌ 该用户未设置安全问题，"
+                            "请联系管理员重置密码"
+                        )
+                    elif user_info.get('is_locked', False):
+                        locked_until = user_info.get('locked_until', '未知时间')
+                        st.error(
+                            f"❌ 账号已被锁定，请于 {locked_until} 后重试。"
+                            "或联系管理员解锁。"
+                        )
+                    else:
+                        st.session_state.forgot_pwd_username = username
+                        st.session_state.forgot_pwd_step = 'questions'
+                        st.session_state.forgot_pwd_q1 = (
+                            user_info['security_q1']
+                        )
+                        st.session_state.forgot_pwd_q2 = (
+                            user_info['security_q2']
+                        )
+                        st.rerun()
+
+    # 阶段2：回答安全问题
+    elif st.session_state.forgot_pwd_step == 'questions':
+        st.markdown(f"**用户名**: {st.session_state.forgot_pwd_username}")
+        st.markdown("---")
+
+        with st.form("forgot_password_questions_form"):
+            st.markdown("#### 请回答以下安全问题")
+            st.text(f"**问题1**: {st.session_state.forgot_pwd_q1}")
+            answer1 = st.text_input("答案1", type="password")
+
+            st.text(f"**问题2**: {st.session_state.forgot_pwd_q2}")
+            answer2 = st.text_input("答案2", type="password")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                back_btn = st.form_submit_button("← 返回")
+            with col2:
+                verify_btn = st.form_submit_button("验证答案")
+
+            if back_btn:
+                st.session_state.forgot_pwd_step = 'username'
+                del st.session_state.forgot_pwd_username
+                st.rerun()
+
+            if verify_btn:
+                if not answer1 or not answer2:
+                    st.error("❌ 请填写两个答案")
+                else:
+                    success, message = verify_security_answers(
+                        st.session_state.forgot_pwd_username,
+                        answer1,
+                        answer2
+                    )
+
+                    if success:
+                        st.session_state.forgot_pwd_step = 'reset'
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+
+    # 阶段3：重置密码
+    elif st.session_state.forgot_pwd_step == 'reset':
+        st.markdown(f"**用户名**: {st.session_state.forgot_pwd_username}")
+        st.markdown("---")
+        st.success("✅ 安全验证成功！请设置新密码")
+
+        with st.form("forgot_password_reset_form"):
+            new_password = st.text_input(
+                "新密码",
+                type="password",
+                help="密码必须至少13位，包含大小写字母、数字和特殊字符"
+            )
+            confirm_password = st.text_input(
+                "确认新密码",
+                type="password"
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                back_btn = st.form_submit_button("← 返回")
+            with col2:
+                reset_btn = st.form_submit_button("重置密码")
+
+            if back_btn:
+                st.session_state.forgot_pwd_step = 'questions'
+                st.rerun()
+
+            if reset_btn:
+                if not new_password or not confirm_password:
+                    st.error("❌ 请填写新密码和确认密码")
+                elif new_password != confirm_password:
+                    st.error("❌ 两次输入的密码不一致")
+                else:
+                    success, message = reset_password(
+                        st.session_state.forgot_pwd_username,
+                        new_password
+                    )
+
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.info("正在跳转到登录页面...")
+                        # 清除状态
+                        del st.session_state.show_forgot_password
+                        del st.session_state.forgot_pwd_step
+                        del st.session_state.forgot_pwd_username
+                        del st.session_state.forgot_pwd_q1
+                        del st.session_state.forgot_pwd_q2
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
 
 
 def _show_terms_modal():

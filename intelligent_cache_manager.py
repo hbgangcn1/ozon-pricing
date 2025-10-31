@@ -13,11 +13,26 @@ from functools import wraps
 
 try:
     from .redis_cache import CacheManager as RedisCache
+    # 导入Redis异常类型用于异常处理
+    try:
+        from redis.exceptions import (
+            RedisError,
+            ConnectionError as RedisConnectionError,
+        )
+        REDIS_EXCEPTIONS = (RedisError, RedisConnectionError)
+    except ImportError:
+        # Redis未安装，使用通用异常类型
+        RedisError = Exception  # type: ignore
+        RedisConnectionError = Exception  # type: ignore
+        REDIS_EXCEPTIONS = (Exception,)
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
     RedisCache = None  # type: ignore
-    print("警告: Redis缓存不可用，将使用内存缓存")
+    RedisError = Exception  # type: ignore
+    RedisConnectionError = Exception  # type: ignore
+    REDIS_EXCEPTIONS = (Exception,)
+    # Redis未安装，自动使用内存缓存（静默处理）
 
 
 class CacheConfig:
@@ -117,8 +132,16 @@ class IntelligentCacheManager:
         if REDIS_AVAILABLE:
             try:
                 self.l2_cache = RedisCache()  # type: ignore
-            except Exception as e:
-                print(f"警告: Redis缓存初始化失败: {e}")
+                # 测试Redis连接是否可用
+                if self.l2_cache:
+                    # 尝试一个简单的get操作来验证连接
+                    try:
+                        self.l2_cache.get('__test_connection__')
+                    except REDIS_EXCEPTIONS:
+                        # Redis连接不可用，降级到L1缓存
+                        self.l2_cache = None
+            except REDIS_EXCEPTIONS:
+                # Redis初始化失败，自动降级到L1内存缓存
                 self.l2_cache = None
 
     def get(self, key: str, category: str = 'default') -> Optional[Any]:
@@ -145,8 +168,8 @@ class IntelligentCacheManager:
                         self.l1_cache.set(l1_key, value, self.default_ttl)
                         return value
                     self.stats['l2_misses'] += 1
-                except Exception as e:
-                    print(f"L2缓存获取失败: {e}")
+                except REDIS_EXCEPTIONS:
+                    # L2缓存失败，静默降级（已记录在统计中）
                     self.stats['l2_misses'] += 1
 
             return None
@@ -168,8 +191,9 @@ class IntelligentCacheManager:
             if self.l2_cache:
                 try:
                     self.l2_cache.set(key, value, ttl)
-                except Exception as e:
-                    print(f"L2缓存设置失败: {e}")
+                except REDIS_EXCEPTIONS:
+                    # L2缓存设置失败，静默降级（L1缓存已设置成功）
+                    pass
 
             return success
 
@@ -186,8 +210,9 @@ class IntelligentCacheManager:
             if self.l2_cache:
                 try:
                     self.l2_cache.delete(key)
-                except Exception as e:
-                    print(f"L2缓存删除失败: {e}")
+                except REDIS_EXCEPTIONS:
+                    # L2缓存删除失败，静默继续（L1缓存已删除）
+                    pass
 
             return success
 
@@ -207,16 +232,18 @@ class IntelligentCacheManager:
                 if self.l2_cache:
                     try:
                         self.l2_cache.clear_all()
-                    except Exception as e:
-                        print(f"L2缓存清空失败: {e}")
+                    except REDIS_EXCEPTIONS:
+                        # L2缓存清空失败，静默继续（L1缓存已清空）
+                        pass
             else:
                 # 清空所有缓存
                 self.l1_cache.clear()
                 if self.l2_cache:
                     try:
                         self.l2_cache.clear_all()
-                    except Exception as e:
-                        print(f"L2缓存清空失败: {e}")
+                    except REDIS_EXCEPTIONS:
+                        # L2缓存清空失败，静默继续（L1缓存已清空）
+                        pass
 
     def get_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""

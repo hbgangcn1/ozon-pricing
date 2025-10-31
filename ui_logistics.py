@@ -519,7 +519,31 @@ def logistics_page():
                                         ),
                                     ),
                                 )
+                                new_logistic_id = c.lastrowid
                                 conn.commit()
+                                # 记录审计日志（如果是admin操作）
+                                try:
+                                    from app import is_admin
+                                    if is_admin():
+                                        from db_utils import log_admin_action
+                                        log_admin_action(
+                                            admin_id=uid,
+                                            action_type='创建物流规则',
+                                            action_detail=(
+                                                f"创建物流规则: {name} "
+                                                f"(类型: {logistic_type}, "
+                                                f"ID: {new_logistic_id})"
+                                            ),
+                                            target_user_id=uid,
+                                            target_type='logistics'
+                                        )
+                                except (
+                                    ImportError,
+                                    AttributeError,
+                                    TypeError,
+                                    ValueError
+                                ):
+                                    pass  # 审计日志记录失败不影响主流程
 
                                 # 重新计算优先级分组
                                 calculate_and_update_priority_groups(uid)
@@ -825,11 +849,41 @@ def logistics_page():
                         st.error("账号到期，请联系客服续费")
                         st.rerun()
                     logistic_id = st.session_state.delete_confirm_logistic_id
+                    # 先获取物流规则名称用于审计日志
+                    logistic_info = c.execute(
+                        "SELECT name, type FROM logistics "
+                        "WHERE id=? AND user_id=?",
+                        (logistic_id, uid),
+                    ).fetchone()
+                    logistic_name = logistic_info[0] if logistic_info else '未知'
+                    logistic_type = logistic_info[1] if logistic_info else '未知'
                     c.execute(
                         "DELETE FROM logistics WHERE id=? AND user_id=?",
                         (logistic_id, uid),
                     )
                     conn.commit()
+                    # 记录审计日志（如果是admin操作）
+                    try:
+                        from app import is_admin
+                        if is_admin():
+                            from db_utils import log_admin_action
+                            log_admin_action(
+                                admin_id=uid,
+                                action_type='删除物流规则',
+                                action_detail=(
+                                    f"删除物流规则: {logistic_name} "
+                                    f"(类型: {logistic_type}, ID: {logistic_id})"
+                                ),
+                                target_user_id=uid,
+                                target_type='logistics'
+                            )
+                    except (
+                        ImportError,
+                        AttributeError,
+                        TypeError,
+                        ValueError
+                    ):
+                        pass  # 审计日志记录失败不影响主流程
 
                     # 重新计算优先级分组
                     calculate_and_update_priority_groups(uid)
@@ -862,6 +916,16 @@ def logistics_page():
                         st.error("账号到期，请联系客服续费")
                         st.rerun()
                     logistic_ids = st.session_state.batch_delete_land_ids
+                    # 先获取物流规则名称用于审计日志
+                    logistic_names = []
+                    for lid in logistic_ids:
+                        info = c.execute(
+                            "SELECT name FROM logistics "
+                            "WHERE id=? AND user_id=?",
+                            (lid, uid),
+                        ).fetchone()
+                        if info:
+                            logistic_names.append(info[0])
                     placeholders = ",".join(["?" for _ in logistic_ids])
                     c.execute(
                         f"DELETE FROM logistics WHERE id IN ({placeholders}) "
@@ -869,6 +933,32 @@ def logistics_page():
                         (*logistic_ids, uid),
                     )
                     conn.commit()
+                    # 记录审计日志（如果是admin操作）
+                    try:
+                        from app import is_admin
+                        if is_admin():
+                            from db_utils import log_admin_action
+                            log_admin_action(
+                                admin_id=uid,
+                                action_type='批量删除物流规则',
+                                action_detail=(
+                                    f"批量删除 {len(logistic_ids)} 个陆运物流规则: "
+                                    f"{', '.join(logistic_names[:5])}"
+                                    + (
+                                        "..." if len(logistic_names) > 5
+                                        else ""
+                                    )
+                                ),
+                                target_user_id=uid,
+                                target_type='logistics'
+                            )
+                    except (
+                        ImportError,
+                        AttributeError,
+                        TypeError,
+                        ValueError
+                    ):
+                        pass  # 审计日志记录失败不影响主流程
 
                     # 重新计算优先级分组
                     calculate_and_update_priority_groups(uid)
@@ -902,6 +992,16 @@ def logistics_page():
                         st.error("账号到期，请联系客服续费")
                         st.rerun()
                     logistic_ids = st.session_state.batch_delete_air_ids
+                    # 先获取物流规则名称用于审计日志
+                    logistic_names = []
+                    for lid in logistic_ids:
+                        info = c.execute(
+                            "SELECT name FROM logistics "
+                            "WHERE id=? AND user_id=?",
+                            (lid, uid),
+                        ).fetchone()
+                        if info:
+                            logistic_names.append(info[0])
                     placeholders = ",".join(["?" for _ in logistic_ids])
                     c.execute(
                         f"DELETE FROM logistics WHERE id IN ({placeholders}) "
@@ -909,6 +1009,32 @@ def logistics_page():
                         (*logistic_ids, uid),
                     )
                     conn.commit()
+                    # 记录审计日志（如果是admin操作）
+                    try:
+                        from app import is_admin
+                        if is_admin():
+                            from db_utils import log_admin_action
+                            log_admin_action(
+                                admin_id=uid,
+                                action_type='批量删除物流规则',
+                                action_detail=(
+                                    f"批量删除 {len(logistic_ids)} 个空运物流规则: "
+                                    f"{', '.join(logistic_names[:5])}"
+                                    + (
+                                        "..." if len(logistic_names) > 5
+                                        else ""
+                                    )
+                                ),
+                                target_user_id=uid,
+                                target_type='logistics'
+                            )
+                    except (
+                        ImportError,
+                        AttributeError,
+                        TypeError,
+                        ValueError
+                    ):
+                        pass  # 审计日志记录失败不影响主流程
 
                     # 重新计算优先级分组
                     calculate_and_update_priority_groups(uid)
@@ -1285,6 +1411,24 @@ def edit_logistic_form():
                     "price_min_currency=? "
                     "WHERE id=? AND user_id=?"
                 )
+                # 先获取物流规则名称用于审计日志（更新前）
+                logistic_info_before = c.execute(
+                    "SELECT name, type FROM logistics "
+                    "WHERE id=? AND user_id=?",
+                    (lid, uid),
+                ).fetchone()
+                logistic_name_before = (
+                    logistic_info_before[0] if logistic_info_before else '未知'
+                )
+                logistic_type_db_before = (
+                    logistic_info_before[1]
+                    if logistic_info_before
+                    else 'unknown'
+                )
+                logistic_type_display_before = (
+                    "陆运" if logistic_type_db_before == "land" else "空运"
+                )
+
                 c.execute(
                     update_sql,
                     (
@@ -1335,6 +1479,24 @@ def edit_logistic_form():
                     ),
                 )
                 conn.commit()
+                # 记录审计日志（如果是admin操作）
+                try:
+                    from app import is_admin
+                    if is_admin():
+                        from db_utils import log_admin_action
+                        log_admin_action(
+                            admin_id=uid,
+                            action_type='更新物流规则',
+                            action_detail=(
+                                f"更新物流规则: {logistic_name_before} "
+                                f"(类型: {logistic_type_display_before}, "
+                                f"ID: {lid})"
+                            ),
+                            target_user_id=uid,
+                            target_type='logistics'
+                        )
+                except (ImportError, AttributeError, TypeError, ValueError):
+                    pass  # 审计日志记录失败不影响主流程
 
                 # 重新计算优先级分组
                 calculate_and_update_priority_groups(uid)

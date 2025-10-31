@@ -9,6 +9,8 @@ import logging
 import threading
 from queue import Queue
 from payment_handler import payment_handler, PaymentHandler
+from hmac_utils import verify_signature, get_callback_secret
+from rate_limiter import get_limiter
 from utils import mask_sensitive
 
 # 配置日志
@@ -77,6 +79,14 @@ for i in range(2):
 # ====================================================
 
 
+def _default_get_payment_callback_monitor():
+    """
+    默认的支付回调监控获取函数（占位函数）
+    用于满足静态分析要求，当无法导入增强监控时使用
+    """
+    return None
+
+
 @app.route('/wechat/notify', methods=['POST'])
 def wechat_notify():
     """
@@ -96,7 +106,8 @@ def wechat_notify():
         }
 
         # 获取请求体
-        body = request.get_data(as_text=True)
+        raw_body = request.get_data()
+        body = raw_body.decode('utf-8', errors='ignore')
         logger.info("收到微信支付通知")
 
         # 构建通知数据
@@ -105,7 +116,40 @@ def wechat_notify():
             'body': body
         }
 
+        # 限流：基于IP或全局限流（示例：每秒最多5次）
+        try:
+            limiter = get_limiter(
+                name="wechat_notify", rate=5, per=1, burst=10
+            )
+            client_ip = request.headers.get(
+                'X-Forwarded-For', request.remote_addr or 'unknown'
+            )
+            if not limiter.is_allowed(client_ip):
+                return jsonify({
+                    'code': 'FAIL',
+                    'message': 'Too Many Requests'
+                }), 429
+        except (ValueError, TypeError, AttributeError):
+            pass
+
         # ========== 阶段1：快速验证签名（目标<500ms）==========
+        # 先做我们自己的HMAC校验，再走原有的微信v3验签流程
+        secret = get_callback_secret()
+        if secret:
+            ok = verify_signature(
+                secret,
+                headers.get('Wechatpay-Timestamp', ''),
+                headers.get('Wechatpay-Nonce', ''),
+                raw_body,
+                headers.get('Wechatpay-Signature', ''),
+                window_seconds=300,
+            )
+            if not ok:
+                return jsonify({
+                    'code': 'FAIL',
+                    'message': 'Signature Invalid'
+                }), 400
+
         result = payment_handler.process_wechat_notify(notify_data)
 
         if not result['success']:
@@ -132,14 +176,44 @@ def wechat_notify():
             logger.error(f"更新订单状态失败: {e}")
             # 即使更新失败，也继续放入队列，补偿服务会处理
 
-        # 放入异步处理队列
+        # 放入异步处理队列（使用增强监控）
         try:
-            payment_processing_queue.put_nowait(order_id)
-            logger.info(
-                f"订单已放入处理队列: "
-                f"{mask_sensitive(order_id, 'order_id')}, "
-                f"队列长度: {payment_processing_queue.qsize()}"
-            )
+            # 尝试使用增强的支付回调监控
+            try:
+                from payment_callback_enhanced import (
+                    get_payment_callback_monitor  # type: ignore
+                )
+                monitor = get_payment_callback_monitor()
+                if monitor is not None:
+                    result = monitor.enqueue_order(order_id)
+                    if result['success']:
+                        logger.info(
+                            f"订单已放入处理队列（增强监控）: "
+                            f"{mask_sensitive(order_id, 'order_id')}, "
+                            f"队列长度: {monitor.processing_queue.qsize()}"
+                        )
+                    else:
+                        # 降级到原始队列
+                        payment_processing_queue.put_nowait(order_id)
+                        logger.warning(
+                            f"增强监控队列满，使用原始队列: {order_id}"
+                        )
+                else:
+                    # 降级到原始队列
+                    payment_processing_queue.put_nowait(order_id)
+                    logger.info(
+                        f"订单已放入处理队列: "
+                        f"{mask_sensitive(order_id, 'order_id')}, "
+                        f"队列长度: {payment_processing_queue.qsize()}"
+                    )
+            except ImportError:
+                # 降级到原始队列
+                payment_processing_queue.put_nowait(order_id)
+                logger.info(
+                    f"订单已放入处理队列: "
+                    f"{mask_sensitive(order_id, 'order_id')}, "
+                    f"队列长度: {payment_processing_queue.qsize()}"
+                )
         except Exception as e:
             logger.error(f"放入队列失败: {e}")
             # 即使放入队列失败，补偿服务也会处理
@@ -213,8 +287,19 @@ def health_check():
             'message': f'数据库连接失败: {str(e)}'
         }
 
-    # 2. 检查队列状态
-    queue_size = payment_processing_queue.qsize()
+    # 2. 检查队列状态（优先使用增强监控）
+    try:
+        from payment_callback_enhanced import (
+            get_payment_callback_monitor  # type: ignore
+        )
+        monitor = get_payment_callback_monitor()
+        if monitor is not None:
+            queue_size = monitor.processing_queue.qsize()
+        else:
+            queue_size = payment_processing_queue.qsize()
+    except ImportError:
+        queue_size = payment_processing_queue.qsize()
+
     if queue_size < 100:
         health_status['checks']['queue'] = {
             'status': 'healthy',
@@ -253,12 +338,32 @@ def health_check():
             'message': '没有活跃的工作线程'
         }
 
-    # 4. 处理统计
-    health_status['stats'] = {
-        'processed_total': queue_stats['processed'],
-        'failed_total': queue_stats['failed'],
-        'pending': queue_stats['pending']
-    }
+    # 4. 处理统计（优先使用增强监控）
+    try:
+        from payment_callback_enhanced import (
+            get_payment_callback_monitor  # type: ignore
+        )
+        monitor = get_payment_callback_monitor()
+        if monitor is not None:
+            monitor_stats = monitor.get_stats()
+            health_status['stats'] = {
+                'processed_total': monitor_stats.get('processed', 0),
+                'failed_total': monitor_stats.get('failed', 0),
+                'pending': monitor_stats.get('queue_size', 0),
+                'retried': monitor_stats.get('retried', 0)
+            }
+        else:
+            health_status['stats'] = {
+                'processed_total': queue_stats['processed'],
+                'failed_total': queue_stats['failed'],
+                'pending': queue_stats['pending']
+            }
+    except ImportError:
+        health_status['stats'] = {
+            'processed_total': queue_stats['processed'],
+            'failed_total': queue_stats['failed'],
+            'pending': queue_stats['pending']
+        }
 
     # 根据健康状态返回不同的HTTP状态码
     http_status = 200

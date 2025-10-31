@@ -13,7 +13,6 @@ try:
         unfreeze_user,
         delete_user_admin,
         get_audit_logs,
-        reset_user_password,
         get_dashboard_stats,
     )
     from statistics_service import (
@@ -40,7 +39,6 @@ except ImportError:
         unfreeze_user,
         delete_user_admin,
         get_audit_logs,
-        reset_user_password,
         get_dashboard_stats,
     )
     from .statistics_service import (
@@ -575,14 +573,7 @@ def user_detail_page():
 
     with col3:
         if st.button("重置密码", key="reset_pwd"):
-            new_password = reset_user_password(
-                user_detail['id'],
-                st.session_state.admin_user['id'],
-            )
-            if new_password:
-                st.success(f"密码已重置为: {new_password}")
-            else:
-                st.error("密码重置失败")
+            st.session_state.show_admin_reset_password = True
 
     with col4:
         if st.button("删除用户", key="delete_user", type="secondary"):
@@ -597,6 +588,123 @@ def user_detail_page():
                     st.rerun()
                 else:
                     st.error("删除失败")
+
+    # 密码找回管理区域
+    st.divider()
+    st.subheader("🔐 密码找回管理")
+
+    try:
+        from .password_recovery import (
+            get_user_security_questions,
+            unlock_user,
+            admin_reset_password,
+            get_password_recovery_logs
+        )
+    except ImportError:
+        from password_recovery import (
+            get_user_security_questions,
+            unlock_user,
+            admin_reset_password,
+            get_password_recovery_logs
+        )
+
+    # 显示安全问题状态
+    security_info = get_user_security_questions(user_detail['username'])
+    if security_info:
+        if security_info.get('has_questions', False):
+            st.success("✅ 用户已设置安全问题")
+            if security_info.get('is_locked', False):
+                locked_until = security_info.get('locked_until', '未知时间')
+                st.warning(f"⚠️ 账号已被锁定，锁定至: {locked_until}")
+                if st.button("解锁账号", key="unlock_account"):
+                    success, msg = unlock_user(
+                        user_detail['username'],
+                        st.session_state.admin_user['username']
+                    )
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                attempt_count = security_info.get('reset_attempt_count', 0)
+                st.info(f"尝试次数: {attempt_count}/3")
+        else:
+            st.warning("⚠️ 用户未设置安全问题")
+
+    # 管理员重置密码表单
+    if st.session_state.get('show_admin_reset_password', False):
+        st.markdown("---")
+        st.markdown("#### 🔑 管理员重置密码")
+
+        with st.form("admin_reset_password_form"):
+            new_password = st.text_input(
+                "新密码",
+                type="password",
+                help="密码必须至少13位，包含大小写字母、数字和特殊字符"
+            )
+            confirm_password = st.text_input(
+                "确认新密码",
+                type="password"
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                cancel_btn = st.form_submit_button("取消")
+            with col2:
+                confirm_btn = st.form_submit_button("确认重置")
+
+            if cancel_btn:
+                st.session_state.show_admin_reset_password = False
+                st.rerun()
+
+            if confirm_btn:
+                if not new_password or not confirm_password:
+                    st.error("❌ 请填写新密码和确认密码")
+                elif new_password != confirm_password:
+                    st.error("❌ 两次输入的密码不一致")
+                else:
+                    success, msg = admin_reset_password(
+                        user_detail['username'],
+                        new_password,
+                        st.session_state.admin_user['username']
+                    )
+                    if success:
+                        st.success(msg)
+                        st.session_state.show_admin_reset_password = False
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+    # 密码找回日志
+    st.markdown("---")
+    st.markdown("#### 📋 密码找回日志（最近3次）")
+    logs = get_password_recovery_logs(
+        username=user_detail['username'],
+        limit=3
+    )
+    if logs:
+        for log in logs:
+            status_icon = "✅" if log['success'] else "❌"
+            event_type_map = {
+                'request': '密码找回请求',
+                'success': '验证成功',
+                'failure': '验证失败',
+                'password_reset': '密码重置',
+                'admin_reset': '管理员重置',
+                'admin_unlock': '管理员解锁'
+            }
+            event_type_val = log['event_type']
+            event_name = event_type_map.get(event_type_val, event_type_val)
+            st.text(
+                f"{status_icon} {log['created_at']} - {event_name} "
+                f"(尝试次数: {log['attempt_count']}, "
+                f"IP: {log['ip_address']})"
+            )
+            if log['admin_name']:
+                st.caption(f"操作管理员: {log['admin_name']}")
+    else:
+        st.info("暂无密码找回记录")
 
     # 套餐修改模态框
     if st.session_state.get('show_plan_modal', False):

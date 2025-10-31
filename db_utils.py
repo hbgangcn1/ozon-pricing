@@ -33,6 +33,10 @@ _POOL_SIZE = 10
 _CONNECTION_POOL = queue.Queue(maxsize=_POOL_SIZE)
 _POOL_LOCK = threading.Lock()
 
+# 连接跟踪：记录连接放入池中的时间
+_CONNECTION_TIMESTAMPS = {}  # {conn_id: timestamp}
+_CONNECTION_IDLE_TIMEOUT = 300  # 5分钟（秒）
+
 # 连接监控配置
 _CONNECTION_WARNINGS = set()  # 记录已发送的警告
 _WARNING_THRESHOLD = 10  # 连接数警告阈值
@@ -96,13 +100,24 @@ def get_connection_stats():
     """获取连接统计信息"""
     with _connection_lock:
         pool_size = _CONNECTION_POOL.qsize()
+
+        # 统计空闲连接数量
+        current_time = time.time()
+        idle_count = 0
+        with _POOL_LOCK:
+            for timestamp in _CONNECTION_TIMESTAMPS.values():
+                if current_time - timestamp > _CONNECTION_IDLE_TIMEOUT:
+                    idle_count += 1
+
         return {
             'active_connections': _connection_counter,
             'pool_size': pool_size,
+            'idle_connections': idle_count,
             'max_connections': _MAX_CONNECTIONS,
             'warning_threshold': _WARNING_THRESHOLD,
             'critical_threshold': _CRITICAL_THRESHOLD,
-            'warnings_active': len(_CONNECTION_WARNINGS) > 0
+            'warnings_active': len(_CONNECTION_WARNINGS) > 0,
+            'idle_timeout': _CONNECTION_IDLE_TIMEOUT
         }
 
 
@@ -180,8 +195,70 @@ except (ValueError, OSError):
     pass
 
 
+def _recycle_idle_connections():
+    """
+    回收空闲连接（超过5分钟未使用的连接）
+    返回回收的连接数量
+    """
+    current_time = time.time()
+    recycled_count = 0
+
+    with _POOL_LOCK:
+        # 收集需要回收的连接ID
+        connections_to_recycle = []
+        for conn_id, timestamp in list(_CONNECTION_TIMESTAMPS.items()):
+            if current_time - timestamp > _CONNECTION_IDLE_TIMEOUT:
+                connections_to_recycle.append(conn_id)
+
+        # 从池中移除并关闭过期连接
+        temp_connections = []
+        while not _CONNECTION_POOL.empty():
+            try:
+                conn = _CONNECTION_POOL.get_nowait()
+                conn_id = id(conn)
+
+                if conn_id in connections_to_recycle:
+                    # 关闭过期连接
+                    try:
+                        conn.close()
+                        recycled_count += 1
+                    except (sqlite3.Error, AttributeError, OSError):
+                        # 连接可能已关闭或无效，忽略错误继续处理
+                        pass
+                    _CONNECTION_TIMESTAMPS.pop(conn_id, None)
+                else:
+                    # 保留未过期的连接
+                    temp_connections.append(conn)
+            except queue.Empty:
+                break
+
+        # 将未过期的连接放回池中
+        for conn in temp_connections:
+            try:
+                _CONNECTION_POOL.put_nowait(conn)
+            except queue.Full:
+                # 池已满，关闭连接
+                try:
+                    conn.close()
+                except (sqlite3.Error, AttributeError, OSError):
+                    # 连接可能已关闭或无效，忽略错误继续处理
+                    pass
+
+    if recycled_count > 0:
+        msg = (
+            f"♻️  已回收 {recycled_count} 个空闲连接"
+            f"（超过{_CONNECTION_IDLE_TIMEOUT}秒未使用）"
+        )
+        print(msg)
+
+    return recycled_count
+
+
 def monitor_connections():
     """连接监控函数，可在定时任务中调用"""
+    # 先回收空闲连接
+    recycled = _recycle_idle_connections()
+
     stats = get_connection_stats()
 
     if stats['active_connections'] > _CRITICAL_THRESHOLD:
@@ -194,7 +271,12 @@ def monitor_connections():
               f"{_WARNING_THRESHOLD}")
         return 'warning'
     else:
-        print(f"✅ 连接数正常: {stats['active_connections']}")
+        if recycled > 0:
+            msg = (
+                f"✅ 连接数正常: {stats['active_connections']} "
+                f"(已回收{recycled}个空闲连接)"
+            )
+            print(msg)
         return 'normal'
 
 
@@ -222,7 +304,24 @@ def _get_connection_from_pool():
     """从连接池获取连接"""
     try:
         # 非阻塞方式获取连接
-        return _CONNECTION_POOL.get_nowait()
+        conn = _CONNECTION_POOL.get_nowait()
+        # 从时间戳记录中移除
+        conn_id = id(conn)
+        with _POOL_LOCK:
+            _CONNECTION_TIMESTAMPS.pop(conn_id, None)
+
+        # 验证连接是否仍然有效
+        try:
+            conn.execute("SELECT 1")
+            return conn
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            # 连接已失效，创建新连接
+            try:
+                conn.close()
+            except (sqlite3.Error, AttributeError, OSError):
+                # 连接可能已关闭或无效，忽略错误继续处理
+                pass
+            return _create_db_connection()
     except queue.Empty:
         # 池中没有可用连接，创建新连接
         return _create_db_connection()
@@ -272,10 +371,18 @@ def _get_connection_with_retry(max_retries=3):
 def _return_connection_to_pool(conn):
     """将连接返回池中"""
     try:
+        # 记录连接放入池中的时间
+        conn_id = id(conn)
+        with _POOL_LOCK:
+            _CONNECTION_TIMESTAMPS[conn_id] = time.time()
+
         # 非阻塞方式返回连接
         _CONNECTION_POOL.put_nowait(conn)
     except queue.Full:
         # 池已满，关闭连接
+        conn_id = id(conn)
+        with _POOL_LOCK:
+            _CONNECTION_TIMESTAMPS.pop(conn_id, None)
         conn.close()
 
 
@@ -674,13 +781,21 @@ def _upgrade_max_size_to_sides(table: str):
             FROM logistics_old
             """
         )
-        # 5. 清理旧表
+        # 5. 清理旧表（table已通过白名单验证）
         c.execute(f"DROP TABLE {table}_old")
         conn.commit()
 
 
 def _upgrade_table_user_id(table: str):
     """给旧表加 user_id 字段（如存在）"""
+    # 白名单验证：只允许这些表名，防止SQL注入
+    allowed_tables = {'products', 'logistics'}
+    if table not in allowed_tables:
+        raise ValueError(
+            f"非法的表名: {table}. "
+            f"只允许使用以下表名: {sorted(allowed_tables)}"
+        )
+
     with get_db_connection() as (conn, c):
         cols = [col[1]
                 for col in c.execute(f"PRAGMA table_info({table})").fetchall()]
@@ -801,8 +916,127 @@ def _upgrade_old_volume_battery():
         conn.commit()
 
 
+def _safe_alter_table_add_column(
+        cursor, table_name: str, column_name: str,
+        column_def: str, allowed_columns: set) -> None:
+    """
+    安全地执行ALTER TABLE ADD COLUMN操作，防止SQL注入
+
+    Args:
+        cursor: 数据库游标
+        table_name: 表名（必须为预定义的安全表名）
+        column_name: 列名（必须通过白名单验证）
+        column_def: 列定义（必须通过白名单验证）
+        allowed_columns: 允许的列名白名单
+
+    Raises:
+        ValueError: 如果列名或表名不在白名单中
+    """
+    # 预定义的安全表名白名单（扩展以包含所有可能的表）
+    safe_table_names = {
+        'users', 'products', 'logistics', 'payment_orders',
+        'active_sessions', 'login_attempts', 'user_lockouts',
+        'subscription_upgrade_history', 'user_login_log',
+        'user_behavior_log', 'admin_action_log', 'alert_records',
+        'statistics_cache', 'alert_config', 'plans', 'system_config'
+    }
+
+    # 验证表名
+    if table_name not in safe_table_names:
+        raise ValueError(
+            f"非法的表名: {table_name}. "
+            f"只允许使用以下表名: {sorted(safe_table_names)}"
+        )
+
+    # 验证列名
+    if column_name not in allowed_columns:
+        raise ValueError(
+            f"非法的列名: {column_name}. "
+            f"只允许使用以下列名: {sorted(allowed_columns)}"
+        )
+
+    # 验证列定义格式（只允许特定类型和DEFAULT值）
+    import re
+
+    allowed_types = {'INTEGER', 'REAL', 'TEXT', 'BOOLEAN'}
+    # 定义允许的列定义格式模式
+    # 注意：SQLite支持单引号和双引号，都需要匹配
+    allowed_patterns = [
+        r'^INTEGER\s*$',  # INTEGER (无DEFAULT)
+        r'^INTEGER\s+DEFAULT\s+-?\d+$',  # INTEGER DEFAULT 数字（支持负数）
+        r'^REAL\s*$',  # REAL (无DEFAULT)
+        r'^REAL\s+DEFAULT\s+-?[\d.]+$',  # REAL DEFAULT 数字或小数（支持负数）
+        r'^TEXT\s*$',  # TEXT (无DEFAULT)
+        r'^TEXT\s+DEFAULT\s+\'[^\']*\'\s*$',  # TEXT DEFAULT '字符串'
+        r'^TEXT\s+DEFAULT\s+"[^"]*"\s*$',  # TEXT DEFAULT "字符串"
+        r'^TEXT\s+DEFAULT\s+\'\'\s*$',  # TEXT DEFAULT '' (空字符串)
+        r'^TEXT\s+DEFAULT\s+""\s*$',  # TEXT DEFAULT "" (空字符串)
+    ]
+
+    column_def_upper = column_def.upper().strip()
+
+    # 首先检查列类型
+    type_match = re.match(r'^(\w+)', column_def_upper)
+    if type_match:
+        col_type = type_match.group(1)
+        if col_type not in allowed_types:
+            raise ValueError(
+                f"非法的列类型: {col_type}. "
+                f"只允许使用以下类型: {sorted(allowed_types)}"
+            )
+    else:
+        raise ValueError(f"无效的列定义格式: {column_def}")
+
+    # 使用正则表达式验证列定义格式是否符合允许的模式
+    pattern_matched = False
+    for pattern in allowed_patterns:
+        if re.match(pattern, column_def_upper):
+            pattern_matched = True
+            break
+
+    if not pattern_matched:
+        raise ValueError(
+            f"非法的列定义格式: {column_def}. "
+            f"列定义必须符合以下格式之一: "
+            f"INTEGER, INTEGER DEFAULT <数字>, "
+            f"REAL, REAL DEFAULT <数字>, "
+            f"TEXT, TEXT DEFAULT '<字符串>' 或 TEXT DEFAULT \"<字符串>\""
+        )
+
+    # 执行安全的ALTER TABLE语句（使用参数化查询的列名部分）
+    # 注意：SQLite的ALTER TABLE不支持参数化列名，所以必须使用白名单验证
+    # 所有输入都经过严格验证和白名单检查
+    sql = (
+        f"ALTER TABLE {table_name} ADD COLUMN "
+        f"{column_name} {column_def}"
+    )
+    # 最终验证：确保SQL语句不包含危险关键字
+    dangerous_keywords = [
+        'DROP', 'DELETE', 'TRUNCATE', 'UPDATE', 'INSERT'
+    ]
+    sql_upper = sql.upper()
+    for keyword in dangerous_keywords:
+        if keyword in sql_upper and 'ADD COLUMN' not in sql_upper:
+            raise ValueError(
+                f"检测到危险的SQL关键字: {keyword}，操作已阻止"
+            )
+    cursor.execute(sql)
+
+
 def _upgrade_logistics_new_fields():
     """升级：新增重量计费字段、电池容量限制字段"""
+    # 白名单：只允许这些列名，防止SQL注入
+    allowed_logistics_columns = {
+        "battery_capacity_limit_wh", "require_msds", "fee_mode",
+        "first_fee", "first_weight_g", "continue_fee", "continue_unit",
+        "volume_coefficient", "price_limit_rub", "price_min_rub",
+        "max_second_side", "min_second_side", "min_length",
+        "max_cylinder_sum", "min_cylinder_sum", "max_cylinder_length",
+        "min_cylinder_length", "allow_battery", "allow_flammable",
+        "delivery_method", "priority_group", "price_limit_currency",
+        "price_min_currency"
+    }
+
     with get_db_connection() as (conn, c):
         cols = [col[1] for col in c.execute(
             "PRAGMA table_info(logistics)").fetchall()]
@@ -832,8 +1066,12 @@ def _upgrade_logistics_new_fields():
             "price_min_currency": "TEXT DEFAULT 'RUB'",
         }
         for col, def_sql in new_cols.items():
+            # 使用安全的ALTER TABLE函数
             if col not in cols:
-                c.execute(f"ALTER TABLE logistics ADD COLUMN {col} {def_sql}")
+                _safe_alter_table_add_column(
+                    c, 'logistics', col, def_sql,
+                    allowed_logistics_columns
+                )
         conn.commit()
 
 
@@ -852,6 +1090,12 @@ def _upgrade_products_cylinder_length():
 
 def _upgrade_products_new_fields():
     """升级：新增产品定价相关字段"""
+    # 白名单：只允许这些列名，防止SQL注入
+    allowed_products_columns = {
+        "promotion_discount", "promotion_cost_rate", "target_profit_margin",
+        "commission_rate", "withdrawal_fee_rate", "payment_processing_fee"
+    }
+
     with get_db_connection() as (conn, c):
         cols = [col[1]
                 for col in c.execute("PRAGMA table_info(products)").fetchall()]
@@ -864,13 +1108,25 @@ def _upgrade_products_new_fields():
             "payment_processing_fee": "REAL DEFAULT 0.01"
         }
         for col, def_sql in new_cols.items():
+            # 使用安全的ALTER TABLE函数
             if col not in cols:
-                c.execute(f"ALTER TABLE products ADD COLUMN {col} {def_sql}")
+                _safe_alter_table_add_column(
+                    c, 'products', col, def_sql,
+                    allowed_products_columns
+                )
         conn.commit()
 
 
 def _upgrade_users_subscription_fields():
     """升级：新增用户订阅相关字段"""
+    # 白名单：只允许这些列名，防止SQL注入
+    allowed_users_columns = {
+        "user_type", "expiry_date", "remaining_calculations",
+        "first_login_date", "test_days_remaining", "subscription_type",
+        "subscription_expires", "efficiency_promo_used", "created_at",
+        "last_login"
+    }
+
     with get_db_connection() as (conn, c):
         cols = [col[1]
                 for col in c.execute("PRAGMA table_info(users)").fetchall()]
@@ -887,8 +1143,12 @@ def _upgrade_users_subscription_fields():
             "last_login": "TEXT"  # 最后登录时间
         }
         for col, def_sql in new_cols.items():
+            # 使用安全的ALTER TABLE函数
             if col not in cols:
-                c.execute(f"ALTER TABLE users ADD COLUMN {col} {def_sql}")
+                _safe_alter_table_add_column(
+                    c, 'users', col, def_sql,
+                    allowed_users_columns
+                )
         conn.commit()
 
 
@@ -976,6 +1236,21 @@ def _upgrade_products_return_rate():
         conn.commit()
 
 
+def _upgrade_products_is_test_data():
+    """升级：新增产品测试数据标记字段"""
+    with get_db_connection() as (conn, c):
+        cols = [col[1] for col in c.execute(
+            "PRAGMA table_info(products)").fetchall()]
+        if "is_test_data" not in cols:
+            c.execute(
+                (
+                    "ALTER TABLE products "
+                    "ADD COLUMN is_test_data INTEGER DEFAULT 0"
+                )
+            )
+        conn.commit()
+
+
 def _upgrade_products_vat_rate():
     """升级：新增产品增值税率字段"""
     with get_db_connection() as (conn, c):
@@ -1013,10 +1288,25 @@ def _upgrade_subscription_upgrade_system():
             'subscription_start': 'INTEGER',
         }
 
+        # 白名单：只允许这些列名，防止SQL注入
+        allowed_users_upgrade_columns = {
+            'billing_cycle', 'last_paid_amount', 'subscription_start'
+        }
+
         for field_name, field_def in new_fields.items():
             if field_name not in cols:
-                sql = f"ALTER TABLE users ADD COLUMN {field_name} {field_def}"
-                c.execute(sql)
+                # 使用安全的ALTER TABLE函数
+                if field_name in allowed_users_upgrade_columns:
+                    _safe_alter_table_add_column(
+                        c, 'users', field_name, field_def,
+                        allowed_users_upgrade_columns
+                    )
+                else:
+                    raise ValueError(
+                        f"不允许的列名: {field_name}. "
+                        f"只允许使用以下列名: "
+                        f"{sorted(allowed_users_upgrade_columns)}"
+                    )
 
         # 2. 添加 payment_orders 表的升级相关字段
         payment_cols = [col[1] for col in c.execute(
@@ -1029,13 +1319,26 @@ def _upgrade_subscription_upgrade_system():
             'remaining_value': 'REAL DEFAULT 0',
         }
 
+        # 白名单：只允许这些列名，防止SQL注入
+        allowed_payment_orders_upgrade_columns = {
+            'is_upgrade', 'upgrade_from_plan', 'upgrade_to_plan',
+            'remaining_value'
+        }
+
         for field_name, field_def in payment_new_fields.items():
             if field_name not in payment_cols:
-                sql = (
-                    f"ALTER TABLE payment_orders ADD COLUMN "
-                    f"{field_name} {field_def}"
-                )
-                c.execute(sql)
+                # 使用安全的ALTER TABLE函数
+                if field_name in allowed_payment_orders_upgrade_columns:
+                    _safe_alter_table_add_column(
+                        c, 'payment_orders', field_name, field_def,
+                        allowed_payment_orders_upgrade_columns
+                    )
+                else:
+                    raise ValueError(
+                        f"不允许的列名: {field_name}. "
+                        f"只允许使用以下列名: "
+                        f"{sorted(allowed_payment_orders_upgrade_columns)}"
+                    )
 
         # 3. 创建升级历史表
         c.execute("""
@@ -1056,6 +1359,36 @@ def _upgrade_subscription_upgrade_system():
             )
         """)
 
+        conn.commit()
+
+
+def _upgrade_users_security_questions():
+    """升级：新增用户安全问题相关字段"""
+    # 白名单：只允许这些列名，防止SQL注入
+    allowed_users_columns = {
+        "security_q1", "security_a1", "security_q2", "security_a2",
+        "reset_locked_until", "reset_attempt_count", "reset_last_attempt"
+    }
+
+    with get_db_connection() as (conn, c):
+        cols = [col[1]
+                for col in c.execute("PRAGMA table_info(users)").fetchall()]
+        new_cols = {
+            "security_q1": "TEXT",
+            "security_a1": "TEXT",
+            "security_q2": "TEXT",
+            "security_a2": "TEXT",
+            "reset_locked_until": "REAL",
+            "reset_attempt_count": "INTEGER DEFAULT 0",
+            "reset_last_attempt": "REAL"
+        }
+        for col, def_sql in new_cols.items():
+            # 使用安全的ALTER TABLE函数
+            if col not in cols:
+                _safe_alter_table_add_column(
+                    c, 'users', col, def_sql,
+                    allowed_users_columns
+                )
         conn.commit()
 
 
@@ -1111,7 +1444,30 @@ def _upgrade_statistics_tables():
             ON admin_action_log(created_at)
         """)
 
-        # 3. 创建异常告警记录表
+        # 3. 创建密码找回日志表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS password_recovery_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                ip_address TEXT,
+                event_type TEXT NOT NULL,
+                success INTEGER DEFAULT 0,
+                attempt_count INTEGER DEFAULT 0,
+                admin_name TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_password_recovery_log_username
+            ON password_recovery_log(username)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_password_recovery_log_created_at
+            ON password_recovery_log(created_at)
+        """)
+
+        # 4. 创建异常告警记录表
         c.execute("""
             CREATE TABLE IF NOT EXISTS alert_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1545,7 +1901,8 @@ def init_db():
                 withdrawal_fee_rate    REAL DEFAULT 0.01,
                 payment_processing_fee REAL DEFAULT 0.01,
                 return_rate            REAL DEFAULT 0,
-                vat_rate               REAL DEFAULT 0
+                vat_rate               REAL DEFAULT 0,
+                is_test_data           INTEGER DEFAULT 0
             )
             """
         )
@@ -1647,6 +2004,7 @@ def init_db():
         _upgrade_products_new_fields()
         _upgrade_logistics_price_min()
         _upgrade_products_return_rate()
+        _upgrade_products_is_test_data()
         _upgrade_products_vat_rate()
         _upgrade_users_subscription_fields()
         _upgrade_users_test_flag()
@@ -1654,6 +2012,7 @@ def init_db():
         _upgrade_subscription_upgrade_system()
         _upgrade_statistics_tables()
         _upgrade_performance_indexes()
+        _upgrade_users_security_questions()
         # 3. 初始管理员（避免递归调用）
         admin_user = c.execute(
             "SELECT * FROM users WHERE username = ?",
@@ -1689,7 +2048,13 @@ def init_db():
 
 
 def add_product(product_data):
-    """添加新产品"""
+    """添加新产品
+
+    Args:
+        product_data: 产品数据字典，可包含is_test_data字段
+                     - is_test_data=0或未设置：手动创建的产品
+                     - is_test_data=1：测试数据
+    """
     with get_db_connection() as (conn, c):
 
         # 提取产品数据
@@ -1703,15 +2068,39 @@ def add_product(product_data):
             'promotion_cost_rate',
             'target_profit_margin',
             'commission_rate', 'withdrawal_fee_rate',
-            'payment_processing_fee', 'return_rate'
+            'payment_processing_fee', 'return_rate', 'is_test_data'
         ]
 
-        # 构建SQL语句
-        placeholders = ','.join(['?' for _ in fields])
-        field_names = ','.join(fields)
+        # 构建SQL语句（如果is_test_data未提供，使用默认值0）
+        base_fields = [f for f in fields if f != 'is_test_data']
+        field_names = ','.join(base_fields) + ',is_test_data'
+        placeholders = ','.join(['?' for _ in base_fields]) + ',?'
 
         # 获取值
-        values = [product_data.get(field, 0) for field in fields]
+        values = [product_data.get(field, 0) for field in base_fields]
+        # is_test_data默认0（手动创建）
+        values.append(product_data.get('is_test_data', 0))
+
+        # 安全的字段名白名单验证（防止SQL注入）
+        # 注意：user_id是必需的字段，包含在白名单中
+        allowed_product_fields = {
+            'user_id', 'name', 'russian_name', 'category', 'model',
+            'unit_price', 'weight_g', 'length_cm', 'width_cm', 'height_cm',
+            'is_cylinder', 'cylinder_diameter', 'cylinder_length',
+            'has_battery', 'battery_capacity_wh', 'battery_capacity_mah',
+            'battery_voltage', 'has_msds', 'has_flammable', 'labeling_fee',
+            'shipping_fee', 'promotion_cost_rate', 'target_profit_margin',
+            'commission_rate', 'withdrawal_fee_rate',
+            'payment_processing_fee', 'return_rate', 'vat_rate', 'is_test_data'
+        }
+        # 验证所有字段名都在白名单中
+        field_list = [f.strip() for f in field_names.split(',')]
+        for field in field_list:
+            if field not in allowed_product_fields:
+                raise ValueError(
+                    f"非法的字段名: {field}. "
+                    f"只允许使用以下字段: {sorted(allowed_product_fields)}"
+                )
 
         c.execute(
             f"INSERT INTO products ({field_names}) VALUES ({placeholders})",
@@ -1766,8 +2155,26 @@ def get_product_by_id(product_id, user_id):
 
 
 def delete_product(product_id, user_id):
-    """删除产品"""
+    """删除产品
+
+    基于is_test_data标记判断：
+    - is_test_data=0（手动创建）：允许删除
+    - is_test_data=1（测试数据）：允许删除（主要用于批量清理）
+    """
     with get_db_connection() as (conn, c):
+        # 检查产品是否存在且属于该用户
+        product = c.execute(
+            (
+                "SELECT is_test_data FROM products "
+                "WHERE id = ? AND user_id = ?"
+            ),
+            (product_id, user_id)
+        ).fetchone()
+
+        if not product:
+            return False
+
+        # 允许删除（无论是手动还是测试数据都可以删除）
         c.execute(
             "DELETE FROM products WHERE id = ? AND user_id = ?",
             (product_id, user_id)
@@ -1777,19 +2184,59 @@ def delete_product(product_id, user_id):
 
 
 def batch_delete_products(product_ids, user_id):
-    """批量删除产品"""
+    """批量删除产品
+
+    基于is_test_data标记判断：
+    - 只删除属于该用户的产品
+    - 建议主要用于清理测试数据（is_test_data=1）
+    """
     if not product_ids:
         return 0
-
     with get_db_connection() as (conn, c):
-        placeholders = ','.join(['?' for _ in product_ids])
-        params = list(product_ids) + [user_id]
+        # 验证product_ids都是整数（防止SQL注入）
+        validated_ids = []
+        for pid in product_ids:
+            try:
+                validated_ids.append(int(pid))
+            except (ValueError, TypeError):
+                raise ValueError(f"无效的产品ID: {pid}")
+
+        # 使用验证后的ID列表构建SQL参数
+        placeholders = ','.join(['?' for _ in validated_ids])
+        params = validated_ids + [user_id]
 
         c.execute(
             f"DELETE FROM products WHERE id IN ({placeholders}) "
             f"AND user_id = ?",
             params
         )
+        conn.commit()
+        return c.rowcount
+
+
+def cleanup_test_products(user_id=None):
+    """清理测试产品（is_test_data=1）
+
+    Args:
+        user_id: 可选，如果指定则只清理该用户的测试产品,
+                否则清理所有用户的测试产品
+
+    Returns:
+        删除的产品数量
+    """
+    with get_db_connection() as (conn, c):
+        if user_id:
+            c.execute(
+                (
+                    "DELETE FROM products "
+                    "WHERE is_test_data = 1 AND user_id = ?"
+                ),
+                (user_id,)
+            )
+        else:
+            c.execute(
+                "DELETE FROM products WHERE is_test_data = 1"
+            )
         conn.commit()
         return c.rowcount
 
@@ -1801,10 +2248,27 @@ def update_product(product_id, user_id, updates):
 
     with get_db_connection() as (conn, c):
 
-        # 构建UPDATE语句
+        # 安全的字段名白名单验证（防止SQL注入）
+        allowed_product_fields = {
+            'name', 'russian_name', 'category', 'model', 'unit_price',
+            'weight_g', 'length_cm', 'width_cm', 'height_cm', 'is_cylinder',
+            'cylinder_diameter', 'cylinder_length', 'has_battery',
+            'battery_capacity_wh', 'battery_capacity_mah', 'battery_voltage',
+            'has_msds', 'has_flammable', 'labeling_fee', 'shipping_fee',
+            'promotion_cost_rate', 'target_profit_margin', 'commission_rate',
+            'withdrawal_fee_rate', 'payment_processing_fee', 'return_rate',
+            'vat_rate', 'is_test_data'
+        }
+
+        # 构建UPDATE语句（验证字段名）
         set_clauses = []
         values = []
         for field, value in updates.items():
+            if field not in allowed_product_fields:
+                raise ValueError(
+                    f"非法的字段名: {field}. "
+                    f"只允许使用以下字段: {sorted(allowed_product_fields)}"
+                )
             set_clauses.append(f"{field} = ?")
             values.append(value)
 
@@ -1826,15 +2290,36 @@ def batch_update_pricing_params(product_ids, user_id, pricing_updates):
 
     with get_db_connection() as (conn, c):
 
-        # 构建UPDATE语句
+        # 安全的字段名白名单验证（防止SQL注入）
+        # 注意：允许更新unit_price等基础字段，不仅仅是定价参数
+        allowed_pricing_fields = {
+            'promotion_cost_rate', 'target_profit_margin', 'commission_rate',
+            'withdrawal_fee_rate', 'payment_processing_fee', 'return_rate',
+            'vat_rate', 'unit_price', 'labeling_fee', 'shipping_fee'
+        }
+
+        # 构建UPDATE语句（验证字段名）
         set_clauses = []
         values = []
         for field, value in pricing_updates.items():
+            if field not in allowed_pricing_fields:
+                raise ValueError(
+                    f"非法的字段名: {field}. "
+                    f"只允许使用以下字段: {sorted(allowed_pricing_fields)}"
+                )
             set_clauses.append(f"{field} = ?")
             values.append(value)
 
-        placeholders = ','.join(['?' for _ in product_ids])
-        values.extend(list(product_ids))
+        # 验证product_ids都是整数（防止SQL注入）
+        validated_ids = []
+        for pid in product_ids:
+            try:
+                validated_ids.append(int(pid))
+            except (ValueError, TypeError):
+                raise ValueError(f"无效的产品ID: {pid}")
+
+        placeholders = ','.join(['?' for _ in validated_ids])
+        values.extend(validated_ids)
         values.append(user_id)
 
         c.execute(

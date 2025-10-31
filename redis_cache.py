@@ -65,8 +65,7 @@ def init_redis_client(config: Optional[Dict[str, Any]] = None) -> bool:
     global _redis_client
 
     if not REDIS_AVAILABLE:
-        print("警告: Redis未安装，缓存功能不可用")
-        print("请运行: pip install redis")
+        # Redis未安装，静默返回False（不使用print，避免干扰）
         return False
 
     try:
@@ -81,11 +80,12 @@ def init_redis_client(config: Optional[Dict[str, Any]] = None) -> bool:
 
         # 测试连接
         _redis_client.ping()
-        print("Redis连接成功")
+        # Redis连接成功，静默返回（避免在生产环境输出过多信息）
         return True
 
-    except (RedisError, RedisConnectionError) as e:
-        print(f"Redis连接失败: {e}")
+    except (RedisError, RedisConnectionError):
+        # Redis连接失败，静默降级到内存缓存
+        # 错误信息已通过异常处理，系统会自动使用L1内存缓存
         _redis_client = None
         return False
 

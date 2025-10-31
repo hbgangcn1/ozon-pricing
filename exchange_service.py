@@ -81,6 +81,20 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 ),
                 'parser': self._parse_moex_api
             },
+            {
+                'name': 'ExchangeRates.io',
+                'url': 'https://api.exchangerates.io/latest?base=RUB',
+                'parser': self._parse_exchangerates_io
+            },
+            {
+                'name': 'CurrencyLayer',
+                'url': (
+                    'https://api.currencylayer.com/live?access_key='
+                    'YOUR_API_KEY&source=RUB&currencies=CNY'
+                ),
+                'parser': self._parse_currencylayer,
+                'requires_key': True  # 需要API密钥
+            },
         ]
 
     @staticmethod
@@ -98,6 +112,24 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 if "CNYRUBTOM" in str(item):
                     return float(item[2])  # 汇率值
         raise ValueError("MOEX数据格式错误")
+
+    @staticmethod
+    def _parse_exchangerates_io(data):
+        """解析ExchangeRates.io的响应"""
+        if "rates" in data and "CNY" in data["rates"]:
+            # ExchangeRates.io返回的是CNY/RUB（需要取倒数）
+            cny_rate = float(data["rates"]["CNY"])
+            if cny_rate > 0:
+                return 1.0 / cny_rate
+        raise ValueError("ExchangeRates.io数据格式错误")
+
+    @staticmethod
+    def _parse_currencylayer(data):
+        """解析CurrencyLayer的响应"""
+        # CurrencyLayer需要API密钥，如果没有配置则跳过
+        if "quotes" in data and "RUBCNY" in data["quotes"]:
+            return float(data["quotes"]["RUBCNY"])
+        raise ValueError("CurrencyLayer数据格式错误或需要API密钥")
 
     @staticmethod
     async def _fetch_source_async(
@@ -157,13 +189,19 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                     f"汇率API限流中，请 {retry_after} 秒后重试"
                 )
 
-        # 并发请求所有数据源
-        tasks = [
-            asyncio.create_task(
-                MultiSourceRubProvider._fetch_source_async(source)
+        # 并发请求所有数据源（跳过需要API密钥但未配置的数据源）
+        tasks = []
+        for source in self.sources:
+            # 跳过需要API密钥但未配置的数据源
+            if (source.get('requires_key') and
+                    'YOUR_API_KEY' in source.get('url', '')):
+                logging.debug(f"跳过需要API密钥的数据源: {source['name']}")
+                continue
+            tasks.append(
+                asyncio.create_task(
+                    MultiSourceRubProvider._fetch_source_async(source)
+                )
             )
-            for source in self.sources
-        ]
 
         try:
             # 使用 as_completed 获取第一个成功的结果
@@ -377,7 +415,7 @@ class ExchangeRateService:
                 logging.info("后台刷新汇率成功: %.5f", new_rate)
             except (requests.RequestException, ValueError, Exception) as e:
                 logging.warning("后台获取汇率失败，继续使用旧值: %s", e)
-            time.sleep(3600)  # 60 分钟
+            time.sleep(900)  # 15分钟（缩短缓存时间）
 
     def get_exchange_rate(self) -> float:
         """获取汇率（带缓存和读写锁优化）"""
@@ -385,14 +423,14 @@ class ExchangeRateService:
         with self._read_lock:
             current_time = time.time()
             # 如果距离上次刷新不到60分钟，直接返回缓存值
-            if current_time - self._last < 3600:  # 60分钟缓存
+            if current_time - self._last < 900:  # 15分钟缓存
                 return self._rate
 
         # 需要刷新：获取写锁
         with self._write_lock:
             # 双重检查：可能其他线程已经刷新了
             with self._read_lock:
-                if time.time() - self._last < 3600:
+                if time.time() - self._last < 900:
                     return self._rate
 
             # 尝试即时刷新（支持并发请求）
@@ -532,7 +570,7 @@ class UsdExchangeRateService:
                 logging.info("异步刷新美元汇率: %.5f", new_rate)
             except (requests.RequestException, ValueError):
                 logging.exception("异步获取美元汇率失败，继续使用旧值")
-            time.sleep(3600)  # 60 分钟
+            time.sleep(900)  # 15分钟（缩短缓存时间）
 
     def get_exchange_rate(self) -> float:
         # 检查是否需要刷新（避免每次都发起网络请求）

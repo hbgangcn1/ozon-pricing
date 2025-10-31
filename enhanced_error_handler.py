@@ -8,6 +8,7 @@ import traceback
 import logging
 import json
 import sqlite3
+import re
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 from enum import Enum
@@ -97,6 +98,173 @@ class ErrorHandler:
         self.logger = ErrorHandler._setup_logger()
 
     @staticmethod
+    def sanitize_log_message(message: str) -> str:
+        """
+        清理日志消息中的敏感信息
+
+        增强功能：
+        - 移除数据库结构信息（表名、列名）
+        - 移除SQL语句中的敏感数据
+        - 移除文件路径中的敏感信息
+
+        Args:
+            message: 原始日志消息
+
+        Returns:
+            清理后的安全日志消息
+        """
+        if not message:
+            return message
+
+        # 移除密码哈希（bcrypt格式: $2a$... 或 $2b$...）
+        message = re.sub(
+            r'\$2[ab]\$[0-9]{2}\$[A-Za-z0-9./]{53}',
+            '[PASSWORD_HASH]',
+            message
+        )
+
+        # 移除旧格式的SHA256哈希（64个十六进制字符）
+        message = re.sub(
+            r'\b[0-9a-f]{64}\b',
+            '[HASH]',
+            message
+        )
+
+        # 移除支付金额（amount=xxx 或 "amount": xxx）
+        message = re.sub(
+            r'(amount|price|total|value)["\']?\s*[:=]\s*\d+\.?\d*',
+            r'\1=[REDACTED]',
+            message,
+            flags=re.IGNORECASE
+        )
+
+        # 移除信用卡号（16位数字，可能用空格或横线分隔）
+        message = re.sub(
+            r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b',
+            '[CARD_NUMBER]',
+            message
+        )
+
+        # 移除数据库表名和列名（防止泄露数据库结构）
+        # 匹配常见SQL语句中的表名和列名
+        db_objects = [
+            'users', 'products', 'logistics', 'payment_orders',
+            'password', 'email', 'username', 'session_id',
+            'user_id', 'order_id', 'transaction_id'
+        ]
+        for obj in db_objects:
+            # 匹配表名和列名，但保留上下文信息
+            message = re.sub(
+                rf'\b{obj}\b',
+                '[DB_OBJECT]',
+                message,
+                flags=re.IGNORECASE
+            )
+
+        # 移除SQL语句中的敏感数据（保留SQL结构但隐藏数据）
+        # 匹配 SELECT ... FROM ... WHERE ... 模式
+        sql_pattern = (
+            r"(SELECT|INSERT|UPDATE|DELETE)\s+.*?\s+"
+            r"(FROM|INTO|SET|WHERE)\s+(\w+).*?(\d+|'[^']*')"
+        )
+        message = re.sub(
+            sql_pattern,
+            r'\1 ... \2 [TABLE] ... [DATA]',
+            message,
+            flags=re.IGNORECASE | re.DOTALL
+        )
+
+        # 移除文件路径中的敏感信息（保留文件名但隐藏路径）
+        message = re.sub(
+            r'[A-Z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*([^\\/:*?"<>|\r\n]+)',
+            r'[PATH]\1',
+            message
+        )
+        message = re.sub(
+            r'/(?:[^/]+/)*([^/]+)',
+            r'[PATH]\1',
+            message
+        )
+
+        # 移除邮箱地址（可选：如果不需要记录邮箱）
+        # message = re.sub(
+        #     r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+        #     '[EMAIL]',
+        #     message
+        # )
+
+        # 移除手机号（11位数字，中国手机号格式）
+        message = re.sub(
+            r'\b1[3-9]\d{9}\b',
+            '[PHONE]',
+            message
+        )
+
+        # 移除API密钥（通常包含大写字母、数字和连字符，长度20-40）
+        message = re.sub(
+            r'\b[A-Z0-9\-]{20,40}\b',
+            '[API_KEY]',
+            message
+        )
+
+        # 移除数据库文件路径（包含.db、.sqlite等）
+        message = re.sub(
+            r'[/\\][\w\s.\-]+\.(db|sqlite|sqlite3)',
+            '[DB_PATH]',
+            message,
+            flags=re.IGNORECASE
+        )
+
+        # 移除绝对路径（Windows和Unix风格）
+        message = re.sub(
+            r'[C-Z]:\\\S+|/\S+',
+            '[FILE_PATH]',
+            message
+        )
+
+        # 移除微信支付相关敏感信息
+        wechat_pattern = (
+            r'(mch_id|app_id|api_v3_key|cert_serial_no)'
+            r'["\']?\s*[:=]\s*["\']?[A-Za-z0-9]+["\']?'
+        )
+        message = re.sub(
+            wechat_pattern,
+            r'\1=[REDACTED]',
+            message,
+            flags=re.IGNORECASE
+        )
+
+        # 移除环境变量中的敏感值
+        env_pattern = (
+            r'(WECHAT_|DB_|REDIS_|SECRET_|KEY_|PASSWORD_|API_|TOKEN_)'
+            r'[A-Z_]*["\']?\s*[:=]\s*["\']?[^\s"\']+["\']?'
+        )
+        message = re.sub(
+            env_pattern,
+            r'\1XXX=[REDACTED]',
+            message,
+            flags=re.IGNORECASE
+        )
+
+        # 移除数据库连接字符串中的敏感信息
+        # 匹配格式: postgresql://user:password@host:port/dbname
+        db_connection_pattern = (
+            r'(postgresql|mysql|sqlite)://[^@]+@[^\s"\']+'
+        )
+        message = re.sub(
+            db_connection_pattern,
+            r'[DB_CONNECTION_REDACTED]',
+            message,
+            flags=re.IGNORECASE
+        )
+
+        # 移除JWT token（通常以eyJ开头）
+        jwt_pattern = r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b'
+        message = re.sub(jwt_pattern, '[JWT_TOKEN]', message)
+
+        return message
+
+    @staticmethod
     def _setup_logger() -> logging.Logger:
         """设置日志记录器"""
         logger = logging.getLogger('enhanced_error_handler')
@@ -141,19 +309,58 @@ class ErrorHandler:
 
     def log_error(self, error_info: ErrorInfo):
         """记录错误"""
-        # 添加到内存日志
-        self.error_log.append(error_info.to_dict())
+        # 使用安全配置模块
+        try:
+            from .security_config import security_config
+        except ImportError:
+            from security_config import security_config
+
+        # 检查是否为生产环境
+        is_production = security_config.is_production()
+
+        # 清理敏感信息后再添加到内存日志
+        error_dict = error_info.to_dict()
+        # 清理错误消息和traceback中的敏感信息
+        error_dict['error_message'] = self.sanitize_log_message(
+            error_dict['error_message']
+        )
+        error_dict['traceback'] = self.sanitize_log_message(
+            error_dict['traceback']
+        )
+
+        # 生产环境下进一步清理：移除上下文中的敏感信息
+        if is_production:
+            # 移除用户ID、会话ID等敏感信息（保留类型但不保留值）
+            if 'context' in error_dict:
+                context = error_dict['context']
+                if 'user_id' in context:
+                    context['user_id'] = '[USER_ID]'
+                if 'session_id' in context:
+                    context['session_id'] = '[SESSION_ID]'
+                if 'request_id' in context:
+                    context['request_id'] = '[REQUEST_ID]'
+
+        self.error_log.append(error_dict)
 
         # 保持日志大小限制
         if len(self.error_log) > self.max_log_size:
             self.error_log = self.error_log[-self.max_log_size:]
 
-        # 记录到日志文件
-        message = error_info.message
+        # 记录到日志文件（已清理敏感信息）
+        message = self.sanitize_log_message(error_info.message)
         severity = error_info.severity.value
         category = error_info.category.value
-        log_message = f"Error: {message} | Severity: {severity} | " \
-                      f"Category: {category}"
+
+        # 生产环境下使用通用错误消息
+        if is_production:
+            log_message = (
+                f"Error | Severity: {severity} | Category: {category}"
+            )
+        else:
+            log_message = (
+                f"Error: {message} | Severity: {severity} | "
+                f"Category: {category}"
+            )
 
         if error_info.severity == ErrorSeverity.CRITICAL:
             self.logger.critical(log_message)
@@ -165,26 +372,77 @@ class ErrorHandler:
             self.logger.info(log_message)
 
     @staticmethod
-    def get_user_friendly_message(error_info: ErrorInfo) -> str:
-        """获取用户友好的错误消息"""
-        category = error_info.category
+    def get_user_friendly_message(
+            error_info: ErrorInfo,
+            show_details: bool = False) -> str:
+        """
+        获取用户友好的错误消息
 
-        if category == ErrorCategory.DATABASE:
-            return "数据库连接出现问题，请稍后重试"
-        elif category == ErrorCategory.NETWORK:
-            return "网络连接异常，请检查网络设置"
-        elif category == ErrorCategory.VALIDATION:
-            return "输入数据格式不正确，请检查后重试"
-        elif category == ErrorCategory.AUTHENTICATION:
-            return "身份验证失败，请重新登录"
-        elif category == ErrorCategory.AUTHORIZATION:
-            return "权限不足，无法执行此操作"
-        elif category == ErrorCategory.BUSINESS_LOGIC:
-            return "业务逻辑错误，请联系管理员"
-        elif category == ErrorCategory.SYSTEM:
-            return "系统内部错误，请联系技术支持"
+        Args:
+            error_info: 错误信息对象
+            show_details: 是否显示详细错误信息（生产环境应为False）
+
+        Returns:
+            用户友好的错误消息
+        """
+        # 使用安全配置模块
+        try:
+            from .security_config import security_config
+        except ImportError:
+            from security_config import security_config
+
+        # 检查是否为生产环境
+        is_production = security_config.is_production()
+
+        # 生产环境不显示详细错误信息，避免泄露数据库结构和技术细节
+        if is_production and not show_details:
+            category = error_info.category
+
+            # 统一的生产环境错误消息，不泄露任何技术细节
+            # 增强：不包含任何表名、列名、文件路径等敏感信息
+            generic_messages = {
+                ErrorCategory.DATABASE: "数据库操作失败，请稍后重试",
+                ErrorCategory.NETWORK: "网络连接异常，请检查网络设置",
+                ErrorCategory.VALIDATION: "输入数据格式不正确，请检查后重试",
+                ErrorCategory.AUTHENTICATION: "身份验证失败，请重新登录",
+                ErrorCategory.AUTHORIZATION: "权限不足，无法执行此操作",
+                ErrorCategory.BUSINESS_LOGIC: "操作失败，请联系管理员",
+                ErrorCategory.SYSTEM: "系统错误，请联系技术支持",
+                ErrorCategory.UNKNOWN: "发生错误，请稍后重试"
+            }
+
+            return generic_messages.get(
+                category, "发生错误，请稍后重试"
+            )
         else:
-            return "发生未知错误，请稍后重试"
+            # 开发环境显示详细错误信息（但已脱敏）
+            # 移除traceback中的敏感信息
+            sanitized_message = ErrorHandler.sanitize_log_message(
+                str(error_info.error)
+            )
+
+            # 进一步清理：移除可能的数据库结构信息
+            # 移除常见的数据库错误信息中的表名和列名
+            sanitized_message = re.sub(
+                r"table\s+['\"]?(\w+)['\"]?\s+already exists",
+                "table [TABLE_NAME] already exists",
+                sanitized_message,
+                flags=re.IGNORECASE
+            )
+            sanitized_message = re.sub(
+                r"no such table:\s+(\w+)",
+                "no such table: [TABLE_NAME]",
+                sanitized_message,
+                flags=re.IGNORECASE
+            )
+            sanitized_message = re.sub(
+                r"no such column:\s+(\w+)",
+                "no such column: [COLUMN_NAME]",
+                sanitized_message,
+                flags=re.IGNORECASE
+            )
+
+            return f"{sanitized_message}"
 
     def get_error_summary(self) -> Dict[str, Any]:
         """获取错误摘要"""

@@ -50,7 +50,9 @@ def init_connection_pool():
                 port=POSTGRES_CONFIG['port'],
                 database=POSTGRES_CONFIG['database'],
                 user=POSTGRES_CONFIG['user'],
-                password=POSTGRES_CONFIG['password']
+                password=POSTGRES_CONFIG['password'],
+                connect_timeout=30,  # 连接超时30秒
+                options='-c statement_timeout=30000'  # 语句超时30秒
             )
 
 
@@ -85,7 +87,10 @@ def get_db_connection():
         if _connection_pool is None:
             raise RuntimeError("连接池未正确初始化")
 
+        # psycopg2的getconn默认阻塞等待，直到有可用连接
+        # 如果连接池已满，会一直等待，这符合连接池的正常行为
         conn = _connection_pool.getconn()
+
         cursor = conn.cursor()
 
         try:
@@ -157,6 +162,14 @@ def adapt_placeholders(sql: str, param_count: int) -> str:
     Returns:
         适配后的SQL
     """
+    # 验证占位符数量
+    placeholder_count = sql.count('?')
+    if placeholder_count != param_count:
+        raise ValueError(
+            f"占位符数量({placeholder_count})与参数数量"
+            f"({param_count})不匹配"
+        )
+
     if DB_TYPE == 'postgresql':
         # psycopg2使用%s占位符，不需要转换
         # 只需确保SQL中没有?

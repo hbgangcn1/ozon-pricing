@@ -349,7 +349,29 @@ def products_page():
                             cylinder_length if is_cylinder else 0.0,
                         ),
                     )
+                    new_product_id = c.lastrowid
                     conn.commit()
+                    # 记录审计日志（如果是admin操作）
+                    try:
+                        from app import is_admin
+                        if is_admin():
+                            from db_utils import log_admin_action
+                            log_admin_action(
+                                admin_id=uid,
+                                action_type='创建产品',
+                                action_detail=(
+                                    f"创建产品: {name} (ID: {new_product_id})"
+                                ),
+                                target_user_id=uid,
+                                target_type='product'
+                            )
+                    except (
+                        ImportError,
+                        AttributeError,
+                        TypeError,
+                        ValueError
+                    ):
+                        pass  # 审计日志记录失败不影响主流程
                     st.success("产品添加成功！")
                     query = (
                         "SELECT id, name, category, weight_g "
@@ -433,11 +455,42 @@ def products_page():
                             st.error("账号到期，请联系客服续费")
                             return
                         product_id = st.session_state.delete_confirm_product_id
+                        # 先获取产品名称用于审计日志
+                        product_info = c.execute(
+                            "SELECT name FROM products "
+                            "WHERE id=? AND user_id=?",
+                            (product_id, uid),
+                        ).fetchone()
+                        product_name = (
+                            product_info[0] if product_info else '未知'
+                        )
                         c.execute(
                             "DELETE FROM products WHERE id=? AND user_id=?",
                             (product_id, uid),
                         )
                         conn.commit()
+                        # 记录审计日志（如果是admin操作）
+                        try:
+                            from app import is_admin
+                            if is_admin():
+                                from db_utils import log_admin_action
+                                log_admin_action(
+                                    admin_id=uid,
+                                    action_type='删除产品',
+                                    action_detail=(
+                                        f"删除产品: {product_name} "
+                                        f"(ID: {product_id})"
+                                    ),
+                                    target_user_id=uid,
+                                    target_type='product'
+                                )
+                        except (
+                            ImportError,
+                            AttributeError,
+                            TypeError,
+                            ValueError
+                        ):
+                            pass  # 审计日志记录失败不影响主流程
                         query = (
                             "SELECT id, name, category, weight_g "
                             "FROM products "
@@ -473,6 +526,10 @@ def products_page():
                             product_ids = [p["id"] for p in selected_products]
                             placeholders = ",".join(["?" for _ in product_ids])
 
+                            # 先获取产品名称用于审计日志
+                            product_names = [
+                                p.get('name', '未知') for p in selected_products
+                            ]
                             c.execute(
                                 f"""
                                 DELETE FROM products
@@ -482,6 +539,33 @@ def products_page():
                             )
 
                             conn.commit()
+                            # 记录审计日志（如果是admin操作）
+                            try:
+                                from app import is_admin
+                                if is_admin():
+                                    from db_utils import log_admin_action
+                                    log_admin_action(
+                                        admin_id=uid,
+                                        action_type='批量删除产品',
+                                        action_detail=(
+                                            f"批量删除 "
+                                            f"{len(selected_products)} 个产品: "
+                                            f"{', '.join(product_names[:5])}"
+                                            + (
+                                                "..." if len(product_names) > 5
+                                                else ""
+                                            )
+                                        ),
+                                        target_user_id=uid,
+                                        target_type='product'
+                                    )
+                            except (
+                                ImportError,
+                                AttributeError,
+                                TypeError,
+                                ValueError
+                            ):
+                                pass  # 审计日志记录失败不影响主流程
                             st.success(
                                 f"成功删除 {len(selected_products)} 个产品！"
                             )
@@ -948,6 +1032,28 @@ def edit_product_form():
                         ),
                     )
                     conn.commit()
+                    # 记录审计日志（如果是admin操作）
+                    try:
+                        from app import is_admin
+                        if is_admin():
+                            from db_utils import log_admin_action
+                            product_name = name or '未知'
+                            log_admin_action(
+                                admin_id=uid,
+                                action_type='更新产品',
+                                action_detail=(
+                                    f"更新产品: {product_name} (ID: {pid})"
+                                ),
+                                target_user_id=uid,
+                                target_type='product'
+                            )
+                    except (
+                        ImportError,
+                        AttributeError,
+                        TypeError,
+                        ValueError
+                    ):
+                        pass  # 审计日志记录失败不影响主流程
                 st.success("产品修改成功！")
                 del st.session_state.edit_product_id
                 # 设置标志，指示应该返回到产品列表页面
@@ -1115,6 +1221,33 @@ def batch_edit_pricing_form():
                 )
 
                 conn.commit()
+                # 记录审计日志（如果是admin操作）
+                try:
+                    from app import is_admin
+                    if is_admin():
+                        from db_utils import log_admin_action
+                        product_names = [
+                            p.get('name', '未知')[:20]
+                            for p in selected_products[:3]
+                        ]
+                        log_admin_action(
+                            admin_id=uid,
+                            action_type='批量更新产品',
+                            action_detail=(
+                                f"批量更新 {len(selected_products)} 个产品的定价参数: "
+                                f"{', '.join(product_names)}"
+                                + ("..." if len(selected_products) > 3 else "")
+                            ),
+                            target_user_id=uid,
+                            target_type='product'
+                        )
+                except (
+                    ImportError,
+                    AttributeError,
+                    TypeError,
+                    ValueError
+                ):
+                    pass  # 审计日志记录失败不影响主流程
                 st.success(f"成功更新 {len(selected_products)} 个产品的定价参数！")
 
                 # 清除session state并返回列表

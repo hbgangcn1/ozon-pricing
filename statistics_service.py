@@ -7,7 +7,49 @@ import time
 import sqlite3
 import streamlit as st
 from datetime import datetime, timedelta, date
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
+
+# 安全常量
+_MAX_IN_CLAUSE_SIZE = 1000  # IN子句最大元素数量
+
+
+def _build_safe_in_clause(
+    values: List[int], max_size: int = _MAX_IN_CLAUSE_SIZE
+) -> Tuple[str, List[int]]:
+    """
+    安全构建IN子句，防止SQL注入
+
+    Args:
+        values: 要查询的值列表（必须是整数列表）
+        max_size: 最大元素数量，防止过大的查询
+
+    Returns:
+        tuple: (IN子句SQL片段, 参数列表)
+
+    Raises:
+        ValueError: 如果values长度超过max_size或包含非整数
+    """
+    if not values:
+        return "IN (NULL)", []
+
+    # 验证输入
+    if len(values) > max_size:
+        raise ValueError(
+            f"IN子句元素数量({len(values)})超过最大限制({max_size})"
+        )
+
+    # 验证所有值都是整数
+    validated_values = []
+    for val in values:
+        if not isinstance(val, int):
+            msg = f"IN子句只能包含整数，发现: {type(val).__name__}"
+            raise ValueError(msg)
+        validated_values.append(val)
+
+    # 构建安全的IN子句（使用参数化查询）
+    placeholders = ','.join('?' * len(validated_values))
+    return f"IN ({placeholders})", validated_values
+
 
 try:
     from .db_utils import (
@@ -83,41 +125,62 @@ def get_retention_analysis(start_date: Optional[str] = None,
                     user_ids = [u[0] for u in registered_users]
                     total_registered = len(user_ids)
 
+                    # 安全构建IN子句（防止SQL注入）
+                    try:
+                        in_clause, in_params = _build_safe_in_clause(user_ids)
+                    except ValueError as e:
+                        print(f"构建IN子句失败: {e}")
+                        # 如果失败，跳过这一天的计算
+                        current += 86400
+                        continue
+
                     # 计算D1留存（第二天登录的用户数）
                     d1_start = day_end
                     d1_end = d1_start + 86400
-                    d1_retained = c.execute(f"""
+                    d1_retained = c.execute(
+                        f"""
                         SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id IN ({','.join('?' * len(user_ids))})
+                        WHERE user_id {in_clause}
                         AND login_time >= ? AND login_time < ?
-                    """, user_ids + [d1_start, d1_end]).fetchone()[0]
+                        """,
+                        in_params + [d1_start, d1_end]
+                    ).fetchone()[0]
 
                     # 计算D3留存
                     d3_start = day_end + 2 * 86400
                     d3_end = d3_start + 86400
-                    d3_retained = c.execute(f"""
+                    d3_retained = c.execute(
+                        f"""
                         SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id IN ({','.join('?' * len(user_ids))})
+                        WHERE user_id {in_clause}
                         AND login_time >= ? AND login_time < ?
-                    """, user_ids + [d3_start, d3_end]).fetchone()[0]
+                        """,
+                        in_params + [d3_start, d3_end]
+                    ).fetchone()[0]
 
                     # 计算D7留存
                     d7_start = day_end + 6 * 86400
                     d7_end = d7_start + 86400
-                    d7_retained = c.execute(f"""
+                    d7_retained = c.execute(
+                        f"""
                         SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id IN ({','.join('?' * len(user_ids))})
+                        WHERE user_id {in_clause}
                         AND login_time >= ? AND login_time < ?
-                    """, user_ids + [d7_start, d7_end]).fetchone()[0]
+                        """,
+                        in_params + [d7_start, d7_end]
+                    ).fetchone()[0]
 
                     # 计算D30留存
                     d30_start = day_end + 29 * 86400
                     d30_end = d30_start + 86400
-                    d30_retained = c.execute(f"""
+                    d30_retained = c.execute(
+                        f"""
                         SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id IN ({','.join('?' * len(user_ids))})
+                        WHERE user_id {in_clause}
                         AND login_time >= ? AND login_time < ?
-                    """, user_ids + [d30_start, d30_end]).fetchone()[0]
+                        """,
+                        in_params + [d30_start, d30_end]
+                    ).fetchone()[0]
 
                     date_str = datetime.fromtimestamp(day_start).strftime(
                         '%Y-%m-%d')

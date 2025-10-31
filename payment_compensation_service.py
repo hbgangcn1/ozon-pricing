@@ -48,7 +48,9 @@ class PaymentCompensationService:
                     ORDER BY created_at ASC
                 """
                 adapted_sql = adapt_placeholders(sql, 2)
-                cursor.execute(adapted_sql, (check_start_time, pending_threshold))
+                cursor.execute(
+                    adapted_sql, (check_start_time, pending_threshold)
+                )
 
                 results = cursor.fetchall()
 
@@ -67,6 +69,53 @@ class PaymentCompensationService:
 
         except Exception as e:
             logger.error(f"获取pending订单失败: {e}")
+            return []
+
+    def get_paid_orders_not_processed(self) -> List[Dict[str, Any]]:
+        """
+        获取PAID状态但可能未处理的订单
+        这些订单可能因为回调处理失败而需要补偿
+        """
+        try:
+            from db_adapter import get_db_connection
+
+            current_time = int(time.time())
+            check_start_time = current_time - self.max_check_age
+            # PAID订单超过5分钟未处理需要补偿
+            paid_threshold = current_time - 300
+
+            with get_db_connection() as (conn, cursor):
+                from db_adapter import adapt_placeholders
+                sql = """
+                    SELECT order_id, user_id, amount, description,
+                           created_at, duration, updated_at
+                    FROM payment_orders
+                    WHERE status = 'PAID'
+                      AND created_at >= ?
+                      AND updated_at <= ?
+                    ORDER BY updated_at ASC
+                """
+                adapted_sql = adapt_placeholders(sql, 2)
+                cursor.execute(adapted_sql, (check_start_time, paid_threshold))
+
+                results = cursor.fetchall()
+
+                orders = []
+                for row in results:
+                    orders.append({
+                        'order_id': row[0],
+                        'user_id': row[1],
+                        'amount': row[2],
+                        'description': row[3],
+                        'created_at': row[4],
+                        'duration': row[5],
+                        'updated_at': row[6] if len(row) > 6 else row[4]
+                    })
+
+                return orders
+
+        except Exception as e:
+            logger.error(f"获取PAID订单失败: {e}")
             return []
 
     @staticmethod
@@ -127,22 +176,32 @@ class PaymentCompensationService:
         """执行一次补偿检查"""
         logger.info("开始执行支付补偿检查...")
 
+        # 1. 检查PENDING状态的订单
         pending_orders = self.get_pending_orders()
 
-        if not pending_orders:
+        # 2. 检查PAID状态但可能未处理的订单
+        paid_orders = self.get_paid_orders_not_processed()
+
+        total_orders = len(pending_orders) + len(paid_orders)
+        if total_orders == 0:
             logger.info("没有需要补偿的订单")
             return
 
-        logger.info(f"发现 {len(pending_orders)} 个待补偿订单")
+        logger.info(
+            f"发现 {len(pending_orders)} 个PENDING订单, "
+            f"{len(paid_orders)} 个PAID订单需要补偿"
+        )
 
         success_count = 0
+
+        # 处理PENDING订单
         for order in pending_orders:
             order_id = order['order_id']
             created_time = datetime.fromtimestamp(order['created_at'])
             age_minutes = (time.time() - order['created_at']) / 60
 
             logger.info(
-                f"处理订单: {order_id}, "
+                f"处理PENDING订单: {order_id}, "
                 f"创建时间: {created_time}, "
                 f"已等待: {age_minutes:.1f}分钟"
             )
@@ -153,8 +212,32 @@ class PaymentCompensationService:
             # 避免请求过快
             time.sleep(1)
 
+        # 处理PAID订单（可能回调处理失败）
+        for order in paid_orders:
+            order_id = order['order_id']
+            updated_time = datetime.fromtimestamp(order['updated_at'])
+            age_minutes = (time.time() - order['updated_at']) / 60
+
+            logger.info(
+                f"处理PAID订单（可能未处理）: {order_id}, "
+                f"更新时间: {updated_time}, "
+                f"已等待: {age_minutes:.1f}分钟"
+            )
+
+            # 对于PAID订单，直接调用handle_payment_success
+            try:
+                from payment_handler import PaymentHandler
+                PaymentHandler.handle_payment_success(order_id)
+                logger.info(f"✅ PAID订单 {order_id} 补偿成功")
+                success_count += 1
+            except Exception as e:
+                logger.error(f"❌ PAID订单 {order_id} 补偿失败: {e}")
+
+            # 避免请求过快
+            time.sleep(1)
+
         logger.info(
-            f"补偿检查完成: 共 {len(pending_orders)} 个订单, "
+            f"补偿检查完成: 共 {total_orders} 个订单, "
             f"成功补偿 {success_count} 个"
         )
 

@@ -2,16 +2,24 @@
 """
 支付处理模块
 集成微信支付到现有的用户界面中
+高优先级安全改进：订单金额验证、用户ID验证、幂等性检查
 """
 
 import streamlit as st
 import time
 import uuid
+import logging
 from typing import Dict, Any, Optional
 from wechat_pay_v3_api import wechat_pay_v3
 from wechat_pay_config import wechat_config
 from db_utils import get_db_connection
 from rate_limiter import get_limiter
+
+# 配置日志
+logger = logging.getLogger(__name__)
+
+# 高优先级安全改进：支付金额阈值配置
+PAYMENT_AMOUNT_THRESHOLD = 10000  # 10000分 = 100元，超过此金额需要人工审核
 
 
 def determine_order_type(user_id: int, target_plan: str,
@@ -304,11 +312,53 @@ class PaymentHandler:
 
         if result["success"]:
             order_id = result.get("out_trade_no")
+            transaction_id = result.get("transaction_id")
+            decrypted_data = result.get("data", {})
+
             print(f"🔧 获取到订单ID: {order_id}")
             if order_id:
+                # 高优先级安全改进：验证订单金额和用户ID
+                validation_result = (
+                    PaymentHandler._validate_payment_callback(
+                        order_id, decrypted_data
+                    )
+                )
+
+                if not validation_result["valid"]:
+                    print(f"❌ 支付回调验证失败: {validation_result['message']}")
+                    return {
+                        "success": False,
+                        "message": validation_result["message"]
+                    }
+
+                # 高优先级安全改进：幂等性检查
+                if transaction_id:
+                    idempotency_result = (
+                        PaymentHandler._check_idempotency(
+                            order_id, str(transaction_id)
+                        )
+                    )
+
+                    if not idempotency_result["can_process"]:
+                        print(
+                            f"⚠️ 订单已处理（幂等性检查）: {order_id}, "
+                            f"原因: {idempotency_result['reason']}"
+                        )
+                        return {
+                            "success": True,
+                            "message": "订单已处理",
+                            "idempotent": True
+                        }
+
                 # 更新订单状态为已支付
                 print(f"🔧 开始更新订单状态: {order_id}")
                 PaymentHandler.update_order_status(order_id, "PAID")
+
+                # 记录处理状态（防止重复处理）
+                if transaction_id:
+                    PaymentHandler._mark_order_processed(
+                        order_id, str(transaction_id)
+                    )
 
                 # 这里可以添加业务逻辑，比如开通会员、增加计算次数等
                 print(f"🔧 开始处理支付成功业务逻辑: {order_id}")
@@ -319,6 +369,191 @@ class PaymentHandler:
             print(f"❌ 支付通知处理失败: {result.get('message', '未知错误')}")
 
         return result
+
+    @staticmethod
+    def _validate_payment_callback(
+            order_id: str, decrypted_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        验证支付回调数据（高优先级安全改进）
+
+        Args:
+            order_id: 订单ID
+            decrypted_data: 解密后的回调数据
+
+        Returns:
+            Dict包含valid(bool)和message(str)
+        """
+        try:
+            with get_db_connection() as (conn, cursor):
+                # 查询订单信息
+                cursor.execute("""
+                    SELECT user_id, amount, status FROM payment_orders
+                    WHERE order_id = ?
+                """, (order_id,))
+
+                order_info = cursor.fetchone()
+                if not order_info:
+                    return {
+                        "valid": False,
+                        "message": f"订单不存在: {order_id}"
+                    }
+
+                db_user_id, db_amount, db_status = order_info
+
+                # 验证订单金额
+                callback_amount = (
+                    decrypted_data.get("amount", {}).get("total", 0)
+                )
+                if callback_amount != db_amount:
+                    logger.error(
+                        f"订单金额不匹配: 订单{order_id}, "
+                        f"数据库金额={db_amount}, 回调金额={callback_amount}"
+                    )
+                    return {
+                        "valid": False,
+                        "message": "订单金额验证失败"
+                    }
+
+                # 验证用户ID（如果回调中包含用户信息）
+                callback_user_id = decrypted_data.get("attach")
+                if callback_user_id:
+                    try:
+                        callback_user_id_int = int(callback_user_id)
+                        if callback_user_id_int != db_user_id:
+                            logger.error(
+                                f"用户ID不匹配: 订单{order_id}, "
+                                f"数据库用户ID={db_user_id}, "
+                                f"回调用户ID={callback_user_id_int}"
+                            )
+                            return {
+                                "valid": False,
+                                "message": "用户ID验证失败"
+                            }
+                    except (ValueError, TypeError):
+                        # attach字段可能不是用户ID，忽略
+                        pass
+
+                # 检查订单状态（防止重复处理）
+                if db_status == "SUCCESS":
+                    return {
+                        "valid": False,
+                        "message": "订单已处理"
+                    }
+
+                return {"valid": True, "message": "验证通过"}
+
+        except Exception as e:
+            logger.error(f"验证支付回调数据失败: {e}")
+            return {
+                "valid": False,
+                "message": f"验证失败: {str(e)}"
+            }
+
+    @staticmethod
+    def _check_idempotency(
+            order_id: str, transaction_id: str
+    ) -> Dict[str, Any]:
+        """
+        检查幂等性（高优先级安全改进）
+
+        Args:
+            order_id: 订单ID
+            transaction_id: 微信交易号
+
+        Returns:
+            Dict包含can_process(bool)和reason(str)
+        """
+        try:
+            with get_db_connection() as (conn, cursor):
+                # 检查订单是否已处理
+                cursor.execute("""
+                    SELECT status, wechat_transaction_id FROM payment_orders
+                    WHERE order_id = ?
+                """, (order_id,))
+
+                order_info = cursor.fetchone()
+                if not order_info:
+                    return {
+                        "can_process": True,
+                        "reason": "订单不存在"
+                    }
+
+                status, existing_transaction_id = order_info
+
+                # 如果订单已成功处理
+                if status == "SUCCESS":
+                    # 检查交易号是否一致
+                    if existing_transaction_id == transaction_id:
+                        return {
+                            "can_process": False,
+                            "reason": "订单已成功处理，交易号一致"
+                        }
+                    else:
+                        logger.warning(
+                            f"订单{order_id}交易号不一致: "
+                            f"已有={existing_transaction_id}, "
+                            f"当前={transaction_id}"
+                        )
+                        return {
+                            "can_process": False,
+                            "reason": "订单已处理但交易号不一致"
+                        }
+
+                return {"can_process": True, "reason": "订单未处理"}
+
+        except Exception as e:
+            logger.error(f"幂等性检查失败: {e}")
+            # 失败时允许继续，但记录日志
+            return {"can_process": True, "reason": "检查失败"}
+
+    @staticmethod
+    def _mark_order_processed(order_id: str, transaction_id: str):
+        """
+        标记订单已处理（高优先级安全改进）
+
+        Args:
+            order_id: 订单ID
+            transaction_id: 微信交易号
+        """
+        try:
+            with get_db_connection() as (conn, cursor):
+                cursor.execute("""
+                    UPDATE payment_orders
+                    SET wechat_transaction_id = ?, updated_at = ?
+                    WHERE order_id = ?
+                """, (transaction_id, int(time.time()), order_id))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"标记订单已处理失败: {e}")
+
+    @staticmethod
+    def _check_payment_amount_threshold(amount: int) -> Dict[str, Any]:
+        """
+        检查支付金额阈值（高优先级安全改进）
+
+        Args:
+            amount: 支付金额（分）
+
+        Returns:
+            Dict包含needs_review(bool)和message(str)
+        """
+        if amount > PAYMENT_AMOUNT_THRESHOLD:
+            logger.warning(
+                f"大额支付告警: 金额={amount}分 "
+                f"(>{PAYMENT_AMOUNT_THRESHOLD}分)"
+            )
+            return {
+                "needs_review": True,
+                "message": (
+                    f"支付金额{amount/100:.2f}元超过阈值"
+                    f"{PAYMENT_AMOUNT_THRESHOLD/100:.2f}元，需要人工审核"
+                )
+            }
+        return {
+            "needs_review": False,
+            "message": "金额正常"
+        }
 
     @staticmethod
     def handle_payment_success(order_id: str):
@@ -350,6 +585,25 @@ class PaymentHandler:
 
                 (user_id, amount, description, duration, is_upgrade,
                  upgrade_from, upgrade_to, remaining_value) = order_info
+
+                # 高优先级安全改进：检查支付金额阈值
+                threshold_check = (
+                    PaymentHandler._check_payment_amount_threshold(amount)
+                )
+                if threshold_check["needs_review"]:
+                    logger.warning(
+                        f"订单{order_id}需要人工审核: "
+                        f"{threshold_check['message']}"
+                    )
+                    # 标记订单为需要审核状态
+                    cursor.execute("""
+                        UPDATE payment_orders
+                        SET status = 'REVIEW_NEEDED', updated_at = ?
+                        WHERE order_id = ?
+                    """, (int(time.time()), order_id))
+                    conn.commit()
+                    print(f"⚠️ 订单已标记为需要审核: {order_id}")
+                    return
 
                 # 判断是否为升级订单
                 if is_upgrade:

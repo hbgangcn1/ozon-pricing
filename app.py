@@ -2846,6 +2846,7 @@ def _create_cost_breakdown_chart(
     final_price: float,
     expected_profit: float = None,
     pricing_mode: str = None,
+    rate_snapshot: float = None,
 ) -> Any:
     """创建成本分解饼状图
 
@@ -2855,6 +2856,7 @@ def _create_cost_breakdown_chart(
         final_price: 最终售价
         expected_profit: 预期利润（如果提供，直接使用；否则重新计算）
         pricing_mode: 定价模式（"代理费在分子中"或"代理费在分母中"，如果提供则直接使用）
+        rate_snapshot: 汇率快照（如果提供，直接使用；否则获取最新汇率）
     """
     import plotly.graph_objects as go
     from exchange_service import get_fallback_exchange_rate
@@ -2871,8 +2873,14 @@ def _create_cost_breakdown_chart(
     return_rate = float(product.get("return_rate") or 0)
     vat_rate = float(product.get("vat_rate") or 0)
 
+    # 获取汇率
+    rate = (
+        rate_snapshot
+        if rate_snapshot is not None
+        else get_fallback_exchange_rate()
+    )
+
     # 计算代理费
-    rate = get_fallback_exchange_rate()
     price_rub = final_price / rate
     actual_commission_rub = max(15, min(200, price_rub * 0.02))
     commission_fee = actual_commission_rub * rate
@@ -2958,7 +2966,7 @@ def _create_cost_breakdown_chart(
         values=values,
         hole=0.3,
         marker=dict(colors=colors),
-        # 多项时放扇区内，仅显示百分比；少量项自动布局“名称：占比”
+        # 多项时放扇区内，仅显示百分比；少量项自动布局"名称：占比"
         # auto: 能放内则内，放不下自动转到外侧
         textinfo='percent' if many_items else 'none',
         texttemplate=None if many_items else '%{label}: %{percent}',
@@ -3109,6 +3117,17 @@ def display_fast_pricing_results_precise_style(
     effective_weight: float,
 ):
     """显示极速模式定价结果 - 使用精准模式样式"""
+
+    # 固定本次展示使用的汇率快照，确保页面内多图一致
+    try:
+        from exchange_service import get_usd_rate as _get_usd_rate
+        rate_snapshot = (
+            st.session_state.get('rate_snapshot')
+            or _get_usd_rate()
+        )
+        st.session_state['rate_snapshot'] = rate_snapshot
+    except (KeyError, AttributeError, TypeError, ValueError, ImportError):
+        rate_snapshot = None
 
     # 显示结果
     st.markdown(
@@ -3341,7 +3360,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_low.get('land_cost', 0),
                 pricing_result_low.get("land_price", 0),
                 pricing_result_low.get("land_expected_profit", 0),
-                pricing_result_low.get("land_pricing_mode")
+                pricing_result_low.get("land_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3427,7 +3447,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_low_home.get('land_cost', 0),
                 pricing_result_low_home.get("land_price", 0),
                 pricing_result_low_home.get("land_expected_profit", 0),
-                pricing_result_low_home.get("land_pricing_mode")
+                pricing_result_low_home.get("land_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig, use_container_width=True, key="fast_land_low_home",
@@ -3522,7 +3543,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_low.get('air_cost', 0),
                 pricing_result_low.get("air_price", 0),
                 pricing_result_low.get("air_expected_profit", 0),
-                pricing_result_low.get("air_pricing_mode")
+                pricing_result_low.get("air_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3608,7 +3630,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_low_home.get('air_cost', 0),
                 pricing_result_low_home.get("air_price", 0),
                 pricing_result_low_home.get("air_expected_profit", 0),
-                pricing_result_low_home.get("air_pricing_mode")
+                pricing_result_low_home.get("air_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3719,7 +3742,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_fast.get('land_cost', 0),
                 pricing_result_fast.get("land_price", 0),
                 pricing_result_fast.get("land_expected_profit", 0),
-                pricing_result_fast.get("land_pricing_mode")
+                pricing_result_fast.get("land_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3804,7 +3828,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_fast_home.get('land_cost', 0),
                 pricing_result_fast_home.get("land_price", 0),
                 pricing_result_fast_home.get("land_expected_profit", 0),
-                pricing_result_fast_home.get("land_pricing_mode")
+                pricing_result_fast_home.get("land_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3814,7 +3839,6 @@ def display_fast_pricing_results_precise_style(
             )
         else:
             st.info("暂无可用物流")
-
     # ------- 空运（速度优先）：送到取货点 + 送货上门 -------
     with col_air_s:
         st.markdown(
@@ -3899,7 +3923,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_fast.get('air_cost', 0),
                 pricing_result_fast.get("air_price", 0),
                 pricing_result_fast.get("air_expected_profit", 0),
-                pricing_result_fast.get("air_pricing_mode")
+                pricing_result_fast.get("air_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3985,7 +4010,8 @@ def display_fast_pricing_results_precise_style(
                 pricing_result_fast_home.get('air_cost', 0),
                 pricing_result_fast_home.get("air_price", 0),
                 pricing_result_fast_home.get("air_expected_profit", 0),
-                pricing_result_fast_home.get("air_pricing_mode")
+                pricing_result_fast_home.get("air_pricing_mode"),
+                rate_snapshot=rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -4672,6 +4698,20 @@ def save_product_to_db(
                 ),
             )
             conn.commit()
+            # 记录审计日志（如果是admin操作）
+            try:
+                if is_admin():
+                    from db_utils import log_admin_action
+                    product_id = c.lastrowid
+                    log_admin_action(
+                        admin_id=user_id,
+                        action_type='创建产品',
+                        action_detail=f"创建产品: {name} (ID: {product_id})",
+                        target_user_id=user_id,
+                        target_type='product'
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass  # 审计日志记录失败不影响主流程
             return True  # 成功时返回True
     except (sqlite3.Error, ValueError, TypeError) as e:
         st.error(f"保存产品失败: {e}")
@@ -5296,8 +5336,30 @@ def show_product_list_page(uid):
                                 "user_id = ?",
                                 (product['id'], uid),
                             )
+                            product_name = product.get('name', '未知')
                             conn.commit()
-                            st.success(f"产品 '{product['name']}' 已删除")
+                            # 记录审计日志（如果是admin操作）
+                            try:
+                                if is_admin():
+                                    from db_utils import log_admin_action
+                                    log_admin_action(
+                                        admin_id=uid,
+                                        action_type='删除产品',
+                                        action_detail=(
+                                            f"删除产品: {product_name} "
+                                            f"(ID: {product['id']})"
+                                        ),
+                                        target_user_id=uid,
+                                        target_type='product'
+                                    )
+                            except (
+                                ImportError,
+                                AttributeError,
+                                TypeError,
+                                ValueError
+                            ):
+                                pass  # 审计日志记录失败不影响主流程
+                            st.success(f"产品 '{product_name}' 已删除")
                             st.rerun()
                         except sqlite3.IntegrityError as del_err:
                             msg = str(del_err)
@@ -5317,9 +5379,31 @@ def show_product_list_page(uid):
                                     "user_id = ?",
                                     (product['id'], uid),
                                 )
+                                product_name = product.get('name', '未知')
                                 conn.commit()
+                                # 记录审计日志（如果是admin操作）
+                                try:
+                                    if is_admin():
+                                        from db_utils import log_admin_action
+                                        log_admin_action(
+                                            admin_id=uid,
+                                            action_type='删除产品',
+                                            action_detail=(
+                                                f"删除产品: {product_name} "
+                                                f"(ID: {product['id']})"
+                                            ),
+                                            target_user_id=uid,
+                                            target_type='product'
+                                        )
+                                except (
+                                    ImportError,
+                                    AttributeError,
+                                    TypeError,
+                                    ValueError
+                                ):
+                                    pass  # 审计日志记录失败不影响主流程
                                 st.success(
-                                    f"产品 '{product['name']}' 已删除"
+                                    f"产品 '{product_name}' 已删除"
                                 )
                                 st.rerun()
                             else:
@@ -5397,6 +5481,17 @@ def display_precise_pricing_results(
 ):
     """显示精准模式定价结果 - 完整版"""
 
+    # 固定本次展示使用的汇率快照，确保页面内多图一致
+    try:
+        from exchange_service import get_usd_rate as _get_usd_rate
+        rate_snapshot = (
+            st.session_state.get('rate_snapshot')
+            or _get_usd_rate()
+        )
+        st.session_state['rate_snapshot'] = rate_snapshot
+    except (KeyError, AttributeError, TypeError, ValueError, ImportError):
+        rate_snapshot = None
+
     # 显示结果标题
     st.markdown(
         (
@@ -5441,75 +5536,6 @@ def display_precise_pricing_results(
             unsafe_allow_html=True,
         )
 
-    # # 显示物流筛选详情
-    # with st.expander("🔍 物流筛选详情", expanded=False):
-    #     st.markdown("### 物流筛选过程")
-    #
-    #     # 获取物流规则
-    #     logistics_rules = get_precise_logistics_rules()
-    #     land_logistics = [
-    #         rule for rule in logistics_rules if rule.get('type') == 'land'
-    #     ]
-    #     air_logistics = [
-    #         rule for rule in logistics_rules if rule.get('type') == 'air'
-    #     ]
-    #
-    #     st.write(
-    #         f"**总物流规则数量：** {len(logistics_rules)}"
-    #     )
-    #     st.write(
-    #         f"**陆运规则数量：** {len(land_logistics)}"
-    #     )
-    #     st.write(
-    #         f"**空运规则数量：** {len(air_logistics)}"
-    #     )
-    #     # 显示每个物流规则的筛选结果
-    #     st.markdown("#### 陆运物流筛选结果")
-    #     for i, rule in enumerate(land_logistics):
-    #         with st.container():
-    #             col1, col2 = st.columns([3, 1])
-    #             with col1:
-    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-    #                 st.write(
-    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
-    #                     f"{rule.get('max_weight', '无限制')}g"
-    #                 )
-    #             with col2:
-    #             # 检查重量限制
-    #                 weight_g = (
-    #                     product_info.get('weight_g', 0)
-    #                     if product_info else 0
-    #                 )
-    #                 if weight_g < rule.get('min_weight', 0):
-    #                     st.error("❌ 重量过低")
-    #                 elif weight_g > rule.get('max_weight', 10**9):
-    #                     st.error("❌ 重量过高")
-    #                 else:
-    #                     st.success("✅ 通过")
-    #
-    #     st.markdown("#### 空运物流筛选结果")
-    #     for i, rule in enumerate(air_logistics):
-    #         with st.container():
-    #             col1, col2 = st.columns([3, 1])
-    #             with col1:
-    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-    #                 st.write(
-    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
-    #                     f"{rule.get('max_weight', '无限制')}g"
-    #                 )
-    #             with col2:
-    #             # 检查重量限制
-    #                 weight_g = (
-    #                     product_info.get('weight_g', 0)
-    #                     if product_info else 0
-    #                 )
-    #                 if weight_g < rule.get('min_weight', 0):
-    #                     st.error("❌ 重量过低")
-    #                 elif weight_g > rule.get('max_weight', 10**9):
-    #                     st.error("❌ 重量过高")
-    #                 else:
-    #                     st.success("✅ 通过")
-
     # =============================
     # 低价优先
     # =============================
@@ -5522,149 +5548,6 @@ def display_precise_pricing_results(
         ),
         unsafe_allow_html=True,
     )
-
-    # 添加调试信息
-    # with st.expander("🔧 计算调试信息", expanded=True):
-    #     st.markdown("### 计算结果调试")
-    #     st.write(
-    #         f"**pricing_result_low keys:** "
-    #         f"{list(pricing_result_low.keys())}"
-    #     )
-    #     st.write(f"**land_cost:** {pricing_result_low.get('land_cost')}")
-    #     st.write(f"**air_cost:** {pricing_result_low.get('air_cost')}")
-    #     st.write(f"**best_land:** {pricing_result_low.get('best_land')}")
-    #     st.write(f"**best_air:** {pricing_result_low.get('best_air')}")
-    #
-    #     # 显示预期利润计算调试信息
-    #     st.markdown("### 预期利润计算调试")
-    #     land_debug = pricing_result_low.get('land_debug', [])
-    #     air_debug = pricing_result_low.get('air_debug', [])
-    #
-    #     if land_debug:
-    #         st.markdown("#### 陆运预期利润计算")
-    #         for debug_line in land_debug:
-    #             st.write(debug_line)
-    #
-    #     if air_debug:
-    #         st.markdown("#### 空运预期利润计算")
-    #         for debug_line in air_debug:
-    #             st.write(debug_line)
-    #
-    #     # 检查all_costs_debug中的详细信息
-    #     all_costs_debug = pricing_result_low.get('all_costs_debug', [])
-    #     st.write(f"**all_costs_debug 数量:** {len(all_costs_debug)}")
-
-    #     # 显示物流淘汰过程
-    #     st.markdown("### 物流淘汰过程")
-    #     if all_costs_debug:
-    #     # 统计淘汰原因
-    #         elimination_reasons = {}
-    #         total_logistics = len(all_costs_debug)
-    #         eliminated_count = 0
-    #
-    #         for debug_info in all_costs_debug:
-    #             if isinstance(debug_info, dict):
-    #                 logistic_name = debug_info.get("logistic", {}).get(
-    #                     "name", "未知物流"
-    #                 )
-    #             cost = debug_info.get("cost")
-    #             debug_list = debug_info.get("debug", [])
-    #
-    #             if cost is None:
-    #                 eliminated_count += 1
-    #             # 找到淘汰原因
-    #                 reason = None
-    #                 for debug_line in debug_list:
-    #                     if "返回 None" in debug_line:
-    #                         reason = debug_line.replace(
-    #                             "返回 None", ""
-    #                         ).strip()
-    #                         break
-    #                     elif "跳过" in debug_line:
-    #                         reason = debug_line.strip()
-    #                         break
-    #
-    #                 if reason:
-    #                     if reason not in elimination_reasons:
-    #                         elimination_reasons[reason] = []
-    #                     elimination_reasons[reason].append(
-    #                         logistic_name
-    #                     )
-#                 else:
-    #                 # 如果没有找到明确的原因，使用最后一个调试信息
-    #                     if debug_list:
-    #                         reason = debug_list[-1].strip()
-    #                         if reason not in elimination_reasons:
-    #                             elimination_reasons[reason] = []
-    #                         elimination_reasons[reason].append(
-    #                             logistic_name
-    #                         )
-#
-    #     st.write(f"**总计物流规则：{total_logistics} 个**")
-    #     st.write(f"**被淘汰物流：{eliminated_count} 个**")
-    #     st.write(f"**可用物流：{total_logistics - eliminated_count} 个**")
-    pass
-
-    # # 显示淘汰原因详情
-    # if elimination_reasons:
-    #     st.markdown("**淘汰原因统计：**")
-    #     for reason, logistics in elimination_reasons.items():
-    #         st.write(f"**原因：**{reason}")
-    #         st.write(f"**影响物流：**{len(logistics)} 个")
-    #         st.write(f"**物流名称：**{', '.join(logistics)}")
-    #         st.markdown("---")
-    #
-    # # 显示运费计算过程
-    # st.markdown("### 运费计算过程")
-    # if all_costs_debug:
-    #     for debug_info in all_costs_debug:
-    #         if isinstance(debug_info, dict):
-    #             logistic_name = debug_info.get("logistic", {}).get(
-    #                 "name", "未知物流"
-    #             )
-    #             cost = debug_info.get("cost")
-    #             debug_list = debug_info.get("debug", [])
-    #
-    #             status = "✅ 可用" if cost is not None else "❌ 被淘汰"
-    #             cost_display = (
-    #                 f"¥{cost:.2f}" if cost is not None else "无法计算"
-    #             )
-    #
-    #             st.markdown(
-    #                 f"**{logistic_name}** - {status} - 运费：{cost_display}"
-    #             )
-    #
-    #             if debug_list:
-    #                 for debug_line in debug_list:
-    #                     st.text(f"  {debug_line}")
-    #
-    #             st.markdown("---")
-    #
-    # # 查找运费为0的物流规则
-    # zero_cost_rules = []
-    # for debug_info in all_costs_debug:
-    #     if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
-    #         zero_cost_rules.append(debug_info)
-    #
-    # st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
-    # if zero_cost_rules:
-    #     st.write("**运费为0的物流规则:**")
-    #     for rule in zero_cost_rules[:5]:  # 只显示前5个
-    #         logistic_name = rule.get('logistic', {}).get('name', 'Unknown')
-    #         st.write(f"  - {logistic_name}: cost={rule.get('cost')}")
-    pass
-
-    # # 查找特定物流规则的运费
-    # target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
-    # for debug_info in all_costs_debug:
-    #     if isinstance(debug_info, dict):
-    #         logistic = debug_info.get('logistic', {})
-    #         name = logistic.get('name', 'Unknown')
-    #         if name in target_rules:
-    #             st.write(
-    #                 f"**{name}:** cost={debug_info.get('cost')}, "
-    #                 f"type={logistic.get('type')}"
-    #             )
 
     col_land_l, col_air_l = st.columns(2)
 
@@ -5741,7 +5624,8 @@ def display_precise_pricing_results(
                     pricing_result_low.get('land_cost', 0),
                     pricing_result_low.get("land_price", 0),
                     pricing_result_low.get("land_expected_profit", 0),
-                    pricing_result_low.get("land_pricing_mode")
+                    pricing_result_low.get("land_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -5816,7 +5700,8 @@ def display_precise_pricing_results(
                     pricing_result_low_home.get('land_cost', 0),
                     pricing_result_low_home.get("land_price", 0),
                     pricing_result_low_home.get("land_expected_profit", 0),
-                    pricing_result_low_home.get("land_pricing_mode")
+                    pricing_result_low_home.get("land_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -5900,7 +5785,8 @@ def display_precise_pricing_results(
                     pricing_result_low.get('air_cost', 0),
                     pricing_result_low.get("air_price", 0),
                     pricing_result_low.get("air_expected_profit", 0),
-                    pricing_result_low.get("air_pricing_mode")
+                    pricing_result_low.get("air_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -5975,7 +5861,8 @@ def display_precise_pricing_results(
                     pricing_result_low_home.get('air_cost', 0),
                     pricing_result_low_home.get("air_price", 0),
                     pricing_result_low_home.get("air_expected_profit", 0),
-                    pricing_result_low_home.get("air_pricing_mode")
+                    pricing_result_low_home.get("air_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6075,7 +5962,8 @@ def display_precise_pricing_results(
                     pricing_result_fast.get('land_cost', 0),
                     pricing_result_fast.get("land_price", 0),
                     pricing_result_fast.get("land_expected_profit", 0),
-                    pricing_result_fast.get("land_pricing_mode")
+                    pricing_result_fast.get("land_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6151,7 +6039,8 @@ def display_precise_pricing_results(
                     pricing_result_fast_home.get('land_cost', 0),
                     pricing_result_fast_home.get("land_price", 0),
                     pricing_result_fast_home.get("land_expected_profit", 0),
-                    pricing_result_fast_home.get("land_pricing_mode")
+                    pricing_result_fast_home.get("land_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6161,7 +6050,6 @@ def display_precise_pricing_results(
                 )
         else:
             st.info("暂无可用物流")
-
     # ------- 空运（速度优先）：送到取货点 + 送货上门 -------
     with col_air_s:
         st.markdown(
@@ -6235,7 +6123,8 @@ def display_precise_pricing_results(
                     pricing_result_fast.get('air_cost', 0),
                     pricing_result_fast.get("air_price", 0),
                     pricing_result_fast.get("air_expected_profit", 0),
-                    pricing_result_fast.get("air_pricing_mode")
+                    pricing_result_fast.get("air_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6310,7 +6199,8 @@ def display_precise_pricing_results(
                     pricing_result_fast_home.get('air_cost', 0),
                     pricing_result_fast_home.get("air_price", 0),
                     pricing_result_fast_home.get("air_expected_profit", 0),
-                    pricing_result_fast_home.get("air_pricing_mode")
+                    pricing_result_fast_home.get("air_pricing_mode"),
+                    rate_snapshot=rate_snapshot
                 )
                 st.plotly_chart(
                     fig,

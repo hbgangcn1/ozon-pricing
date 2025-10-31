@@ -345,6 +345,17 @@ def _display_calculation_results():
         ),
         unsafe_allow_html=True,
     )
+    # 导入HTML转义工具
+    try:
+        from security_utils import escape_html_content
+    except ImportError:
+        from html import escape as escape_html_content
+
+    # 转义用户输入，防止XSS攻击
+    safe_product_name = escape_html_content(product.get('name', ''))
+    safe_category = escape_html_content(product.get('category', ''))
+    safe_weight = escape_html_content(str(product.get('weight_g', 0)))
+
     st.markdown(
         (
             '<div style="background: linear-gradient(135deg, '
@@ -353,12 +364,12 @@ def _display_calculation_results():
             'border-left: 4px solid #28a745;">'
             '<div style="font-size: 1.1em; color: #2c3e50; '
             'margin-bottom: 8px;"><strong>产品名称：</strong>'
-            f"{product['name']}</div>"
+            f"{safe_product_name}</div>"
             '<div style="font-size: 1.1em; color: #2c3e50; '
             'margin-bottom: 8px;"><strong>产品类别：</strong>'
-            f"{product['category']}</div>"
+            f"{safe_category}</div>"
             '<div style="font-size: 1.1em; color: #2c3e50;">'
-            f"<strong>重量：</strong>{product['weight_g']}g</div>"
+            f"<strong>重量：</strong>{safe_weight}g</div>"
             "</div>"
         ),
         unsafe_allow_html=True,
