@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import base64
 import os
+import logging
 from typing import Dict, Optional, Any
 import requests
 from cryptography.hazmat.primitives import hashes, serialization
@@ -17,6 +18,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.backends import default_backend
 from wechat_pay_config import wechat_config
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 class WeChatPayV3API:
@@ -428,10 +432,45 @@ class WeChatPayV3API:
                          .get("Wechatpay-Signature", ""))
             body = request_data.get("body", "")
 
-            # 验证签名（使用微信支付公钥）
+            # 高优先级安全改进：强制验证签名（使用微信支付公钥）
             if not self.verify_notify_signature_with_public_key(
                 timestamp, nonce, body, signature
             ):
+                logger.error(
+                    f"【安全告警】支付回调签名验证失败: "
+                    f"timestamp={timestamp}, nonce={nonce[:8]}..."
+                )
+                # 记录到支付异常监控
+                try:
+                    from payment_callback_enhanced import (
+                        get_payment_callback_monitor
+                    )
+                    monitor = get_payment_callback_monitor()
+                    monitor.record_alert(
+                        'signature_verification_failed',
+                        'critical',
+                        f"支付回调签名验证失败: timestamp={timestamp}",
+                        {
+                            'timestamp': timestamp,
+                            'nonce': nonce[:8] if nonce else None
+                        }
+                    )
+                except (ImportError, ModuleNotFoundError):
+                    # 监控模块不可用，记录警告但不影响主流程
+                    logger.warning(
+                        "支付异常监控模块不可用，无法记录签名验证失败告警"
+                    )
+                except (AttributeError, TypeError) as e:
+                    # 监控模块配置错误
+                    logger.warning(
+                        f"支付异常监控模块配置错误: {type(e).__name__}: {e}"
+                    )
+                except Exception as e:
+                    # 其他异常（如监控模块内部错误），记录但不影响主流程
+                    logger.warning(
+                        f"记录支付异常监控告警失败: "
+                        f"{type(e).__name__}: {e}"
+                    )
                 return {"success": False, "message": "签名验证失败"}
 
             # 解析通知数据
@@ -488,13 +527,15 @@ class WeChatPayV3API:
             bool: 签名是否正确
         """
         try:
-            # 检查是否有公钥配置
+            # 高优先级安全改进：强制要求公钥验证
             if not self.config.public_key_path:
-                return True  # 如果没有配置公钥，跳过验证
+                logger.error("微信支付公钥未配置，无法验证回调签名")
+                return False  # 如果没有配置公钥，拒绝验证
 
             # 检查公钥文件是否存在
             if not os.path.exists(self.config.public_key_path):
-                return True  # 如果公钥文件不存在，跳过验证
+                logger.error(f"微信支付公钥文件不存在: {self.config.public_key_path}")
+                return False  # 如果公钥文件不存在，拒绝验证
 
             # 构建待验证的字符串
             sign_str = f"{timestamp}\n{nonce}\n{body}\n"

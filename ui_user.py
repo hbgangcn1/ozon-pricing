@@ -909,14 +909,57 @@ def _show_login_form():
             st.rerun()
 
         if submitted:
+            # 输入验证
+            if not identifier or not identifier.strip():
+                st.error("❌ 请输入用户名或邮箱")
+                return
+
+            if not pwd or not pwd.strip():
+                st.error("❌ 请输入密码")
+                return
+
             try:
                 from .session_security import secure_login
             except ImportError:
                 from session_security import secure_login
-            login_success = secure_login(identifier, pwd)
-            if login_success:
-                st.rerun()
-            # secure_login函数内部已经处理了错误信息显示
+
+            try:
+                login_success = secure_login(identifier.strip(), pwd)
+                if login_success:
+                    st.rerun()
+            except (ImportError, AttributeError, RuntimeError) as e:
+                # 捕获导入错误、属性错误和运行时错误
+                error_msg = str(e)
+                st.error(f"❌ 登录过程中发生错误: {error_msg}")
+                # 记录错误日志
+                try:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"登录错误: {error_msg}", exc_info=True)
+                except (AttributeError, RuntimeError, ImportError):
+                    pass
+            except sqlite3.Error as e:
+                # 数据库相关错误
+                error_msg = str(e)
+                st.error(f"❌ 数据库错误: {error_msg}")
+                # 记录错误日志
+                try:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"登录数据库错误: {error_msg}", exc_info=True)
+                except (AttributeError, RuntimeError, ImportError):
+                    pass
+            except Exception as e:
+                # 捕获其他未预期的异常
+                error_msg = str(e)
+                st.error(f"❌ 登录过程中发生未知错误: {error_msg}")
+                # 记录错误日志
+                try:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"登录未知错误: {error_msg}", exc_info=True)
+                except (AttributeError, RuntimeError, ImportError):
+                    pass
 
 
 def _show_register_form():

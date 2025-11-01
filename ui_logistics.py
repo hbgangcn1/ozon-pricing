@@ -926,11 +926,32 @@ def logistics_page():
                         ).fetchone()
                         if info:
                             logistic_names.append(info[0])
-                    placeholders = ",".join(["?" for _ in logistic_ids])
+
+                    # 导入SQL安全工具
+                    try:
+                        from .sql_security import (
+                            build_in_clause, SQLSecurityError
+                        )
+                    except ImportError:
+                        from sql_security import (
+                            build_in_clause, SQLSecurityError
+                        )
+
+                    # 使用安全的IN子句构建工具
+                    try:
+                        in_clause, validated_ids = build_in_clause(
+                            logistic_ids
+                        )
+                    except SQLSecurityError as e:
+                        st.error(f"SQL安全错误: {e}")
+                        del st.session_state.batch_delete_land_ids
+                        st.rerun()
+                        # st.rerun()会立即重新运行脚本，所以不需要return
+
                     c.execute(
-                        f"DELETE FROM logistics WHERE id IN ({placeholders}) "
+                        f"DELETE FROM logistics WHERE id {in_clause} "
                         f"AND user_id=?",
-                        (*logistic_ids, uid),
+                        (*validated_ids, uid),
                     )
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
@@ -1002,11 +1023,32 @@ def logistics_page():
                         ).fetchone()
                         if info:
                             logistic_names.append(info[0])
-                    placeholders = ",".join(["?" for _ in logistic_ids])
+
+                    # 导入SQL安全工具
+                    try:
+                        from .sql_security import (
+                            build_in_clause, SQLSecurityError
+                        )
+                    except ImportError:
+                        from sql_security import (
+                            build_in_clause, SQLSecurityError
+                        )
+
+                    # 使用安全的IN子句构建工具
+                    try:
+                        in_clause, validated_ids = build_in_clause(
+                            logistic_ids
+                        )
+                    except SQLSecurityError as e:
+                        st.error(f"SQL安全错误: {e}")
+                        del st.session_state.batch_delete_air_ids
+                        st.rerun()
+                        # st.rerun()会立即重新运行脚本，所以不需要return
+
                     c.execute(
-                        f"DELETE FROM logistics WHERE id IN ({placeholders}) "
+                        f"DELETE FROM logistics WHERE id {in_clause} "
                         f"AND user_id=?",
-                        (*logistic_ids, uid),
+                        (*validated_ids, uid),
                     )
                     conn.commit()
                     # 记录审计日志（如果是admin操作）

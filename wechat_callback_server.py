@@ -7,6 +7,8 @@
 from flask import Flask, request, jsonify
 import logging
 import threading
+import importlib
+import json
 from queue import Queue
 from payment_handler import payment_handler, PaymentHandler
 from hmac_utils import verify_signature, get_callback_secret
@@ -132,7 +134,74 @@ def wechat_notify():
         except (ValueError, TypeError, AttributeError):
             pass
 
-        # ========== 阶段1：快速验证签名（目标<500ms）==========
+        # ========== 阶段1：高优先级安全改进 - 快速验证时间戳和nonce ==========
+        # 先进行轻量级验证（时间戳和nonce），快速拒绝无效请求
+        # 这样可以避免在无效请求上浪费计算资源进行签名验证
+        order_id = ''  # 初始化订单号变量
+        try:
+            module = importlib.import_module('payment_callback_security')
+            security_class = getattr(
+                module, 'PaymentCallbackSecurity', None
+            )
+            if security_class:
+                # 1. 先验证时间戳（轻量级操作）
+                timestamp = headers.get('Wechatpay-Timestamp', '')
+                if timestamp:
+                    is_valid, msg = security_class.validate_timestamp(
+                        timestamp
+                    )
+                    if not is_valid:
+                        logger.warning(
+                            f"时间戳验证失败: {msg}, "
+                            f"timestamp={timestamp}"
+                        )
+                        return jsonify({
+                            'code': 'FAIL',
+                            'message': f'时间戳验证失败: {msg}'
+                        }), 400
+                else:
+                    return jsonify({
+                        'code': 'FAIL',
+                        'message': '缺少时间戳'
+                    }), 400
+
+                # 2. 解析订单号（用于nonce验证）
+                # 注意：这里需要先解析请求体获取订单号
+                # 但由于nonce验证需要订单号，我们先进行签名验证前的准备
+                try:
+                    body_dict = json.loads(body)
+                    order_id = body_dict.get('out_trade_no', '')
+                except (json.JSONDecodeError, KeyError, AttributeError):
+                    order_id = ''
+
+                # 3. 验证nonce（防重放攻击）
+                nonce = headers.get('Wechatpay-Nonce', '')
+                if nonce and order_id:
+                    is_valid, msg = security_class.check_and_store_nonce(
+                        nonce, order_id, timestamp
+                    )
+                    if not is_valid:
+                        logger.warning(
+                            f"nonce验证失败: {msg}, "
+                            f"order_id={order_id[:8]}..., "
+                            f"nonce={nonce[:8]}..."
+                        )
+                        return jsonify({
+                            'code': 'FAIL',
+                            'message': f'nonce验证失败: {msg}'
+                        }), 400
+                elif not nonce:
+                    return jsonify({
+                        'code': 'FAIL',
+                        'message': '缺少nonce'
+                    }), 400
+        except ImportError:
+            # 如果安全模块不可用，记录警告但继续处理
+            logger.warning(
+                "支付回调安全模块不可用，跳过时间戳和nonce验证"
+            )
+
+        # ========== 阶段2：验证签名（重量级操作）==========
         # 先做我们自己的HMAC校验，再走原有的微信v3验签流程
         secret = get_callback_secret()
         if secret:
@@ -160,8 +229,9 @@ def wechat_notify():
                 'message': result['message']
             }), 400
 
-        # ========== 阶段2：提取订单号，放入队列 ==========
-        order_id = result.get('out_trade_no')
+        # ========== 阶段3：提取订单号，放入队列 ==========
+        # 从处理结果中获取订单号（如果之前没有获取到）
+        order_id = result.get('out_trade_no', order_id)
         if not order_id:
             logger.error("未能从回调中提取订单号")
             return jsonify({

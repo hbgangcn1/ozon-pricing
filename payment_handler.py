@@ -401,15 +401,49 @@ class PaymentHandler:
 
                 db_user_id, db_amount, db_status = order_info
 
-                # 验证订单金额
+                # 高优先级安全改进：支付金额二次验证
                 callback_amount = (
                     decrypted_data.get("amount", {}).get("total", 0)
                 )
                 if callback_amount != db_amount:
                     logger.error(
-                        f"订单金额不匹配: 订单{order_id}, "
+                        f"【安全告警】订单金额不匹配: 订单{order_id}, "
                         f"数据库金额={db_amount}, 回调金额={callback_amount}"
                     )
+                    # 记录到支付异常监控
+                    try:
+                        from payment_callback_enhanced import (
+                            get_payment_callback_monitor
+                        )
+                        monitor = get_payment_callback_monitor()
+                        monitor.record_alert(
+                            'amount_mismatch',
+                            'critical',
+                            f"订单{order_id}金额验证失败: "
+                            f"数据库={db_amount}, 回调={callback_amount}",
+                            {
+                                'order_id': order_id,
+                                'db_amount': db_amount,
+                                'callback_amount': callback_amount
+                            }
+                        )
+                    except (ImportError, ModuleNotFoundError):
+                        # 监控模块不可用，记录警告但不影响主流程
+                        logger.warning(
+                            "支付异常监控模块不可用，无法记录金额验证失败告警"
+                        )
+                    except (AttributeError, TypeError) as e:
+                        # 监控模块配置错误
+                        logger.warning(
+                            f"支付异常监控模块配置错误: "
+                            f"{type(e).__name__}: {e}"
+                        )
+                    except Exception as e:
+                        # 其他异常（如监控模块内部错误），记录但不影响主流程
+                        logger.warning(
+                            f"记录支付异常监控告警失败: "
+                            f"{type(e).__name__}: {e}"
+                        )
                     return {
                         "valid": False,
                         "message": "订单金额验证失败"
@@ -775,15 +809,20 @@ class PaymentHandler:
                         SET calculations_remaining = calculations_remaining + ?
                         WHERE id = ?
                     """, (amount // 100, user_id))  # 假设1元=1次计算
-                    print(f"✅ 计算次数已增加: {amount // 100}次")
+                    # 高优先级安全改进：使用脱敏日志
+                    from logger_config import log_safe_info
+                    log_safe_info(f"✅ 计算次数已增加: {amount // 100}次")
 
                 conn.commit()
-                print(f"✅ 支付成功处理完成: 订单ID={order_id}")
+                from logger_config import SensitiveFormatter, log_safe_info
+                masked_order_id = SensitiveFormatter.mask_order_id(order_id)
+                log_safe_info(
+                    f"✅ 支付成功处理完成: 订单ID={masked_order_id}"
+                )
 
         except Exception as e:
-            print(f"❌ 处理支付成功逻辑失败: {e}")
-            import traceback
-            print(f"❌ 错误详情: {traceback.format_exc()}")
+            from logger_config import log_safe_error
+            log_safe_error(f"❌ 处理支付成功逻辑失败: {e}", exception=e)
             # 数据库连接已自动回滚（由get_db_connection的上下文管理器处理）
 
     @staticmethod
@@ -796,9 +835,19 @@ class PaymentHandler:
         remaining_value: float
     ):
         """处理升级支付成功的业务逻辑"""
-        print(f"🔄 处理套餐升级支付: 订单ID={order_id}")
-        print(f"   用户ID={user_id}, 目标套餐={target_plan}")
-        print(f"   支付金额=¥{paid_amount:.2f}, 折抵价值=¥{remaining_value:.2f}")
+        # 高优先级安全改进：使用脱敏日志
+        from logger_config import log_safe_info, SensitiveFormatter
+        masked_order_id = SensitiveFormatter.mask_order_id(order_id)
+        log_safe_info(
+            f"🔄 处理套餐升级支付: 订单ID={masked_order_id}"
+        )
+        masked_user_id = SensitiveFormatter.mask_user_id(user_id)
+        log_safe_info(
+            f"   用户ID={masked_user_id}, 目标套餐={target_plan}"
+        )
+        masked_amount = SensitiveFormatter.mask_amount(paid_amount)
+        masked_value = SensitiveFormatter.mask_amount(remaining_value)
+        log_safe_info(f"   支付金额={masked_amount}, 折抵价值={masked_value}")
 
         try:
             from subscription_upgrade import SubscriptionUpgrade

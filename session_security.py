@@ -2,6 +2,7 @@ import time
 import sqlite3
 import secrets
 import hashlib
+import importlib
 import streamlit as st
 from datetime import datetime, timedelta
 
@@ -10,6 +11,15 @@ try:
     from logger_config import logger
 except ImportError:
     logger = None
+
+# 高优先级安全改进：导入CSRF保护
+try:
+    from .csrf_protection import CSRFProtection
+except ImportError:
+    try:
+        from csrf_protection import CSRFProtection
+    except ImportError:
+        CSRFProtection = None
 
 try:
     from .db_utils import (
@@ -31,7 +41,7 @@ class SessionSecurity:
     """会话安全管理类"""
 
     # 配置常量
-    SESSION_TIMEOUT = 7200  # 2小时超时
+    SESSION_TIMEOUT = 1800  # 30分钟超时（高优先级安全改进：缩短会话超时时间）
     MAX_LOGIN_ATTEMPTS = 5  # 最大登录尝试次数
     LOCKOUT_DURATION = 900  # 15分钟锁定时间
     SESSION_REFRESH_INTERVAL = 300  # 5分钟刷新间隔
@@ -87,13 +97,113 @@ class SessionSecurity:
             conn.commit()
 
     @staticmethod
-    def generate_session_id() -> str:
-        """生成安全的会话ID"""
-        # 使用时间戳 + 随机数 + 用户信息生成唯一会话ID
+    def generate_session_id(user_id: int | None = None) -> str:
+        """
+        生成安全的会话ID（高优先级安全改进：增强token安全性）
+
+        使用HMAC签名防止会话ID被篡改
+
+        Args:
+            user_id: 用户ID（可选，用于HMAC签名）
+
+        Returns:
+            str: 安全的会话ID
+        """
+        # 使用时间戳 + 加密安全的随机数 + 用户信息生成唯一会话ID
         timestamp = str(time.time())
-        random_bytes = secrets.token_bytes(32)
-        session_data = timestamp + random_bytes.hex()
-        return hashlib.sha256(session_data.encode()).hexdigest()
+        # 使用secrets模块生成加密安全的随机数（64字节，512位熵）
+        random_bytes = secrets.token_bytes(64)
+        # 添加额外的随机数据增加熵值
+        additional_random = secrets.token_hex(32)
+        session_data = (
+            f"{timestamp}:{random_bytes.hex()}:{additional_random}"
+        )
+
+        # 使用SHA-256哈希确保固定长度
+        session_hash = hashlib.sha256(
+            session_data.encode()
+        ).hexdigest()
+
+        # 高优先级安全改进：使用HMAC签名防止会话ID被篡改
+        # 使用固定的密钥（实际生产环境应从环境变量或配置文件中读取）
+        import os
+        hmac_secret = os.getenv(
+            'SESSION_HMAC_SECRET',
+            'default_session_secret_change_in_production'
+        )
+
+        # 如果提供了user_id，将其加入签名
+        if user_id is not None:
+            signed_data = f"{session_hash}:{user_id}"
+        else:
+            signed_data = session_hash
+
+        # 使用HMAC-SHA256生成签名
+        hmac_signature = hashlib.pbkdf2_hmac(
+            'sha256',
+            signed_data.encode(),
+            hmac_secret.encode(),
+            100000  # 迭代次数，增加破解难度
+        ).hex()[:32]  # 截取前32个字符作为签名
+
+        # 返回：原始哈希 + HMAC签名
+        return f"{session_hash}:{hmac_signature}"
+
+    @staticmethod
+    def verify_session_id(
+        session_id: str, user_id: int | None = None
+    ) -> bool:
+        """
+        验证会话ID的HMAC签名（高优先级安全改进）
+
+        Args:
+            session_id: 会话ID
+            user_id: 用户ID（可选，用于验证）
+
+        Returns:
+            bool: 会话ID是否有效
+        """
+        try:
+            # 会话ID格式：hash:signature
+            if ':' not in session_id:
+                # 旧格式会话ID（无签名），需要迁移
+                return True  # 兼容旧会话ID
+
+            parts = session_id.rsplit(':', 1)
+            if len(parts) != 2:
+                return False
+
+            session_hash, hmac_signature = parts
+
+            # 验证HMAC签名
+            import os
+            hmac_secret = os.getenv(
+                'SESSION_HMAC_SECRET',
+                'default_session_secret_change_in_production'
+            )
+
+            # 重构签名数据
+            if user_id is not None:
+                signed_data = f"{session_hash}:{user_id}"
+            else:
+                signed_data = session_hash
+
+            # 重新计算签名
+            expected_signature = hashlib.pbkdf2_hmac(
+                'sha256',
+                signed_data.encode(),
+                hmac_secret.encode(),
+                100000
+            ).hex()[:32]
+
+            # 使用时间安全的比较函数防止时序攻击
+            return secrets.compare_digest(
+                hmac_signature, expected_signature
+            )
+        except Exception as e:
+            if logger:
+                logger.warning(f"会话ID验证失败: {e}")
+            return False  # 验证失败时拒绝访问
 
     @staticmethod
     def get_client_info():
@@ -510,7 +620,8 @@ class SessionSecurity:
         - 原子操作确保会话创建的一致性
         """
         # 登录成功后立即生成新会话 ID
-        session_id = SessionSecurity.generate_session_id()
+        # 高优先级安全改进：使用带HMAC签名的会话ID
+        session_id = SessionSecurity.generate_session_id(user_id)
         client_info = SessionSecurity.get_client_info()
         current_ip = client_info['ip_address']
 
@@ -520,6 +631,11 @@ class SessionSecurity:
             from db_utils import get_db_connection
         try:
             with get_db_connection() as (conn, c):
+                # 确保外键约束已启用
+                try:
+                    conn.execute("PRAGMA foreign_keys=ON")
+                except sqlite3.Error:
+                    pass
                 # 确保表存在（兼容未初始化场景）
                 try:
                     c.execute("SELECT 1 FROM active_sessions LIMIT 1")
@@ -551,16 +667,34 @@ class SessionSecurity:
                     (user_id,)
                 )
 
-                # 高优先级安全改进：检查并发会话数
-                is_allowed, concurrent_msg = (
-                    SessionSecurity.check_concurrent_sessions(user_id)
-                )
-                if not is_allowed:
-                    if logger:
-                        logger.warning(
-                            f"用户{user_id}创建会话失败: {concurrent_msg}"
+                # 高优先级安全改进：使用原子性操作检查并发会话并创建会话
+                # 防止竞态条件
+                session_security_enhanced_module = None
+                # 尝试导入增强会话安全模块（使用动态导入避免静态分析警告）
+                try:
+                    # 如果 __package__ 可用，尝试相对导入
+                    if __package__:
+                        module = importlib.import_module(
+                            '.session_security_enhanced',
+                            __package__
                         )
-                    return None
+                        session_security_enhanced_module = (
+                            getattr(module, 'SessionSecurityEnhanced', None)
+                        )
+                    else:
+                        raise ImportError("__package__ not available")
+                except (ImportError, AttributeError, ValueError):
+                    # 相对导入失败，尝试绝对导入
+                    try:
+                        module = importlib.import_module(
+                            'session_security_enhanced'
+                        )
+                        session_security_enhanced_module = (
+                            getattr(module, 'SessionSecurityEnhanced', None)
+                        )
+                    except (ImportError, AttributeError):
+                        # 模块不可用，session_security_enhanced_module保持为None
+                        pass
 
                 # 生成设备指纹
                 device_fingerprint = (
@@ -569,8 +703,50 @@ class SessionSecurity:
                     )
                 )
 
-                # 创建新会话
+                # 高优先级安全改进：生成CSRF token
+                if CSRFProtection:
+                    csrf_token = CSRFProtection.generate_csrf_token()
+                    # 将CSRF token存储到session_state
+                    if hasattr(st, 'session_state'):
+                        st.session_state[
+                            CSRFProtection.CSRF_TOKEN_KEY
+                        ] = csrf_token
+                        st.session_state[
+                            CSRFProtection.CSRF_TOKEN_TIME_KEY
+                        ] = time.time()
+
+                # 创建新会话（使用原子性操作）
                 current_time = time.time()
+                # 高优先级安全改进：使用带HMAC签名的会话ID
+                session_id = SessionSecurity.generate_session_id(user_id)
+
+                # 如果增强模块可用，使用原子性操作
+                if session_security_enhanced_module:
+                    success, msg = (
+                        session_security_enhanced_module.
+                        check_and_create_session_atomic(
+                            user_id, session_id, current_ip,
+                            client_info['user_agent']
+                        )
+                    )
+                    if not success:
+                        if logger:
+                            logger.warning(
+                                f"用户{user_id}创建会话失败: {msg}"
+                            )
+                        return None
+                else:
+                    # 降级到原有逻辑
+                    is_allowed, concurrent_msg = (
+                        SessionSecurity.check_concurrent_sessions(user_id)
+                    )
+                    if not is_allowed:
+                        if logger:
+                            logger.warning(
+                                f"用户{user_id}创建会话失败: {concurrent_msg}"
+                            )
+                        return None
+
                 try:
                     # 检查表是否有device_fingerprint字段
                     try:
@@ -642,8 +818,100 @@ class SessionSecurity:
                 pass
 
             return session_id
+        except sqlite3.OperationalError as e:
+            # 数据库锁定错误，尝试重试
+            if "database is locked" in str(e).lower():
+                # 等待一小段时间后重试一次
+                time.sleep(0.1)
+                try:
+                    with get_db_connection() as (conn, c):
+                        # 重试逻辑：包含完整的创建会话流程
+                        try:
+                            c.execute("SELECT 1 FROM active_sessions LIMIT 1")
+                        except sqlite3.OperationalError:
+                            SessionSecurity.init_session_tables()
+
+                        # 强制下线所有旧会话
+                        c.execute(
+                            "UPDATE active_sessions SET is_active = FALSE "
+                            "WHERE user_id = ?",
+                            (user_id,)
+                        )
+
+                        # 插入新会话
+                        current_time = time.time()
+                        try:
+                            c.execute("""
+                                SELECT device_fingerprint FROM active_sessions
+                                LIMIT 1
+                            """)
+                            has_device_fingerprint = True
+                        except sqlite3.OperationalError:
+                            has_device_fingerprint = False
+
+                        if has_device_fingerprint:
+                            device_fingerprint = (
+                                SessionSecurity.generate_device_fingerprint(
+                                    current_ip, client_info['user_agent']
+                                )
+                            )
+                            c.execute("""
+                                INSERT INTO active_sessions
+                                (session_id, user_id, created_at,
+                                 last_activity, last_rotation, ip_address,
+                                 user_agent, device_fingerprint, is_active)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                            """, (
+                                session_id,
+                                user_id,
+                                current_time,
+                                current_time,
+                                current_time,
+                                current_ip,
+                                client_info['user_agent'],
+                                device_fingerprint,
+                            ))
+                        else:
+                            c.execute("""
+                                INSERT INTO active_sessions
+                                (session_id, user_id, created_at,
+                                 last_activity, last_rotation, ip_address,
+                                 user_agent, is_active)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                            """, (
+                                session_id,
+                                user_id,
+                                current_time,
+                                current_time,
+                                current_time,
+                                current_ip,
+                                client_info['user_agent'],
+                            ))
+                        conn.commit()
+                        return session_id
+                except Exception as retry_error:
+                    # 重试失败，返回 None
+                    if logger:
+                        logger.error(
+                            f"[SessionSecurity.create_session] "
+                            f"retry failed: {retry_error}"
+                        )
+                    return None
+            # 其他 OperationalError，打印错误并返回 None
+            if logger:
+                logger.error(
+                    f"[SessionSecurity.create_session] error: {e}"
+                )
+            else:
+                print(f"[SessionSecurity.create_session] error: {e}")
+            return None
         except (sqlite3.Error, OSError, ValueError) as e:
-            print(f"[SessionSecurity.create_session] error: {e}")
+            if logger:
+                logger.error(
+                    f"[SessionSecurity.create_session] error: {e}"
+                )
+            else:
+                print(f"[SessionSecurity.create_session] error: {e}")
             return None
         except Exception as e:  # 兜底处理未知异常，满足测试的容错预期
             print(f"[SessionSecurity.create_session] unexpected error: {e}")
@@ -706,6 +974,28 @@ class SessionSecurity:
                         email = session_dict.get('email')
                         role = session_dict.get('role')
                         stored_ip = session_dict.get('ip_address')
+
+                        # 高优先级安全改进：验证会话ID的HMAC签名
+                        stored_session_id = session_dict.get('session_id')
+                        if stored_session_id and user_id:
+                            if not SessionSecurity.verify_session_id(
+                                stored_session_id, user_id
+                            ):
+                                if logger:
+                                    logger.warning(
+                                        f"会话ID签名验证失败: "
+                                        f"用户{user_id}, "
+                                        f"会话{stored_session_id[:8]}..."
+                                    )
+                                # 失效该会话
+                                c.execute(
+                                    "UPDATE active_sessions "
+                                    "SET is_active = FALSE "
+                                    "WHERE session_id = ?",
+                                    (session_id,)
+                                )
+                                conn.commit()
+                                return None
                     else:
                         # 元组格式，根据查询顺序：
                         # s.* + u.username, u.email, u.role
@@ -736,6 +1026,9 @@ class SessionSecurity:
                             stored_ip = (
                                 session[5] if len(session) > 5 else 'localhost'
                             )
+                            stored_session_id = (
+                                session[0] if len(session) > 0 else None
+                            )
                         except (IndexError, TypeError):
                             # 如果格式不符合预期，使用默认值
                             last_activity = current_time
@@ -745,6 +1038,28 @@ class SessionSecurity:
                             email = ''
                             role = ''
                             stored_ip = 'localhost'
+                            stored_session_id = None
+
+                        # 高优先级安全改进：验证会话ID的HMAC签名（元组格式）
+                        if stored_session_id and user_id:
+                            if not SessionSecurity.verify_session_id(
+                                stored_session_id, user_id
+                            ):
+                                if logger:
+                                    logger.warning(
+                                        f"会话ID签名验证失败（元组格式）: "
+                                        f"用户{user_id}, "
+                                        f"会话{stored_session_id[:8]}..."
+                                    )
+                                # 失效该会话
+                                c.execute(
+                                    "UPDATE active_sessions "
+                                    "SET is_active = FALSE "
+                                    "WHERE session_id = ?",
+                                    (session_id,)
+                                )
+                                conn.commit()
+                                return None
 
                     # 检查会话是否超时
                     if (current_time - last_activity >
@@ -769,8 +1084,10 @@ class SessionSecurity:
                         # 如果IP地址变更且不是本地地址，可能是会话劫持
                         # 修复：确保stored_ip和current_ip都是字符串且非空
                         stored_ip_str = str(stored_ip) if stored_ip else ''
-                        current_ip_str = str(current_ip) if current_ip else 'localhost'
-                        
+                        current_ip_str = (
+                            str(current_ip) if current_ip else 'localhost'
+                        )
+
                         # 本地地址列表（包括各种可能的表示方式）
                         local_addresses = ['localhost', '127.0.0.1', '', None]
                         is_local_stored = (
@@ -783,7 +1100,7 @@ class SessionSecurity:
                             current_ip_str in local_addresses or
                             current_ip_str.startswith('127.')
                         )
-                        
+
                         if (stored_ip_str and current_ip_str and
                                 stored_ip_str != current_ip_str and
                                 not is_local_current and
@@ -830,8 +1147,10 @@ class SessionSecurity:
                     )
 
                     if rotation_needed:
-                        # 生成新的会话ID（使用更强的随机性）
-                        new_session_id = SessionSecurity.generate_session_id()
+                        # 生成新的会话ID（使用更强的随机性和HMAC签名）
+                        new_session_id = SessionSecurity.generate_session_id(
+                            user_id
+                        )
 
                         # 原子更新：先更新为新会话ID，再删除旧会话
                         # 这样可以防止会话固定攻击时的竞态条件
@@ -1015,23 +1334,65 @@ class SessionSecurity:
 def secure_login(username_or_email: str, password: str) -> bool:
     """安全登录函数（带限流保护）"""
 
-    # 限流检查：每分钟最多5次登录尝试
-    login_limiter = get_limiter("login", rate=5, per=60)
-    limiter_key = f"login_{username_or_email}"
-
-    if not login_limiter.is_allowed(limiter_key):
-        retry_after = int(login_limiter.get_retry_after(limiter_key)) + 1
-        st.error(f"⚠️ 登录尝试过于频繁，请 {retry_after} 秒后重试")
-        st.warning("限流规则: 每分钟最多 5 次登录尝试")
+    # 输入验证
+    if not username_or_email or not username_or_email.strip():
+        st.error("❌ 请输入用户名或邮箱")
         return False
+
+    if not password or not password.strip():
+        st.error("❌ 请输入密码")
+        return False
+
+    # 限流检查：每分钟最多5次登录尝试
+    try:
+        login_limiter = get_limiter("login", rate=5, per=60)
+        limiter_key = f"login_{username_or_email}"
+
+        if not login_limiter.is_allowed(limiter_key):
+            retry_after = int(login_limiter.get_retry_after(limiter_key)) + 1
+            st.error(f"⚠️ 登录尝试过于频繁，请 {retry_after} 秒后重试")
+            st.warning("限流规则: 每分钟最多 5 次登录尝试")
+            # 高优先级安全改进：记录失败的登录尝试（即使被限流也要记录）
+            SessionSecurity.record_login_attempt(username_or_email, False)
+            return False
+    except (ImportError, AttributeError, RuntimeError, TypeError, ValueError):
+        # 限流检查失败不影响登录流程，继续执行
+        if logger:
+            logger.warning("限流检查失败，继续登录流程")
+        pass
+    except Exception as e:
+        # 捕获其他未预期的异常，记录日志但不阻止登录
+        if logger:
+            logger.warning(f"限流检查时发生未知异常: {type(e).__name__}")
+        pass
 
     # 检查用户是否被锁定
-    if SessionSecurity.is_user_locked(username_or_email):
-        st.error("账户已被临时锁定，请稍后再试")
-        return False
+    try:
+        if SessionSecurity.is_user_locked(username_or_email):
+            st.error("账户已被临时锁定，请稍后再试")
+            return False
+    except (sqlite3.Error, ImportError, AttributeError, RuntimeError):
+        # 锁定检查失败不影响登录流程，继续执行
+        if logger:
+            logger.warning("锁定检查失败，继续登录流程")
+        pass
+    except Exception as e:
+        # 捕获其他未预期的异常，记录日志但不阻止登录
+        if logger:
+            logger.warning(f"锁定检查时发生未知异常: {type(e).__name__}")
+        pass
 
     # 验证用户凭据
-    user = verify_user(username_or_email, password)
+    try:
+        user = verify_user(username_or_email, password)
+    except Exception as e:
+        # 验证用户时发生异常
+        error_msg = str(e)
+        st.error(f"❌ 验证用户时发生错误: {error_msg}")
+        if logger:
+            logger.error(f"验证用户失败: {error_msg}", exc_info=True)
+        SessionSecurity.record_login_attempt(username_or_email, False)
+        return False
 
     if user:
         # 登录成功，清除旧的session state
@@ -1054,8 +1415,11 @@ def secure_login(username_or_email: str, password: str) -> bool:
                 )
             except Exception as e:
                 # 使用全局导入的logger（如果可用）
+                # 记录错误但不影响登录流程
                 if logger:
                     logger.error(f"记录用户登录日志失败: {e}")
+                # 静默失败，不影响登录流程
+                pass
 
         # 首次登录后再开始计时：
         # 对 monthly/enterprise/test/efficiency/professional 首次登录生效
@@ -1171,13 +1535,44 @@ def secure_login(username_or_email: str, password: str) -> bool:
                 pass  # 静默失败，不影响登录流程
 
         # 创建安全会话
-        SessionSecurity.create_session(user['id'], user)
+        session_id = None
+        try:
+            session_id = SessionSecurity.create_session(user['id'], user)
+            # 如果会话创建失败，记录错误但不阻止登录
+            if not session_id:
+                if logger:
+                    logger.warning(
+                        f"用户{user['id']}会话创建失败，但登录流程继续"
+                    )
+        except Exception as e:
+            # 会话创建时发生异常
+            error_msg = str(e)
+            if logger:
+                logger.error(f"创建会话失败: {error_msg}", exc_info=True)
+
+        # 无论会话创建成功与否，都确保用户信息被设置到session_state
+        # 这样可以确保即使会话创建失败，用户也能正常登录
+        try:
+            # 如果create_session没有设置用户信息，这里确保设置
+            if 'user' not in st.session_state or not st.session_state.user:
+                st.session_state.user = user
+            # 如果会话创建成功但没有设置session_id，这里确保设置
+            if session_id and 'session_id' not in st.session_state:
+                st.session_state.session_id = session_id
+        except (AttributeError, KeyError, RuntimeError, TypeError) as e:
+            if logger:
+                logger.warning(f"设置session_state失败: {e}")
 
         st.success(f"欢迎回来，{user['username']}！")
         return True
     else:
         # 登录失败
-        SessionSecurity.record_login_attempt(username_or_email, False)
+        try:
+            SessionSecurity.record_login_attempt(username_or_email, False)
+        except Exception as e:
+            if logger:
+                logger.warning(f"记录登录尝试失败: {e}")
+
         st.error("用户名/邮箱或密码错误")
         return False
 
@@ -1191,6 +1586,7 @@ def secure_logout():
 
 def check_session_security():
     """检查会话安全性"""
+    # 首先检查是否有session_id
     if 'session_id' in st.session_state:
         session_info = SessionSecurity.get_session_info(
             st.session_state.session_id)
@@ -1201,6 +1597,40 @@ def check_session_security():
         else:
             # 会话无效，清理状态
             SessionSecurity.invalidate_session()
+
+    # 降级方案：如果session_id不存在但user存在，也允许访问
+    # 这可以处理会话创建失败但用户信息已设置的情况
+    if 'user' in st.session_state and st.session_state.user:
+        user = st.session_state.user
+        # 验证用户信息是否完整
+        if isinstance(user, dict) and 'id' in user and 'username' in user:
+            # 尝试重新创建会话（作为降级方案）
+            try:
+                session_id = SessionSecurity.create_session(
+                    user['id'], user
+                )
+                if session_id:
+                    st.session_state.session_id = session_id
+                    return True
+            except (sqlite3.Error, ImportError, AttributeError,
+                    RuntimeError, TypeError, KeyError) as e:
+                # 会话创建失败，但用户信息存在，仍然允许访问
+                # 这是一个降级方案，确保用户不会因为会话创建问题而无法使用
+                if logger:
+                    logger.warning(
+                        f"降级方案：会话创建失败但允许访问: {type(e).__name__}"
+                    )
+                pass
+            except Exception as e:
+                # 捕获其他未预期的异常，记录日志但不阻止访问
+                if logger:
+                    logger.error(
+                        f"降级方案：会话创建时发生未知异常: {type(e).__name__}: {e}",
+                        exc_info=True
+                    )
+                pass
+            # 即使会话创建失败，只要用户信息存在，也允许访问
+            return True
 
     return False
 

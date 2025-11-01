@@ -1686,8 +1686,8 @@ def get_payment_records(
     with get_db_connection() as (conn, c):
         try:
             # 构建查询条件
-            where_clauses = ["po.status = 'SUCCESS'"]
-            params = []
+            where_clauses = ["po.status = ?"]
+            params: List[Any] = ['SUCCESS']
 
             if plan_code:
                 where_clauses.append("po.description LIKE ?")
@@ -1709,17 +1709,24 @@ def get_payment_records(
                 where_clauses.append("po.created_at <= ?")
                 params.append(end_ts)
 
-            where_sql = " AND ".join(where_clauses)
+            # 导入SQL安全工具
+            try:
+                from .sql_security import build_where_clause
+            except ImportError:
+                from sql_security import build_where_clause
+
+            # 使用安全的WHERE子句构建工具
+            where_sql, safe_params = build_where_clause(where_clauses, params)
 
             # 获取总数
             total = c.execute(
                 f"SELECT COUNT(*) FROM payment_orders po WHERE {where_sql}",
-                params
+                safe_params
             ).fetchone()[0]
 
             # 获取分页数据
             offset = (page - 1) * per_page
-            query_params = params + [per_page, offset]
+            query_params = safe_params + [per_page, offset]
 
             c.execute(f"""
                 SELECT
@@ -1873,22 +1880,31 @@ def get_login_records(
     with get_db_connection() as (conn, c):
         try:
             # 构建查询条件
-            where_sql = "1=1"
+            where_clauses = []
             params = []
 
             if user_id:
-                where_sql += " AND ull.user_id = ?"
+                where_clauses.append("ull.user_id = ?")
                 params.append(user_id)
+
+            # 导入SQL安全工具
+            try:
+                from .sql_security import build_where_clause
+            except ImportError:
+                from sql_security import build_where_clause
+
+            # 使用安全的WHERE子句构建工具
+            where_sql, safe_params = build_where_clause(where_clauses, params)
 
             # 获取总数
             total = c.execute(
                 f"SELECT COUNT(*) FROM user_login_log ull WHERE {where_sql}",
-                params
+                safe_params
             ).fetchone()[0]
 
             # 获取分页数据
             offset = (page - 1) * per_page
-            query_params = params + [per_page, offset]
+            query_params = safe_params + [per_page, offset]
 
             c.execute(f"""
                 SELECT

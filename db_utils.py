@@ -921,6 +921,7 @@ def _safe_alter_table_add_column(
         column_def: str, allowed_columns: set) -> None:
     """
     安全地执行ALTER TABLE ADD COLUMN操作，防止SQL注入
+    高优先级安全改进：增强列名验证（正则表达式 + SQL关键字检查）
 
     Args:
         cursor: 数据库游标
@@ -932,13 +933,16 @@ def _safe_alter_table_add_column(
     Raises:
         ValueError: 如果列名或表名不在白名单中
     """
+    import re
+
     # 预定义的安全表名白名单（扩展以包含所有可能的表）
     safe_table_names = {
         'users', 'products', 'logistics', 'payment_orders',
         'active_sessions', 'login_attempts', 'user_lockouts',
         'subscription_upgrade_history', 'user_login_log',
         'user_behavior_log', 'admin_action_log', 'alert_records',
-        'statistics_cache', 'alert_config', 'plans', 'system_config'
+        'statistics_cache', 'alert_config', 'plans', 'system_config',
+        'payment_nonce_log'
     }
 
     # 验证表名
@@ -948,7 +952,37 @@ def _safe_alter_table_add_column(
             f"只允许使用以下表名: {sorted(safe_table_names)}"
         )
 
-    # 验证列名
+    # 高优先级安全改进：更严格的列名验证
+    # 1. 正则表达式验证：只允许字母、数字、下划线，且必须以字母开头
+    column_pattern = r'^[a-zA-Z][a-zA-Z0-9_]{0,62}$'
+    if not re.match(column_pattern, column_name):
+        raise ValueError(
+            f"非法的列名格式: {column_name}. "
+            f"列名必须以字母开头，只能包含字母、数字和下划线，"
+            f"长度不超过63个字符"
+        )
+
+    # 2. SQL关键字检查（防止使用SQL关键字作为列名）
+    sql_keywords = {
+        'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE',
+        'ALTER', 'TABLE', 'INDEX', 'VIEW', 'TRIGGER', 'DATABASE',
+        'SCHEMA', 'FROM', 'WHERE', 'JOIN', 'ON', 'AS', 'AND', 'OR',
+        'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL', 'TRUE', 'FALSE',
+        'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'UNION',
+        'ALL', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN',
+        'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'IF',
+        'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'CONSTRAINT',
+        'UNIQUE', 'CHECK', 'DEFAULT', 'AUTOINCREMENT', 'INTEGER',
+        'REAL', 'TEXT', 'BLOB', 'VARCHAR', 'CHAR', 'DATE', 'TIME',
+        'DATETIME', 'TIMESTAMP', 'BOOLEAN', 'INT', 'FLOAT', 'DOUBLE'
+    }
+    if column_name.upper() in sql_keywords:
+        raise ValueError(
+            f"列名不能使用SQL关键字: {column_name}. "
+            f"请使用其他名称"
+        )
+
+    # 3. 白名单验证（双重保险）
     if column_name not in allowed_columns:
         raise ValueError(
             f"非法的列名: {column_name}. "
@@ -956,7 +990,6 @@ def _safe_alter_table_add_column(
         )
 
     # 验证列定义格式（只允许特定类型和DEFAULT值）
-    import re
 
     allowed_types = {'INTEGER', 'REAL', 'TEXT', 'BOOLEAN'}
     # 定义允许的列定义格式模式
@@ -2081,6 +2114,12 @@ def add_product(product_data):
         # is_test_data默认0（手动创建）
         values.append(product_data.get('is_test_data', 0))
 
+        # 高优先级安全改进：使用sql_security模块进行字段名验证（防止SQL注入）
+        try:
+            from .sql_security import validate_field_names, SQLSecurityError
+        except ImportError:
+            from sql_security import validate_field_names, SQLSecurityError
+
         # 安全的字段名白名单验证（防止SQL注入）
         # 注意：user_id是必需的字段，包含在白名单中
         allowed_product_fields = {
@@ -2093,14 +2132,12 @@ def add_product(product_data):
             'commission_rate', 'withdrawal_fee_rate',
             'payment_processing_fee', 'return_rate', 'vat_rate', 'is_test_data'
         }
-        # 验证所有字段名都在白名单中
+        # 使用sql_security模块验证所有字段名
         field_list = [f.strip() for f in field_names.split(',')]
-        for field in field_list:
-            if field not in allowed_product_fields:
-                raise ValueError(
-                    f"非法的字段名: {field}. "
-                    f"只允许使用以下字段: {sorted(allowed_product_fields)}"
-                )
+        try:
+            validate_field_names(field_list, allowed_product_fields)
+        except SQLSecurityError as e:
+            raise ValueError(f"SQL安全错误: {e}") from e
 
         c.execute(
             f"INSERT INTO products ({field_names}) VALUES ({placeholders})",
@@ -2193,23 +2230,22 @@ def batch_delete_products(product_ids, user_id):
     if not product_ids:
         return 0
     with get_db_connection() as (conn, c):
-        # 验证product_ids都是整数（防止SQL注入）
-        validated_ids = []
-        for pid in product_ids:
-            try:
-                validated_ids.append(int(pid))
-            except (ValueError, TypeError):
-                raise ValueError(f"无效的产品ID: {pid}")
+        # 导入SQL安全工具
+        try:
+            from .sql_security import build_in_clause, SQLSecurityError
+        except ImportError:
+            from sql_security import build_in_clause, SQLSecurityError
 
-        # 使用验证后的ID列表构建SQL参数
-        placeholders = ','.join(['?' for _ in validated_ids])
+        # 使用安全的IN子句构建工具
+        try:
+            in_clause, validated_ids = build_in_clause(product_ids)
+        except SQLSecurityError as e:
+            raise ValueError(f"SQL安全错误: {e}") from e
+
+        # 使用参数化查询，确保安全
         params = validated_ids + [user_id]
-
-        c.execute(
-            f"DELETE FROM products WHERE id IN ({placeholders}) "
-            f"AND user_id = ?",
-            params
-        )
+        sql = f"DELETE FROM products WHERE id {in_clause} AND user_id = ?"
+        c.execute(sql, params)
         conn.commit()
         return c.rowcount
 
@@ -2246,6 +2282,18 @@ def update_product(product_id, user_id, updates):
     if not updates:
         return False
 
+    # 导入SQL安全工具
+    try:
+        from .sql_security import (
+            build_update_set_clause,
+            SQLSecurityError
+        )
+    except ImportError:
+        from sql_security import (
+            build_update_set_clause,
+            SQLSecurityError
+        )
+
     with get_db_connection() as (conn, c):
 
         # 安全的字段名白名单验证（防止SQL注入）
@@ -2260,25 +2308,19 @@ def update_product(product_id, user_id, updates):
             'vat_rate', 'is_test_data'
         }
 
-        # 构建UPDATE语句（验证字段名）
-        set_clauses = []
-        values = []
-        for field, value in updates.items():
-            if field not in allowed_product_fields:
-                raise ValueError(
-                    f"非法的字段名: {field}. "
-                    f"只允许使用以下字段: {sorted(allowed_product_fields)}"
-                )
-            set_clauses.append(f"{field} = ?")
-            values.append(value)
+        # 使用安全的SQL构建工具
+        try:
+            set_clause, values = build_update_set_clause(
+                updates, allowed_product_fields
+            )
+        except SQLSecurityError as e:
+            raise ValueError(f"SQL安全错误: {e}") from e
 
         values.extend([product_id, user_id])
 
-        c.execute(
-            f"UPDATE products SET {', '.join(set_clauses)} " +
-            "WHERE id = ? AND user_id = ?",
-            values
-        )
+        # 使用参数化查询，确保安全
+        sql = f"UPDATE products SET {set_clause} WHERE id = ? AND user_id = ?"
+        c.execute(sql, values)
         conn.commit()
         return c.rowcount > 0
 
@@ -2287,6 +2329,20 @@ def batch_update_pricing_params(product_ids, user_id, pricing_updates):
     """批量更新产品定价参数"""
     if not product_ids or not pricing_updates:
         return 0
+
+    # 导入SQL安全工具
+    try:
+        from .sql_security import (
+            build_update_set_clause,
+            build_in_clause,
+            SQLSecurityError
+        )
+    except ImportError:
+        from sql_security import (
+            build_update_set_clause,
+            build_in_clause,
+            SQLSecurityError
+        )
 
     with get_db_connection() as (conn, c):
 
@@ -2298,37 +2354,24 @@ def batch_update_pricing_params(product_ids, user_id, pricing_updates):
             'vat_rate', 'unit_price', 'labeling_fee', 'shipping_fee'
         }
 
-        # 构建UPDATE语句（验证字段名）
-        set_clauses = []
-        values = []
-        for field, value in pricing_updates.items():
-            if field not in allowed_pricing_fields:
-                raise ValueError(
-                    f"非法的字段名: {field}. "
-                    f"只允许使用以下字段: {sorted(allowed_pricing_fields)}"
-                )
-            set_clauses.append(f"{field} = ?")
-            values.append(value)
+        # 使用安全的SQL构建工具
+        try:
+            set_clause, values = build_update_set_clause(
+                pricing_updates, allowed_pricing_fields
+            )
+            in_clause, validated_ids = build_in_clause(product_ids)
+        except SQLSecurityError as e:
+            raise ValueError(f"SQL安全错误: {e}") from e
 
-        # 验证product_ids都是整数（防止SQL注入）
-        validated_ids = []
-        for pid in product_ids:
-            try:
-                validated_ids.append(int(pid))
-            except (ValueError, TypeError):
-                raise ValueError(f"无效的产品ID: {pid}")
-
-        placeholders = ','.join(['?' for _ in validated_ids])
         values.extend(validated_ids)
         values.append(user_id)
 
-        c.execute(
-            (
-                f"UPDATE products SET {', '.join(set_clauses)} "
-                f"WHERE id IN ({placeholders}) AND user_id = ?"
-            ),
-            values,
+        # 使用参数化查询，确保安全
+        sql = (
+            f"UPDATE products SET {set_clause} "
+            f"WHERE id {in_clause} AND user_id = ?"
         )
+        c.execute(sql, values)
         conn.commit()
         return c.rowcount
 
@@ -3146,13 +3189,20 @@ def get_all_users(
                     "subscription_end >= datetime('now'))"
                 )
 
-        where_clause = (
-            " AND ".join(where_conditions) if where_conditions else "1=1"
+        # 导入SQL安全工具
+        try:
+            from .sql_security import build_where_clause
+        except ImportError:
+            from sql_security import build_where_clause
+
+        # 使用安全的WHERE子句构建工具
+        where_clause, safe_params = build_where_clause(
+            where_conditions, params
         )
 
         # 获取总数
         count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
-        c.execute(count_query, params)
+        c.execute(count_query, safe_params)
         total_count = c.fetchone()[0]
 
         # 获取分页数据
@@ -3167,7 +3217,7 @@ def get_all_users(
         ORDER BY created_at DESC
         LIMIT ? OFFSET ?
         """
-        c.execute(query, params + [per_page, offset])
+        c.execute(query, safe_params + [per_page, offset])
         users = c.fetchall()
 
         # 获取每个用户的物流模板数量
@@ -3535,13 +3585,20 @@ def get_audit_logs(
             where_conditions.append("audit_logs.action = ?")
             params.append(action)
 
-        where_clause = (
-            " AND ".join(where_conditions) if where_conditions else "1=1"
+        # 导入SQL安全工具
+        try:
+            from .sql_security import build_where_clause
+        except ImportError:
+            from sql_security import build_where_clause
+
+        # 使用安全的WHERE子句构建工具
+        where_clause, safe_params = build_where_clause(
+            where_conditions, params
         )
 
         # 获取总数
         count_query = f"SELECT COUNT(*) FROM audit_logs WHERE {where_clause}"
-        c.execute(count_query, params)
+        c.execute(count_query, safe_params)
         total_count = c.fetchone()[0]
 
         # 获取分页数据
@@ -3559,7 +3616,7 @@ def get_audit_logs(
             "ORDER BY audit_logs.timestamp DESC "
             "LIMIT ? OFFSET ?"
         )
-        c.execute(query, params + [per_page, offset])
+        c.execute(query, safe_params + [per_page, offset])
         logs = c.fetchall()
 
         formatted_logs = []
@@ -3648,6 +3705,11 @@ def log_user_login(user_id: int, ip_address: Optional[str] = None,
                    user_agent: Optional[str] = None) -> bool:
     """记录用户登录日志"""
     with get_db_connection() as (conn, c):
+        # 确保外键约束已启用
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+        except sqlite3.Error:
+            pass
         try:
             # 简单的设备类型判断
             device_type = 'unknown'
