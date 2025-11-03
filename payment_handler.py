@@ -18,8 +18,9 @@ from rate_limiter import get_limiter
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# 高优先级安全改进：支付金额阈值配置
-PAYMENT_AMOUNT_THRESHOLD = 10000  # 10000分 = 100元，超过此金额需要人工审核
+# 已禁用：高优先级安全改进：支付金额阈值配置
+# 原功能：当支付金额超过100元时，需要人工审核
+# PAYMENT_AMOUNT_THRESHOLD = 10000  # 10000分 = 100元，超过此金额需要人工审核
 
 
 def determine_order_type(user_id: int, target_plan: str,
@@ -561,33 +562,34 @@ class PaymentHandler:
         except Exception as e:
             logger.error(f"标记订单已处理失败: {e}")
 
-    @staticmethod
-    def _check_payment_amount_threshold(amount: int) -> Dict[str, Any]:
-        """
-        检查支付金额阈值（高优先级安全改进）
-
-        Args:
-            amount: 支付金额（分）
-
-        Returns:
-            Dict包含needs_review(bool)和message(str)
-        """
-        if amount > PAYMENT_AMOUNT_THRESHOLD:
-            logger.warning(
-                f"大额支付告警: 金额={amount}分 "
-                f"(>{PAYMENT_AMOUNT_THRESHOLD}分)"
-            )
-            return {
-                "needs_review": True,
-                "message": (
-                    f"支付金额{amount/100:.2f}元超过阈值"
-                    f"{PAYMENT_AMOUNT_THRESHOLD/100:.2f}元，需要人工审核"
-                )
-            }
-        return {
-            "needs_review": False,
-            "message": "金额正常"
-        }
+    # 已禁用：大额支付人工审核功能
+    # @staticmethod
+    # def _check_payment_amount_threshold(amount: int) -> Dict[str, Any]:
+    #     """
+    #     检查支付金额阈值（高优先级安全改进）
+    #
+    #     Args:
+    #         amount: 支付金额（分）
+    #
+    #     Returns:
+    #         Dict包含needs_review(bool)和message(str)
+    #     """
+    #     if amount > PAYMENT_AMOUNT_THRESHOLD:
+    #         logger.warning(
+    #             f"大额支付告警: 金额={amount}分 "
+    #             f"(>{PAYMENT_AMOUNT_THRESHOLD}分)"
+    #         )
+    #         return {
+    #             "needs_review": True,
+    #             "message": (
+    #                 f"支付金额{amount/100:.2f}元超过阈值"
+    #                 f"{PAYMENT_AMOUNT_THRESHOLD/100:.2f}元，需要人工审核"
+    #             )
+    #         }
+    #     return {
+    #         "needs_review": False,
+    #         "message": "金额正常"
+    #     }
 
     @staticmethod
     def handle_payment_success(order_id: str):
@@ -620,24 +622,25 @@ class PaymentHandler:
                 (user_id, amount, description, duration, is_upgrade,
                  upgrade_from, upgrade_to, remaining_value) = order_info
 
-                # 高优先级安全改进：检查支付金额阈值
-                threshold_check = (
-                    PaymentHandler._check_payment_amount_threshold(amount)
-                )
-                if threshold_check["needs_review"]:
-                    logger.warning(
-                        f"订单{order_id}需要人工审核: "
-                        f"{threshold_check['message']}"
-                    )
-                    # 标记订单为需要审核状态
-                    cursor.execute("""
-                        UPDATE payment_orders
-                        SET status = 'REVIEW_NEEDED', updated_at = ?
-                        WHERE order_id = ?
-                    """, (int(time.time()), order_id))
-                    conn.commit()
-                    print(f"⚠️ 订单已标记为需要审核: {order_id}")
-                    return
+                # 已禁用：大额支付人工审核功能
+                # 原功能：当支付金额超过100元时，需要人工审核
+                # threshold_check = (
+                #     PaymentHandler._check_payment_amount_threshold(amount)
+                # )
+                # if threshold_check["needs_review"]:
+                #     logger.warning(
+                #         f"订单{order_id}需要人工审核: "
+                #         f"{threshold_check['message']}"
+                #     )
+                #     # 标记订单为需要审核状态
+                #     cursor.execute("""
+                #         UPDATE payment_orders
+                #         SET status = 'REVIEW_NEEDED', updated_at = ?
+                #         WHERE order_id = ?
+                #     """, (int(time.time()), order_id))
+                #     conn.commit()
+                #     print(f"⚠️ 订单已标记为需要审核: {order_id}")
+                #     return
 
                 # 判断是否为升级订单
                 if is_upgrade:
