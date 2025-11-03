@@ -9,7 +9,7 @@ import logging
 import json
 import sqlite3
 import re
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, Tuple
 from datetime import datetime
 from enum import Enum
 from functools import wraps
@@ -281,7 +281,7 @@ class ErrorHandler:
         return logger
 
     @staticmethod
-    def classify_error(error: Exception) -> tuple[ErrorSeverity,
+    def classify_error(error: Exception) -> Tuple[ErrorSeverity,
                                                   ErrorCategory]:
         """分类错误"""
         # 数据库错误
