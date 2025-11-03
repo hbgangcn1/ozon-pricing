@@ -596,8 +596,30 @@ class PooledDBConnection:
 
 
 @handle_database_error
-def get_db_connection() -> DBConnection:
-    """返回一个可用于 with 语句的数据库连接管理器"""
+def get_db_connection():
+    """
+    返回一个可用于 with 语句的数据库连接管理器
+    自动适配SQLite和PostgreSQL
+    """
+    # 优先使用db_adapter的统一接口
+    try:
+        from db_adapter import get_db_connection as adapter_get_db_connection
+        from db_config import DB_TYPE
+        
+        # 如果配置为PostgreSQL，直接返回适配器的上下文管理器
+        if DB_TYPE == 'postgresql':
+            return adapter_get_db_connection()
+        # SQLite也尝试使用适配器（统一接口）
+        else:
+            try:
+                return adapter_get_db_connection()
+            except:
+                # 如果适配器失败，回退到SQLite
+                pass
+    except ImportError:
+        pass
+    
+    # 回退到SQLite（兼容旧代码）
     db_path = os.path.join(os.path.dirname(__file__), "pricing_system.db")
     return DBConnection(db_path)
 
