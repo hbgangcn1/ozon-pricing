@@ -97,6 +97,138 @@ class SessionSecurity:
             conn.commit()
 
     @staticmethod
+    def _get_hmac_secret() -> str:
+        """
+        获取HMAC会话密钥（安全改进：强制要求环境变量）
+
+        Returns:
+            str: HMAC密钥
+
+        Raises:
+            ValueError: 如果环境变量未设置（生产环境）
+        """
+        import os
+        import secrets
+        from pathlib import Path
+
+        hmac_secret = os.getenv('SESSION_HMAC_SECRET')
+
+        if not hmac_secret:
+            # 检查是否为生产环境
+            prod_mode = os.getenv('PRODUCTION_MODE', 'false')
+            is_production = prod_mode.lower() == 'true'
+
+            if is_production:
+                # 生产环境：强制要求设置
+                error_msg = (
+                    "SESSION_HMAC_SECRET environment variable is "
+                    "required in production environment. "
+                    "Please set it in your environment or .env "
+                    "file for security."
+                )
+                if logger:
+                    logger.error(error_msg)
+                raise ValueError(error_msg)
+            else:
+                # 开发环境：尝试从 .env 文件读取或生成临时密钥
+                env_file = Path('.env')
+                temp_secret = None
+
+                # 尝试从 .env 文件读取（如果已存在但未加载）
+                if env_file.exists():
+                    # 尝试使用 dotenv 读取 .env 文件
+                    # 先检查模块是否可用，避免在 except 块中变量未定义
+                    try:
+                        import importlib
+                        dotenv_module = importlib.import_module('dotenv')
+                        if hasattr(dotenv_module, 'dotenv_values'):
+                            env_vars = dotenv_module.dotenv_values('.env')
+                            temp_secret = env_vars.get('SESSION_HMAC_SECRET')
+                        else:
+                            temp_secret = None
+                    except (ImportError, Exception):
+                        # dotenv 模块不可用或读取失败，跳过从文件读取
+                        temp_secret = None
+
+                if not temp_secret:
+                    # 生成临时密钥用于开发环境
+                    temp_secret = secrets.token_urlsafe(64)
+
+                    # 尝试自动写入 .env 文件（如果可写）
+                    try:
+                        if env_file.exists():
+                            # 读取现有 .env 文件
+                            with open(env_file, 'r', encoding='utf-8') as f:
+                                content = f.read()
+
+                            # 检查是否已有 SESSION_HMAC_SECRET（可能是空值）
+                            if 'SESSION_HMAC_SECRET' not in content:
+                                # 追加到文件末尾
+                                with open(env_file, 'a',
+                                          encoding='utf-8') as f:
+                                    f.write(
+                                        f'\n# 会话HMAC密钥（自动生成，开发环境使用）\n'
+                                        f'SESSION_HMAC_SECRET={temp_secret}\n'
+                                    )
+                                if logger:
+                                    msg = (
+                                        "开发环境：已自动生成 SESSION_HMAC_SECRET "
+                                        "并写入 .env 文件"
+                                    )
+                                    logger.info(msg)
+                            else:
+                                # 更新现有值
+                                import re
+                                pattern = r'SESSION_HMAC_SECRET=.*'
+                                new_content = re.sub(
+                                    pattern,
+                                    f'SESSION_HMAC_SECRET={temp_secret}',
+                                    content,
+                                    flags=re.MULTILINE
+                                )
+                                if new_content != content:
+                                    with open(env_file, 'w',
+                                              encoding='utf-8') as f:
+                                        f.write(new_content)
+                                    if logger:
+                                        msg = (
+                                            "开发环境：已更新 .env 文件中的 "
+                                            "SESSION_HMAC_SECRET"
+                                        )
+                                        logger.info(msg)
+                        else:
+                            # .env 文件不存在，创建它
+                            with open(env_file, 'w', encoding='utf-8') as f:
+                                f.write(
+                                    f'# 开发环境配置\n'
+                                    f'SESSION_HMAC_SECRET={temp_secret}\n'
+                                )
+                            if logger:
+                                msg = (
+                                    "开发环境：已创建 .env 文件并设置 "
+                                    "SESSION_HMAC_SECRET"
+                                )
+                                logger.info(msg)
+                    except (IOError, OSError, PermissionError) as e:
+                        # 无法写入文件，使用临时密钥（仅本次运行有效）
+                        if logger:
+                            logger.warning(
+                                f"开发环境：无法写入 .env 文件 ({e})，"
+                                f"使用临时密钥（仅本次运行有效）。"
+                                f"建议手动在 .env 文件中设置 "
+                                f"SESSION_HMAC_SECRET"
+                            )
+
+                hmac_secret = temp_secret
+                if logger:
+                    logger.info(
+                        "开发环境：使用自动生成的临时 SESSION_HMAC_SECRET。"
+                        "建议在 .env 文件中手动设置此值以确保一致性。"
+                    )
+
+        return hmac_secret
+
+    @staticmethod
     def generate_session_id(user_id: int | None = None) -> str:
         """
         生成安全的会话ID（高优先级安全改进：增强token安全性）
@@ -108,6 +240,9 @@ class SessionSecurity:
 
         Returns:
             str: 安全的会话ID
+
+        Raises:
+            ValueError: 如果SESSION_HMAC_SECRET环境变量未设置
         """
         # 使用时间戳 + 加密安全的随机数 + 用户信息生成唯一会话ID
         timestamp = str(time.time())
@@ -125,12 +260,8 @@ class SessionSecurity:
         ).hexdigest()
 
         # 高优先级安全改进：使用HMAC签名防止会话ID被篡改
-        # 使用固定的密钥（实际生产环境应从环境变量或配置文件中读取）
-        import os
-        hmac_secret = os.getenv(
-            'SESSION_HMAC_SECRET',
-            'default_session_secret_change_in_production'
-        )
+        # 强制要求从环境变量读取密钥（生产环境必须设置）
+        hmac_secret = SessionSecurity._get_hmac_secret()
 
         # 如果提供了user_id，将其加入签名
         if user_id is not None:
@@ -176,11 +307,8 @@ class SessionSecurity:
             session_hash, hmac_signature = parts
 
             # 验证HMAC签名
-            import os
-            hmac_secret = os.getenv(
-                'SESSION_HMAC_SECRET',
-                'default_session_secret_change_in_production'
-            )
+            # 强制要求从环境变量读取密钥（生产环境必须设置）
+            hmac_secret = SessionSecurity._get_hmac_secret()
 
             # 重构签名数据
             if user_id is not None:
