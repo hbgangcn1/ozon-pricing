@@ -122,6 +122,7 @@ class ConnectionPool:
             return {
                 'pool_size': len(self._pool),
                 'in_use': len(self._in_use),
+                'active_connections': len(self._pool) + len(self._in_use),
                 'total_created': self._stats['total_created'],
                 'total_used': self._stats['total_used'],
                 'total_leaked': self._stats['total_leaked'],
@@ -137,6 +138,10 @@ class ConnectionPool:
                 except (sqlite3.Error, AttributeError, OSError):
                     pass
             self._pool.clear()
+
+    def cleanup_all_connections(self):
+        """清理所有连接（close_all 的别名）"""
+        self.close_all()
 
     @staticmethod
     def _get_stack_trace() -> str:
@@ -171,6 +176,12 @@ def get_connection_pool() -> ConnectionPool:
     if _global_pool is None:
         return init_connection_pool()
     return _global_pool
+
+
+# 为了向后兼容，提供 get_enhanced_connection_pool 别名
+def get_enhanced_connection_pool() -> ConnectionPool:
+    """获取增强连接池（get_connection_pool 的别名）"""
+    return get_connection_pool()
 
 
 @contextmanager

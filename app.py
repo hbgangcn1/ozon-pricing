@@ -26,7 +26,7 @@ import pandas as pd  # noqa: E402
 import sqlite3  # noqa: E402
 import threading  # noqa: E402
 from typing import Optional, Dict, List, Any  # noqa: E402
-from datetime import date, timedelta  # noqa: E402
+from datetime import date, timedelta, datetime  # noqa: E402
 
 # 配置 Streamlit 服务器设置
 st.set_page_config(
@@ -58,6 +58,7 @@ try:
         migrate_user_preferences,
         decrement_user_calculations,
         get_dashboard_stats,
+        _safe_adapt_sql,
     )
 
     from .ui_user import (
@@ -117,6 +118,7 @@ except ImportError:  # Fallback when run as a top-level module
         migrate_user_preferences,
         decrement_user_calculations,
         get_dashboard_stats,
+        _safe_adapt_sql,
         get_plans,
         create_plan,
         update_plan,
@@ -827,7 +829,11 @@ def show_main_interface():
 
     # 验证用户并获取信息
     validation_result = _validate_user_and_get_mode()
-    if validation_result is None:
+    if validation_result is None or not validation_result:
+        return
+    # 确保validation_result是3元组
+    if len(validation_result) != 3:
+        st.error("用户验证失败：数据不完整")
         return
 
     current_user, current_mode, subscription_status = (
@@ -1929,11 +1935,13 @@ def precise_products_page():
             st.write("")  # 空列，保持布局平衡
         with col3:
             # 获取用户产品列表
+            sql = (
+                "SELECT id, name FROM products "
+                "WHERE user_id = ? ORDER BY name"
+            )
+            sql = _safe_adapt_sql(sql, conn)
             user_products = pd.read_sql(
-                (
-                    "SELECT id, name FROM products "
-                    "WHERE user_id = ? ORDER BY name"
-                ),
+                sql,
                 conn,
                 params=(uid,),
             )
@@ -1962,11 +1970,13 @@ def precise_products_page():
                     ).get("name", "")
                     if current_product != selected_product:
                         # 获取选中产品的完整数据
+                        sql = (
+                            "SELECT * FROM products "
+                            "WHERE name = ? AND user_id = ?"
+                        )
+                        sql = _safe_adapt_sql(sql, conn)
                         product_data = pd.read_sql(
-                            (
-                                "SELECT * FROM products "
-                                "WHERE name = ? AND user_id = ?"
-                            ),
+                            sql,
                             conn,
                             params=(selected_product, uid),
                         )
@@ -2503,13 +2513,13 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
     try:
         with get_db_connection() as (conn, c):
             # 首先检查表结构，确保字段存在
-            c.execute("PRAGMA table_info(logistics)")
-            columns = [col[1] for col in c.fetchall()]
-        # 根据实际存在的字段构建查询
+            from db_utils import _get_table_columns
+            columns = _get_table_columns(c, 'logistics')
+            # 根据实际存在的字段构建查询
+            from db_adapter import adapt_sql
             if 'weight_factor' in columns:
                 # 新版本表结构
-                c.execute(
-                    """
+                sql = adapt_sql("""
                     SELECT
                         id, name, type,
                         base_fee, continue_fee, fee_mode,
@@ -2522,13 +2532,11 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
                     FROM logistics
                     WHERE user_id = ?
                     ORDER BY name ASC
-                    """,
-                    (current_user_id(),),
-                )
+                """)
+                c.execute(sql, (current_user_id(),))
             else:
                 # 旧版本表结构，使用兼容字段
-                c.execute(
-                    """
+                sql = adapt_sql("""
                     SELECT
                         id, name, type,
                         base_fee, continue_fee, fee_mode,
@@ -2541,13 +2549,23 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
                     FROM logistics
                     WHERE user_id = ?
                     ORDER BY name ASC
-                    """,
-                    (current_user_id(),),
-                )
-    # 明确类型为 Dict[str, Any]，避免被推断为 Dict[str, str]
+                """)
+                c.execute(sql, (current_user_id(),))
+
+            # 明确类型为 Dict[str, Any]，避免被推断为 Dict[str, str]
             from typing import List, Dict, Any
-            results: List[Dict[str, Any]] = [dict(row) for row in c.fetchall()]
-        # 为旧版本表结构添加默认字段
+            rows = c.fetchall()
+            # 获取列名（兼容SQLite和PostgreSQL）
+            from db_config import DB_TYPE
+            if DB_TYPE == 'postgresql':
+                columns = [desc[0] for desc in c.description]
+            else:
+                columns = [col[0] for col in c.description]
+            # 将结果转换为字典列表
+            results: List[Dict[str, Any]] = [
+                dict(zip(columns, row)) for row in rows
+            ]
+            # 为旧版本表结构添加默认字段
             for rule in results:
                 if 'weight_factor' not in rule:
                     rule['weight_factor'] = 0.0  # 默认值
@@ -2556,8 +2574,15 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
                 if 'priority_group' not in rule:
                     rule['priority_group'] = 'D'  # 默认优先级组
             return results
-    except (sqlite3.Error, ValueError, TypeError) as e:
-        st.error(f"获取物流规则失败: {e}")
+    except Exception as e:
+        # 捕获所有异常，包括PostgreSQL错误
+        import traceback
+        print(f"获取物流规则失败: {e}")
+        print(traceback.format_exc())
+        try:
+            st.error(f"获取物流规则失败: {e}")
+        except (AttributeError, RuntimeError, NameError):
+            pass  # 如果st不可用（测试环境），忽略
         return []
 
 
@@ -2846,7 +2871,8 @@ def _create_cost_breakdown_chart(
     final_price: float,
     expected_profit: float = None,
     pricing_mode: str = None,
-    rate_snapshot: float = None,
+    commission_fee_cny: float = None,
+    rub_rate_snapshot: float = None,
 ) -> Any:
     """创建成本分解饼状图
 
@@ -2856,10 +2882,13 @@ def _create_cost_breakdown_chart(
         final_price: 最终售价
         expected_profit: 预期利润（如果提供，直接使用；否则重新计算）
         pricing_mode: 定价模式（"代理费在分子中"或"代理费在分母中"，如果提供则直接使用）
-        rate_snapshot: 汇率快照（如果提供，直接使用；否则获取最新汇率）
+        commission_fee_cny: 代理费（人民币，如果提供则直接使用，否则重新计算）
+        rub_rate_snapshot: 卢布汇率快照（用于计算代理费）
     """
     import plotly.graph_objects as go
-    from exchange_service import get_fallback_exchange_rate
+    from exchange_service import (
+        get_fallback_exchange_rate as get_rub_rate
+    )
 
     # 获取产品参数
     unit_price = float(product.get("unit_price") or 0)
@@ -2873,17 +2902,26 @@ def _create_cost_breakdown_chart(
     return_rate = float(product.get("return_rate") or 0)
     vat_rate = float(product.get("vat_rate") or 0)
 
-    # 获取汇率
-    rate = (
-        rate_snapshot
-        if rate_snapshot is not None
-        else get_fallback_exchange_rate()
+    # 获取卢布汇率（用于计算代理费）
+    rub_rate = (
+        rub_rate_snapshot
+        if rub_rate_snapshot is not None
+        else get_rub_rate()
     )
 
-    # 计算代理费
-    price_rub = final_price / rate
-    actual_commission_rub = max(15, min(200, price_rub * 0.02))
-    commission_fee = actual_commission_rub * rate
+    # 如果提供了已计算的代理费（人民币），直接使用；否则重新计算
+    if commission_fee_cny is not None:
+        commission_fee = commission_fee_cny
+        # 计算对应的卢布值用于判断定价模式（使用卢布汇率）
+        actual_commission_rub_used = commission_fee / rub_rate
+    else:
+        # 代理费始终基于最终售价重新计算（这是正确的浮动代理费计算方式）
+        # 代理费 = max(15, min(200, 最终售价(卢布) * 2%))
+        # final_price 是人民币价格，需要转换为卢布价格
+        # rub_rate 是 RUB/CNY，所以 final_price_rub = final_price / rub_rate
+        final_price_rub = final_price / rub_rate
+        actual_commission_rub_used = max(15, min(200, final_price_rub * 0.02))
+        commission_fee = actual_commission_rub_used * rub_rate
 
     # 计算各项费用的绝对值
     base_cost = unit_price + labeling_fee + shipping_fee + logistics_cost
@@ -2891,7 +2929,8 @@ def _create_cost_breakdown_chart(
     # 使用传入的定价模式，如果未提供则根据代理费范围判断
     if pricing_mode is None:
         # 未传入定价模式，根据代理费范围判断
-        if actual_commission_rub <= 15 or actual_commission_rub >= 200:
+        if (actual_commission_rub_used <= 15 or
+                actual_commission_rub_used >= 200):
             pricing_mode = "代理费在分子中"
         else:
             pricing_mode = "代理费在分母中"
@@ -3120,14 +3159,23 @@ def display_fast_pricing_results_precise_style(
 
     # 固定本次展示使用的汇率快照，确保页面内多图一致
     try:
-        from exchange_service import get_usd_rate as _get_usd_rate
+        from exchange_service import (
+            get_usd_rate as _get_usd_rate,
+            get_fallback_exchange_rate as _get_rub_rate
+        )
         rate_snapshot = (
             st.session_state.get('rate_snapshot')
             or _get_usd_rate()
         )
         st.session_state['rate_snapshot'] = rate_snapshot
+        # 获取卢布汇率快照（用于计算代理费）
+        rub_rate_snapshot = (
+            st.session_state.get('rub_rate_snapshot')
+            or _get_rub_rate()
+        )
+        st.session_state['rub_rate_snapshot'] = rub_rate_snapshot
     except (KeyError, AttributeError, TypeError, ValueError, ImportError):
-        rate_snapshot = None
+        rub_rate_snapshot = None
 
     # 显示结果
     st.markdown(
@@ -3355,13 +3403,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_low.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            land_commission_rub = (
+                pricing_result_low.get("land_commission_info") or 0
+            )
+            commission_fee_cny = (
+                land_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and land_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_low.get('land_cost', 0),
                 pricing_result_low.get("land_price", 0),
                 pricing_result_low.get("land_expected_profit", 0),
                 pricing_result_low.get("land_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3442,13 +3500,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_low_home.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            land_commission_rub = (
+                pricing_result_low_home.get("land_commission_info") or 0
+            )
+            commission_fee_cny = (
+                land_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and land_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_low_home.get('land_cost', 0),
                 pricing_result_low_home.get("land_price", 0),
                 pricing_result_low_home.get("land_expected_profit", 0),
                 pricing_result_low_home.get("land_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig, use_container_width=True, key="fast_land_low_home",
@@ -3538,13 +3606,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_low.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            air_commission_rub = (
+                pricing_result_low.get("air_commission_info") or 0
+            )
+            commission_fee_cny = (
+                air_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and air_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_low.get('air_cost', 0),
                 pricing_result_low.get("air_price", 0),
                 pricing_result_low.get("air_expected_profit", 0),
                 pricing_result_low.get("air_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3625,13 +3703,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_low_home.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            air_commission_rub = (
+                pricing_result_low_home.get("air_commission_info") or 0
+            )
+            commission_fee_cny = (
+                air_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and air_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_low_home.get('air_cost', 0),
                 pricing_result_low_home.get("air_price", 0),
                 pricing_result_low_home.get("air_expected_profit", 0),
                 pricing_result_low_home.get("air_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3737,13 +3825,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_fast.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            land_commission_rub = (
+                pricing_result_fast.get("land_commission_info") or 0
+            )
+            commission_fee_cny = (
+                land_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and land_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_fast.get('land_cost', 0),
                 pricing_result_fast.get("land_price", 0),
                 pricing_result_fast.get("land_expected_profit", 0),
                 pricing_result_fast.get("land_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3823,13 +3921,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_fast_home.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            land_commission_rub = (
+                pricing_result_fast_home.get("land_commission_info") or 0
+            )
+            commission_fee_cny = (
+                land_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and land_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_fast_home.get('land_cost', 0),
                 pricing_result_fast_home.get("land_price", 0),
                 pricing_result_fast_home.get("land_expected_profit", 0),
                 pricing_result_fast_home.get("land_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -3918,13 +4026,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_fast.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            air_commission_rub = (
+                pricing_result_fast.get("air_commission_info") or 0
+            )
+            commission_fee_cny = (
+                air_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and air_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_fast.get('air_cost', 0),
                 pricing_result_fast.get("air_price", 0),
                 pricing_result_fast.get("air_expected_profit", 0),
                 pricing_result_fast.get("air_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -4005,13 +4123,23 @@ def display_fast_pricing_results_precise_style(
             product_info = pricing_result_fast_home.get(
                 "product_info", virtual_product
             )
+            # 计算代理费（人民币）：从卢布单位转换为人民币
+            air_commission_rub = (
+                pricing_result_fast_home.get("air_commission_info") or 0
+            )
+            commission_fee_cny = (
+                air_commission_rub * rub_rate_snapshot
+                if rub_rate_snapshot and air_commission_rub
+                else None
+            )
             fig = _create_cost_breakdown_chart(
                 product_info,
                 pricing_result_fast_home.get('air_cost', 0),
                 pricing_result_fast_home.get("air_price", 0),
                 pricing_result_fast_home.get("air_expected_profit", 0),
                 pricing_result_fast_home.get("air_pricing_mode"),
-                rate_snapshot=rate_snapshot
+                commission_fee_cny=commission_fee_cny,
+                rub_rate_snapshot=rub_rate_snapshot
             )
             st.plotly_chart(
                 fig,
@@ -4048,15 +4176,27 @@ def get_user_products(user_id: int) -> List[Dict[str, Any]]:
     """获取用户产品列表"""
     try:
         with get_db_connection() as (conn, c):
-            c.execute("""
+            from db_adapter import adapt_sql
+            from db_config import DB_TYPE
+            sql = adapt_sql("""
                 SELECT id, name, weight_g, unit_price, category
                 FROM products
                 WHERE user_id = ?
                 ORDER BY name
-            """, (user_id,))
-            return [dict(row) for row in c.fetchall()]
-    except (sqlite3.Error, ValueError, TypeError) as e:
-        st.error(f"获取产品列表失败: {e}")
+            """)
+            c.execute(sql, (user_id,))
+            rows = c.fetchall()
+            # 获取列名并转换为字典
+            if DB_TYPE == 'postgresql':
+                columns = [desc[0] for desc in c.description]
+            else:
+                columns = [col[0] for col in c.description]
+            return [dict(zip(columns, row)) for row in rows]
+    except Exception as e:
+        try:
+            st.error(f"获取产品列表失败: {e}")
+        except (AttributeError, RuntimeError, NameError):
+            pass  # 如果st不可用（测试环境），忽略
         return []
 
 
@@ -4634,13 +4774,15 @@ def save_product_to_db(
         with get_db_connection() as (conn, c):
             # 检查产品名称是否重复
             user_id = current_user_id()
-            existing_product = c.execute(
+            check_sql = _safe_adapt_sql(
                 """
                 SELECT id, name FROM products
                 WHERE user_id = ? AND name = ?
                 """,
-                (user_id, name)
-            ).fetchone()
+                conn
+            )
+            c.execute(check_sql, (user_id, name))
+            existing_product = c.fetchone()
 
             if existing_product:
                 st.error(f"❌ 产品名称重复！已存在同名产品：'{name}'")
@@ -4648,7 +4790,7 @@ def save_product_to_db(
                 return False
 
             # 名称不重复，继续保存
-            c.execute(
+            insert_sql = _safe_adapt_sql(
                 """
                 INSERT INTO products (
                     user_id, name, russian_name, category, model, unit_price,
@@ -4666,6 +4808,10 @@ def save_product_to_db(
                     ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
         """,
+                conn
+            )
+            c.execute(
+                insert_sql,
                 (
                     user_id,
                     name,
@@ -5265,8 +5411,8 @@ def show_product_list_page(uid):
 
     with get_db_connection() as (conn, c):
         # 获取用户的所有产品
-        products = pd.read_sql(
-            """
+        # 适配SQL占位符
+        sql = """
             SELECT id, name, unit_price, weight_g,
                    CASE
                        WHEN is_cylinder = 1 THEN '圆柱包装'
@@ -5276,10 +5422,9 @@ def show_product_list_page(uid):
             FROM products
             WHERE user_id = ?
             ORDER BY name
-            """,
-            conn,
-            params=(uid,)
-        )
+        """
+        sql = _safe_adapt_sql(sql, conn)
+        products = pd.read_sql(sql, conn, params=(uid,))
 
         if products.empty:
             st.info("您还没有添加任何产品。")
@@ -5331,11 +5476,12 @@ def show_product_list_page(uid):
                     if st.button("🗑️ 删除", key=f"delete_{product['id']}"):
                         # 删除产品（兼容历史触发器残留）
                         try:
-                            c.execute(
+                            delete_sql = _safe_adapt_sql(
                                 "DELETE FROM products WHERE id = ? AND "
                                 "user_id = ?",
-                                (product['id'], uid),
+                                conn
                             )
+                            c.execute(delete_sql, (product['id'], uid))
                             product_name = product.get('name', '未知')
                             conn.commit()
                             # 记录审计日志（如果是admin操作）
@@ -5420,10 +5566,10 @@ def show_product_list_page(uid):
 def show_product_details(product_id, uid):
     """显示产品详细信息"""
     with get_db_connection() as (conn, c):
+        sql = "SELECT * FROM products WHERE id = ? AND user_id = ?"
+        sql = _safe_adapt_sql(sql, conn)
         product = pd.read_sql(
-            """
-            SELECT * FROM products WHERE id = ? AND user_id = ?
-            """,
+            sql,
             conn,
             params=(product_id, uid)
         )
@@ -5483,14 +5629,24 @@ def display_precise_pricing_results(
 
     # 固定本次展示使用的汇率快照，确保页面内多图一致
     try:
-        from exchange_service import get_usd_rate as _get_usd_rate
+        from exchange_service import (
+            get_usd_rate as _get_usd_rate,
+            get_fallback_exchange_rate as _get_rub_rate
+        )
         rate_snapshot = (
             st.session_state.get('rate_snapshot')
             or _get_usd_rate()
         )
         st.session_state['rate_snapshot'] = rate_snapshot
+        # 获取卢布汇率快照（用于计算代理费）
+        rub_rate_snapshot = (
+            st.session_state.get('rub_rate_snapshot')
+            or _get_rub_rate()
+        )
+        st.session_state['rub_rate_snapshot'] = rub_rate_snapshot
     except (KeyError, AttributeError, TypeError, ValueError, ImportError):
-        rate_snapshot = None
+        rub_rate_snapshot = None
+        st.session_state['rub_rate_snapshot'] = rub_rate_snapshot
 
     # 显示结果标题
     st.markdown(
@@ -5619,13 +5775,23 @@ def display_precise_pricing_results(
             # 显示定价因素饼状图
             product_info_chart = pricing_result_low.get("product_info", {})
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                land_commission_rub = (
+                    pricing_result_low.get("land_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    land_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and land_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_low.get('land_cost', 0),
                     pricing_result_low.get("land_price", 0),
                     pricing_result_low.get("land_expected_profit", 0),
                     pricing_result_low.get("land_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -5695,13 +5861,23 @@ def display_precise_pricing_results(
                 "product_info", {}
             )
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                land_commission_rub = (
+                    pricing_result_low_home.get("land_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    land_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and land_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_low_home.get('land_cost', 0),
                     pricing_result_low_home.get("land_price", 0),
                     pricing_result_low_home.get("land_expected_profit", 0),
                     pricing_result_low_home.get("land_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -5780,13 +5956,23 @@ def display_precise_pricing_results(
             # 显示定价因素饼状图
             product_info_chart = pricing_result_low.get("product_info", {})
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                air_commission_rub = (
+                    pricing_result_low.get("air_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    air_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and air_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_low.get('air_cost', 0),
                     pricing_result_low.get("air_price", 0),
                     pricing_result_low.get("air_expected_profit", 0),
                     pricing_result_low.get("air_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -5856,13 +6042,23 @@ def display_precise_pricing_results(
                 "product_info", {}
             )
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                air_commission_rub = (
+                    pricing_result_low_home.get("air_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    air_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and air_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_low_home.get('air_cost', 0),
                     pricing_result_low_home.get("air_price", 0),
                     pricing_result_low_home.get("air_expected_profit", 0),
                     pricing_result_low_home.get("air_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -5957,13 +6153,23 @@ def display_precise_pricing_results(
             # 显示定价因素饼状图
             product_info_chart = pricing_result_fast.get("product_info", {})
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                land_commission_rub = (
+                    pricing_result_fast.get("land_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    land_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and land_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_fast.get('land_cost', 0),
                     pricing_result_fast.get("land_price", 0),
                     pricing_result_fast.get("land_expected_profit", 0),
                     pricing_result_fast.get("land_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6034,13 +6240,23 @@ def display_precise_pricing_results(
                 "product_info", {}
             )
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                land_commission_rub = (
+                    pricing_result_fast_home.get("land_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    land_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and land_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_fast_home.get('land_cost', 0),
                     pricing_result_fast_home.get("land_price", 0),
                     pricing_result_fast_home.get("land_expected_profit", 0),
                     pricing_result_fast_home.get("land_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6118,13 +6334,23 @@ def display_precise_pricing_results(
             # 显示定价因素饼状图
             product_info_chart = pricing_result_fast.get("product_info", {})
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                air_commission_rub = (
+                    pricing_result_fast.get("air_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    air_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and air_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_fast.get('air_cost', 0),
                     pricing_result_fast.get("air_price", 0),
                     pricing_result_fast.get("air_expected_profit", 0),
                     pricing_result_fast.get("air_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6194,13 +6420,23 @@ def display_precise_pricing_results(
                 "product_info", {}
             )
             if product_info_chart:
+                # 计算代理费（人民币）：从卢布单位转换为人民币
+                air_commission_rub = (
+                    pricing_result_fast_home.get("air_commission_info") or 0
+                )
+                commission_fee_cny = (
+                    air_commission_rub * rub_rate_snapshot
+                    if rub_rate_snapshot and air_commission_rub
+                    else None
+                )
                 fig = _create_cost_breakdown_chart(
                     product_info_chart,
                     pricing_result_fast_home.get('air_cost', 0),
                     pricing_result_fast_home.get("air_price", 0),
                     pricing_result_fast_home.get("air_expected_profit", 0),
                     pricing_result_fast_home.get("air_pricing_mode"),
-                    rate_snapshot=rate_snapshot
+                    commission_fee_cny=commission_fee_cny,
+                    rub_rate_snapshot=rub_rate_snapshot
                 )
                 st.plotly_chart(
                     fig,
@@ -6241,36 +6477,53 @@ def payment_center_page():
         unsafe_allow_html=True
     )
 
-    current_user = st.session_state.get('current_user', {})
-    username = current_user.get('username', '')
+    user_id = current_user_id()
 
     try:
         with get_db_connection() as (conn, cursor):
             # 查询订单
-            cursor.execute(
+            sql = _safe_adapt_sql(
                 """
-                SELECT order_id, plan_type, amount, status,
-                       created_at, paid_at
-                FROM subscription_orders
-                WHERE username = ?
+                SELECT order_id, amount, description, status, created_at
+                FROM payment_orders
+                WHERE user_id = ?
                 ORDER BY created_at DESC
-                LIMIT 10
+                LIMIT 20
                 """,
-                (username,)
+                conn
             )
+            cursor.execute(sql, (user_id,))
             orders = cursor.fetchall()
 
             if orders:
                 # 创建订单表格
                 orders_data = []
                 for order in orders:
+                    # 状态映射
+                    status_map = {
+                        'PAID': '已支付',
+                        'PENDING': '待支付',
+                        'FAILED': '支付失败',
+                        'SUCCESS': '已支付',
+                        'CANCELLED': '已取消'
+                    }
+                    status_display = status_map.get(order[3], order[3])
+
+                    # 格式化时间
+                    try:
+                        created_time = datetime.fromtimestamp(order[4])
+                        created_time_str = created_time.strftime(
+                            '%Y-%m-%d %H:%M:%S'
+                        )
+                    except (ValueError, TypeError, OSError):
+                        created_time_str = str(order[4])
+
                     orders_data.append({
                         '订单号': order[0],
-                        '套餐类型': order[1],
-                        '金额': f'¥{order[2]:.2f}',
-                        '状态': '已支付' if order[3] == 'paid' else '待支付',
-                        '创建时间': order[4],
-                        '支付时间': order[5] if order[5] else '-'
+                        '描述': order[2],
+                        '金额': f'¥{order[1] / 100:.2f}',
+                        '状态': status_display,
+                        '创建时间': created_time_str
                     })
                 df = pd.DataFrame(orders_data)
                 st.dataframe(df, width='stretch')
@@ -6279,7 +6532,8 @@ def payment_center_page():
     except Exception as e:
         # 检查是否是表不存在的错误
         error_msg = str(e).lower()
-        if 'no such table' in error_msg or 'subscription_orders' in error_msg:
+        if ('no such table' in error_msg or
+                'relation' in error_msg and 'does not exist' in error_msg):
             st.info("当前无订单")
         else:
             st.error(f"查询订单失败: {str(e)}")
@@ -6333,10 +6587,11 @@ def subscription_management_page():
 
     # 获取用户信息 - 优先使用subscription_type字段
     with get_db_connection() as (conn, c):
-        c.execute(
-            "SELECT subscription_type, user_type FROM users WHERE id = ?",
-            (user_id,)
+        from db_adapter import adapt_sql
+        sql = adapt_sql(
+            "SELECT subscription_type, user_type FROM users WHERE id = ?"
         )
+        c.execute(sql, (user_id,))
         result = c.fetchone()
         if not result:
             st.error("无法获取用户信息")
@@ -7420,13 +7675,33 @@ def show_statistics_user_details():
 
     users_data = []
     for user in data['users']:
+        # 格式化注册日期
+        created_at = user['created_at']
+        if created_at:
+            if isinstance(created_at, datetime):
+                created_at_str = created_at.strftime('%Y-%m-%d')
+            else:
+                created_at_str = str(created_at)[:10]
+        else:
+            created_at_str = '未知'
+
+        # 格式化最近登录
+        last_login = user['last_login']
+        if last_login:
+            if isinstance(last_login, datetime):
+                last_login_str = last_login.strftime('%Y-%m-%d')
+            else:
+                last_login_str = str(last_login)[:10]
+        else:
+            last_login_str = '从未'
+
         users_data.append({
             'ID': user['user_id'],
             '用户名': user['username'],
             '邮箱': user['email'] or '无',
             '套餐': user['user_type'],
-            '注册日期': user['created_at'][:10] if user['created_at'] else '未知',
-            '最近登录': user['last_login'][:10] if user['last_login'] else '从未',
+            '注册日期': created_at_str,
+            '最近登录': last_login_str,
             '登录次数': user['login_count'],
             '留存天数': user['retention_days'],
         })

@@ -209,6 +209,27 @@ def detect_and_fix_leaks(
     return connection_fixer.fix_leaks()
 
 
+# 为了向后兼容，提供 ConnectionLeakDetector 别名
+class ConnectionLeakDetector:
+    """连接泄漏检测器（ConnectionLeakFixer 的别名）"""
+
+    def __init__(self, db_path: str = 'pricing_system.db'):
+        self._fixer = ConnectionLeakFixer(db_path)
+        self.db_path = db_path
+
+    def generate_report(self) -> Any:
+        """生成连接泄漏报告"""
+        leak_info = self._fixer.detect_leaks()
+        # 创建一个简单的报告对象
+        class Report:
+            def __init__(self, leak_info: Dict[str, Any]):
+                self.total_connections = leak_info.get('active_connections', 0)
+                self.leaks_detected = leak_info.get('leaks_detected', False)
+                self.timestamp = leak_info.get('timestamp', '')
+
+        return Report(leak_info)
+
+
 if __name__ == "__main__":
     # 测试连接泄漏修复
     print("测试连接泄漏修复工具...")

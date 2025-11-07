@@ -34,13 +34,15 @@ def calculate_logistic_cost(logistic, product, debug=False):
 
     # 获取体积重量计算参数
     volume_mode = logistic.get("volume_mode", "none")
-    volume_coefficient = logistic.get("volume_coefficient", 5000)
+    # 转换为float以兼容PostgreSQL的Decimal类型
+    volume_coefficient = float(logistic.get("volume_coefficient", 5000))
     debug_info.append(f"体积重量模式: {volume_mode}, 系数: {volume_coefficient}")
 
     # 基础限制检查
     actual_weight = product.get("weight_g", 0)
-    min_w = logistic.get("min_weight", 0)
-    max_w = logistic.get("max_weight", 10**9)
+    # 转换为float以兼容PostgreSQL的Decimal类型
+    min_w = float(logistic.get("min_weight", 0))
+    max_w = float(logistic.get("max_weight", 10**9))
     debug_info.append(f"重量限制: {min_w}g ~ {max_w}g, 当前: {actual_weight}g")
     if actual_weight < min_w or actual_weight > max_w:
         debug_info.append("不满足重量限制，返回 None")
@@ -49,7 +51,8 @@ def calculate_logistic_cost(logistic, product, debug=False):
     # 如果重量为0，返回基础费用
     if actual_weight == 0:
         debug_info.append("重量为0，返回基础费用")
-        base_fee = logistic.get("base_fee", 0)
+        # 转换为float以兼容PostgreSQL的Decimal类型
+        base_fee = float(logistic.get("base_fee", 0))
         return (base_fee, debug_info) if debug else base_fee
 
     # 如果重量不满足限制，返回None
@@ -271,7 +274,9 @@ def calculate_logistic_cost(logistic, product, debug=False):
                 f"计费重量: {calculated_weight:.2f}g"
             )
         elif volume_mode == "longest_side":
-            longest_side_threshold = logistic.get("longest_side_threshold", 0)
+            # 转换为float以兼容PostgreSQL的Decimal类型
+            longest_side_threshold = float(
+                logistic.get("longest_side_threshold", 0))
             longest_side = max(sides)
             debug_info.append(
                 f"最长边: {longest_side}cm, 阈值: {longest_side_threshold}cm"
@@ -306,20 +311,22 @@ def calculate_logistic_cost(logistic, product, debug=False):
     w = calculated_weight
     fee_mode = logistic.get("fee_mode", "base_plus_continue")
     continue_unit = int(logistic.get("continue_unit", 100))
-    continue_fee = logistic.get("continue_fee", 0)
+    # 转换为float以兼容PostgreSQL的Decimal类型
+    continue_fee = float(logistic.get("continue_fee", 0))
     debug_info.append(
         f"计费方式: {fee_mode}, 续重单位: {continue_unit}g, 续重费用: {continue_fee:.5f}"
     )
     if fee_mode == "base_plus_continue":
         units = math.ceil(w / continue_unit)
-        cost = logistic.get("base_fee", 0) + continue_fee * units
+        base_fee = float(logistic.get("base_fee", 0))
+        cost = base_fee + continue_fee * units
         debug_info.append(
-            f"基础费用: {logistic.get('base_fee', 0)}, "
+            f"基础费用: {base_fee}, "
             f"单位数: {units}, 运费: {cost}"
         )
     else:  # first_plus_continue
-        first_weight = logistic.get("first_weight_g", 0)
-        first_fee = logistic.get("first_fee", 0)
+        first_weight = float(logistic.get("first_weight_g", 0))
+        first_fee = float(logistic.get("first_fee", 0))
         if w <= first_weight:
             cost = first_fee
             debug_info.append(f"首重费用: {first_fee}，在首重范围内")
@@ -578,25 +585,28 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 log_limit_currency = current_log_dict.get(
                     "price_limit_currency", "RUB")
                 if log_limit_currency == "RUB":
-                    log_limit_value = (
+                    # 转换为float以兼容PostgreSQL的Decimal类型
+                    log_limit_value = float(
                         current_log_dict.get("price_limit_rub") or 0)
                 else:  # USD
                     # 如果货币是USD，需要从price_limit字段读取（存储的是转换后的CNY值）
                     # 然后转换回USD
-                    price_limit_cny = (current_log_dict.get("price_limit") or
-                                       0)
+                    price_limit_cny = float(
+                        current_log_dict.get("price_limit") or 0)
                     log_limit_value = (price_limit_cny / usd_rate
                                        if price_limit_cny > 0 else 0)
 
                 log_min_currency = current_log_dict.get(
                     "price_min_currency", "RUB")
                 if log_min_currency == "RUB":
-                    log_min_value = (current_log_dict.get("price_min_rub") or
-                                     0)
+                    # 转换为float以兼容PostgreSQL的Decimal类型
+                    log_min_value = float(
+                        current_log_dict.get("price_min_rub") or 0)
                 else:  # USD
                     # 如果货币是USD，需要从price_min字段读取（存储的是转换后的CNY值）
                     # 然后转换回USD
-                    price_min_cny = (current_log_dict.get("price_min") or 0)
+                    price_min_cny = float(
+                        current_log_dict.get("price_min") or 0)
                     log_min_value = (price_min_cny / usd_rate
                                      if price_min_cny > 0 else 0)
 
@@ -803,19 +813,33 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 final_price = base_cost_calc / denominator
                 pricing_mode = "代理费在分母中"
 
+            # 基于最终售价重新计算代理费（这是正确的浮动代理费）
+            final_price_rub = final_price / rate
+            final_commission_rub = max(15, min(200, final_price_rub * 0.02))
+            final_actual_commission = final_commission_rub
+
             if debug_list is not None:
                 debug_list.append(
-                    f"最终浮动代理费: {actual_commission:.2f} RUB"
+                    f"迭代计算代理费: {actual_commission:.2f} RUB"
+                )
+                debug_list.append(
+                    f"最终售价: {final_price:.2f} CNY"
+                )
+                debug_list.append(
+                    f"最终售价(卢布): {final_price_rub:.2f} RUB"
+                )
+                debug_list.append(
+                    f"最终浮动代理费: {final_actual_commission:.2f} RUB"
+                )
+                debug_list.append(
+                    f"最终代理费(CNY): {final_actual_commission * rate:.2f}"
                 )
                 debug_list.append(f"定价模式: {pricing_mode}")
                 debug_list.append("定价公式详细参数:")
                 debug_list.append(f"  基础成本: {base_cost_calc:.2f}")
-                debug_list.append(
-                    f"  代理费(CNY): {actual_commission * rate:.2f}"
-                )
                 if pricing_mode == "代理费在分子中":
                     total_cost_display = (
-                        base_cost_calc + actual_commission * rate
+                        base_cost_calc + final_actual_commission * rate
                     )
                     debug_list.append(
                         f"  总成本: {total_cost_display:.2f}"
@@ -841,12 +865,12 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 )
                 debug_list.append(f"  退货率: -{final_return_rate * 100:.2f}%")
                 debug_list.append(f"  增值税率: -{final_vat_rate * 100:.2f}%")
-                if 15 < actual_commission < 200:
+                if 15 < final_actual_commission < 200:
                     debug_list.append("  代理费率: -2.00%")
                 debug_list.append(f"  定价分母: {denominator:.4f}")
                 debug_list.append(f"  计算售价: {final_price:.2f}")
 
-            return round(final_price, 2), actual_commission, pricing_mode
+            return round(final_price, 2), final_actual_commission, pricing_mode
         land_debug = []
         air_debug = []
 
@@ -1150,6 +1174,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "air_debug": air_debug,
             "land_pricing_mode": land_pricing_mode,
             "air_pricing_mode": air_pricing_mode,
+            "land_commission_info": land_commission_info,
+            "air_commission_info": air_commission_info,
             "product_info": product
         }
     except ZeroDivisionError:
@@ -1178,6 +1204,10 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "all_costs_debug": [],
             "land_debug": [],
             "air_debug": [],
+            "land_pricing_mode": None,
+            "air_pricing_mode": None,
+            "land_commission_info": None,
+            "air_commission_info": None,
             "product_info": product
         }
 
@@ -1351,17 +1381,21 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:
         continue_unit = int(logistic.get("continue_unit", 100))
         if fee_mode == "base_plus_continue":
             units = math.ceil(w / continue_unit)
-            cost = logistic.get("base_fee", 0) + \
-                logistic.get("continue_fee", 0) * units
+            # 转换为float以兼容PostgreSQL的Decimal类型
+            base_fee_val = float(logistic.get("base_fee", 0))
+            continue_fee_val = float(logistic.get("continue_fee", 0))
+            cost = base_fee_val + continue_fee_val * units
         else:  # first_plus_continue
-            first_w = logistic.get("first_weight_g", 0)
-            first_cost = logistic.get("first_fee", 0)
+            # 转换为float以兼容PostgreSQL的Decimal类型
+            first_w = float(logistic.get("first_weight_g", 0))
+            first_cost = float(logistic.get("first_fee", 0))
+            continue_fee_val = float(logistic.get("continue_fee", 0))
             cost = (
                 first_cost
                 if w <= first_w
                 else first_cost +
                 math.ceil((w - first_w) / continue_unit) *
-                logistic.get("continue_fee", 0)
+                continue_fee_val
             )
         # 估算人民币总成本
         total_cny = unit_price + labeling_fee + shipping_fee + 15 * rate + cost
@@ -1391,21 +1425,23 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:
         # 根据货币类型读取正确的价格限制值
         limit_currency = logistic.get("price_limit_currency", "RUB")
         if limit_currency == "RUB":
-            limit_value = logistic.get("price_limit_rub", 0)
+            # 转换为float以兼容PostgreSQL的Decimal类型
+            limit_value = float(logistic.get("price_limit_rub", 0))
         else:  # USD
             # 如果货币是USD，需要从price_limit字段读取（存储的是转换后的CNY值）
             # 然后转换回USD
-            price_limit_cny = logistic.get("price_limit", 0)
+            price_limit_cny = float(logistic.get("price_limit", 0))
             limit_value = (price_limit_cny / usd_rate
                            if price_limit_cny > 0 else 0)
 
         min_currency = logistic.get("price_min_currency", "RUB")
         if min_currency == "RUB":
-            min_value = logistic.get("price_min_rub", 0)
+            # 转换为float以兼容PostgreSQL的Decimal类型
+            min_value = float(logistic.get("price_min_rub", 0))
         else:  # USD
             # 如果货币是USD，需要从price_min字段读取（存储的是转换后的CNY值）
             # 然后转换回USD
-            price_min_cny = logistic.get("price_min", 0)
+            price_min_cny = float(logistic.get("price_min", 0))
             min_value = (price_min_cny / usd_rate
                          if price_min_cny > 0 else 0)
 

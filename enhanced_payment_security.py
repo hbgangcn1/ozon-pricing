@@ -16,12 +16,16 @@ from enum import Enum
 # 导入数据库相关模块
 try:
     from db_utils import get_db_connection
-    from db_adapter import get_db_connection as get_db_connection_adapter
+    from db_adapter import (
+        get_db_connection as get_db_connection_adapter, adapt_sql)
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
     get_db_connection = None
     get_db_connection_adapter = None
+
+    def adapt_sql(sql: str) -> str:
+        return sql
 
 # 导入微信支付相关模块
 try:
@@ -249,10 +253,12 @@ class PaymentSecurityManager:
 
             with get_db_connection() as (conn, c):
                 # 查询订单金额
-                order_data = c.execute("""
+                sql = adapt_sql("""
                     SELECT amount, status FROM payment_orders
                     WHERE order_id = ?
-                """, (callback_data.order_id,)).fetchone()
+                """)
+                c.execute(sql, (callback_data.order_id,))
+                order_data = c.fetchone()
 
                 if not order_data:
                     logger.error(f"订单不存在: {callback_data.order_id}")
@@ -336,9 +342,11 @@ class PaymentSecurityManager:
 
             with get_db_connection() as (conn, c):
                 # 检查订单是否存在
-                order_exists = c.execute("""
+                sql = adapt_sql("""
                     SELECT id, status FROM payment_orders WHERE order_id = ?
-                """, (callback_data.order_id,)).fetchone()
+                """)
+                c.execute(sql, (callback_data.order_id,))
+                order_exists = c.fetchone()
 
                 if not order_exists:
                     return False, f"订单不存在: {callback_data.order_id}"
@@ -351,11 +359,12 @@ class PaymentSecurityManager:
                     return True, "状态已是最新"
 
                 # 更新订单状态
-                c.execute("""
+                sql = adapt_sql("""
                     UPDATE payment_orders
                     SET status = ?, updated_at = ?
                     WHERE order_id = ?
-                """, (
+                """)
+                c.execute(sql, (
                     callback_data.status.value,
                     int(time.time()),
                     callback_data.order_id
@@ -389,10 +398,12 @@ class PaymentSecurityManager:
         """
         try:
             # 获取订单信息
-            order_data = cursor.execute("""
+            sql = adapt_sql("""
                 SELECT user_id, description, duration FROM payment_orders
                 WHERE order_id = ?
-            """, (callback_data.order_id,)).fetchone()
+            """)
+            cursor.execute(sql, (callback_data.order_id,))
+            order_data = cursor.fetchone()
 
             if not order_data:
                 logger.error(f"无法获取订单信息: {callback_data.order_id}")
@@ -413,12 +424,14 @@ class PaymentSecurityManager:
             expiry_time = current_time + (duration_days * 24 * 3600)
 
             # 更新用户订阅
-            cursor.execute("""
+            sql = adapt_sql("""
                 UPDATE users
                 SET subscription_type = ?, subscription_expires = ?,
                     remaining_calculations = -1, updated_at = ?
                 WHERE id = ?
-            """, (plan_code, expiry_time, current_time, user_id))
+            """)
+            cursor.execute(
+                sql, (plan_code, expiry_time, current_time, user_id))
 
             logger.info(
                 f"用户订阅已更新: 用户{user_id}, 套餐{plan_code}, "
@@ -460,12 +473,13 @@ class PaymentSecurityManager:
                 return
 
             with get_db_connection() as (conn, c):
-                c.execute("""
+                sql = adapt_sql("""
                     INSERT INTO payment_callback_log
                     (order_id, event_type, transaction_id, amount, status,
                      raw_data, processed_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (
+                """)
+                c.execute(sql, (
                     callback_data.order_id,
                     callback_data.event_type.value,
                     callback_data.transaction_id,
@@ -557,12 +571,14 @@ class PaymentSecurityManager:
                 return None
 
             with get_db_connection() as (conn, c):
-                order_data = c.execute("""
+                sql = adapt_sql("""
                     SELECT order_id, amount, status, created_at, updated_at,
                            wechat_order_id, description
                     FROM payment_orders
                     WHERE order_id = ?
-                """, (order_id,)).fetchone()
+                """)
+                c.execute(sql, (order_id,))
+                order_data = c.fetchone()
 
                 if not order_data:
                     return None
@@ -589,7 +605,7 @@ class PaymentSecurityManager:
                 return False
 
             with get_db_connection() as (conn, c):
-                c.execute("""
+                create_sql = adapt_sql("""
                     CREATE TABLE IF NOT EXISTS payment_callback_log (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         order_id VARCHAR(255) NOT NULL,
@@ -602,13 +618,15 @@ class PaymentSecurityManager:
                         created_at INTEGER DEFAULT (strftime('%s', 'now'))
                     )
                 """)
+                c.execute(create_sql)
 
                 # 创建索引
-                c.execute("""
+                index_sql = adapt_sql("""
                     CREATE INDEX IF NOT EXISTS
                     idx_payment_callback_log_order_id
                     ON payment_callback_log(order_id)
                 """)
+                c.execute(index_sql)
 
                 c.execute("""
                     CREATE INDEX IF NOT EXISTS
