@@ -132,6 +132,17 @@ flake8_app.txt
 flake8_logic.txt
 flake8_ui_logistics.txt
 
+# 测试工具和输出文件
+cleanup_test_users.py
+fix_test_placeholders.py
+fix_*.py
+conftest.py
+coverage.xml
+test_*.txt
+test_output*.txt
+test_results*.txt
+test_full_output*.txt
+
 # 微信支付敏感文件
 cert/
 wxpaycertificate/
