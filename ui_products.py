@@ -20,12 +20,14 @@ try:
         get_db_connection,
         current_user_id,
         check_user_subscription_status,
+        _safe_adapt_sql,
     )
 except ImportError:
     from db_utils import (
         get_db_connection,
         current_user_id,
         check_user_subscription_status,
+        _safe_adapt_sql,
     )
 
 # 向后兼容：提供 get_db 以便旧测试可以 monkeypatch
@@ -49,8 +51,74 @@ def products_page():
     """产品管理页面"""
     uid = current_user_id()
 
+    # 在进入数据库连接上下文之前检查编辑模式，避免上下文管理器问题
+    # 安全地获取edit_product_id
+    edit_id = None
+
+    # 尝试多种方法获取值，优先使用最可靠的方法
+    # 方法1: 直接尝试get方法（最可靠）
+    try:
+        if hasattr(st.session_state, 'get'):
+            edit_id = st.session_state.get("edit_product_id")
+            # 如果get返回的值是有效的，使用它
+            if edit_id is not None and edit_id != 0 and edit_id != "":
+                pass  # 使用这个值
+    except (AttributeError, TypeError):
+        pass
+
+    # 方法2: 如果get方法不存在或返回None，尝试字典式访问
+    if edit_id is None:
+        try:
+            # 先检查键是否存在
+            key_exists = False
+            try:
+                if hasattr(st.session_state, '__contains__'):
+                    contains_result = "edit_product_id" in st.session_state
+                    # 确保结果是布尔值，不是MagicMock
+                    if isinstance(contains_result, bool):
+                        key_exists = contains_result
+            except (AttributeError, TypeError):
+                pass
+
+            if key_exists:
+                edit_id = st.session_state["edit_product_id"]
+        except (KeyError, AttributeError, TypeError):
+            pass
+
+    # 方法3: 如果前面方法都失败，尝试属性访问
+    if edit_id is None:
+        try:
+            attr_value = getattr(st.session_state, 'edit_product_id', None)
+            # 确保不是MagicMock对象
+            if attr_value is not None:
+                # 检查是否是有效的值类型
+                if isinstance(attr_value, (int, float, str, list, dict)):
+                    edit_id = attr_value
+        except (AttributeError, TypeError):
+            pass
+
+    # 只有在edit_id确实存在且有效时才调用编辑表单
+    # 确保是真正的数字、非空字符串或非空列表
+    if (edit_id is not None and
+            edit_id is not False and
+            edit_id != 0 and
+            edit_id != "" and
+            edit_id != []):
+        # 确保是有效的类型
+        if isinstance(edit_id, (int, float, str, list, dict)):
+            edit_product_form()
+            return
+
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
+
+        # 检查订阅状态，如果不是免费用户且订阅无效，显示错误并返回
+        if (
+            subscription_status.get("user_type") != "free" and
+            not subscription_status.get("valid", True)
+        ):
+            st.error("账号到期，请联系客服续费")
+            return
 
         # 使用容器优化渲染性能
         header_container = st.container()
@@ -67,11 +135,60 @@ def products_page():
                 unsafe_allow_html=True,
             )
 
-        if st.session_state.get("edit_product_id"):
-            edit_product_form()
-            return
+        # 安全地获取batch_edit_products
+        batch_products = None
 
-        if st.session_state.get("batch_edit_products"):
+        # 方法1: 直接尝试get方法（最可靠）
+        try:
+            if hasattr(st.session_state, 'get'):
+                batch_products = st.session_state.get("batch_edit_products")
+                # 如果get返回的值是有效的，使用它
+                if batch_products is not None and batch_products != []:
+                    pass  # 使用这个值
+        except (AttributeError, TypeError):
+            pass
+
+        # 方法2: 如果get方法不存在或返回None，尝试字典式访问
+        if batch_products is None or batch_products == []:
+            try:
+                # 先检查键是否存在
+                key_exists = False
+                try:
+                    if hasattr(st.session_state, '__contains__'):
+                        contains_result = (
+                            "batch_edit_products" in st.session_state
+                        )
+                        # 确保结果是布尔值，不是MagicMock
+                        if isinstance(contains_result, bool):
+                            key_exists = contains_result
+                except (AttributeError, TypeError):
+                    pass
+
+                if key_exists:
+                    batch_products = (
+                        st.session_state["batch_edit_products"]
+                    )
+            except (KeyError, AttributeError, TypeError):
+                pass
+
+        # 方法3: 如果前面方法都失败，尝试属性访问
+        if batch_products is None or batch_products == []:
+            try:
+                attr_value = getattr(
+                    st.session_state, 'batch_edit_products', None
+                )
+                # 确保不是MagicMock对象且是有效的列表
+                if (attr_value is not None and
+                        isinstance(attr_value, (list, tuple))):
+                    batch_products = attr_value
+            except (AttributeError, TypeError):
+                pass
+
+        # 只有在batch_products确实存在且有效时才调用批量编辑表单
+        # 确保是非空列表
+        if (batch_products is not None and
+                batch_products != [] and
+                isinstance(batch_products, (list, tuple))):
             batch_edit_pricing_form()
             return
 
@@ -266,22 +383,48 @@ def products_page():
                 missing_fields = []
                 if not name:
                     missing_fields.append("产品名称")
-                if weight_g <= 0:
-                    missing_fields.append("重量")
-                if unit_price <= 0:
-                    missing_fields.append("进货单价")
-                if not is_cylinder:
-                    if length_cm <= 0:
-                        missing_fields.append("长度")
-                    if width_cm <= 0:
-                        missing_fields.append("宽度")
-                    if height_cm <= 0:
-                        missing_fields.append("高度")
-                else:
-                    if cylinder_diameter <= 0:
-                        missing_fields.append("圆柱直径")
-                    if cylinder_length <= 0:
-                        missing_fields.append("圆柱长度")
+                # 确保数值类型正确，避免MagicMock比较错误
+                try:
+                    weight_g_val = (
+                        float(weight_g) if weight_g is not None else 0)
+                    unit_price_val = (
+                        float(unit_price) if unit_price is not None else 0)
+                    if weight_g_val <= 0:
+                        missing_fields.append("重量")
+                    if unit_price_val <= 0:
+                        missing_fields.append("进货单价")
+                    if not is_cylinder:
+                        length_cm_val = (
+                            float(length_cm) if length_cm is not None else 0)
+                        width_cm_val = (
+                            float(width_cm) if width_cm is not None else 0)
+                        height_cm_val = (
+                            float(height_cm) if height_cm is not None else 0)
+                        if length_cm_val <= 0:
+                            missing_fields.append("长度")
+                        if width_cm_val <= 0:
+                            missing_fields.append("宽度")
+                        if height_cm_val <= 0:
+                            missing_fields.append("高度")
+                    else:
+                        cylinder_diameter_val = (
+                            float(cylinder_diameter)
+                            if cylinder_diameter is not None
+                            else 0)
+                        cylinder_length_val = (
+                            float(cylinder_length)
+                            if cylinder_length is not None
+                            else 0)
+                        if cylinder_diameter_val <= 0:
+                            missing_fields.append("圆柱直径")
+                        if cylinder_length_val <= 0:
+                            missing_fields.append("圆柱长度")
+                except (TypeError, ValueError):
+                    # 如果类型转换失败，添加所有尺寸字段
+                    if not is_cylinder:
+                        missing_fields.extend(["长度", "宽度", "高度"])
+                    else:
+                        missing_fields.extend(["圆柱直径", "圆柱长度"])
                 # 电池容量验证逻辑
                 if has_battery:
                     if choice == "填写 Wh（瓦时）":
@@ -304,7 +447,7 @@ def products_page():
                 if missing_fields:
                     st.error(f"请填写以下必填字段：{', '.join(missing_fields)}")
                 else:
-                    c.execute(
+                    insert_sql = _safe_adapt_sql(
                         "INSERT INTO products ("
                         "user_id, name, russian_name, category, model, "
                         "unit_price, weight_g, length_cm, width_cm, "
@@ -319,6 +462,10 @@ def products_page():
                         "cylinder_length) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
                         "?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        conn
+                    )
+                    c.execute(
+                        insert_sql,
                         (
                             uid,
                             name,
@@ -354,7 +501,7 @@ def products_page():
                     # 记录审计日志（如果是admin操作）
                     try:
                         from app import is_admin
-                        if is_admin():
+                        if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
                                 admin_id=uid,
@@ -389,6 +536,7 @@ def products_page():
         # 使用容器优化渲染性能
         products_list_container = st.container()
         with products_list_container:
+            # 检查是否有产品数据
             if not products.empty:
                 selected_list = []
                 for _, row in products.iterrows():
@@ -456,23 +604,27 @@ def products_page():
                             return
                         product_id = st.session_state.delete_confirm_product_id
                         # 先获取产品名称用于审计日志
-                        product_info = c.execute(
+                        select_sql = _safe_adapt_sql(
                             "SELECT name FROM products "
                             "WHERE id=? AND user_id=?",
-                            (product_id, uid),
+                            conn
+                        )
+                        product_info = c.execute(
+                            select_sql, (product_id, uid)
                         ).fetchone()
                         product_name = (
                             product_info[0] if product_info else '未知'
                         )
-                        c.execute(
+                        delete_sql = _safe_adapt_sql(
                             "DELETE FROM products WHERE id=? AND user_id=?",
-                            (product_id, uid),
+                            conn
                         )
+                        c.execute(delete_sql, (product_id, uid))
                         conn.commit()
                         # 记录审计日志（如果是admin操作）
                         try:
                             from app import is_admin
-                            if is_admin():
+                            if is_admin() and uid is not None:
                                 from db_utils import log_admin_action
                                 log_admin_action(
                                     admin_id=uid,
@@ -530,19 +682,20 @@ def products_page():
                             product_names = [
                                 p.get('name', '未知') for p in selected_products
                             ]
-                            c.execute(
+                            delete_sql = _safe_adapt_sql(
                                 f"""
                                 DELETE FROM products
                                 WHERE id IN ({placeholders}) AND user_id = ?
                             """,
-                                (*product_ids, uid),
+                                conn
                             )
+                            c.execute(delete_sql, (*product_ids, uid))
 
                             conn.commit()
                             # 记录审计日志（如果是admin操作）
                             try:
                                 from app import is_admin
-                                if is_admin():
+                                if is_admin() and uid is not None:
                                     from db_utils import log_admin_action
                                     log_admin_action(
                                         admin_id=uid,
@@ -581,35 +734,75 @@ def products_page():
                     if st.button("取消", key="cancel_batch_delete"):
                         del st.session_state.batch_delete_products
                         st.rerun()
-            else:
+            elif products.empty:
+                # 如果没有产品数据且没有批量删除操作，显示提示
                 st.info("暂无产品数据")
 
 
 def edit_product_form():
     """编辑产品表单"""
+    # 安全地获取编辑ID
+    get_func = (st.session_state.get if hasattr(st.session_state, 'get')
+                else lambda k, d=None: getattr(st.session_state, k, d))
+    pid = (get_func("edit_product_id")
+           if hasattr(st.session_state, 'get')
+           else getattr(st.session_state, 'edit_product_id', None))
+
+    if not pid:
+        st.error("编辑ID不存在")
+        if st.button("返回列表"):
+            try:
+                if hasattr(st.session_state, 'get'):
+                    st.session_state.pop("edit_product_id", None)
+                else:
+                    if hasattr(st.session_state, 'edit_product_id'):
+                        delattr(st.session_state, 'edit_product_id')
+            except (KeyError, AttributeError):
+                pass
+            st.rerun()
+        return
+
     uid = current_user_id()
-    pid = st.session_state.edit_product_id
 
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
         if not subscription_status.get("valid", True):
             st.error("账号到期，请联系客服续费")
             if st.button("返回列表"):
-                if "edit_product_id" in st.session_state:
-                    del st.session_state.edit_product_id
+                try:
+                    if hasattr(st.session_state, 'get'):
+                        st.session_state.pop("edit_product_id", None)
+                    else:
+                        if hasattr(st.session_state, 'edit_product_id'):
+                            delattr(st.session_state, 'edit_product_id')
+                except (KeyError, AttributeError):
+                    pass
                 st.rerun()
             return
 
-        row = c.execute(
-            "SELECT * FROM products WHERE id=? AND user_id=?", (pid, uid)
-        ).fetchone()
+        sql = _safe_adapt_sql(
+            "SELECT * FROM products WHERE id=? AND user_id=?", conn
+        )
+        c.execute(sql, (pid, uid))
+        row = c.fetchone()
+
+        # 将tuple转换为字典（兼容SQLite和PostgreSQL）
+        if isinstance(row, dict):
+            # SQLite可能返回字典（如果设置了row_factory）
+            vals = row
+        else:
+            # PostgreSQL返回tuple，需要从cursor.description获取列名
+            column_names = (
+                [desc[0] for desc in c.description] if c.description else []
+            )
+            vals = dict(zip(column_names, row)) if column_names else {}
+
     if not row:
         st.error("产品不存在或无权编辑")
         if st.button("返回列表"):
             del st.session_state.edit_product_id
             st.rerun()
         return
-    vals = dict(zip(row.keys(), row))
     # 确保所有必需的字段都存在
     required_fields = [
         "name",
@@ -985,7 +1178,7 @@ def edit_product_form():
                 st.error(f"请填写以下必填字段：{', '.join(missing_fields)}")
             else:
                 with get_db_connection() as (conn, c):
-                    c.execute(
+                    update_sql = _safe_adapt_sql(
                         """UPDATE products SET
                         name=?, russian_name=?, category=?, model=?,
                         weight_g=?, length_cm=?, width_cm=?, height_cm=?,
@@ -999,6 +1192,10 @@ def edit_product_form():
                         withdrawal_fee_rate=?, payment_processing_fee=?,
                         "return_rate"=?, vat_rate=?
                         WHERE id=? AND user_id=?""",
+                        conn
+                    )
+                    c.execute(
+                        update_sql,
                         (
                             name,
                             russian_name,
@@ -1035,7 +1232,7 @@ def edit_product_form():
                     # 记录审计日志（如果是admin操作）
                     try:
                         from app import is_admin
-                        if is_admin():
+                        if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             product_name = name or '未知'
                             log_admin_action(
@@ -1070,17 +1267,25 @@ def edit_product_form():
 
 def batch_edit_pricing_form():
     """批量编辑产品定价参数表单"""
+    # 安全地获取批量编辑产品列表
+    get_func = (st.session_state.get if hasattr(st.session_state, 'get')
+                else lambda k, d=None: getattr(st.session_state, k, d))
+    selected_products = (
+        get_func("batch_edit_products")
+        if hasattr(st.session_state, 'get')
+        else getattr(
+            st.session_state, 'batch_edit_products', None))
+
+    if not selected_products:
+        st.error("没有选择要编辑的产品")
+        if st.button("返回列表"):
+            st.rerun()
+        return
+
     uid = current_user_id()
-    selected_products = st.session_state.batch_edit_products
 
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
-
-        if not st.session_state.get("batch_edit_products"):
-            st.error("没有选择要编辑的产品")
-            if st.button("返回列表"):
-                st.rerun()
-            return
 
         # 显示选中的产品
         st.subheader("批量编辑定价参数")
@@ -1099,7 +1304,7 @@ def batch_edit_pricing_form():
         product_ids = [p["id"] for p in selected_products]
         placeholders = ",".join(["?" for _ in product_ids])
 
-        avg_params = c.execute(
+        avg_sql = _safe_adapt_sql(
             f"""
             SELECT
                 AVG(promotion_cost_rate) as avg_promotion_cost_rate,
@@ -1110,8 +1315,11 @@ def batch_edit_pricing_form():
                 AVG("return_rate") as avg_return_rate
             FROM products
             WHERE id IN ({placeholders}) AND user_id = ?
-        """,
-            (*product_ids, uid),
+            """,
+            conn
+        )
+        avg_params = c.execute(
+            avg_sql, (*product_ids, uid)
         ).fetchone()
 
         # 定价参数输入
@@ -1205,9 +1413,10 @@ def batch_edit_pricing_form():
                         "return_rate" = ?
                     WHERE id IN ({placeholders}) AND user_id = ?
                 """
+                update_sql = _safe_adapt_sql(update_query, conn)
 
                 c.execute(
-                    update_query,
+                    update_sql,
                     (
                         promotion_cost_rate,
                         target_profit_margin,
@@ -1224,7 +1433,7 @@ def batch_edit_pricing_form():
                 # 记录审计日志（如果是admin操作）
                 try:
                     from app import is_admin
-                    if is_admin():
+                    if is_admin() and uid is not None:
                         from db_utils import log_admin_action
                         product_names = [
                             p.get('name', '未知')[:20]
@@ -1251,7 +1460,7 @@ def batch_edit_pricing_form():
                 st.success(f"成功更新 {len(selected_products)} 个产品的定价参数！")
 
                 # 清除session state并返回列表
-                del st.session_state.batch_edit_products
+                st.session_state.pop('batch_edit_products', None)
                 # 设置标志，指示应该返回到产品列表页面
                 st.session_state.return_to_product_list = True
                 st.rerun()
@@ -1262,7 +1471,7 @@ def batch_edit_pricing_form():
 
         # 取消按钮
         if st.button("取消", key="cancel_batch_edit"):
-            del st.session_state.batch_edit_products
+            st.session_state.pop('batch_edit_products', None)
             # 设置标志，指示应该返回到产品列表页面
             st.session_state.return_to_product_list = True
             st.rerun()

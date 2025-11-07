@@ -7,6 +7,8 @@ try:
         current_user_id,
         calculate_and_update_priority_groups,
         check_user_subscription_status,
+        _safe_adapt_sql,
+        _is_postgresql_connection,
     )
 except ImportError:
     from db_utils import (
@@ -14,6 +16,8 @@ except ImportError:
         current_user_id,
         calculate_and_update_priority_groups,
         check_user_subscription_status,
+        _safe_adapt_sql,
+        _is_postgresql_connection,
     )
 try:
     from .exchange_service import (
@@ -42,6 +46,18 @@ def get_db():
     if _legacy_get_db is None:
         raise AttributeError("get_db is deprecated; use get_db_connection")
     return _legacy_get_db()
+
+
+def _safe_delete_session_key(key: str):
+    """安全地删除session_state中的键"""
+    try:
+        if (hasattr(st.session_state, '__contains__') and
+                key in st.session_state):
+            del st.session_state[key]
+        elif hasattr(st.session_state, key):
+            delattr(st.session_state, key)
+    except (KeyError, AttributeError, TypeError):
+        pass
 
 
 def format_logistics_name(
@@ -88,22 +104,73 @@ def logistics_page():
             unsafe_allow_html=True,
         )
 
-    with get_db_connection() as (conn, c):
-        uid = current_user_id()
+    # 在进入数据库连接上下文之前检查编辑模式，避免上下文管理器问题
+    # 安全地获取edit_logistic_id
+    edit_id = None
 
-        # 延迟加载：先显示加载状态
+    # 方法1: 直接尝试get方法（最可靠）
+    try:
+        if hasattr(st.session_state, 'get'):
+            edit_id = st.session_state.get("edit_logistic_id")
+            # 如果get返回的值是有效的，使用它
+            if edit_id is not None and edit_id != 0 and edit_id != "":
+                pass  # 使用这个值
+    except (AttributeError, TypeError):
+        pass
+
+    # 方法2: 如果get方法不存在或返回None，尝试字典式访问
+    if edit_id is None:
+        try:
+            # 先检查键是否存在
+            key_exists = False
+            try:
+                if hasattr(st.session_state, '__contains__'):
+                    contains_result = "edit_logistic_id" in st.session_state
+                    # 确保结果是布尔值，不是MagicMock
+                    if isinstance(contains_result, bool):
+                        key_exists = contains_result
+            except (AttributeError, TypeError):
+                pass
+
+            if key_exists:
+                edit_id = st.session_state["edit_logistic_id"]
+        except (KeyError, AttributeError, TypeError):
+            pass
+
+    # 方法3: 如果前面方法都失败，尝试属性访问
+    if edit_id is None:
+        try:
+            attr_value = getattr(st.session_state, 'edit_logistic_id', None)
+            # 确保不是MagicMock对象
+            if attr_value is not None:
+                # 检查是否是有效的值类型
+                if isinstance(attr_value, (int, float, str, list, dict)):
+                    edit_id = attr_value
+        except (AttributeError, TypeError):
+            pass
+
+    # 只有在edit_id确实存在且有效时才调用编辑表单
+    # 确保是真正的数字或非空字符串
+    if (edit_id is not None and
+            edit_id is not False and
+            edit_id != 0 and
+            edit_id != "" and
+            isinstance(edit_id, (int, float, str, list, dict))):
+        edit_logistic_form()
+        return
+
+    uid = current_user_id()
+    with get_db_connection() as (conn, c):
         with st.spinner("正在加载物流数据..."):
             # 缓存订阅状态，避免在每个按钮中重复查询
             subscription_status = check_user_subscription_status(uid)
 
-        # Check if we're in edit mode
-        get_func = (st.session_state.get if hasattr(st.session_state, 'get')
-                    else lambda k, d=None: getattr(st.session_state, k, d))
-        edit_id = (get_func("edit_logistic_id")
-                   if hasattr(st.session_state, 'get')
-                   else getattr(st.session_state, 'edit_logistic_id', None))
-        if edit_id:
-            edit_logistic_form()
+        # 检查订阅状态，如果不是免费用户且订阅无效，显示错误并返回
+        if (
+            subscription_status.get("user_type") != "free" and
+            not subscription_status.get("valid", True)
+        ):
+            st.error("账号到期，请联系客服续费")
             return
 
         # ------------------------------------------------------------------
@@ -345,21 +412,24 @@ def logistics_page():
                     return
                 # 检查物流模板数量限制
                 # 获取用户物流模板数量和限制
-                with get_db_connection() as (_, cur):
+                with get_db_connection() as (conn2, cur):
                     # 获取当前物流模板数量
-                    cur.execute(
+                    sql = _safe_adapt_sql(
                         "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
-                        (uid,),
+                        conn2
                     )
-                    current_count = cur.fetchone()[0]
+                    cur.execute(sql, (uid,))
+                    result = cur.fetchone()
+                    current_count = result[0] if result else 0
                     # 获取用户类型和物流模板限制
-                    cur.execute(
+                    sql = _safe_adapt_sql(
                         "SELECT user_type, "
                         "logistics_templates_limit "
                         "FROM users "
                         "WHERE id = ?",
-                        (uid,),
+                        conn2
                     )
+                    cur.execute(sql, (uid,))
                     result = cur.fetchone()
                     if result:
                         user_type, _db_limit = result
@@ -440,7 +510,12 @@ def logistics_page():
                                 }
 
                                 placeholders = ",".join(["?"] * 35)
-                                insert_sql = (
+                                # 根据数据库类型决定是否添加 RETURNING 子句
+                                is_pg = _is_postgresql_connection(conn)
+                                returning_clause = (
+                                    " RETURNING id" if is_pg else ""
+                                )
+                                insert_sql_raw = (
                                     "INSERT INTO logistics ("
                                     "user_id, name, type, min_days, max_days, "
                                     "price_limit, price_limit_rub, "
@@ -462,6 +537,10 @@ def logistics_page():
                                     "price_limit_currency, "
                                     "price_min_currency) "
                                     f"VALUES ({placeholders})"
+                                    f"{returning_clause}"
+                                )
+                                insert_sql = _safe_adapt_sql(
+                                    insert_sql_raw, conn
                                 )
                                 c.execute(
                                     insert_sql,
@@ -519,12 +598,20 @@ def logistics_page():
                                         ),
                                     ),
                                 )
-                                new_logistic_id = c.lastrowid
+                                # PostgreSQL 使用 RETURNING 子句，
+                                # SQLite 使用 lastrowid
+                                if is_pg:
+                                    result = c.fetchone()
+                                    new_logistic_id = (
+                                        result[0] if result else None
+                                    )
+                                else:
+                                    new_logistic_id = c.lastrowid
                                 conn.commit()
                                 # 记录审计日志（如果是admin操作）
                                 try:
                                     from app import is_admin
-                                    if is_admin():
+                                    if is_admin() and uid is not None:
                                         from db_utils import log_admin_action
                                         log_admin_action(
                                             admin_id=uid,
@@ -581,16 +668,19 @@ def logistics_page():
             if not (hasattr(st.session_state, cache_key)
                     if not hasattr(st.session_state, '__contains__')
                     else cache_key in st.session_state):
-                land_query = (
-                    "SELECT * FROM logistics WHERE type='land' "
-                    "AND user_id = ?"
-                )
-                air_query = (
-                    "SELECT * FROM logistics WHERE type='air' AND user_id = ?"
-                )
-
                 # 忽略pandas关于数据库连接类型的警告
                 import warnings
+
+                land_query = _safe_adapt_sql(
+                    "SELECT * FROM logistics WHERE type='land' "
+                    "AND user_id = ? ORDER BY id",
+                    conn
+                )
+                air_query = _safe_adapt_sql(
+                    "SELECT * FROM logistics WHERE type='air' "
+                    "AND user_id = ? ORDER BY id",
+                    conn
+                )
 
                 with warnings.catch_warnings():
                     warnings.filterwarnings(
@@ -838,7 +928,18 @@ def logistics_page():
             # 到期拦截（不显示二次确认框，直接提示）
             if not subscription_status.get("valid", True):
                 st.error("账号到期，请联系客服续费")
-                del st.session_state.delete_confirm_logistic_id
+                # 安全地删除键
+                try:
+                    if (hasattr(st.session_state, '__contains__') and
+                            "delete_confirm_logistic_id" in
+                            st.session_state):
+                        del st.session_state["delete_confirm_logistic_id"]
+                    elif (hasattr(st.session_state,
+                                  'delete_confirm_logistic_id')):
+                        delattr(st.session_state,
+                                'delete_confirm_logistic_id')
+                except (KeyError, AttributeError, TypeError):
+                    pass
                 return
             st.warning("确定要删除这个物流规则吗？")
             col_confirm, col_cancel = st.columns(2)
@@ -850,22 +951,25 @@ def logistics_page():
                         st.rerun()
                     logistic_id = st.session_state.delete_confirm_logistic_id
                     # 先获取物流规则名称用于审计日志
-                    logistic_info = c.execute(
+                    sql = _safe_adapt_sql(
                         "SELECT name, type FROM logistics "
                         "WHERE id=? AND user_id=?",
-                        (logistic_id, uid),
-                    ).fetchone()
+                        conn
+                    )
+                    c.execute(sql, (logistic_id, uid))
+                    logistic_info = c.fetchone()
                     logistic_name = logistic_info[0] if logistic_info else '未知'
                     logistic_type = logistic_info[1] if logistic_info else '未知'
-                    c.execute(
+                    sql = _safe_adapt_sql(
                         "DELETE FROM logistics WHERE id=? AND user_id=?",
-                        (logistic_id, uid),
+                        conn
                     )
+                    c.execute(sql, (logistic_id, uid))
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
                         from app import is_admin
-                        if is_admin():
+                        if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
                                 admin_id=uid,
@@ -893,11 +997,33 @@ def logistics_page():
                     if cache_key in st.session_state:
                         del st.session_state[cache_key]
 
-                    del st.session_state.delete_confirm_logistic_id
+                    # 安全地删除键
+                    try:
+                        if (hasattr(st.session_state, '__contains__') and
+                                "delete_confirm_logistic_id" in
+                                st.session_state):
+                            del st.session_state["delete_confirm_logistic_id"]
+                        elif (hasattr(st.session_state,
+                                      'delete_confirm_logistic_id')):
+                            delattr(st.session_state,
+                                    'delete_confirm_logistic_id')
+                    except (KeyError, AttributeError, TypeError):
+                        pass
                     st.rerun()
             with col_cancel:
                 if st.button("取消", key="cancel_delete_logistic"):
-                    del st.session_state.delete_confirm_logistic_id
+                    # 安全地删除键
+                    try:
+                        if (hasattr(st.session_state, '__contains__') and
+                                "delete_confirm_logistic_id" in
+                                st.session_state):
+                            del st.session_state["delete_confirm_logistic_id"]
+                        elif (hasattr(st.session_state,
+                                      'delete_confirm_logistic_id')):
+                            delattr(st.session_state,
+                                    'delete_confirm_logistic_id')
+                    except (KeyError, AttributeError, TypeError):
+                        pass
                     st.rerun()
 
         # 批量删除确认对话框
@@ -905,7 +1031,7 @@ def logistics_page():
             # 到期拦截
             if not subscription_status.get("valid", True):
                 st.error("账号到期，请联系客服续费")
-                del st.session_state.batch_delete_land_ids
+                _safe_delete_session_key("batch_delete_land_ids")
                 return
             st.warning("确定要删除这些陆运物流规则吗？")
             col_confirm, col_cancel = st.columns(2)
@@ -918,12 +1044,14 @@ def logistics_page():
                     logistic_ids = st.session_state.batch_delete_land_ids
                     # 先获取物流规则名称用于审计日志
                     logistic_names = []
+                    sql = _safe_adapt_sql(
+                        "SELECT name FROM logistics "
+                        "WHERE id=? AND user_id=?",
+                        conn
+                    )
                     for lid in logistic_ids:
-                        info = c.execute(
-                            "SELECT name FROM logistics "
-                            "WHERE id=? AND user_id=?",
-                            (lid, uid),
-                        ).fetchone()
+                        c.execute(sql, (lid, uid))
+                        info = c.fetchone()
                         if info:
                             logistic_names.append(info[0])
 
@@ -944,20 +1072,21 @@ def logistics_page():
                         )
                     except SQLSecurityError as e:
                         st.error(f"SQL安全错误: {e}")
-                        del st.session_state.batch_delete_land_ids
+                        _safe_delete_session_key("batch_delete_land_ids")
                         st.rerun()
                         # st.rerun()会立即重新运行脚本，所以不需要return
 
-                    c.execute(
+                    sql = _safe_adapt_sql(
                         f"DELETE FROM logistics WHERE id {in_clause} "
                         f"AND user_id=?",
-                        (*validated_ids, uid),
+                        conn
                     )
+                    c.execute(sql, (*validated_ids, uid))
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
                         from app import is_admin
-                        if is_admin():
+                        if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
                                 admin_id=uid,
@@ -989,12 +1118,12 @@ def logistics_page():
                     if cache_key in st.session_state:
                         del st.session_state[cache_key]
 
-                    del st.session_state.batch_delete_land_ids
+                    _safe_delete_session_key("batch_delete_land_ids")
                     st.success(f"成功删除 {len(logistic_ids)} 个陆运物流规则！")
                     st.rerun()
             with col_cancel:
                 if st.button("取消", key="cancel_batch_delete_land"):
-                    del st.session_state.batch_delete_land_ids
+                    _safe_delete_session_key("batch_delete_land_ids")
                     st.rerun()
 
         # 批量删除确认对话框
@@ -1002,7 +1131,7 @@ def logistics_page():
             # 到期拦截
             if not subscription_status.get("valid", True):
                 st.error("账号到期，请联系客服续费")
-                del st.session_state.batch_delete_air_ids
+                _safe_delete_session_key("batch_delete_air_ids")
                 return
             st.warning("确定要删除这些空运物流规则吗？")
             col_confirm, col_cancel = st.columns(2)
@@ -1015,12 +1144,14 @@ def logistics_page():
                     logistic_ids = st.session_state.batch_delete_air_ids
                     # 先获取物流规则名称用于审计日志
                     logistic_names = []
+                    sql = _safe_adapt_sql(
+                        "SELECT name FROM logistics "
+                        "WHERE id=? AND user_id=?",
+                        conn
+                    )
                     for lid in logistic_ids:
-                        info = c.execute(
-                            "SELECT name FROM logistics "
-                            "WHERE id=? AND user_id=?",
-                            (lid, uid),
-                        ).fetchone()
+                        c.execute(sql, (lid, uid))
+                        info = c.fetchone()
                         if info:
                             logistic_names.append(info[0])
 
@@ -1041,20 +1172,21 @@ def logistics_page():
                         )
                     except SQLSecurityError as e:
                         st.error(f"SQL安全错误: {e}")
-                        del st.session_state.batch_delete_air_ids
+                        _safe_delete_session_key("batch_delete_air_ids")
                         st.rerun()
                         # st.rerun()会立即重新运行脚本，所以不需要return
 
-                    c.execute(
+                    sql = _safe_adapt_sql(
                         f"DELETE FROM logistics WHERE id {in_clause} "
                         f"AND user_id=?",
-                        (*validated_ids, uid),
+                        conn
                     )
+                    c.execute(sql, (*validated_ids, uid))
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
                         from app import is_admin
-                        if is_admin():
+                        if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
                                 admin_id=uid,
@@ -1086,31 +1218,76 @@ def logistics_page():
                     if cache_key in st.session_state:
                         del st.session_state[cache_key]
 
-                    del st.session_state.batch_delete_air_ids
+                    _safe_delete_session_key("batch_delete_air_ids")
                     st.success(f"成功删除 {len(logistic_ids)} 个空运物流规则！")
                     st.rerun()
             with col_cancel:
                 if st.button("取消", key="cancel_batch_delete_air"):
-                    del st.session_state.batch_delete_air_ids
+                    _safe_delete_session_key("batch_delete_air_ids")
                     st.rerun()
     # 数据库连接由上下文管理器自动关闭
 
 
 def edit_logistic_form():
     """物流编辑表单"""
+    # 安全地获取编辑ID
+    lid = None
+    try:
+        if hasattr(st.session_state, 'get'):
+            lid = st.session_state.get("edit_logistic_id")
+    except (AttributeError, TypeError):
+        pass
+
+    if lid is None:
+        try:
+            if hasattr(st.session_state, '__contains__'):
+                if "edit_logistic_id" in st.session_state:
+                    lid = st.session_state["edit_logistic_id"]
+        except (KeyError, AttributeError, TypeError):
+            pass
+
+    if lid is None:
+        try:
+            lid = getattr(st.session_state, 'edit_logistic_id', None)
+        except (AttributeError, TypeError):
+            pass
+
+    if not lid:
+        st.error("编辑ID不存在")
+        if st.button("返回"):
+            try:
+                if hasattr(st.session_state, 'get'):
+                    st.session_state.pop("edit_logistic_id", None)
+                else:
+                    if hasattr(st.session_state, 'edit_logistic_id'):
+                        delattr(st.session_state, 'edit_logistic_id')
+            except (KeyError, AttributeError):
+                pass
+            st.rerun()
+        return
+
     with get_db_connection() as (conn, c):
         uid = current_user_id()
-        lid = st.session_state.edit_logistic_id
-        row = c.execute(
-            "SELECT * FROM logistics WHERE id=? AND user_id=?", (lid, uid)
-        ).fetchone()
+        sql = _safe_adapt_sql(
+            "SELECT * FROM logistics WHERE id=? AND user_id=?", conn)
+        c.execute(sql, (lid, uid))
+        row = c.fetchone()
         if not row:
             st.error("规则不存在或无权编辑")
             if st.button("返回", key=f"edit_cancel_{lid}"):
-                del st.session_state.edit_logistic_id
+                _safe_delete_session_key("edit_logistic_id")
                 st.rerun()
             return
-        vals = dict(zip(row.keys(), row))
+
+        # 处理Row对象或元组
+        if hasattr(row, 'keys'):
+            vals = dict(row)
+        else:
+            # 元组格式，需要从cursor.description获取列名
+            columns = (
+                [col[0] for col in c.description]
+                if c.description else [])
+            vals = dict(zip(columns, row)) if columns else {}
         st.subheader("编辑物流规则")
         name = st.text_input(
             "物流名称", value=vals.get("name", ""), key=f"name_{lid}"
@@ -1124,13 +1301,13 @@ def edit_logistic_form():
         min_days = st.number_input(
             "最快时效(天)，未知就填0",
             min_value=0,
-            value=vals.get("min_days", 0),
+            value=int(vals.get("min_days", 0) or 0),
             key=f"min_days_{lid}",
         )
         max_days = st.number_input(
             "最慢时效(天)，未知就填0",
             min_value=0,
-            value=vals.get("max_days", 0),
+            value=int(vals.get("max_days", 0) or 0),
             key=f"max_days_{lid}",
         )
 
@@ -1152,7 +1329,7 @@ def edit_logistic_form():
         if fee_mode == "基础费用+续重费用":
             base_fee = st.number_input(
                 "基础费用(元)",
-                value=vals.get("base_fee", 0.0),
+                value=float(vals.get("base_fee", 0.0) or 0.0),
                 format="%.2f",
                 key=f"base_fee_{lid}",
             )
@@ -1160,51 +1337,67 @@ def edit_logistic_form():
             first_weight_g = 0
             continue_fee = st.number_input(
                 "续重费用(元 / 单位)",
-                value=vals.get("continue_fee", 0.0),
+                value=float(vals.get("continue_fee", 0.0) or 0.0),
                 format="%.5f",
                 key=f"continue_fee_{lid}",
             )
+            # 处理continue_unit：可能是"100克"格式或"100"格式
+            continue_unit_val = vals.get("continue_unit", "100")
+            # 如果是unit_map的键（如"100克"），转换为值（"100"）
+            if continue_unit_val in unit_map:
+                continue_unit_val = unit_map[continue_unit_val]
+            # 如果不在unit_values中，使用默认值
+            if continue_unit_val not in unit_values:
+                continue_unit_val = "100"
             continue_unit = st.selectbox(
                 "续重单位",
                 list(unit_map.keys()),
-                index=unit_values.index(vals.get("continue_unit", "100")),
+                index=unit_values.index(continue_unit_val),
                 key=f"continue_unit_{lid}",
             )
         else:
             base_fee = 0.0
             first_fee = st.number_input(
                 "首重费用(元)",
-                value=vals.get("first_fee", 0.0),
+                value=float(vals.get("first_fee", 0.0) or 0.0),
                 key=f"first_fee_{lid}",
             )
             first_weight_g = st.number_input(
                 "首重重量(克)",
                 min_value=0,
-                value=vals.get("first_weight_g", 0),
+                value=int(vals.get("first_weight_g", 0) or 0),
                 key=f"first_weight_g_{lid}",
             )
             continue_fee = st.number_input(
                 "续重费用(元 / 单位)",
-                value=vals.get("continue_fee", 0.0),
+                value=float(vals.get("continue_fee", 0.0) or 0.0),
                 format="%.5f",
                 key=f"continue_fee2_{lid}",
             )
+            # 处理continue_unit：可能是"100克"格式或"100"格式
+            continue_unit_val = vals.get("continue_unit", "100")
+            # 如果是unit_map的键（如"100克"），转换为值（"100"）
+            if continue_unit_val in unit_map:
+                continue_unit_val = unit_map[continue_unit_val]
+            # 如果不在unit_values中，使用默认值
+            if continue_unit_val not in unit_values:
+                continue_unit_val = "100"
             continue_unit = st.selectbox(
                 "续重单位",
                 list(unit_map.keys()),
-                index=unit_values.index(vals.get("continue_unit", "100")),
+                index=unit_values.index(continue_unit_val),
                 key=f"continue_unit2_{lid}",
             )
 
         st.subheader("重量限制")
         min_weight = st.number_input(
             "最小重量(g)",
-            value=vals.get("min_weight", 0),
+            value=int(vals.get("min_weight", 0) or 0),
             key=f"min_weight_{lid}",
         )
         max_weight = st.number_input(
             "最大重量(g)",
-            value=vals.get("max_weight", 0),
+            value=int(vals.get("max_weight", 0) or 0),
             key=f"max_weight_{lid}",
         )
 
@@ -1214,29 +1407,29 @@ def edit_logistic_form():
         st.write("**标准包装**")
         max_sum_of_sides = st.number_input(
             "三边之和限制(cm)",
-            value=vals.get("max_sum_of_sides", 0),
+            value=int(vals.get("max_sum_of_sides", 0) or 0),
             key=f"max_sum_of_sides_{lid}",
         )
         max_longest_side = st.number_input(
             "最长边限制(cm)",
-            value=vals.get("max_longest_side", 0),
+            value=int(vals.get("max_longest_side", 0) or 0),
             key=f"max_longest_side_{lid}",
         )
         min_length = st.number_input(
             "最长边下限(cm)",
-            value=vals.get("min_length", 0),
+            value=int(vals.get("min_length", 0) or 0),
             help="0表示不限制",
             key=f"min_length_{lid}",
         )
         max_second_side = st.number_input(
             "第二边长上限(cm)",
-            value=vals.get("max_second_side", 0),
+            value=int(vals.get("max_second_side", 0) or 0),
             help="0表示不限制",
             key=f"max_second_side_{lid}",
         )
         min_second_side = st.number_input(
             "第二长边下限(cm)",
-            value=vals.get("min_second_side", 0),
+            value=int(vals.get("min_second_side", 0) or 0),
             help="0表示不限制",
             key=f"min_second_side_{lid}",
         )
@@ -1247,23 +1440,23 @@ def edit_logistic_form():
         st.write("**圆柱形包装**")
         max_cylinder_sum = st.number_input(
             "2倍直径与长度之和限制(cm)",
-            value=vals.get("max_cylinder_sum", 0),
+            value=int(vals.get("max_cylinder_sum", 0) or 0),
             key=f"max_cylinder_sum_{lid}",
         )
         min_cylinder_sum = st.number_input(
             "2倍直径与长度之和下限(cm)",
-            value=vals.get("min_cylinder_sum", 0),
+            value=int(vals.get("min_cylinder_sum", 0) or 0),
             help="0表示不限制",
             key=f"min_cylinder_sum_{lid}",
         )
         max_cylinder_length = st.number_input(
             "长度限制(cm)",
-            value=vals.get("max_cylinder_length", 0),
+            value=int(vals.get("max_cylinder_length", 0) or 0),
             key=f"max_cylinder_length_{lid}",
         )
         min_cylinder_length = st.number_input(
             "长度下限(cm)",
-            value=vals.get("min_cylinder_length", 0),
+            value=int(vals.get("min_cylinder_length", 0) or 0),
             help="0表示不限制",
             key=f"min_cylinder_length_{lid}",
         )
@@ -1291,11 +1484,12 @@ def edit_logistic_form():
             longest_side_threshold = st.number_input(
                 "最长边阈值(cm)",
                 min_value=0,
-                value=vals.get("longest_side_threshold", 0),
+                value=int(vals.get("longest_side_threshold", 0) or 0),
                 key=f"longest_side_threshold_{lid}",
             )
             # 确保默认值不小于最小值
             default_coefficient = vals.get("volume_coefficient", 5000.0)
+            default_coefficient = float(default_coefficient or 5000.0)
             if default_coefficient < 1.0:
                 default_coefficient = 5000.0
             volume_coefficient = st.number_input(
@@ -1307,6 +1501,7 @@ def edit_logistic_form():
         elif volume_mode == "max_actual_vs_volume":
             # 确保默认值不小于最小值
             default_coefficient = vals.get("volume_coefficient", 5000.0)
+            default_coefficient = float(default_coefficient or 5000.0)
             if default_coefficient < 1.0:
                 default_coefficient = 5000.0
             volume_coefficient = st.number_input(
@@ -1340,7 +1535,7 @@ def edit_logistic_form():
             price_limit = st.number_input(
                 "价格上限",
                 min_value=0.0,
-                value=vals.get("price_limit_rub", 0.0),
+                value=float(vals.get("price_limit_rub", 0.0) or 0.0),
                 help="物流方给出的最高价格限制",
                 key=f"price_limit_{lid}",
             )
@@ -1348,7 +1543,7 @@ def edit_logistic_form():
             price_min = st.number_input(
                 "价格下限",
                 min_value=0.0,
-                value=vals.get("price_min_rub", 0.0),
+                value=float(vals.get("price_min_rub", 0.0) or 0.0),
                 help="物流方给出的最低价格限制，0表示不限制",
                 key=f"price_min_{lid}",
             )
@@ -1374,7 +1569,7 @@ def edit_logistic_form():
         if allow_battery:
             battery_capacity_limit_wh = st.number_input(
                 "电池容量限制(Wh)",
-                value=vals.get("battery_capacity_limit_wh", 0.0),
+                value=float(vals.get("battery_capacity_limit_wh", 0.0) or 0.0),
                 key=f"battery_capacity_limit_wh_{lid}",
             )
             require_msds = st.checkbox(
@@ -1434,7 +1629,7 @@ def edit_logistic_form():
                     "未知": "unknown",
                 }
                 # 构建 UPDATE 语句
-                update_sql = (
+                update_sql_raw = (
                     "UPDATE logistics SET "
                     "name=?, type=?, min_days=?, max_days=?, "
                     "price_limit=?, price_limit_rub=?, price_min_rub=?, "
@@ -1453,12 +1648,15 @@ def edit_logistic_form():
                     "price_min_currency=? "
                     "WHERE id=? AND user_id=?"
                 )
+                update_sql = _safe_adapt_sql(update_sql_raw, conn)
                 # 先获取物流规则名称用于审计日志（更新前）
-                logistic_info_before = c.execute(
+                sql = _safe_adapt_sql(
                     "SELECT name, type FROM logistics "
                     "WHERE id=? AND user_id=?",
-                    (lid, uid),
-                ).fetchone()
+                    conn
+                )
+                c.execute(sql, (lid, uid))
+                logistic_info_before = c.fetchone()
                 logistic_name_before = (
                     logistic_info_before[0] if logistic_info_before else '未知'
                 )
@@ -1524,7 +1722,7 @@ def edit_logistic_form():
                 # 记录审计日志（如果是admin操作）
                 try:
                     from app import is_admin
-                    if is_admin():
+                    if is_admin() and uid is not None:
                         from db_utils import log_admin_action
                         log_admin_action(
                             admin_id=uid,
@@ -1549,10 +1747,10 @@ def edit_logistic_form():
                     del st.session_state[cache_key]
 
                 st.success("修改成功！")
-                del st.session_state.edit_logistic_id
+                _safe_delete_session_key("edit_logistic_id")
                 st.rerun()
         with col_cancel:
             if st.button("取消", key=f"cancel_{lid}"):
-                del st.session_state.edit_logistic_id
+                _safe_delete_session_key("edit_logistic_id")
                 st.rerun()
     # 数据库连接由上下文管理器自动关闭

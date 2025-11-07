@@ -66,10 +66,12 @@ class TestCheckPaymentStatusInDb:
         
         # 创建测试订单
         with get_db_connection() as (conn, cursor):
-            cursor.execute("""
-                INSERT INTO payment_orders (order_id, user_id, amount, description, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (order_id, 1, 10000, "test", "SUCCESS", time.time()))
+            from db_adapter import adapt_sql
+
+            sql = adapt_sql("""INSERT INTO payment_orders (order_id, user_id, amount, description, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)""")
+
+            cursor.execute(sql, (order_id, 1, 10000, "test", "SUCCESS", time.time()))
             conn.commit()
         
         result = check_payment_status_in_db(order_id)
@@ -83,10 +85,12 @@ class TestCheckPaymentStatusInDb:
         order_id = f"test_order_paid_{int(time.time() * 1000)}"
         
         with get_db_connection() as (conn, cursor):
-            cursor.execute("""
-                INSERT INTO payment_orders (order_id, user_id, amount, description, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (order_id, 1, 10000, "test", "PAID", time.time()))
+            from db_adapter import adapt_sql
+
+            sql = adapt_sql("""INSERT INTO payment_orders (order_id, user_id, amount, description, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)""")
+
+            cursor.execute(sql, (order_id, 1, 10000, "test", "PAID", time.time()))
             conn.commit()
         
         result = check_payment_status_in_db(order_id)
@@ -100,10 +104,12 @@ class TestCheckPaymentStatusInDb:
         order_id = f"test_order_pending_{int(time.time() * 1000)}"
         
         with get_db_connection() as (conn, cursor):
-            cursor.execute("""
-                INSERT INTO payment_orders (order_id, user_id, amount, description, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (order_id, 1, 10000, "test", "PENDING", time.time()))
+            from db_adapter import adapt_sql
+
+            sql = adapt_sql("""INSERT INTO payment_orders (order_id, user_id, amount, description, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)""")
+
+            cursor.execute(sql, (order_id, 1, 10000, "test", "PENDING", time.time()))
             conn.commit()
         
         result = check_payment_status_in_db(order_id)

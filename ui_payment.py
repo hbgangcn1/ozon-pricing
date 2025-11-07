@@ -12,11 +12,13 @@ from db_utils import get_db_connection
 def check_payment_status_in_db(order_id: str) -> bool:
     """检查数据库中订单的支付状态"""
     try:
+        from db_adapter import adapt_sql
         with get_db_connection() as (conn, cursor):
-            cursor.execute("""
+            sql = adapt_sql("""
                 SELECT status FROM payment_orders
                 WHERE order_id = ?
-            """, (order_id,))
+            """)
+            cursor.execute(sql, (order_id,))
 
             result = cursor.fetchone()
             if result:

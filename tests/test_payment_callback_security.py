@@ -74,7 +74,7 @@ class TestValidateTimestamp:
 
     def test_validate_timestamp_none(self):
         """测试None值"""
-        is_valid, message = PaymentCallbackSecurity.validate_timestamp(None)
+        is_valid, message = PaymentCallbackSecurity.validate_timestamp(None)  # type: ignore[arg-type]
         
         assert is_valid is False
         assert "格式无效" in message
@@ -153,7 +153,7 @@ class TestCheckAndStoreNonce:
     def test_check_and_store_nonce_none(self, clean_db):
         """测试None nonce"""
         is_valid, message = PaymentCallbackSecurity.check_and_store_nonce(
-            None, "order123", "1234567890"
+            None, "order123", "1234567890"  # type: ignore[arg-type]
         )
         
         assert is_valid is False
@@ -438,11 +438,13 @@ class TestCleanupExpiredNonces:
             """)
             
             # 插入一个已过期的记录
-            c.execute("""
+            from db_adapter import adapt_sql
+            sql = adapt_sql("""
                 INSERT INTO payment_nonce_log
                 (nonce_hash, order_id, nonce, timestamp, created_at, expires_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (
+            """)
+            c.execute(sql, (
                 "expired_hash",
                 "order123",
                 "nonce123",
@@ -457,10 +459,13 @@ class TestCleanupExpiredNonces:
         
         # 验证记录已被删除
         with get_db_connection() as (conn, c):
-            remaining = c.execute("""
+            from db_adapter import adapt_sql
+            sql = adapt_sql("""
                 SELECT COUNT(*) FROM payment_nonce_log
-                WHERE nonce_hash = 'expired_hash'
-            """).fetchone()[0]
+                WHERE nonce_hash = ?
+            """)
+            c.execute(sql, ('expired_hash',))
+            remaining = c.fetchone()[0]
             
             assert remaining == 0
 

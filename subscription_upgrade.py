@@ -179,13 +179,15 @@ class SubscriptionUpgrade:
         from db_utils import get_db_connection
 
         try:
+            from db_adapter import adapt_sql
             with get_db_connection() as (conn, cursor):
-                cursor.execute("""
+                sql = adapt_sql("""
                     SELECT subscription_type, subscription_expires,
                            last_paid_amount, billing_cycle
                     FROM users
                     WHERE id = ?
-                """, (user_id,))
+                """)
+                cursor.execute(sql, (user_id,))
 
                 result = cursor.fetchone()
                 if not result:
@@ -281,32 +283,51 @@ class SubscriptionUpgrade:
             # 规范化 billing_cycle 为 "year" 或 "month"
             billing_cycle = 'year' if is_year else 'month'
 
+            from db_adapter import adapt_sql
+            from db_utils import _is_postgresql_connection as is_pg
             with get_db_connection() as (conn, cursor):
-                # 更新订阅信息
-                cursor.execute("""
-                    UPDATE users
-                    SET subscription_type = ?,
-                        user_type = ?,
-                        subscription_expires = ?,
-                        billing_cycle = ?,
-                        last_paid_amount = ?,
-                        subscription_start = ?,
-                        efficiency_promo_used = ?
-                    WHERE id = ?
-                """, (
+                # 检测连接类型并适配SQL
+                if is_pg(conn):
+                    # PostgreSQL需要将时间戳转换为timestamp类型
+                    sql = adapt_sql("""
+                        UPDATE users
+                        SET subscription_type = ?,
+                            user_type = ?,
+                            subscription_expires = ?,
+                            billing_cycle = ?,
+                            last_paid_amount = ?,
+                            subscription_start = to_timestamp(?),
+                            efficiency_promo_used = ?
+                        WHERE id = ?
+                    """)
+                else:
+                    # SQLite直接使用时间戳
+                    sql = adapt_sql("""
+                        UPDATE users
+                        SET subscription_type = ?,
+                            user_type = ?,
+                            subscription_expires = ?,
+                            billing_cycle = ?,
+                            last_paid_amount = ?,
+                            subscription_start = ?,
+                            efficiency_promo_used = ?
+                        WHERE id = ?
+                    """)
+                cursor.execute(sql, (
                     actual_subscription_type, actual_subscription_type,
                     new_end_time, billing_cycle, upgrade_info['target_price'],
                     current_time, efficiency_promo_used, user_id
                 ))
 
                 # 4. 记录升级历史
-                cursor.execute("""
+                sql = adapt_sql("""
                     INSERT INTO subscription_upgrade_history
                     (user_id, from_plan, to_plan, from_cycle, to_cycle,
                      upgrade_time, remaining_value, difference_paid,
                      target_price, payment_order_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
+                """)
+                cursor.execute(sql, (
                     user_id,
                     current_sub['subscription_type'],
                     target_plan,

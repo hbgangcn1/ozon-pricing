@@ -13,9 +13,15 @@ from datetime import datetime
 try:
     from .db_utils import get_db_connection, hash_password
     from .security_questions import validate_security_answers
+    from .db_adapter import adapt_sql
 except ImportError:
     from db_utils import get_db_connection, hash_password
     from security_questions import validate_security_answers
+    try:
+        from db_adapter import adapt_sql
+    except ImportError:
+        def adapt_sql(sql: str) -> str:
+            return sql
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -54,12 +60,13 @@ def log_password_recovery_event(
         ip_address = client_info.get('ip_address', 'unknown')
 
     with get_db_connection() as (conn, c):
-        c.execute("""
+        sql = adapt_sql("""
             INSERT INTO password_recovery_log
             (username, ip_address, event_type, success, attempt_count,
              admin_name, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
+        """)
+        c.execute(sql, (
             username, ip_address, event_type, 1 if success else 0,
             attempt_count, admin_name, int(time.time())
         ))
@@ -90,12 +97,13 @@ def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
         包含安全问题的字典，如果用户不存在或未设置安全问题则返回None
     """
     with get_db_connection() as (conn, c):
-        c.execute("""
+        sql = adapt_sql("""
             SELECT security_q1, security_q2, reset_locked_until,
                    reset_attempt_count
             FROM users
             WHERE username = ?
-        """, (username,))
+        """)
+        c.execute(sql, (username,))
         result = c.fetchone()
 
         if not result:
@@ -104,6 +112,13 @@ def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
         security_q1, security_q2, reset_locked_until, reset_attempt_count = (
             result
         )
+
+        # 转换时间戳为float（PostgreSQL可能返回Decimal类型）
+        if reset_locked_until is not None:
+            try:
+                reset_locked_until = float(reset_locked_until)
+            except (TypeError, ValueError):
+                reset_locked_until = None
 
         # 检查是否设置了安全问题
         if not security_q1 or not security_q2:
@@ -121,12 +136,13 @@ def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
                 is_locked = True
             else:
                 # 锁定已过期，清除锁定状态
-                c.execute("""
+                sql = adapt_sql("""
                     UPDATE users
                     SET reset_locked_until = NULL,
                         reset_attempt_count = 0
                     WHERE username = ?
-                """, (username,))
+                """)
+                c.execute(sql, (username,))
                 conn.commit()
                 reset_locked_until = None
                 reset_attempt_count = 0
@@ -167,12 +183,13 @@ def verify_security_answers(
 
     with get_db_connection() as (conn, c):
         # 获取用户的安全答案哈希
-        c.execute("""
+        sql = adapt_sql("""
             SELECT security_a1, security_a2, reset_locked_until,
                    reset_attempt_count
             FROM users
             WHERE username = ?
-        """, (username,))
+        """)
+        c.execute(sql, (username,))
         result = c.fetchone()
 
         if not result:
@@ -218,13 +235,14 @@ def verify_security_answers(
 
         if a1_valid and a2_valid:
             # 验证成功，重置尝试次数
-            c.execute("""
+            sql = adapt_sql("""
                 UPDATE users
                 SET reset_attempt_count = 0,
                     reset_locked_until = NULL,
                     reset_last_attempt = ?
                 WHERE username = ?
-            """, (current_time, username))
+            """)
+            c.execute(sql, (current_time, username))
             conn.commit()
 
             log_password_recovery_event(
@@ -253,13 +271,14 @@ def verify_security_answers(
                     "请重新输入。"
                 )
 
-            c.execute("""
+            sql = adapt_sql("""
                 UPDATE users
                 SET reset_attempt_count = ?,
                     reset_locked_until = ?,
                     reset_last_attempt = ?
                 WHERE username = ?
-            """, (
+            """)
+            c.execute(sql, (
                 new_attempt_count, reset_locked_until, current_time, username
             ))
             conn.commit()
@@ -300,18 +319,20 @@ def reset_password(
 
     with get_db_connection() as (conn, c):
         # 检查用户是否存在
-        c.execute("SELECT id FROM users WHERE username = ?", (username,))
+        sql = adapt_sql("SELECT id FROM users WHERE username = ?")
+        c.execute(sql, (username,))
         if not c.fetchone():
             return False, "用户不存在"
 
         # 更新密码
-        c.execute("""
+        sql = adapt_sql("""
             UPDATE users
             SET password = ?,
                 reset_attempt_count = 0,
                 reset_locked_until = NULL
             WHERE username = ?
-        """, (hashed_password, username))
+        """)
+        c.execute(sql, (hashed_password, username))
         conn.commit()
 
     log_password_recovery_event(username, 'password_reset', True, 0)
@@ -331,17 +352,19 @@ def unlock_user(username: str, admin_name: str) -> tuple[bool, str]:
     """
     with get_db_connection() as (conn, c):
         # 检查用户是否存在
-        c.execute("SELECT id FROM users WHERE username = ?", (username,))
+        sql = adapt_sql("SELECT id FROM users WHERE username = ?")
+        c.execute(sql, (username,))
         if not c.fetchone():
             return False, "用户不存在"
 
         # 解锁用户
-        c.execute("""
+        sql = adapt_sql("""
             UPDATE users
             SET reset_locked_until = NULL,
                 reset_attempt_count = 0
             WHERE username = ?
-        """, (username,))
+        """)
+        c.execute(sql, (username,))
         conn.commit()
 
     log_password_recovery_event(
@@ -382,18 +405,20 @@ def admin_reset_password(
 
     with get_db_connection() as (conn, c):
         # 检查用户是否存在
-        c.execute("SELECT id FROM users WHERE username = ?", (username,))
+        sql = adapt_sql("SELECT id FROM users WHERE username = ?")
+        c.execute(sql, (username,))
         if not c.fetchone():
             return False, "用户不存在"
 
         # 更新密码并清除锁定状态
-        c.execute("""
+        sql = adapt_sql("""
             UPDATE users
             SET password = ?,
                 reset_attempt_count = 0,
                 reset_locked_until = NULL
             WHERE username = ?
-        """, (hashed_password, username))
+        """)
+        c.execute(sql, (hashed_password, username))
         conn.commit()
 
     log_password_recovery_event(
@@ -418,22 +443,24 @@ def get_password_recovery_logs(
     """
     with get_db_connection() as (conn, c):
         if username:
-            c.execute("""
+            sql = adapt_sql("""
                 SELECT username, ip_address, event_type, success,
                        attempt_count, admin_name, created_at
                 FROM password_recovery_log
                 WHERE username = ?
                 ORDER BY created_at DESC
                 LIMIT ?
-            """, (username, limit))
+            """)
+            c.execute(sql, (username, limit))
         else:
-            c.execute("""
+            sql = adapt_sql("""
                 SELECT username, ip_address, event_type, success,
                        attempt_count, admin_name, created_at
                 FROM password_recovery_log
                 ORDER BY created_at DESC
                 LIMIT ?
-            """, (limit,))
+            """)
+            c.execute(sql, (limit,))
 
         results = c.fetchall()
         logs = []

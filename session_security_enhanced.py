@@ -94,7 +94,18 @@ class DistributedLock:
             with get_db_connection() as (conn, c):
                 # SQLite的BEGIN IMMEDIATE事务会获取写锁
                 # 这可以防止并发写入
-                conn.execute("BEGIN IMMEDIATE")
+                # PostgreSQL使用BEGIN TRANSACTION
+                try:
+                    import psycopg2
+                    is_pg = isinstance(conn, psycopg2.extensions.connection)
+                except (ImportError, AttributeError):
+                    is_pg = False
+
+                if is_pg:
+                    c.execute("BEGIN TRANSACTION")
+                else:
+                    # SQLite特有语法
+                    conn.execute("BEGIN IMMEDIATE")
                 return True
         except (OSError, ConnectionError, RuntimeError):
             # 数据库连接错误或其他运行时错误
@@ -139,7 +150,19 @@ class DistributedLock:
             with get_db_connection() as (conn, c):
                 # BEGIN IMMEDIATE会获取写锁，防止并发
                 try:
-                    conn.execute("BEGIN IMMEDIATE")
+                    # 检测数据库类型
+                    try:
+                        import psycopg2
+                        is_pg = isinstance(
+                            conn, psycopg2.extensions.connection)
+                    except (ImportError, AttributeError):
+                        is_pg = False
+
+                    if is_pg:
+                        c.execute("BEGIN TRANSACTION")
+                    else:
+                        # SQLite特有语法
+                        conn.execute("BEGIN IMMEDIATE")
                     self.lock_acquired = True
                     try:
                         yield self
@@ -190,19 +213,24 @@ class SessionSecurityEnhanced:
                 # 在锁保护下执行检查和创建操作
                 # 1. 检查当前活跃会话数
                 with get_db_connection() as (conn, c):
-                    active_count = c.execute("""
+                    from db_adapter import adapt_sql
+                    sql = adapt_sql("""
                         SELECT COUNT(*) FROM active_sessions
                         WHERE user_id = ? AND is_active = 1
-                    """, (user_id,)).fetchone()[0]
+                    """)
+                    c.execute(sql, (user_id,))
+                    active_count = c.fetchone()[0]
 
                     # 2. 如果超过限制，下线最旧的会话
                     if active_count >= SessionSecurity.MAX_CONCURRENT_SESSIONS:
-                        oldest_session = c.execute("""
+                        sql = adapt_sql("""
                             SELECT session_id FROM active_sessions
                             WHERE user_id = ? AND is_active = 1
                             ORDER BY last_activity ASC
                             LIMIT 1
-                        """, (user_id,)).fetchone()
+                        """)
+                        c.execute(sql, (user_id,))
+                        oldest_session = c.fetchone()
 
                         if oldest_session:
                             SessionSecurity.force_logout_session(
@@ -212,13 +240,15 @@ class SessionSecurityEnhanced:
 
                     # 3. 创建新会话（在事务中）
                     current_time = time.time()
-                    c.execute("""
+                    sql = adapt_sql("""
                         INSERT INTO active_sessions
                         (session_id, user_id, created_at, last_activity,
                          ip_address, user_agent, is_active)
                         VALUES (?, ?, ?, ?, ?, ?, 1)
-                    """, (session_id, user_id, current_time, current_time,
-                          ip_address, user_agent))
+                    """)
+                    c.execute(
+                        sql, (session_id, user_id, current_time,
+                              current_time, ip_address, user_agent))
                     conn.commit()
 
                     return True, "会话创建成功"
@@ -245,12 +275,14 @@ class SessionSecurityEnhanced:
         try:
             with lock.acquire():
                 with get_db_connection() as (conn, c):
+                    from db_adapter import adapt_sql
                     current_time = time.time()
-                    c.execute("""
+                    sql = adapt_sql("""
                         UPDATE active_sessions
                         SET last_activity = ?
                         WHERE session_id = ? AND is_active = 1
-                    """, (current_time, session_id))
+                    """)
+                    c.execute(sql, (current_time, session_id))
                     conn.commit()
                     return True
         except (

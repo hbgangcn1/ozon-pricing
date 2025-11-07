@@ -15,6 +15,18 @@ from wechat_pay_config import wechat_config
 from db_utils import get_db_connection
 from rate_limiter import get_limiter
 
+# 导入数据库适配函数
+try:
+    from db_adapter import adapt_placeholders
+    from db_config import DB_TYPE
+except ImportError:
+    DB_TYPE = 'sqlite'
+
+    def adapt_placeholders(sql: str, param_count: int) -> str:
+        # noinspection PyUnusedLocal
+        _ = param_count  # 占位函数，参数未使用但需保持签名一致
+        return sql
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -44,15 +56,20 @@ def determine_order_type(user_id: int, target_plan: str,
             return 'upgrade'
 
         # 2. 查询用户历史成功订单数
-        history_count = c.execute("""
+        sql1 = adapt_placeholders("""
             SELECT COUNT(*) FROM payment_orders
             WHERE user_id = ? AND status = 'SUCCESS'
-        """, (user_id,)).fetchone()[0]
+        """, 1)
+        c.execute(sql1, (user_id,))
+        result = c.fetchone()
+        history_count = result[0] if result else 0
 
         # 3. 查询当前用户类型
-        user_info = c.execute("""
+        sql2 = adapt_placeholders("""
             SELECT user_type FROM users WHERE id = ?
-        """, (user_id,)).fetchone()
+        """, 1)
+        c.execute(sql2, (user_id,))
+        user_info = c.fetchone()
 
         if not user_info:
             return 'first_payment'
@@ -139,7 +156,10 @@ class PaymentHandler:
         try:
             with get_db_connection() as (conn, cursor):
                 # 先检查用户是否存在
-                cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+                sql = adapt_placeholders(
+                    "SELECT id FROM users WHERE id = ?", 1
+                )
+                cursor.execute(sql, (user_id,))
                 if not cursor.fetchone():
                     return {"success": False, "message": f"用户ID {user_id} 不存在"}
 
@@ -163,14 +183,16 @@ class PaymentHandler:
                 )
 
                 # 保存订单信息（包含升级信息）
+                from db_adapter import adapt_sql
                 if is_upgrade and upgrade_info:
-                    cursor.execute("""
+                    sql = adapt_sql("""
                         INSERT INTO payment_orders
                         (order_id, user_id, amount, description, duration,
                          status, created_at, is_upgrade, upgrade_from_plan,
                          upgrade_to_plan, remaining_value, order_type)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
+                    """)
+                    cursor.execute(sql, (
                         order_id, user_id, amount, description, duration,
                         'PENDING', int(time.time()), 1,
                         upgrade_info.get('current_plan'),
@@ -179,13 +201,16 @@ class PaymentHandler:
                         order_type
                     ))
                 else:
-                    cursor.execute("""
+                    sql = adapt_sql("""
                         INSERT INTO payment_orders
                         (order_id, user_id, amount, description, duration,
                          status, created_at, order_type)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (order_id, user_id, amount, description, duration,
-                          'PENDING', int(time.time()), order_type))
+                    """)
+                    cursor.execute(
+                        sql, (order_id, user_id, amount, description,
+                              duration, 'PENDING', int(time.time()),
+                              order_type))
 
                 conn.commit()
 
@@ -255,11 +280,13 @@ class PaymentHandler:
         """更新订单状态（公开方法）"""
         try:
             with get_db_connection() as (conn, cursor):
-                cursor.execute("""
+                from db_adapter import adapt_sql
+                sql = adapt_sql("""
                     UPDATE payment_orders
                     SET status = ?, updated_at = ?
                     WHERE order_id = ?
-                """, (status, int(time.time()), order_id))
+                """)
+                cursor.execute(sql, (status, int(time.time()), order_id))
 
                 conn.commit()
 
@@ -271,13 +298,15 @@ class PaymentHandler:
         """获取用户支付历史"""
         try:
             with get_db_connection() as (conn, cursor):
-                cursor.execute("""
+                from db_adapter import adapt_sql
+                sql = adapt_sql("""
                     SELECT order_id, amount, description, status, created_at
                     FROM payment_orders
                     WHERE user_id = ?
                     ORDER BY created_at DESC
                     LIMIT 20
-                """, (user_id,))
+                """)
+                cursor.execute(sql, (user_id,))
 
                 results = cursor.fetchall()
 
@@ -388,10 +417,12 @@ class PaymentHandler:
         try:
             with get_db_connection() as (conn, cursor):
                 # 查询订单信息
-                cursor.execute("""
+                from db_adapter import adapt_sql
+                sql = adapt_sql("""
                     SELECT user_id, amount, status FROM payment_orders
                     WHERE order_id = ?
-                """, (order_id,))
+                """)
+                cursor.execute(sql, (order_id,))
 
                 order_info = cursor.fetchone()
                 if not order_info:
@@ -502,10 +533,12 @@ class PaymentHandler:
         try:
             with get_db_connection() as (conn, cursor):
                 # 检查订单是否已处理
-                cursor.execute("""
+                from db_adapter import adapt_sql
+                sql = adapt_sql("""
                     SELECT status, wechat_transaction_id FROM payment_orders
                     WHERE order_id = ?
-                """, (order_id,))
+                """)
+                cursor.execute(sql, (order_id,))
 
                 order_info = cursor.fetchone()
                 if not order_info:
@@ -605,12 +638,14 @@ class PaymentHandler:
         try:
             with get_db_connection() as (conn, cursor):
                 # 获取订单信息（包含升级信息）
-                cursor.execute("""
+                from db_adapter import adapt_sql
+                sql = adapt_sql("""
                     SELECT user_id, amount, description, duration, is_upgrade,
                            upgrade_from_plan, upgrade_to_plan, remaining_value
                     FROM payment_orders
                     WHERE order_id = ?
-                """, (order_id,))
+                """)
+                cursor.execute(sql, (order_id,))
 
                 order_info = cursor.fetchone()
                 if not order_info:
@@ -670,11 +705,12 @@ class PaymentHandler:
                       f"{duration_text}, {days}天, 描述={description}")
 
                 # 获取用户当前订阅信息
-                cursor.execute("""
+                sql = adapt_sql("""
                     SELECT subscription_type, subscription_expires, user_type
                     FROM users
                     WHERE id = ?
-                """, (user_id,))
+                """)
+                cursor.execute(sql, (user_id,))
                 user_info = cursor.fetchone()
                 if user_info:
                     (current_sub_type, current_expires,
@@ -756,17 +792,33 @@ class PaymentHandler:
                               "efficiency_promo_used=1")
 
                     # 更新订阅信息（包含计费周期和支付金额）
-                    cursor.execute("""
-                        UPDATE users
-                        SET subscription_type = ?,
-                            subscription_expires = ?,
-                            user_type = ?,
-                            billing_cycle = ?,
-                            last_paid_amount = ?,
-                            subscription_start = ?,
-                            efficiency_promo_used = ?
-                        WHERE id = ?
-                    """, (
+                    # 检测数据库类型以正确处理时间戳
+                    from db_config import DB_TYPE
+                    if DB_TYPE == 'postgresql':
+                        sql = adapt_sql("""
+                            UPDATE users
+                            SET subscription_type = ?,
+                                subscription_expires = ?,
+                                user_type = ?,
+                                billing_cycle = ?,
+                                last_paid_amount = ?,
+                                subscription_start = to_timestamp(?),
+                                efficiency_promo_used = ?
+                            WHERE id = ?
+                        """)
+                    else:
+                        sql = adapt_sql("""
+                            UPDATE users
+                            SET subscription_type = ?,
+                                subscription_expires = ?,
+                                user_type = ?,
+                                billing_cycle = ?,
+                                last_paid_amount = ?,
+                                subscription_start = ?,
+                                efficiency_promo_used = ?
+                            WHERE id = ?
+                        """)
+                    cursor.execute(sql, (
                         subscription_type, new_expires,
                         subscription_type, billing_cycle,
                         paid_amount, current_time,
@@ -774,12 +826,13 @@ class PaymentHandler:
                     ))
 
                     # 验证更新结果
-                    cursor.execute("""
+                    sql = adapt_sql("""
                         SELECT subscription_type, subscription_expires,
                                user_type
                         FROM users
                         WHERE id = ?
-                    """, (user_id,))
+                    """)
+                    cursor.execute(sql, (user_id,))
                     verify_info = cursor.fetchone()
                     if verify_info:
                         (verify_sub_type, verify_expires,
@@ -807,11 +860,12 @@ class PaymentHandler:
 
                 elif "计算次数" in description:
                     # 增加计算次数
-                    cursor.execute("""
+                    sql = adapt_sql("""
                         UPDATE users
                         SET calculations_remaining = calculations_remaining + ?
                         WHERE id = ?
-                    """, (amount // 100, user_id))  # 假设1元=1次计算
+                    """)
+                    cursor.execute(sql, (amount // 100, user_id))  # 假设1元=1次计算
                     # 高优先级安全改进：使用脱敏日志
                     from logger_config import log_safe_info
                     log_safe_info(f"✅ 计算次数已增加: {amount // 100}次")

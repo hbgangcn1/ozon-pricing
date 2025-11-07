@@ -12,8 +12,14 @@ from typing import Dict, Tuple
 
 try:
     from .db_utils import get_db_connection
+    from .db_adapter import adapt_sql
 except ImportError:
     from db_utils import get_db_connection
+    try:
+        from db_adapter import adapt_sql
+    except ImportError:
+        def adapt_sql(sql: str) -> str:
+            return sql
 
 try:
     from .redis_cache import get_redis_client
@@ -123,7 +129,7 @@ class PaymentCallbackSecurity:
         try:
             with get_db_connection() as (conn, c):
                 # 创建nonce记录表（如果不存在）
-                c.execute("""
+                create_sql = adapt_sql("""
                     CREATE TABLE IF NOT EXISTS payment_nonce_log (
                         nonce_hash TEXT PRIMARY KEY,
                         order_id TEXT NOT NULL,
@@ -133,12 +139,15 @@ class PaymentCallbackSecurity:
                         expires_at REAL NOT NULL
                     )
                 """)
+                c.execute(create_sql)
 
                 # 检查nonce是否已存在
-                existing = c.execute("""
+                sql = adapt_sql("""
                     SELECT nonce_hash FROM payment_nonce_log
                     WHERE nonce_hash = ? AND expires_at > ?
-                """, (nonce_hash, time.time())).fetchone()
+                """)
+                c.execute(sql, (nonce_hash, time.time()))
+                existing = c.fetchone()
 
                 if existing:
                     logger.warning(
@@ -150,21 +159,24 @@ class PaymentCallbackSecurity:
                 # 存储nonce
                 current_time = time.time()
                 expires_at = current_time + NONCE_EXPIRY_SECONDS
-                c.execute("""
+                sql = adapt_sql("""
                     INSERT INTO payment_nonce_log
                     (nonce_hash, order_id, nonce, timestamp,
                      created_at, expires_at)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (nonce_hash, order_id, nonce, timestamp,
-                      current_time, expires_at))
+                """)
+                c.execute(
+                    sql, (nonce_hash, order_id, nonce, timestamp,
+                          current_time, expires_at))
                 conn.commit()
 
                 # 清理过期的nonce记录（每100次插入清理一次）
                 if hash(nonce_hash) % 100 == 0:
-                    c.execute("""
+                    sql = adapt_sql("""
                         DELETE FROM payment_nonce_log
                         WHERE expires_at < ?
-                    """, (time.time(),))
+                    """)
+                    c.execute(sql, (time.time(),))
                     conn.commit()
 
                 return True, ""
@@ -219,10 +231,12 @@ class PaymentCallbackSecurity:
         try:
             # 清理数据库中的过期nonce
             with get_db_connection() as (conn, c):
-                deleted_count = c.execute("""
+                sql = adapt_sql("""
                     DELETE FROM payment_nonce_log
                     WHERE expires_at < ?
-                """, (time.time(),)).rowcount
+                """)
+                c.execute(sql, (time.time(),))
+                deleted_count = c.rowcount
                 conn.commit()
 
                 if deleted_count > 0:
