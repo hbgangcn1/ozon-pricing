@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import streamlit as st
 import hashlib
@@ -85,6 +86,40 @@ def _is_postgresql_connection(conn):
         return DB_TYPE == 'postgresql'
     except (ImportError, AttributeError):
         return False
+
+
+_TIMESTAMP_NUMERIC_PATTERN = r'^\d+(\.\d+)?$'
+_TIMESTAMP_DATE_PATTERN = r'^\d{4}-\d{2}-\d{2}$'
+_TIMESTAMP_FULL_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$'
+_TIMESTAMP_SHORT_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$'
+
+
+def _build_safe_timestamp_expr(column: str) -> str:
+    """生成兼容PostgreSQL的时间字段转换表达式"""
+    return f"""
+        COALESCE(
+            CASE
+                WHEN {column} IS NULL THEN NULL
+                WHEN TRIM({column}::text) = '' THEN NULL
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_NUMERIC_PATTERN}'
+                    THEN to_timestamp(TRIM({column}::text)::double precision)
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_DATE_PATTERN}'
+                    THEN to_timestamp(TRIM({column}::text), 'YYYY-MM-DD')
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_FULL_PATTERN}'
+                    THEN to_timestamp(
+                        REPLACE(TRIM({column}::text), 'T', ' '),
+                        'YYYY-MM-DD HH24:MI:SS'
+                    )
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_SHORT_PATTERN}'
+                    THEN to_timestamp(
+                        REPLACE(TRIM({column}::text), 'T', ' '),
+                        'YYYY-MM-DD HH24:MI'
+                    )
+                ELSE NULL
+            END,
+            to_timestamp(0)
+        )
+    """
 
 
 def _safe_execute_fetchone(cursor, sql, params=None, conn=None):
@@ -5027,21 +5062,26 @@ def get_dashboard_stats() -> Dict[str, Any]:
             active_users_today = c.fetchone()[0]
 
             # 今日新增用户数
-            # 将时间戳转换为日期字符串来与created_at比较
-            today_start_str = datetime.fromtimestamp(today_start).strftime(
-                '%Y-%m-%d 00:00:00'
-            )
-            # 检测实际连接类型
             if _is_postgresql_connection(conn):
-                # PostgreSQL需要将字符串转换为时间戳
-                sql = """
-                    SELECT COUNT(*) FROM users
-                    WHERE created_at >= to_timestamp(%s)
+                safe_user_expr = _build_safe_timestamp_expr('created_at')
+                sql = f"""
+                    WITH normalized_users AS (
+                        SELECT
+                            {safe_user_expr} AS created_ts,
+                            role
+                        FROM users
+                    )
+                    SELECT COUNT(*) FROM normalized_users
+                    WHERE role != 'admin'
+                    AND created_ts >= to_timestamp(%s)
                 """
-                today_start_ts = int(
-                    datetime.fromtimestamp(today_start).timestamp())
-                c.execute(sql, (today_start_ts,))
+                c.execute(sql, (today_start,))
             else:
+                today_start_str = (
+                    datetime.fromtimestamp(today_start).strftime(
+                        '%Y-%m-%d 00:00:00'
+                    )
+                )
                 sql = """
                     SELECT COUNT(*) FROM users
                     WHERE created_at >= ?
@@ -5068,43 +5108,73 @@ def get_dashboard_stats() -> Dict[str, Any]:
             total_revenue = c.fetchone()[0]
 
             # 今日收入
-            sql_raw = """
-                SELECT COALESCE(SUM(amount), 0) / 100.0
-                FROM payment_orders
-                WHERE status = 'SUCCESS' AND created_at >= ?
-            """
-            sql = _safe_adapt_sql(sql_raw, conn)
+            orders_cte = ""
             if _is_postgresql_connection(conn):
-                sql = sql.replace('>= ?', '>= to_timestamp(%s)')
-            c.execute(sql, (today_start,))
+                safe_order_expr = _build_safe_timestamp_expr('created_at')
+                orders_cte = f"""
+                    WITH normalized_orders AS (
+                        SELECT
+                            amount,
+                            status,
+                            {safe_order_expr} AS created_ts
+                        FROM payment_orders
+                    )
+                """
+                sql = orders_cte + """
+                    SELECT COALESCE(SUM(amount), 0) / 100.0
+                    FROM normalized_orders
+                    WHERE status = 'SUCCESS'
+                    AND created_ts >= to_timestamp(%s)
+                """
+                c.execute(sql, (today_start,))
+            else:
+                sql_raw = """
+                    SELECT COALESCE(SUM(amount), 0) / 100.0
+                    FROM payment_orders
+                    WHERE status = 'SUCCESS' AND created_at >= ?
+                """
+                sql = _safe_adapt_sql(sql_raw, conn)
+                c.execute(sql, (today_start,))
             revenue_today = c.fetchone()[0]
 
             # 昨日收入
-            sql_raw = """
-                SELECT COALESCE(SUM(amount), 0) / 100.0
-                FROM payment_orders
-                WHERE status = 'SUCCESS'
-                AND created_at >= ? AND created_at < ?
-            """
-            sql = _safe_adapt_sql(sql_raw, conn)
             if _is_postgresql_connection(conn):
-                sql = (
-                    sql.replace('>= ?', '>= to_timestamp(%s)', 1)
-                    .replace('< ?', '< to_timestamp(%s)', 1)
-                )
-            c.execute(sql, (yesterday_start, today_start))
+                sql = orders_cte + """
+                    SELECT COALESCE(SUM(amount), 0) / 100.0
+                    FROM normalized_orders
+                    WHERE status = 'SUCCESS'
+                    AND created_ts >= to_timestamp(%s)
+                    AND created_ts < to_timestamp(%s)
+                """
+                c.execute(sql, (yesterday_start, today_start))
+            else:
+                sql_raw = """
+                    SELECT COALESCE(SUM(amount), 0) / 100.0
+                    FROM payment_orders
+                    WHERE status = 'SUCCESS'
+                    AND created_at >= ? AND created_at < ?
+                """
+                sql = _safe_adapt_sql(sql_raw, conn)
+                c.execute(sql, (yesterday_start, today_start))
             revenue_yesterday = c.fetchone()[0]
 
             # 本月收入
-            sql_raw = """
-                SELECT COALESCE(SUM(amount), 0) / 100.0
-                FROM payment_orders
-                WHERE status = 'SUCCESS' AND created_at >= ?
-            """
-            sql = _safe_adapt_sql(sql_raw, conn)
             if _is_postgresql_connection(conn):
-                sql = sql.replace('>= ?', '>= to_timestamp(%s)')
-            c.execute(sql, (month_start,))
+                sql = orders_cte + """
+                    SELECT COALESCE(SUM(amount), 0) / 100.0
+                    FROM normalized_orders
+                    WHERE status = 'SUCCESS'
+                    AND created_ts >= to_timestamp(%s)
+                """
+                c.execute(sql, (month_start,))
+            else:
+                sql_raw = """
+                    SELECT COALESCE(SUM(amount), 0) / 100.0
+                    FROM payment_orders
+                    WHERE status = 'SUCCESS' AND created_at >= ?
+                """
+                sql = _safe_adapt_sql(sql_raw, conn)
+                c.execute(sql, (month_start,))
             revenue_month = c.fetchone()[0]
 
             # 实时在线用户数（过去5分钟有登录记录的用户）

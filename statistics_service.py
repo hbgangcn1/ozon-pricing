@@ -51,40 +51,6 @@ try:
 except ImportError:
     logger = None
 
-_TIMESTAMP_NUMERIC_PATTERN = r'^\d+(\.\d+)?$'
-_TIMESTAMP_DATE_PATTERN = r'^\d{4}-\d{2}-\d{2}$'
-_TIMESTAMP_FULL_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$'
-_TIMESTAMP_SHORT_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$'
-
-
-def _build_safe_timestamp_expr(column: str) -> str:
-    """生成兼容PostgreSQL的时间字段转换表达式"""
-    return f"""
-        COALESCE(
-            CASE
-                WHEN {column} IS NULL THEN NULL
-                WHEN TRIM({column}::text) = '' THEN NULL
-                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_NUMERIC_PATTERN}'
-                    THEN to_timestamp(TRIM({column}::text)::double precision)
-                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_DATE_PATTERN}'
-                    THEN to_timestamp(TRIM({column}::text), 'YYYY-MM-DD')
-                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_FULL_PATTERN}'
-                    THEN to_timestamp(
-                        REPLACE(TRIM({column}::text), 'T', ' '),
-                        'YYYY-MM-DD HH24:MI:SS'
-                    )
-                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_SHORT_PATTERN}'
-                    THEN to_timestamp(
-                        REPLACE(TRIM({column}::text), 'T', ' '),
-                        'YYYY-MM-DD HH24:MI'
-                    )
-                ELSE NULL
-            END,
-            to_timestamp(0)
-        )
-    """
-
-
 def _build_safe_in_clause(
     values: List[int], max_size: int = _MAX_IN_CLAUSE_SIZE
 ) -> Tuple[str, List[int]]:
@@ -136,12 +102,20 @@ def _build_safe_in_clause(
 
 try:
     from .db_utils import (
-        get_db_connection, get_statistics_cache, set_statistics_cache
+        get_db_connection,
+        get_statistics_cache,
+        set_statistics_cache,
+        _is_postgresql_connection,
+        _build_safe_timestamp_expr,
     )
     from .intelligent_cache_manager import cache_result, get_cache_stats
 except ImportError:
     from db_utils import (
-        get_db_connection, get_statistics_cache, set_statistics_cache
+        get_db_connection,
+        get_statistics_cache,
+        set_statistics_cache,
+        _is_postgresql_connection,
+        _build_safe_timestamp_expr,
     )
     try:
         from intelligent_cache_manager import cache_result, get_cache_stats
@@ -162,8 +136,8 @@ except ImportError:
 def _check_table_exists(cursor, table_name: str) -> bool:
     """检查表是否存在（兼容SQLite和PostgreSQL）"""
     try:
-        from db_config import DB_TYPE
-        if DB_TYPE == 'postgresql':
+        conn = getattr(cursor, 'connection', None)
+        if _is_postgresql_connection(conn):
             check_sql = """
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
@@ -190,8 +164,8 @@ def _check_table_column_exists(
         cursor, table_name: str, column_name: str) -> bool:
     """检查表的列是否存在（兼容SQLite和PostgreSQL）"""
     try:
-        from db_config import DB_TYPE
-        if DB_TYPE == 'postgresql':
+        conn = getattr(cursor, 'connection', None)
+        if _is_postgresql_connection(conn):
             check_sql = """
                 SELECT EXISTS (
                     SELECT FROM information_schema.columns
@@ -228,6 +202,7 @@ def get_retention_analysis(start_date: Optional[str] = None,
     if cached:
         return cached
 
+    is_pg = False
     with get_db_connection() as (conn, c):
         try:
             # 如果未指定日期范围，默认最近30天
@@ -260,11 +235,18 @@ def get_retention_analysis(start_date: Optional[str] = None,
                     is_pg_retention = False
 
                 if is_pg_retention:
-                    sql = _safe_adapt_sql("""
-                        SELECT id FROM users
-                        WHERE created_at >= to_timestamp(?)
-                        AND created_at < to_timestamp(?)
-                        AND role != 'admin'
+                    safe_expr = _build_safe_timestamp_expr('created_at')
+                    sql = _safe_adapt_sql(f"""
+                        WITH normalized_users AS (
+                            SELECT
+                                id,
+                                {safe_expr} AS created_ts
+                            FROM users
+                            WHERE role != 'admin'
+                        )
+                        SELECT id FROM normalized_users
+                        WHERE created_ts >= to_timestamp(?)
+                        AND created_ts < to_timestamp(?)
                     """, conn)
                 else:
                     sql = _safe_adapt_sql("""
@@ -1125,8 +1107,10 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
     if cached:
         return cached
 
+    is_pg = False
     with get_db_connection() as (conn, c):
         try:
+            is_pg = _is_postgresql_connection(conn)
             # 确定时间范围
             if not target_date:
                 target_date = date.today().isoformat()
@@ -1140,11 +1124,8 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
             thirty_days_ago = current_time - 30 * 86400
             sixty_days_ago = current_time - 60 * 86400
 
-            # 导入DB_TYPE用于数据库适配
-            from db_config import DB_TYPE as DB_TYPE_LOCAL
-
             # 1. 新用户（7天内注册）- 适配PostgreSQL
-            if DB_TYPE_LOCAL == 'postgresql':
+            if is_pg:
                 safe_created_at_expr = _build_safe_timestamp_expr('created_at')
                 sql = f"""
                     SELECT COUNT(*) FROM users
@@ -1166,7 +1147,7 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
             has_behavior_log = _check_table_exists(c, 'user_behavior_log')
 
             if has_behavior_log:
-                if DB_TYPE_LOCAL == 'postgresql':
+                if is_pg:
                     sql = """
                         SELECT COUNT(DISTINCT user_id) FROM (
                             SELECT user_id FROM user_login_log
@@ -1209,7 +1190,7 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
 
             # 5. 沉默用户（30天无活动）
             if has_behavior_log:
-                if DB_TYPE_LOCAL == 'postgresql':
+                if is_pg:
                     sql = """
                         SELECT COUNT(DISTINCT user_id) FROM (
                             SELECT user_id FROM user_login_log
@@ -1352,7 +1333,8 @@ def get_conversion_funnel(
 
             # 1. 注册用户数
             normalized_users_cte = ""
-            if DB_TYPE == 'postgresql':
+            is_pg = _is_postgresql_connection(conn)
+            if is_pg:
                 safe_created_expr = _build_safe_timestamp_expr('created_at')
                 normalized_users_cte = f"""
                     WITH normalized_users AS (
@@ -1381,7 +1363,7 @@ def get_conversion_funnel(
             registered_users = result[0] if result else 0
 
             # 2. 有登录记录的用户数
-            if DB_TYPE == 'postgresql':
+            if is_pg:
                 sql = normalized_users_cte + """
                     SELECT COUNT(DISTINCT nu.id)
                     FROM normalized_users nu
@@ -1407,7 +1389,7 @@ def get_conversion_funnel(
             # 检查 user_behavior_log 表是否存在
             calculated_users = 0
             if has_behavior_log:
-                if DB_TYPE == 'postgresql':
+                if is_pg:
                     sql = normalized_users_cte + """
                         SELECT COUNT(DISTINCT nu.id)
                         FROM normalized_users nu
@@ -1436,7 +1418,7 @@ def get_conversion_funnel(
                     calculated_users = 0
 
             # 4. 有支付记录的用户数
-            if DB_TYPE == 'postgresql':
+            if is_pg:
                 sql = normalized_users_cte + """
                     SELECT COUNT(DISTINCT nu.id)
                     FROM normalized_users nu
@@ -1465,7 +1447,7 @@ def get_conversion_funnel(
             has_order_type = _check_table_column_exists(
                 c, 'payment_orders', 'order_type')
             if has_order_type:
-                if DB_TYPE == 'postgresql':
+                if is_pg:
                     sql = normalized_users_cte + """
                         SELECT COUNT(DISTINCT nu.id)
                         FROM normalized_users nu
@@ -1496,7 +1478,7 @@ def get_conversion_funnel(
                     upgraded_users = 0
             else:
                 # 如果order_type字段不存在，通过is_upgrade字段判断
-                if DB_TYPE == 'postgresql':
+                if is_pg:
                     sql = normalized_users_cte + """
                         SELECT COUNT(DISTINCT nu.id)
                         FROM normalized_users nu
@@ -2014,8 +1996,7 @@ def get_enhanced_revenue_stats(
             conversion_rate = {}
 
             # 免费用户转付费率
-            from db_config import DB_TYPE as DB_TYPE_CHECK
-            if DB_TYPE_CHECK == 'postgresql':
+            if _is_postgresql_connection(conn):
                 safe_expr = _build_safe_timestamp_expr('created_at')
                 sql = f"""
                     WITH normalized_users AS (
@@ -2045,7 +2026,7 @@ def get_enhanced_revenue_stats(
             free_users = result[0] if result else 0
 
             if free_users > 0:
-                if DB_TYPE_CHECK == 'postgresql':
+                if _is_postgresql_connection(conn):
                     safe_expr = _build_safe_timestamp_expr('created_at')
                     sql = f"""
                         WITH normalized_users AS (
