@@ -1178,7 +1178,7 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
                         UNION
                         SELECT user_id FROM user_behavior_log
                         WHERE created_at >= ?
-                    )
+                    ) AS combined_users
                 """, conn)
                 c.execute(sql, (sixty_days_ago, sixty_days_ago))
             else:
@@ -1209,7 +1209,7 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
                         UNION
                         SELECT user_id FROM user_behavior_log
                         WHERE created_at >= ?
-                    )
+                    ) AS recent_users
                 """, conn)
                 c.execute(sql, (thirty_days_ago, thirty_days_ago))
             else:
