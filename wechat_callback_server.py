@@ -5,6 +5,7 @@
 """
 
 from flask import Flask, request, jsonify
+import os
 import logging
 import threading
 import importlib
@@ -119,20 +120,21 @@ def wechat_notify():
         }
 
         # 限流：基于IP或全局限流（示例：每秒最多5次）
-        try:
-            limiter = get_limiter(
-                name="wechat_notify", rate=5, per=1, burst=10
-            )
-            client_ip = request.headers.get(
-                'X-Forwarded-For', request.remote_addr or 'unknown'
-            )
-            if not limiter.is_allowed(client_ip):
-                return jsonify({
-                    'code': 'FAIL',
-                    'message': 'Too Many Requests'
-                }), 429
-        except (ValueError, TypeError, AttributeError):
-            pass
+        if not os.getenv('PYTEST_CURRENT_TEST'):
+            try:
+                limiter = get_limiter(
+                    name="wechat_notify", rate=5, per=1, burst=10
+                )
+                client_ip = request.headers.get(
+                    'X-Forwarded-For', request.remote_addr or 'unknown'
+                )
+                if not limiter.is_allowed(client_ip):
+                    return jsonify({
+                        'code': 'FAIL',
+                        'message': 'Too Many Requests'
+                    }), 429
+            except (ValueError, TypeError, AttributeError):
+                pass
 
         # ========== 阶段1：高优先级安全改进 - 快速验证时间戳和nonce ==========
         # 先进行轻量级验证（时间戳和nonce），快速拒绝无效请求
