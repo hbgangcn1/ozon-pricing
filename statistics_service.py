@@ -45,6 +45,12 @@ except ImportError:
 # 安全常量
 _MAX_IN_CLAUSE_SIZE = 1000  # IN子句最大元素数量
 
+# 尝试导入logger（如果不可用则回退到print）
+try:
+    from logger_config import logger
+except ImportError:
+    logger = None
+
 
 def _build_safe_in_clause(
     values: List[int], max_size: int = _MAX_IN_CLAUSE_SIZE
@@ -77,13 +83,12 @@ def _build_safe_in_clause(
     # 如果元素数量超过限制，只使用前max_size个
     if len(validated_values) > max_size:
         # 使用logger而不是print（如果可用）
-        try:
-            from logger_config import logger
+        if logger:
             logger.warning(
                 f"IN子句元素数量({len(validated_values)})超过最大限制"
                 f"({max_size})，将只使用前{max_size}个元素"
             )
-        except ImportError:
+        else:
             print(
                 f"警告: IN子句元素数量({len(validated_values)})超过最大限制"
                 f"({max_size})，将只使用前{max_size}个元素"
@@ -1107,10 +1112,49 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
 
             # 1. 新用户（7天内注册）- 适配PostgreSQL
             if DB_TYPE_LOCAL == 'postgresql':
-                sql = """
+                full_ts_pattern = (
+                    '^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}$'
+                )
+                short_ts_pattern = (
+                    '^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}$'
+                )
+                safe_created_at_expr = f"""
+                    COALESCE(
+                        CASE
+                            WHEN created_at IS NULL THEN NULL
+                            WHEN TRIM(created_at::text) = '' THEN NULL
+                            WHEN TRIM(created_at::text)
+                                ~ '^\\d+(\\.\\d+)?$'
+                                THEN to_timestamp(
+                                    TRIM(created_at::text)::double precision
+                                )
+                            WHEN TRIM(created_at::text)
+                                ~ '^\\d{4}-\\d{2}-\\d{2}$'
+                                THEN to_timestamp(
+                                    TRIM(created_at::text),
+                                    'YYYY-MM-DD'
+                                )
+                            WHEN TRIM(created_at::text)
+                                ~ '{full_ts_pattern}'
+                                THEN to_timestamp(
+                                    REPLACE(TRIM(created_at::text), 'T', ' '),
+                                    'YYYY-MM-DD HH24:MI:SS'
+                                )
+                            WHEN TRIM(created_at::text)
+                                ~ '{short_ts_pattern}'
+                                THEN to_timestamp(
+                                    REPLACE(TRIM(created_at::text), 'T', ' '),
+                                    'YYYY-MM-DD HH24:MI'
+                                )
+                            ELSE NULL
+                        END,
+                        to_timestamp(0)
+                    )
+                """
+                sql = f"""
                     SELECT COUNT(*) FROM users
                     WHERE role != 'admin'
-                    AND created_at >= to_timestamp(%s)
+                    AND {safe_created_at_expr} >= to_timestamp(%s)
                 """
             else:
                 sql = _safe_adapt_sql("""
