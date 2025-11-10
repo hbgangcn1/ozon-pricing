@@ -51,8 +51,11 @@ try:
 except ImportError:
     logger = None
 
+
 def _build_safe_in_clause(
-    values: List[int], max_size: int = _MAX_IN_CLAUSE_SIZE
+    values: List[int],
+    max_size: int = _MAX_IN_CLAUSE_SIZE,
+    placeholder: Optional[str] = None
 ) -> Tuple[str, List[int]]:
     """
     安全构建IN子句，防止SQL注入
@@ -95,7 +98,8 @@ def _build_safe_in_clause(
         validated_values = validated_values[:max_size]
 
     # 构建安全的IN子句（使用参数化查询）
-    placeholder = get_placeholder()
+    if placeholder is None:
+        placeholder = get_placeholder()
     placeholders = ','.join([placeholder] * len(validated_values))
     return f"IN ({placeholders})", validated_values
 
@@ -235,7 +239,7 @@ def get_retention_analysis(start_date: Optional[str] = None,
 
                 if is_pg_retention:
                     safe_expr = _build_safe_timestamp_expr('created_at')
-                    sql = _safe_adapt_sql(f"""
+                    sql = f"""
                         WITH normalized_users AS (
                             SELECT
                                 id,
@@ -244,9 +248,10 @@ def get_retention_analysis(start_date: Optional[str] = None,
                             WHERE role != 'admin'
                         )
                         SELECT id FROM normalized_users
-                        WHERE created_ts >= to_timestamp(?)
-                        AND created_ts < to_timestamp(?)
-                    """, conn)
+                        WHERE created_ts >= to_timestamp(%s)
+                        AND created_ts < to_timestamp(%s)
+                    """
+                    c.execute(sql, (day_start, day_end))
                 else:
                     sql = _safe_adapt_sql("""
                         SELECT id FROM users
@@ -254,7 +259,7 @@ def get_retention_analysis(start_date: Optional[str] = None,
                         AND created_at < datetime(?, 'unixepoch')
                         AND role != 'admin'
                     """, conn)
-                c.execute(sql, (day_start, day_end))
+                    c.execute(sql, (day_start, day_end))
                 registered_users = c.fetchall()
 
                 if registered_users:
@@ -263,7 +268,11 @@ def get_retention_analysis(start_date: Optional[str] = None,
 
                     # 安全构建IN子句（防止SQL注入）
                     try:
-                        in_clause, in_params = _build_safe_in_clause(user_ids)
+                        placeholder_char = '%s' if is_pg_retention else '?'
+                        in_clause, in_params = _build_safe_in_clause(
+                            user_ids,
+                            placeholder=placeholder_char
+                        )
                     except ValueError as e:
                         print(f"构建IN子句失败: {e}")
                         # 如果失败，跳过这一天的计算
@@ -273,60 +282,108 @@ def get_retention_analysis(start_date: Optional[str] = None,
                     # 计算D1留存（第二天登录的用户数）
                     d1_start = day_end
                     d1_end = d1_start + 86400
-                    sql = _safe_adapt_sql(
-                        f"""
-                        SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id {in_clause}
-                        AND login_time >= ? AND login_time < ?
-                        """,
-                        conn
-                    )
-                    c.execute(sql, in_params + [d1_start, d1_end])
+                    if is_pg_retention:
+                        sql = (
+                            "SELECT COUNT(DISTINCT user_id) "
+                            "FROM user_login_log "
+                            f"WHERE user_id {in_clause} "
+                            "AND login_time >= %s AND login_time < %s"
+                        )
+                        params = tuple(in_params + [d1_start, d1_end])
+                        c.execute(sql, params)
+                    else:
+                        sql = _safe_adapt_sql(
+                            f"""
+                            SELECT COUNT(DISTINCT user_id)
+                            FROM user_login_log
+                            WHERE user_id {in_clause}
+                            AND login_time >= ?
+                            AND login_time < ?
+                            """,
+                            conn
+                        )
+                        c.execute(sql, in_params + [d1_start, d1_end])
                     result = c.fetchone()
                     d1_retained = result[0] if result else 0
 
                     # 计算D3留存
                     d3_start = day_end + 2 * 86400
                     d3_end = d3_start + 86400
-                    sql = _safe_adapt_sql(
-                        f"""
-                        SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id {in_clause}
-                        AND login_time >= ? AND login_time < ?
-                        """,
-                        conn
-                    )
-                    c.execute(sql, in_params + [d3_start, d3_end])
+                    if is_pg_retention:
+                        sql = (
+                            "SELECT COUNT(DISTINCT user_id) "
+                            "FROM user_login_log "
+                            f"WHERE user_id {in_clause} "
+                            "AND login_time >= %s AND login_time < %s"
+                        )
+                        params = tuple(in_params + [d3_start, d3_end])
+                        c.execute(sql, params)
+                    else:
+                        sql = _safe_adapt_sql(
+                            f"""
+                            SELECT COUNT(DISTINCT user_id)
+                            FROM user_login_log
+                            WHERE user_id {in_clause}
+                            AND login_time >= ?
+                            AND login_time < ?
+                            """,
+                            conn
+                        )
+                        c.execute(sql, in_params + [d3_start, d3_end])
                     result = c.fetchone()
                     d3_retained = result[0] if result else 0
 
                     # 计算D7留存
                     d7_start = day_end + 6 * 86400
                     d7_end = d7_start + 86400
-                    sql = _safe_adapt_sql(
-                        f"""
-                        SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id {in_clause}
-                        AND login_time >= ? AND login_time < ?
-                        """,
-                        conn
-                    )
-                    c.execute(sql, in_params + [d7_start, d7_end])
+                    if is_pg_retention:
+                        sql = (
+                            "SELECT COUNT(DISTINCT user_id) "
+                            "FROM user_login_log "
+                            f"WHERE user_id {in_clause} "
+                            "AND login_time >= %s AND login_time < %s"
+                        )
+                        params = tuple(in_params + [d7_start, d7_end])
+                        c.execute(sql, params)
+                    else:
+                        sql = _safe_adapt_sql(
+                            f"""
+                            SELECT COUNT(DISTINCT user_id)
+                            FROM user_login_log
+                            WHERE user_id {in_clause}
+                            AND login_time >= ?
+                            AND login_time < ?
+                            """,
+                            conn
+                        )
+                        c.execute(sql, in_params + [d7_start, d7_end])
                     result = c.fetchone()
                     d7_retained = result[0] if result else 0
 
                     # 计算D30留存
                     d30_start = day_end + 29 * 86400
                     d30_end = d30_start + 86400
-                    sql = _safe_adapt_sql(
-                        f"""
-                        SELECT COUNT(DISTINCT user_id) FROM user_login_log
-                        WHERE user_id {in_clause}
-                        AND login_time >= ? AND login_time < ?
-                        """,
-                        conn
-                    )
-                    c.execute(sql, in_params + [d30_start, d30_end])
+                    if is_pg_retention:
+                        sql = (
+                            "SELECT COUNT(DISTINCT user_id) "
+                            "FROM user_login_log "
+                            f"WHERE user_id {in_clause} "
+                            "AND login_time >= %s AND login_time < %s"
+                        )
+                        params = tuple(in_params + [d30_start, d30_end])
+                        c.execute(sql, params)
+                    else:
+                        sql = _safe_adapt_sql(
+                            f"""
+                            SELECT COUNT(DISTINCT user_id)
+                            FROM user_login_log
+                            WHERE user_id {in_clause}
+                            AND login_time >= ?
+                            AND login_time < ?
+                            """,
+                            conn
+                        )
+                        c.execute(sql, in_params + [d30_start, d30_end])
                     result = c.fetchone()
                     d30_retained = result[0] if result else 0
 
