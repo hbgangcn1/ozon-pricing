@@ -2016,12 +2016,21 @@ def get_enhanced_revenue_stats(
             # 免费用户转付费率
             from db_config import DB_TYPE as DB_TYPE_CHECK
             if DB_TYPE_CHECK == 'postgresql':
-                sql = """
-                    SELECT COUNT(*) FROM users
+                safe_expr = _build_safe_timestamp_expr('created_at')
+                sql = f"""
+                    WITH normalized_users AS (
+                        SELECT
+                            id,
+                            user_type,
+                            role,
+                            {safe_expr} AS created_ts
+                        FROM users
+                    )
+                    SELECT COUNT(*) FROM normalized_users
                     WHERE user_type = 'free'
                     AND role != 'admin'
-                    AND created_at >= to_timestamp(%s)
-                    AND created_at <= to_timestamp(%s)
+                    AND created_ts >= to_timestamp(%s)
+                    AND created_ts <= to_timestamp(%s)
                 """
             else:
                 sql = _safe_adapt_sql("""
@@ -2037,16 +2046,23 @@ def get_enhanced_revenue_stats(
 
             if free_users > 0:
                 if DB_TYPE_CHECK == 'postgresql':
-                    sql = """
-                        SELECT COUNT(DISTINCT user_id)
-                        FROM payment_orders
-                        WHERE status = 'SUCCESS'
-                        AND user_id IN (
-                            SELECT id FROM users
-                            WHERE user_type = 'free'
-                            AND created_at >= to_timestamp(%s)
-                            AND created_at <= to_timestamp(%s)
+                    safe_expr = _build_safe_timestamp_expr('created_at')
+                    sql = f"""
+                        WITH normalized_users AS (
+                            SELECT
+                                id,
+                                user_type,
+                                {safe_expr} AS created_ts
+                            FROM users
                         )
+                        SELECT COUNT(DISTINCT p.user_id)
+                        FROM payment_orders p
+                        INNER JOIN normalized_users nu
+                            ON p.user_id = nu.id
+                        WHERE p.status = 'SUCCESS'
+                        AND nu.user_type = 'free'
+                        AND nu.created_ts >= to_timestamp(%s)
+                        AND nu.created_ts <= to_timestamp(%s)
                     """
                 else:
                     sql = _safe_adapt_sql("""
