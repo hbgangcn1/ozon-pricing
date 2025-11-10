@@ -202,7 +202,6 @@ def get_retention_analysis(start_date: Optional[str] = None,
     if cached:
         return cached
 
-    is_pg = False
     with get_db_connection() as (conn, c):
         try:
             # 如果未指定日期范围，默认最近30天
@@ -1107,7 +1106,6 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
     if cached:
         return cached
 
-    is_pg = False
     with get_db_connection() as (conn, c):
         try:
             is_pg = _is_postgresql_connection(conn)
