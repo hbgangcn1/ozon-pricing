@@ -51,6 +51,39 @@ try:
 except ImportError:
     logger = None
 
+_TIMESTAMP_NUMERIC_PATTERN = r'^\d+(\.\d+)?$'
+_TIMESTAMP_DATE_PATTERN = r'^\d{4}-\d{2}-\d{2}$'
+_TIMESTAMP_FULL_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$'
+_TIMESTAMP_SHORT_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$'
+
+
+def _build_safe_timestamp_expr(column: str) -> str:
+    """生成兼容PostgreSQL的时间字段转换表达式"""
+    return f"""
+        COALESCE(
+            CASE
+                WHEN {column} IS NULL THEN NULL
+                WHEN TRIM({column}::text) = '' THEN NULL
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_NUMERIC_PATTERN}'
+                    THEN to_timestamp(TRIM({column}::text)::double precision)
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_DATE_PATTERN}'
+                    THEN to_timestamp(TRIM({column}::text), 'YYYY-MM-DD')
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_FULL_PATTERN}'
+                    THEN to_timestamp(
+                        REPLACE(TRIM({column}::text), 'T', ' '),
+                        'YYYY-MM-DD HH24:MI:SS'
+                    )
+                WHEN TRIM({column}::text) ~ '{_TIMESTAMP_SHORT_PATTERN}'
+                    THEN to_timestamp(
+                        REPLACE(TRIM({column}::text), 'T', ' '),
+                        'YYYY-MM-DD HH24:MI'
+                    )
+                ELSE NULL
+            END,
+            to_timestamp(0)
+        )
+    """
+
 
 def _build_safe_in_clause(
     values: List[int], max_size: int = _MAX_IN_CLAUSE_SIZE
@@ -1112,45 +1145,7 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
 
             # 1. 新用户（7天内注册）- 适配PostgreSQL
             if DB_TYPE_LOCAL == 'postgresql':
-                full_ts_pattern = (
-                    '^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}$'
-                )
-                short_ts_pattern = (
-                    '^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}$'
-                )
-                safe_created_at_expr = f"""
-                    COALESCE(
-                        CASE
-                            WHEN created_at IS NULL THEN NULL
-                            WHEN TRIM(created_at::text) = '' THEN NULL
-                            WHEN TRIM(created_at::text)
-                                ~ '^\\d+(\\.\\d+)?$'
-                                THEN to_timestamp(
-                                    TRIM(created_at::text)::double precision
-                                )
-                            WHEN TRIM(created_at::text)
-                                ~ '^\\d{4}-\\d{2}-\\d{2}$'
-                                THEN to_timestamp(
-                                    TRIM(created_at::text),
-                                    'YYYY-MM-DD'
-                                )
-                            WHEN TRIM(created_at::text)
-                                ~ '{full_ts_pattern}'
-                                THEN to_timestamp(
-                                    REPLACE(TRIM(created_at::text), 'T', ' '),
-                                    'YYYY-MM-DD HH24:MI:SS'
-                                )
-                            WHEN TRIM(created_at::text)
-                                ~ '{short_ts_pattern}'
-                                THEN to_timestamp(
-                                    REPLACE(TRIM(created_at::text), 'T', ' '),
-                                    'YYYY-MM-DD HH24:MI'
-                                )
-                            ELSE NULL
-                        END,
-                        to_timestamp(0)
-                    )
-                """
+                safe_created_at_expr = _build_safe_timestamp_expr('created_at')
                 sql = f"""
                     SELECT COUNT(*) FROM users
                     WHERE role != 'admin'
@@ -1356,26 +1351,48 @@ def get_conversion_funnel(
             has_behavior_log = _check_table_exists(c, 'user_behavior_log')
 
             # 1. 注册用户数
-            sql = _safe_adapt_sql("""
-                SELECT COUNT(*) FROM users
-                WHERE role != 'admin'
-                AND created_at >= datetime(?, 'unixepoch')
-                AND created_at <= datetime(?, 'unixepoch')
-            """, conn)
-            c.execute(sql, (start_timestamp, end_timestamp))
+            if DB_TYPE == 'postgresql':
+                safe_created_expr = _build_safe_timestamp_expr('created_at')
+                sql = f"""
+                    SELECT COUNT(*) FROM users
+                    WHERE role != 'admin'
+                    AND {safe_created_expr} >= to_timestamp(%s)
+                    AND {safe_created_expr} <= to_timestamp(%s)
+                """
+                c.execute(sql, (start_timestamp, end_timestamp))
+            else:
+                sql = _safe_adapt_sql("""
+                    SELECT COUNT(*) FROM users
+                    WHERE role != 'admin'
+                    AND created_at >= datetime(?, 'unixepoch')
+                    AND created_at <= datetime(?, 'unixepoch')
+                """, conn)
+                c.execute(sql, (start_timestamp, end_timestamp))
             result = c.fetchone()
             registered_users = result[0] if result else 0
 
             # 2. 有登录记录的用户数
-            sql = _safe_adapt_sql("""
-                SELECT COUNT(DISTINCT u.id)
-                FROM users u
-                INNER JOIN user_login_log l ON u.id = l.user_id
-                WHERE u.role != 'admin'
-                AND u.created_at >= datetime(?, 'unixepoch')
-                AND u.created_at <= datetime(?, 'unixepoch')
-            """, conn)
-            c.execute(sql, (start_timestamp, end_timestamp))
+            if DB_TYPE == 'postgresql':
+                safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                sql = f"""
+                    SELECT COUNT(DISTINCT u.id)
+                    FROM users u
+                    INNER JOIN user_login_log l ON u.id = l.user_id
+                    WHERE u.role != 'admin'
+                    AND {safe_created_expr} >= to_timestamp(%s)
+                    AND {safe_created_expr} <= to_timestamp(%s)
+                """
+                c.execute(sql, (start_timestamp, end_timestamp))
+            else:
+                sql = _safe_adapt_sql("""
+                    SELECT COUNT(DISTINCT u.id)
+                    FROM users u
+                    INNER JOIN user_login_log l ON u.id = l.user_id
+                    WHERE u.role != 'admin'
+                    AND u.created_at >= datetime(?, 'unixepoch')
+                    AND u.created_at <= datetime(?, 'unixepoch')
+                """, conn)
+                c.execute(sql, (start_timestamp, end_timestamp))
             result = c.fetchone()
             logged_in_users = result[0] if result else 0
 
@@ -1383,33 +1400,60 @@ def get_conversion_funnel(
             # 检查 user_behavior_log 表是否存在
             calculated_users = 0
             if has_behavior_log:
-                sql = _safe_adapt_sql("""
-                    SELECT COUNT(DISTINCT u.id)
-                    FROM users u
-                    INNER JOIN user_behavior_log b ON u.id = b.user_id
-                    WHERE u.role != 'admin'
-                    AND u.created_at >= datetime(?, 'unixepoch')
-                    AND u.created_at <= datetime(?, 'unixepoch')
-                    AND b.behavior_type = 'calculation'
-                """, conn)
+                if DB_TYPE == 'postgresql':
+                    safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                    sql = f"""
+                        SELECT COUNT(DISTINCT u.id)
+                        FROM users u
+                        INNER JOIN user_behavior_log b ON u.id = b.user_id
+                        WHERE u.role != 'admin'
+                        AND {safe_created_expr} >= to_timestamp(%s)
+                        AND {safe_created_expr} <= to_timestamp(%s)
+                        AND b.behavior_type = 'calculation'
+                    """
+                    params = (start_timestamp, end_timestamp)
+                else:
+                    sql = _safe_adapt_sql("""
+                        SELECT COUNT(DISTINCT u.id)
+                        FROM users u
+                        INNER JOIN user_behavior_log b ON u.id = b.user_id
+                        WHERE u.role != 'admin'
+                        AND u.created_at >= datetime(?, 'unixepoch')
+                        AND u.created_at <= datetime(?, 'unixepoch')
+                        AND b.behavior_type = 'calculation'
+                    """, conn)
+                    params = (start_timestamp, end_timestamp)
                 try:
-                    c.execute(sql, (start_timestamp, end_timestamp))
+                    c.execute(sql, params)
                     result = c.fetchone()
                     calculated_users = result[0] if result else 0
                 except DB_EXCEPTIONS:
                     calculated_users = 0
 
             # 4. 有支付记录的用户数
-            sql = _safe_adapt_sql("""
-                SELECT COUNT(DISTINCT u.id)
-                FROM users u
-                INNER JOIN payment_orders p ON u.id = p.user_id
-                WHERE u.role != 'admin'
-                AND u.created_at >= datetime(?, 'unixepoch')
-                AND u.created_at <= datetime(?, 'unixepoch')
-                AND p.status = 'SUCCESS'
-            """, conn)
-            c.execute(sql, (start_timestamp, end_timestamp))
+            if DB_TYPE == 'postgresql':
+                safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                sql = f"""
+                    SELECT COUNT(DISTINCT u.id)
+                    FROM users u
+                    INNER JOIN payment_orders p ON u.id = p.user_id
+                    WHERE u.role != 'admin'
+                    AND {safe_created_expr} >= to_timestamp(%s)
+                    AND {safe_created_expr} <= to_timestamp(%s)
+                    AND p.status = 'SUCCESS'
+                """
+                c.execute(sql, (start_timestamp, end_timestamp))
+            else:
+                sql = _safe_adapt_sql("""
+                    SELECT COUNT(DISTINCT u.id)
+                    FROM users u
+                    INNER JOIN payment_orders p ON u.id = p.user_id
+                    WHERE u.role != 'admin'
+                    AND u.created_at >= datetime(?, 'unixepoch')
+                    AND u.created_at <= datetime(?, 'unixepoch')
+                    AND p.status = 'SUCCESS'
+                """, conn)
+                c.execute(sql, (start_timestamp, end_timestamp))
             result = c.fetchone()
             paid_users = result[0] if result else 0
 
@@ -1418,36 +1462,66 @@ def get_conversion_funnel(
             has_order_type = _check_table_column_exists(
                 c, 'payment_orders', 'order_type')
             if has_order_type:
-                sql = _safe_adapt_sql("""
-                    SELECT COUNT(DISTINCT u.id)
-                    FROM users u
-                    INNER JOIN payment_orders p ON u.id = p.user_id
-                    WHERE u.role != 'admin'
-                    AND u.created_at >= datetime(?, 'unixepoch')
-                    AND u.created_at <= datetime(?, 'unixepoch')
-                    AND p.status = 'SUCCESS'
-                    AND p.order_type = 'upgrade'
-                """, conn)
+                if DB_TYPE == 'postgresql':
+                    safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                    sql = f"""
+                        SELECT COUNT(DISTINCT u.id)
+                        FROM users u
+                        INNER JOIN payment_orders p ON u.id = p.user_id
+                        WHERE u.role != 'admin'
+                        AND {safe_created_expr} >= to_timestamp(%s)
+                        AND {safe_created_expr} <= to_timestamp(%s)
+                        AND p.status = 'SUCCESS'
+                        AND p.order_type = 'upgrade'
+                    """
+                    params = (start_timestamp, end_timestamp)
+                else:
+                    sql = _safe_adapt_sql("""
+                        SELECT COUNT(DISTINCT u.id)
+                        FROM users u
+                        INNER JOIN payment_orders p ON u.id = p.user_id
+                        WHERE u.role != 'admin'
+                        AND u.created_at >= datetime(?, 'unixepoch')
+                        AND u.created_at <= datetime(?, 'unixepoch')
+                        AND p.status = 'SUCCESS'
+                        AND p.order_type = 'upgrade'
+                    """, conn)
+                    params = (start_timestamp, end_timestamp)
                 try:
-                    c.execute(sql, (start_timestamp, end_timestamp))
+                    c.execute(sql, params)
                     result = c.fetchone()
                     upgraded_users = result[0] if result else 0
                 except DB_EXCEPTIONS:
                     upgraded_users = 0
             else:
                 # 如果order_type字段不存在，通过is_upgrade字段判断
-                sql = _safe_adapt_sql("""
-                    SELECT COUNT(DISTINCT u.id)
-                    FROM users u
-                    INNER JOIN payment_orders p ON u.id = p.user_id
-                    WHERE u.role != 'admin'
-                    AND u.created_at >= datetime(?, 'unixepoch')
-                    AND u.created_at <= datetime(?, 'unixepoch')
-                    AND p.status = 'SUCCESS'
-                    AND p.is_upgrade = 1
-                """, conn)
+                if DB_TYPE == 'postgresql':
+                    safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                    sql = f"""
+                        SELECT COUNT(DISTINCT u.id)
+                        FROM users u
+                        INNER JOIN payment_orders p ON u.id = p.user_id
+                        WHERE u.role != 'admin'
+                        AND {safe_created_expr} >= to_timestamp(%s)
+                        AND {safe_created_expr} <= to_timestamp(%s)
+                        AND p.status = 'SUCCESS'
+                        AND p.is_upgrade = 1
+                    """
+                    params = (start_timestamp, end_timestamp)
+                else:
+                    sql = _safe_adapt_sql("""
+                        SELECT COUNT(DISTINCT u.id)
+                        FROM users u
+                        INNER JOIN payment_orders p ON u.id = p.user_id
+                        WHERE u.role != 'admin'
+                        AND u.created_at >= datetime(?, 'unixepoch')
+                        AND u.created_at <= datetime(?, 'unixepoch')
+                        AND p.status = 'SUCCESS'
+                        AND p.is_upgrade = 1
+                    """, conn)
+                    params = (start_timestamp, end_timestamp)
                 try:
-                    c.execute(sql, (start_timestamp, end_timestamp))
+                    c.execute(sql, params)
                     result = c.fetchone()
                     upgraded_users = result[0] if result else 0
                 except DB_EXCEPTIONS:
