@@ -1171,16 +1171,28 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
             has_behavior_log = _check_table_exists(c, 'user_behavior_log')
 
             if has_behavior_log:
-                sql = _safe_adapt_sql("""
-                    SELECT COUNT(DISTINCT user_id) FROM (
-                        SELECT user_id FROM user_login_log
-                        WHERE login_time >= ?
-                        UNION
-                        SELECT user_id FROM user_behavior_log
-                        WHERE created_at >= ?
-                    ) AS combined_users
-                """, conn)
-                c.execute(sql, (sixty_days_ago, sixty_days_ago))
+                if DB_TYPE_LOCAL == 'postgresql':
+                    sql = """
+                        SELECT COUNT(DISTINCT user_id) FROM (
+                            SELECT user_id FROM user_login_log
+                            WHERE login_time >= %s
+                            UNION
+                            SELECT user_id FROM user_behavior_log
+                            WHERE created_at >= %s
+                        ) AS combined_users
+                    """
+                    c.execute(sql, (sixty_days_ago, sixty_days_ago))
+                else:
+                    sql = _safe_adapt_sql("""
+                        SELECT COUNT(DISTINCT user_id) FROM (
+                            SELECT user_id FROM user_login_log
+                            WHERE login_time >= ?
+                            UNION
+                            SELECT user_id FROM user_behavior_log
+                            WHERE created_at >= ?
+                        ) AS combined_users
+                    """, conn)
+                    c.execute(sql, (sixty_days_ago, sixty_days_ago))
             else:
                 sql = _safe_adapt_sql("""
                     SELECT COUNT(DISTINCT user_id) FROM user_login_log
@@ -1202,16 +1214,28 @@ def get_user_segmentation(target_date: Optional[str] = None) -> Dict[str, Any]:
 
             # 5. 沉默用户（30天无活动）
             if has_behavior_log:
-                sql = _safe_adapt_sql("""
-                    SELECT COUNT(DISTINCT user_id) FROM (
-                        SELECT user_id FROM user_login_log
-                        WHERE login_time >= ?
-                        UNION
-                        SELECT user_id FROM user_behavior_log
-                        WHERE created_at >= ?
-                    ) AS recent_users
-                """, conn)
-                c.execute(sql, (thirty_days_ago, thirty_days_ago))
+                if DB_TYPE_LOCAL == 'postgresql':
+                    sql = """
+                        SELECT COUNT(DISTINCT user_id) FROM (
+                            SELECT user_id FROM user_login_log
+                            WHERE login_time >= %s
+                            UNION
+                            SELECT user_id FROM user_behavior_log
+                            WHERE created_at >= %s
+                        ) AS recent_users
+                    """
+                    c.execute(sql, (thirty_days_ago, thirty_days_ago))
+                else:
+                    sql = _safe_adapt_sql("""
+                        SELECT COUNT(DISTINCT user_id) FROM (
+                            SELECT user_id FROM user_login_log
+                            WHERE login_time >= ?
+                            UNION
+                            SELECT user_id FROM user_behavior_log
+                            WHERE created_at >= ?
+                        ) AS recent_users
+                    """, conn)
+                    c.execute(sql, (thirty_days_ago, thirty_days_ago))
             else:
                 sql = _safe_adapt_sql("""
                     SELECT COUNT(DISTINCT user_id) FROM user_login_log
