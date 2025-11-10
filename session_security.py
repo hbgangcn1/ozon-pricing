@@ -860,14 +860,25 @@ class SessionSecurity:
                         is_pg_force = False
 
                     if is_pg_force:
-                        # PostgreSQL: 设置语句超时（10秒）
-                        c.execute("SET statement_timeout = 10000")
+                        # PostgreSQL: 设置语句与锁超时（仅当前事务）
+                        c.execute(
+                            "SET LOCAL statement_timeout = 10000"
+                        )
+                        c.execute("SET LOCAL lock_timeout = 5000")
                     c.execute(sql, (session_id,))
                     conn.commit()
                 except Exception as update_error:
                     # 如果更新失败（包括超时），尝试记录但不阻塞
                     error_str = str(update_error).lower()
                     if 'timeout' in error_str or 'cancel' in error_str:
+                        try:
+                            conn.rollback()
+                        except DB_EXCEPTIONS as rollback_error:
+                            if logger:
+                                logger.debug(
+                                    "force_logout_session rollback failed: %s",
+                                    rollback_error,
+                                )
                         if logger:
                             logger.warning(
                                 f"会话{session_id[:8]}...下线超时，"
@@ -996,13 +1007,24 @@ class SessionSecurity:
                         is_pg_update = False
 
                     if is_pg_update:
-                        # PostgreSQL: 设置语句超时（5秒）
-                        c.execute("SET statement_timeout = 5000")
+                        # PostgreSQL: 设置语句与锁超时（仅当前事务）
+                        c.execute(
+                            "SET LOCAL statement_timeout = 5000"
+                        )
+                        c.execute("SET LOCAL lock_timeout = 3000")
                     c.execute(sql, (user_id,))
                 except Exception as update_error:
                     # 如果更新失败（包括超时），记录但继续执行
                     error_str = str(update_error).lower()
                     if 'timeout' in error_str or 'cancel' in error_str:
+                        try:
+                            conn.rollback()
+                        except DB_EXCEPTIONS as rollback_error:
+                            if logger:
+                                logger.debug(
+                                    "create_session rollback failed: %s",
+                                    rollback_error,
+                                )
                         if logger:
                             logger.warning(
                                 f"用户{user_id}旧会话下线超时，但继续创建新会话: "

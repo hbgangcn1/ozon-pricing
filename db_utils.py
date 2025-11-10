@@ -393,6 +393,7 @@ def _safe_adapt_sql(sql: str, conn) -> str:
 _connection_counter = 0
 _connection_lock = threading.Lock()
 _MAX_CONNECTIONS = 50  # 最大并发连接数阈值
+_postgres_pool_closed_logged = False
 
 # 连接池配置
 _POOL_SIZE = 10
@@ -572,7 +573,10 @@ def _check_connections_at_exit():
 
     try:
         close_connection_pool()
-        print("✅ PostgreSQL连接池已关闭")
+        global _postgres_pool_closed_logged
+        if not _postgres_pool_closed_logged:
+            print("✅ PostgreSQL连接池已关闭")
+            _postgres_pool_closed_logged = True
     except (AttributeError, RuntimeError, OSError, ConnectionError):
         # 忽略关闭PostgreSQL连接池时的错误（连接池可能未初始化或已关闭）
         pass
@@ -1940,7 +1944,7 @@ def _upgrade_subscription_upgrade_system():
         cols = _get_table_columns(c, 'users')
 
         new_fields = {
-            'billing_cycle': 'TEXT DEFAULT "month"',
+            'billing_cycle': "TEXT DEFAULT 'month'",
             'last_paid_amount': 'REAL DEFAULT 0',
             'subscription_start': 'INTEGER',
         }
