@@ -1401,7 +1401,9 @@ def get_conversion_funnel(
             calculated_users = 0
             if has_behavior_log:
                 if DB_TYPE == 'postgresql':
-                    safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                    safe_created_expr = _build_safe_timestamp_expr(
+                        'u.created_at'
+                    )
                     sql = f"""
                         SELECT COUNT(DISTINCT u.id)
                         FROM users u
@@ -1432,7 +1434,9 @@ def get_conversion_funnel(
 
             # 4. 有支付记录的用户数
             if DB_TYPE == 'postgresql':
-                safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                safe_created_expr = _build_safe_timestamp_expr(
+                    'u.created_at'
+                )
                 sql = f"""
                     SELECT COUNT(DISTINCT u.id)
                     FROM users u
@@ -1463,7 +1467,9 @@ def get_conversion_funnel(
                 c, 'payment_orders', 'order_type')
             if has_order_type:
                 if DB_TYPE == 'postgresql':
-                    safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                    safe_created_expr = _build_safe_timestamp_expr(
+                        'u.created_at'
+                    )
                     sql = f"""
                         SELECT COUNT(DISTINCT u.id)
                         FROM users u
@@ -1496,7 +1502,9 @@ def get_conversion_funnel(
             else:
                 # 如果order_type字段不存在，通过is_upgrade字段判断
                 if DB_TYPE == 'postgresql':
-                    safe_created_expr = _build_safe_timestamp_expr('u.created_at')
+                    safe_created_expr = _build_safe_timestamp_expr(
+                        'u.created_at'
+                    )
                     sql = f"""
                         SELECT COUNT(DISTINCT u.id)
                         FROM users u
