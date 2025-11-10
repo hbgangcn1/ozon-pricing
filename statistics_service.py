@@ -229,13 +229,7 @@ def get_retention_analysis(start_date: Optional[str] = None,
                 day_end = current + 86400
 
                 # 获取该日注册的用户（适配PostgreSQL）
-                # 检测数据库类型
-                try:
-                    import psycopg2
-                    is_pg_retention = isinstance(
-                        conn, psycopg2.extensions.connection)
-                except (ImportError, AttributeError):
-                    is_pg_retention = False
+                is_pg_retention = _is_postgresql_connection(conn)
 
                 if is_pg_retention:
                     safe_expr = _build_safe_timestamp_expr('created_at')
