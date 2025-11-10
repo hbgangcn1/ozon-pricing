@@ -1351,13 +1351,22 @@ def get_conversion_funnel(
             has_behavior_log = _check_table_exists(c, 'user_behavior_log')
 
             # 1. 注册用户数
+            normalized_users_cte = ""
             if DB_TYPE == 'postgresql':
                 safe_created_expr = _build_safe_timestamp_expr('created_at')
-                sql = f"""
-                    SELECT COUNT(*) FROM users
-                    WHERE role != 'admin'
-                    AND {safe_created_expr} >= to_timestamp(%s)
-                    AND {safe_created_expr} <= to_timestamp(%s)
+                normalized_users_cte = f"""
+                    WITH normalized_users AS (
+                        SELECT
+                            id,
+                            {safe_created_expr} AS created_ts
+                        FROM users
+                        WHERE role != 'admin'
+                    )
+                """
+                sql = normalized_users_cte + """
+                    SELECT COUNT(*) FROM normalized_users
+                    WHERE created_ts >= to_timestamp(%s)
+                    AND created_ts <= to_timestamp(%s)
                 """
                 c.execute(sql, (start_timestamp, end_timestamp))
             else:
@@ -1373,14 +1382,12 @@ def get_conversion_funnel(
 
             # 2. 有登录记录的用户数
             if DB_TYPE == 'postgresql':
-                safe_created_expr = _build_safe_timestamp_expr('u.created_at')
-                sql = f"""
-                    SELECT COUNT(DISTINCT u.id)
-                    FROM users u
-                    INNER JOIN user_login_log l ON u.id = l.user_id
-                    WHERE u.role != 'admin'
-                    AND {safe_created_expr} >= to_timestamp(%s)
-                    AND {safe_created_expr} <= to_timestamp(%s)
+                sql = normalized_users_cte + """
+                    SELECT COUNT(DISTINCT nu.id)
+                    FROM normalized_users nu
+                    INNER JOIN user_login_log l ON nu.id = l.user_id
+                    WHERE nu.created_ts >= to_timestamp(%s)
+                    AND nu.created_ts <= to_timestamp(%s)
                 """
                 c.execute(sql, (start_timestamp, end_timestamp))
             else:
@@ -1401,16 +1408,12 @@ def get_conversion_funnel(
             calculated_users = 0
             if has_behavior_log:
                 if DB_TYPE == 'postgresql':
-                    safe_created_expr = _build_safe_timestamp_expr(
-                        'u.created_at'
-                    )
-                    sql = f"""
-                        SELECT COUNT(DISTINCT u.id)
-                        FROM users u
-                        INNER JOIN user_behavior_log b ON u.id = b.user_id
-                        WHERE u.role != 'admin'
-                        AND {safe_created_expr} >= to_timestamp(%s)
-                        AND {safe_created_expr} <= to_timestamp(%s)
+                    sql = normalized_users_cte + """
+                        SELECT COUNT(DISTINCT nu.id)
+                        FROM normalized_users nu
+                        INNER JOIN user_behavior_log b ON nu.id = b.user_id
+                        WHERE nu.created_ts >= to_timestamp(%s)
+                        AND nu.created_ts <= to_timestamp(%s)
                         AND b.behavior_type = 'calculation'
                     """
                     params = (start_timestamp, end_timestamp)
@@ -1434,16 +1437,12 @@ def get_conversion_funnel(
 
             # 4. 有支付记录的用户数
             if DB_TYPE == 'postgresql':
-                safe_created_expr = _build_safe_timestamp_expr(
-                    'u.created_at'
-                )
-                sql = f"""
-                    SELECT COUNT(DISTINCT u.id)
-                    FROM users u
-                    INNER JOIN payment_orders p ON u.id = p.user_id
-                    WHERE u.role != 'admin'
-                    AND {safe_created_expr} >= to_timestamp(%s)
-                    AND {safe_created_expr} <= to_timestamp(%s)
+                sql = normalized_users_cte + """
+                    SELECT COUNT(DISTINCT nu.id)
+                    FROM normalized_users nu
+                    INNER JOIN payment_orders p ON nu.id = p.user_id
+                    WHERE nu.created_ts >= to_timestamp(%s)
+                    AND nu.created_ts <= to_timestamp(%s)
                     AND p.status = 'SUCCESS'
                 """
                 c.execute(sql, (start_timestamp, end_timestamp))
@@ -1467,16 +1466,12 @@ def get_conversion_funnel(
                 c, 'payment_orders', 'order_type')
             if has_order_type:
                 if DB_TYPE == 'postgresql':
-                    safe_created_expr = _build_safe_timestamp_expr(
-                        'u.created_at'
-                    )
-                    sql = f"""
-                        SELECT COUNT(DISTINCT u.id)
-                        FROM users u
-                        INNER JOIN payment_orders p ON u.id = p.user_id
-                        WHERE u.role != 'admin'
-                        AND {safe_created_expr} >= to_timestamp(%s)
-                        AND {safe_created_expr} <= to_timestamp(%s)
+                    sql = normalized_users_cte + """
+                        SELECT COUNT(DISTINCT nu.id)
+                        FROM normalized_users nu
+                        INNER JOIN payment_orders p ON nu.id = p.user_id
+                        WHERE nu.created_ts >= to_timestamp(%s)
+                        AND nu.created_ts <= to_timestamp(%s)
                         AND p.status = 'SUCCESS'
                         AND p.order_type = 'upgrade'
                     """
@@ -1502,16 +1497,12 @@ def get_conversion_funnel(
             else:
                 # 如果order_type字段不存在，通过is_upgrade字段判断
                 if DB_TYPE == 'postgresql':
-                    safe_created_expr = _build_safe_timestamp_expr(
-                        'u.created_at'
-                    )
-                    sql = f"""
-                        SELECT COUNT(DISTINCT u.id)
-                        FROM users u
-                        INNER JOIN payment_orders p ON u.id = p.user_id
-                        WHERE u.role != 'admin'
-                        AND {safe_created_expr} >= to_timestamp(%s)
-                        AND {safe_created_expr} <= to_timestamp(%s)
+                    sql = normalized_users_cte + """
+                        SELECT COUNT(DISTINCT nu.id)
+                        FROM normalized_users nu
+                        INNER JOIN payment_orders p ON nu.id = p.user_id
+                        WHERE nu.created_ts >= to_timestamp(%s)
+                        AND nu.created_ts <= to_timestamp(%s)
                         AND p.status = 'SUCCESS'
                         AND p.is_upgrade = 1
                     """
