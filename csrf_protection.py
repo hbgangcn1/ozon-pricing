@@ -8,7 +8,7 @@ import secrets
 import hashlib
 import time
 import streamlit as st
-from typing import Optional
+from typing import Optional, Tuple
 
 
 class CSRFProtection:
@@ -62,7 +62,7 @@ class CSRFProtection:
         return st.session_state[CSRFProtection.CSRF_TOKEN_KEY]
 
     @staticmethod
-    def validate_csrf_token(token: Optional[str]) -> tuple[bool, str]:
+    def validate_csrf_token(token: Optional[str]) -> Tuple[bool, str]:
         """
         验证CSRF token
 
@@ -119,6 +119,6 @@ def get_csrf_token() -> str:
     return CSRFProtection.get_csrf_token()
 
 
-def validate_csrf_token(token: Optional[str]) -> tuple[bool, str]:
+def validate_csrf_token(token: Optional[str]) -> Tuple[bool, str]:
     """验证CSRF token（便捷函数）"""
     return CSRFProtection.validate_csrf_token(token)
