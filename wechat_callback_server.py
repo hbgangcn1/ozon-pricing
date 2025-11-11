@@ -4,15 +4,18 @@
 用于接收微信支付的异步通知
 """
 
-from flask import Flask, request, jsonify
-import os
-import logging
-import threading
 import importlib
 import json
+import logging
+import os
+import threading
 from queue import Queue
-from payment_handler import payment_handler, PaymentHandler
-from hmac_utils import verify_signature, get_callback_secret
+from typing import Optional
+
+from flask import Flask, jsonify, request
+
+from hmac_utils import get_callback_secret, verify_signature
+from payment_handler import PaymentHandler, payment_handler
 from rate_limiter import get_limiter
 from utils import mask_sensitive
 
@@ -463,7 +466,43 @@ def queue_stats_endpoint():
     })
 
 
+def get_callback_port() -> int:
+    env_port: Optional[str] = os.getenv("WECHAT_CALLBACK_PORT")
+    if env_port:
+        try:
+            return int(env_port)
+        except (TypeError, ValueError):
+            logger.warning(
+                "环境变量 WECHAT_CALLBACK_PORT=%s 非法，回退使用默认端口 8081",
+                env_port,
+            )
+    return 8081
+
+
+def run_callback_server(
+    host: str = '0.0.0.0',
+    port: Optional[int] = None,
+) -> None:
+    """
+    启动微信支付回调服务。
+
+    在嵌入式模式（由 Streamlit 调用）与独立脚本运行时复用。
+    """
+    from werkzeug.serving import WSGIRequestHandler
+
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
+    WSGIRequestHandler.protocol_version = "HTTP/1.1"
+    if port is None:
+        port = get_callback_port()
+    app.run(
+        host=host,
+        port=port,
+        debug=False,
+        use_reloader=False,
+    )  # nosec B104
+
+
 if __name__ == '__main__':
     # 在生产环境中，建议使用 gunicorn 等 WSGI 服务器
     # 微信支付回调需要接受外网请求，必须绑定0.0.0.0
-    app.run(host='0.0.0.0', port=8081, debug=False)  # nosec B104
+    run_callback_server()

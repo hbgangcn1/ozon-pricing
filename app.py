@@ -7214,95 +7214,28 @@ def restart_gunicorn_callback_server():
 
 def start_wechat_callback_server():
     """启动微信支付回调服务器（后台线程）"""
-    if not st.session_state.get('callback_server_started', False):
-        try:
-            from flask import Flask, request, jsonify
-            import logging
-            from payment_handler import payment_handler
+    if st.session_state.get('callback_server_started', False):
+        return
 
-            # 配置日志
-            logging.basicConfig(level=logging.INFO)
-            logger = logging.getLogger(__name__)
+    try:
+        from wechat_callback_server import (  # type: ignore
+            get_callback_port,
+            run_callback_server,
+        )
 
-            app = Flask(__name__)
+        port = get_callback_port()
+        threading.Thread(
+            target=run_callback_server,
+            kwargs={'host': '0.0.0.0', 'port': port},
+            daemon=True,
+            name="WechatCallbackServer",
+        ).start()
 
-            @app.route('/wechat/notify', methods=['POST'])
-            def wechat_notify():
-                """接收微信支付回调通知（v3 API）"""
-                try:
-                    # 获取请求头信息
-                    headers = {
-                        'Wechatpay-Timestamp': request.headers.get(
-                            'Wechatpay-Timestamp', ''
-                        ),
-                        'Wechatpay-Nonce': request.headers.get(
-                            'Wechatpay-Nonce', ''
-                        ),
-                        'Wechatpay-Signature': request.headers.get(
-                            'Wechatpay-Signature', ''
-                        ),
-                    }
-
-                    # 获取请求体
-                    body = request.get_data(as_text=True)
-                    logger.info(f"收到微信支付通知: {body}")
-                    logger.info(f"回调请求头: {dict(request.headers)}")
-
-                    # 构建通知数据
-                    notify_data = {
-                        'headers': headers,
-                        'body': body
-                    }
-
-                    # 处理通知
-                    result = payment_handler.process_wechat_notify(notify_data)
-                    logger.info(f"支付通知处理结果: {result}")
-
-                    if result['success']:
-                        # 返回成功响应
-                        return jsonify({
-                            'code': 'SUCCESS',
-                            'message': 'OK'
-                        }), 200
-                    else:
-                        # 返回失败响应
-                        logger.error(f"支付通知处理失败: {result['message']}")
-                        return jsonify({
-                            'code': 'FAIL',
-                            'message': result['message']
-                        }), 400
-
-                except Exception as error:
-                    logger.error(f"处理微信支付通知异常: {str(error)}")
-                    return jsonify({
-                        'code': 'FAIL',
-                        'message': f'系统错误: {str(error)}'
-                    }), 500
-
-            @app.route('/health')
-            def health_check():
-                """健康检查接口"""
-                return {"status": "ok", "message": "微信支付回调服务运行正常"}
-
-            # 在后台线程中启动Flask应用
-            def run_server():
-                # 微信支付回调服务器需要接受外网请求，必须绑定0.0.0.0
-                app.run(
-                    host='0.0.0.0', port=8081, debug=False,  # nosec B104
-                    use_reloader=False
-                )
-
-            server_thread = threading.Thread(target=run_server, daemon=True)
-            server_thread.start()
-
-            st.session_state.callback_server_started = True
-            print("✅ 微信支付回调服务器已启动 (端口: 8081)")
-
-        except ImportError:
-            print("⚠️ Flask未安装，无法启动微信支付回调服务器")
-            print("📝 请运行: pip install flask")
-        except Exception as ex:
-            print(f"⚠️ 启动微信支付回调服务器失败: {ex}")
+        st.session_state['callback_server_started'] = True
+        print(f"✅ 微信支付回调服务器已启动 (端口: {port})")
+    except Exception as exc:
+        print(f"⚠️ 启动微信支付回调服务器失败: {exc}")
+        st.session_state['callback_server_started'] = False
 
 
 def show_admin_statistics():
