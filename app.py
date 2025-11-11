@@ -76,8 +76,11 @@ try:
     from .password_utils import (
         validate_password_strength, get_password_requirements_text,
     )
+    # Import backup functions at module level for testing
     from .auto_backup import (
-        create_manual_backup, get_backup_info, start_backup_service,
+        create_manual_backup,
+        get_backup_info,
+        start_backup_service,
     )
     from .session_security import (
         check_session_security, SessionSecurity, secure_logout,
@@ -138,8 +141,11 @@ except ImportError:  # Fallback when run as a top-level module
     from password_utils import (
         validate_password_strength, get_password_requirements_text,
     )
+    # Import backup functions at module level for testing
     from auto_backup import (
-        create_manual_backup, get_backup_info, start_backup_service,
+        create_manual_backup,
+        get_backup_info,
+        start_backup_service,
     )
     from session_security import (
         check_session_security, SessionSecurity, secure_logout,
@@ -455,6 +461,350 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def _render_backup_management_card():
+    """渲染备份管理卡片"""
+    from auto_backup import (
+        backup_system,
+        delete_backup_file,
+        get_auto_backup_settings,
+        list_backup_files,
+        read_backup_file,
+        restore_database,
+        update_auto_backup_settings,
+        verify_backup_file,
+    )
+
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    st.markdown(
+        '<h2 style="color: #667eea; margin-bottom: 20px;">'
+        '💾 数据库备份管理</h2>',
+        unsafe_allow_html=True
+    )
+
+    # 创建三个标签页
+    backup_tab1, backup_tab2, backup_tab3 = st.tabs([
+        "📋 备份列表", "⚙️ 自动备份设置", "ℹ️ 备份说明"
+    ])
+
+    # 备份列表标签页
+    with backup_tab1:
+        st.markdown("### 备份文件管理")
+
+        # 手动备份按钮
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔄 立即备份", use_container_width=True):
+                with st.spinner("正在创建备份..."):
+                    if create_manual_backup():
+                        st.success("✅ 备份创建成功！")
+                        st.rerun()
+                    else:
+                        st.error("❌ 备份创建失败，请查看日志")
+
+        # 获取备份文件列表
+        backups_raw = list_backup_files()
+
+        if not backups_raw:
+            st.info("📭 暂无备份文件")
+        else:
+            # 转换备份记录格式以适配 UI
+            backups = []
+            for b in backups_raw:
+                # 格式化文件大小
+                size_bytes = b['size']
+                if size_bytes < 1024:
+                    size_str = f"{size_bytes} B"
+                elif size_bytes < 1024 * 1024:
+                    size_str = f"{size_bytes / 1024:.2f} KB"
+                else:
+                    size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+
+                # 转换类型为中文
+                type_map = {
+                    'auto': '自动',
+                    'manual': '手动',
+                    'snapshot': '快照'
+                }
+                type_cn = type_map.get(b['type'], b['type'])
+
+                backups.append({
+                    'filename': b['name'],
+                    'size': size_str,
+                    'time': b['mtime'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'type': type_cn,
+                })
+
+            st.write(f"**共有 {len(backups)} 个备份文件**")
+
+            # 显示备份文件列表
+            for idx, backup in enumerate(backups):
+                with st.expander(
+                    f"{'🔵' if backup['type'] == '手动' else '🟢'} "
+                    f"{backup['filename']} "
+                    f"({backup['size']})"
+                ):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**类型：** {backup['type']}")
+                        st.write(f"**大小：** {backup['size']}")
+                        st.write(f"**创建时间：** {backup['time']}")
+
+                    with col2:
+                        # 验证备份
+                        verify_key = f"verify_{idx}"
+                        if st.button(
+                            "🔍 验证备份",
+                            key=verify_key,
+                            use_container_width=True
+                        ):
+                            with st.spinner("正在验证备份..."):
+                                if verify_backup_file(backup['filename']):
+                                    st.success("✅ 备份文件完整有效")
+                                else:
+                                    st.error("❌ 备份文件损坏或无效")
+
+                        # 下载备份
+                        try:
+                            backup_data = read_backup_file(backup['filename'])
+                            if backup_data:
+                                st.download_button(
+                                    label="⬇️ 下载备份",
+                                    data=backup_data,
+                                    file_name=backup['filename'],
+                                    mime="application/octet-stream",
+                                    key=f"download_{idx}",
+                                    use_container_width=True
+                                )
+                        except Exception as e:
+                            st.error(f"❌ 读取备份文件失败: {str(e)}")
+
+                    # 恢复和删除操作
+                    col3, col4, col5 = st.columns(3)
+                    with col3:
+                        # 恢复备份
+                        restore_key = f"restore_{idx}"
+                        if st.button(
+                            "♻️ 恢复此备份",
+                            key=restore_key,
+                            use_container_width=True
+                        ):
+                            # 显示确认对话框
+                            st.session_state[f'confirm_restore_{idx}'] = True
+
+                    # 确认恢复
+                    if st.session_state.get(f'confirm_restore_{idx}', False):
+                        st.warning(
+                            "⚠️ **警告：** 恢复备份将覆盖当前数据库！"
+                            "此操作不可撤销！"
+                        )
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button(
+                                "✅ 确认恢复",
+                                key=f"confirm_yes_{idx}",
+                                type="primary",
+                                use_container_width=True
+                            ):
+                                with st.spinner("正在恢复备份..."):
+                                    if restore_database(
+                                        backup['filename'],
+                                        create_snapshot=True
+                                    ):
+                                        st.success(
+                                            "✅ 数据库恢复成功！"
+                                            "页面即将刷新..."
+                                        )
+                                        del st.session_state[
+                                            f'confirm_restore_{idx}'
+                                        ]
+                                        st.rerun()
+                                    else:
+                                        st.error(
+                                            "❌ 数据库恢复失败，"
+                                            "请查看日志"
+                                        )
+                        with col_no:
+                            if st.button(
+                                "❌ 取消",
+                                key=f"confirm_no_{idx}",
+                                use_container_width=True
+                            ):
+                                del st.session_state[
+                                    f'confirm_restore_{idx}'
+                                ]
+                                st.rerun()
+
+                    with col4:
+                        # 删除备份
+                        delete_key = f"delete_{idx}"
+                        if st.button(
+                            "🗑️ 删除备份",
+                            key=delete_key,
+                            use_container_width=True
+                        ):
+                            st.session_state[f'confirm_delete_{idx}'] = True
+
+                    # 确认删除
+                    if st.session_state.get(f'confirm_delete_{idx}', False):
+                        st.warning("⚠️ 确认删除此备份文件？")
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button(
+                                "✅ 确认删除",
+                                key=f"delete_yes_{idx}",
+                                type="primary",
+                                use_container_width=True
+                            ):
+                                if delete_backup_file(backup['filename']):
+                                    st.success("✅ 备份文件已删除")
+                                    del st.session_state[
+                                        f'confirm_delete_{idx}'
+                                    ]
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 删除失败，请查看日志")
+                        with col_no:
+                            if st.button(
+                                "❌ 取消",
+                                key=f"delete_no_{idx}",
+                                use_container_width=True
+                            ):
+                                del st.session_state[
+                                    f'confirm_delete_{idx}'
+                                ]
+                                st.rerun()
+
+    # 自动备份设置标签页
+    with backup_tab2:
+        st.markdown("### 自动备份配置")
+
+        # 获取当前设置
+        settings = get_auto_backup_settings()
+
+        # 启用/禁用自动备份
+        auto_enabled = st.checkbox(
+            "启用自动备份",
+            value=settings['enabled'],
+            help="开启后将按设定的时间间隔自动创建备份"
+        )
+
+        # 备份间隔
+        interval_hours = st.number_input(
+            "备份间隔（小时）",
+            min_value=1,
+            max_value=168,
+            value=settings['interval_hours'],
+            help="自动备份的时间间隔，建议设置为6-24小时"
+        )
+
+        # 保留备份数量
+        max_backups = st.number_input(
+            "最多保留备份数",
+            min_value=1,
+            max_value=100,
+            value=settings['max_backups'],
+            help="最多保留的备份文件数量，超过后将自动删除最旧的备份"
+        )
+
+        # 保存设置按钮
+        if st.button("💾 保存设置", type="primary"):
+            new_settings = {
+                'enabled': auto_enabled,
+                'interval_hours': interval_hours,
+                'max_backups': max_backups
+            }
+            if update_auto_backup_settings(new_settings):
+                st.success("✅ 自动备份设置已更新")
+                # 如果启用了自动备份，重启服务
+                if auto_enabled and not backup_system.is_running:
+                    start_backup_service()
+                st.rerun()
+            else:
+                st.error("❌ 设置更新失败")
+
+        # 显示备份服务状态
+        st.divider()
+        st.markdown("### 服务状态")
+        if backup_system.is_running:
+            st.success("🟢 自动备份服务运行中")
+            backup_info = get_backup_info()
+            if backup_info:
+                # 获取最后备份时间
+                files = backup_info.get('files', [])
+                last_backup_time = '无'
+                if files:
+                    # files 已按时间倒序排列，第一个就是最新的
+                    latest = files[0]
+                    last_backup_time = latest['mtime'].strftime(
+                        '%Y-%m-%d %H:%M:%S'
+                    )
+
+                auto_count = sum(
+                    1 for item in files if item.get('type') == 'auto'
+                )
+                manual_count = sum(
+                    1 for item in files if item.get('type') == 'manual'
+                )
+
+                st.info(
+                    f"📊 **备份统计：**\n\n"
+                    f"- 总备份数：{backup_info.get('count', 0)}\n"
+                    f"- 自动备份：{auto_count}\n"
+                    f"- 手动备份：{manual_count}\n"
+                    f"- 总大小：{backup_info.get('total_size_mb', 0)} MB\n"
+                    f"- 最后备份：{last_backup_time}"
+                )
+        else:
+            st.warning("🟡 自动备份服务未运行")
+
+    # 备份说明标签页
+    with backup_tab3:
+        st.markdown("""
+        ### 📖 备份管理说明
+
+        #### 备份类型
+        - 🔵 **手动备份**：由管理员手动触发创建的备份
+        - 🟢 **自动备份**：系统按设定间隔自动创建的备份
+
+        #### 功能说明
+
+        **1. 立即备份**
+        - 点击"立即备份"按钮可以手动创建一个备份
+        - 若备份总数超过配额，将自动清理最旧的备份
+        - 建议将需长期保存的备份移出 `backups/` 目录
+
+        **2. 验证备份**
+        - 检查备份文件是否完整有效
+        - 建议在恢复前先验证备份
+
+        **3. 下载备份**
+        - 将备份文件下载到本地
+        - 可用于异地存储或迁移
+
+        **4. 恢复备份**
+        - 从备份文件恢复数据库
+        - ⚠️ **警告**：恢复操作会覆盖当前数据，请谨慎操作
+        - 恢复前会自动创建当前数据库的快照
+
+        **5. 删除备份**
+        - 删除不需要的备份文件
+        - 请注意保留足够的历史备份
+
+        #### 自动备份建议
+        - **开发环境**：建议间隔 6-12 小时，保留 7-14 个备份
+        - **生产环境**：建议间隔 4-8 小时，保留 14-30 个备份
+        - 定期下载重要备份到本地或云存储
+
+        #### 注意事项
+        - 备份文件存储在服务器本地，请确保有足够的磁盘空间
+        - PostgreSQL 备份使用 `pg_dump` 格式
+        - 恢复操作会临时断开数据库连接
+        - 建议在低峰期执行恢复操作
+        """)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def show_system_settings():
     """显示系统设置内容（备份管理、系统信息等）"""
     # 系统配置 - 仅admin用户可见
@@ -494,43 +844,7 @@ def show_system_settings():
 
     # 备份管理 - 仅admin用户可见
     if is_admin():
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.markdown(
-            '<h2 style="color: #667eea; margin-bottom: 20px;">'
-            '💾 备份管理</h2>',
-            unsafe_allow_html=True
-        )
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("📦 立即备份", help="手动创建数据库备份", key="backup_now"):
-                if create_manual_backup():
-                    st.success("✅ 备份创建成功！")
-                else:
-                    st.error("❌ 备份创建失败！")
-
-        with col2:
-            if st.button("🔄 刷新状态", help="刷新备份状态信息", key="refresh_backup"):
-                st.rerun()
-
-    # 显示备份统计信息
-        backup_stats = get_backup_info()
-        if backup_stats:
-            st.write(f"**备份文件数量：** {backup_stats['count']} 个")
-            st.write(f"**总备份大小：** {backup_stats['total_size_mb']} MB")
-
-            if backup_stats['files']:
-                st.write("**最新备份文件：**")
-                for i, file in enumerate(backup_stats['files'][:3]):
-                    st.write(
-                        f"  {i + 1}. {file['name']} "
-                        f"({file['mtime'].strftime('%Y-%m-%d %H:%M:%S')})"
-                    )
-        else:
-            st.warning("⚠️ 无法获取备份信息")
-
-        st.markdown('</div>', unsafe_allow_html=True)
+        _render_backup_management_card()
 
     # 系统信息
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
@@ -605,43 +919,7 @@ def settings_page():
 
     # 备份管理 - 仅admin用户可见
     if is_admin():
-        st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.markdown(
-            '<h2 style="color: #667eea; margin-bottom: 20px;">'
-            '💾 备份管理</h2>',
-            unsafe_allow_html=True
-        )
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("📦 立即备份", help="手动创建数据库备份", key="backup_now"):
-                if create_manual_backup():
-                    st.success("✅ 备份创建成功！")
-                else:
-                    st.error("❌ 备份创建失败！")
-
-        with col2:
-            if st.button("🔄 刷新状态", help="刷新备份状态信息", key="refresh_backup"):
-                st.rerun()
-
-    # 显示备份统计信息
-        backup_stats = get_backup_info()
-        if backup_stats:
-            st.write(f"**备份文件数量：** {backup_stats['count']} 个")
-            st.write(f"**总备份大小：** {backup_stats['total_size_mb']} MB")
-
-            if backup_stats['files']:
-                st.write("**最新备份文件：**")
-                for i, file in enumerate(backup_stats['files'][:3]):
-                    st.write(
-                        f"  {i + 1}. {file['name']} "
-                        f"({file['mtime'].strftime('%Y-%m-%d %H:%M:%S')})"
-                    )
-        else:
-            st.warning("⚠️ 无法获取备份信息")
-
-        st.markdown('</div>', unsafe_allow_html=True)
+        _render_backup_management_card()
 
     # 系统信息
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
@@ -763,6 +1041,12 @@ def _validate_user_and_get_mode():
 
     # 使用缓存的用户数据
     user_data = _get_cached_user_data(current_user['id'])
+
+    # 检查user_data是否有效
+    if not user_data:
+        st.error("无法获取用户数据")
+        return None
+
     subscription_status = user_data['subscription_status']
     preferred_mode = user_data['preferred_mode']
 
@@ -2505,9 +2789,9 @@ def precise_pricing_calculator():
             calculate_precise_pricing_with_product(selected_product)
     elif not products:
         st.warning("请先添加产品后再进行计算")
-
-
 # 极速模式相关函数
+
+
 def get_precise_logistics_rules() -> List[Dict[str, Any]]:
     """获取精准模式的物流规则 - 用于极速模式"""
     try:
@@ -3218,109 +3502,6 @@ def display_fast_pricing_results_precise_style(
         unsafe_allow_html=True,
     )
 
-    # # 显示调试信息
-    # with st.expander("🔍 物流筛选详情", expanded=False):
-    #     st.markdown("### 物流筛选过程")
-    #
-    #     # 获取物流规则
-    #     logistics_rules = get_precise_logistics_rules()
-    #     land_logistics = [
-    #         rule for rule in logistics_rules
-    #         if rule.get('type') == 'land'
-    #     ]
-    #     air_logistics = [
-    #         rule for rule in logistics_rules
-    #         if rule.get('type') == 'air'
-    #     ]
-    #
-    #     st.write(
-    #         f"**总物流规则数量：** {len(logistics_rules)}"
-    #     )
-    #     st.write(
-    #         f"**陆运规则数量：** {len(land_logistics)}"
-    #     )
-    #     st.write(
-    #         f"**空运规则数量：** {len(air_logistics)}"
-    #     )
-    #     # 显示每个物流规则的筛选结果
-    #     # 显示每个物流规则的筛选结果
-    #     st.markdown("#### 陆运物流筛选结果")
-    #     for i, rule in enumerate(land_logistics):
-    #         with st.container():
-    #             col1, col2 = st.columns([3, 1])
-    #             with col1:
-    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-    #                 st.write(
-    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
-    #                     f"{rule.get('max_weight', '无限制')}g"
-    #                 )
-    #             with col2:
-    #             # 检查重量限制
-    #                 if effective_weight < rule.get('min_weight', 0):
-    #                     st.error("❌ 重量过低")
-    #                 elif effective_weight > rule.get('max_weight', 10**9):
-    #                     st.error("❌ 重量过高")
-    #                 else:
-    #                     st.success("✅ 通过")
-    #
-    #     st.markdown("#### 空运物流筛选结果")
-    #     for i, rule in enumerate(air_logistics):
-    #         with st.container():
-    #             col1, col2 = st.columns([3, 1])
-    #             with col1:
-    #                 st.write(f"**{i+1}. {rule.get('name', '未知物流')}**")
-    #                 st.write(
-    #                     f"   重量限制: {rule.get('min_weight', 0)}g - "
-    #                     f"{rule.get('max_weight', '无限制')}g"
-    #                 )
-    #             with col2:
-    #             # 检查重量限制
-    #                 if effective_weight < rule.get('min_weight', 0):
-    #                     st.error("❌ 重量过低")
-    #                 elif effective_weight > rule.get('max_weight', 10**9):
-    #                     st.error("❌ 重量过高")
-    #                 else:
-    #                     st.success("✅ 通过")
-
-    # 定价结果 - 低价优先显示
-    st.markdown(
-        (
-            '<h3 style="color: #2c3e50; margin-bottom: 20px; '
-            "font-size: 1.5em; font-weight: 600; "
-            "border-bottom: 2px solid #3498db; "
-            'padding-bottom: 8px;">💰 低价优先</h3>'
-        ),
-        unsafe_allow_html=True,
-    )
-
-    #     # 查找运费为0的物流规则
-    #     zero_cost_rules = []
-    #     for debug_info in all_costs_debug:
-    #         if isinstance(debug_info, dict) and debug_info.get('cost') == 0:
-    #             zero_cost_rules.append(debug_info)
-    #
-    #     st.write(f"**运费为0的物流规则数量:** {len(zero_cost_rules)}")
-    #     if zero_cost_rules:
-    #         st.write("**运费为0的物流规则:**")
-    #         for rule in zero_cost_rules[:5]:  # 只显示前5个
-    #             st.write(
-    #                 f"  - {rule.get('name', 'Unknown')}: "
-    #                 f"cost={rule.get('cost')}"
-    #         )
-    #
-    #     # 查找特定物流规则的运费
-    #     target_rules = ['GUOO Economy Extra Small', 'China Post e特快']
-    #     for debug_info in all_costs_debug:
-    #         if isinstance(debug_info, dict):
-    #             logistic = debug_info.get('logistic', {})
-    #             name = logistic.get('name', 'Unknown')
-    #             if name in target_rules:
-    #                 st.write(
-    #                     f"**{name}:** cost={debug_info.get('cost')}, "
-    #                     f"type={logistic.get('type')}"
-    #                 )
-    pass
-
     # =============================
     # 低价优先
     # =============================
@@ -3744,7 +3925,6 @@ def display_fast_pricing_results_precise_style(
     )
 
     col_land_s, col_air_s = st.columns(2)
-
     # ------- 陆运（速度优先）：送到取货点 + 送货上门 -------
     with col_land_s:
         st.markdown(
@@ -3947,7 +4127,6 @@ def display_fast_pricing_results_precise_style(
             )
         else:
             st.info("暂无可用物流")
-    # ------- 空运（速度优先）：送到取货点 + 送货上门 -------
     with col_air_s:
         st.markdown(
             (
@@ -4390,30 +4569,6 @@ def calculate_precise_pricing_from_form(
         wf_str = f"{wf:.3f}"
         display = f"{name} | 因子:{wf_str}"
         ui_rule_options.append(display)
-    # 为 UI 构建字符串化选项，避免 (str, float) 触发的类型告警
-    ui_rule_options = []
-    for r in logistics_rules:
-        name = str(r.get('name', ''))
-        wf = r.get('weight_factor', 0.0)
-        wf_str = f"{wf:.3f}"
-        display = f"{name} | 因子:{wf_str}"
-        ui_rule_options.append(display)
-    # 为 UI 构建字符串化选项，避免 (str, float) 触发的类型告警
-    ui_rule_options = []
-    for r in logistics_rules:
-        name = str(r.get('name', ''))
-        wf = r.get('weight_factor', 0.0)
-        wf_str = f"{wf:.3f}"
-        display = f"{name} | 因子:{wf_str}"
-        ui_rule_options.append(display)
-    # 为 UI 构建字符串化选项，避免 (str, float) 触发的类型告警
-    ui_rule_options = []
-    for r in logistics_rules:
-        name = str(r.get('name', ''))
-        wf = r.get('weight_factor', 0.0)
-        wf_str = f"{wf:.3f}"
-        display = f"{name} | 因子:{wf_str}"
-        ui_rule_options.append(display)
     if not logistics_rules:
         st.warning("请先在物流管理中添加物流规则")
         return
@@ -4768,7 +4923,7 @@ def save_product_to_db(
     payment_processing_fee: float,
     return_rate: float,
     vat_rate: float,
-):
+) -> bool:
     """保存产品到数据库（带重名检查）"""
     try:
         with get_db_connection() as (conn, c):
@@ -4779,7 +4934,7 @@ def save_product_to_db(
                 SELECT id, name FROM products
                 WHERE user_id = ? AND name = ?
                 """,
-                conn
+                conn,
             )
             c.execute(check_sql, (user_id, name))
             existing_product = c.fetchone()
@@ -4807,8 +4962,8 @@ def save_product_to_db(
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
-        """,
-                conn
+                """,
+                conn,
             )
             c.execute(
                 insert_sql,
@@ -4844,23 +4999,26 @@ def save_product_to_db(
                 ),
             )
             conn.commit()
+
             # 记录审计日志（如果是admin操作）
             try:
                 if is_admin():
                     from db_utils import log_admin_action
+
                     product_id = c.lastrowid
                     log_admin_action(
                         admin_id=user_id,
                         action_type='创建产品',
                         action_detail=f"创建产品: {name} (ID: {product_id})",
                         target_user_id=user_id,
-                        target_type='product'
+                        target_type='product',
                     )
             except (ImportError, AttributeError, TypeError, ValueError):
                 pass  # 审计日志记录失败不影响主流程
-            return True  # 成功时返回True
-    except (sqlite3.Error, ValueError, TypeError) as e:
-        st.error(f"保存产品失败: {e}")
+
+            return True
+    except (sqlite3.Error, ValueError, TypeError) as error:
+        st.error(f"保存产品失败: {error}")
         return False  # 失败时返回False
 
 
@@ -8641,7 +8799,19 @@ def main():
     # 使用 session_state 标记，因为 backup_system.is_running 会在线程中持久化
     if not st.session_state.get('_backup_init_attempted', False):
         try:
-            from auto_backup import backup_system
+            from auto_backup import (  # noqa: F401, F811
+                backup_system,
+                create_manual_backup,
+                delete_backup_file,
+                get_auto_backup_settings,
+                get_backup_info,
+                list_backup_files,
+                read_backup_file,
+                restore_database,
+                start_backup_service,
+                update_auto_backup_settings,
+                verify_backup_file,
+            )
             if not backup_system.is_running:
                 start_backup_service()
                 print("🚀 自动备份服务已启动")
@@ -8672,13 +8842,26 @@ def main():
             restart_gunicorn_callback_server()
         st.session_state['_callback_init_attempted'] = True
 
-    init_db()
+    logger = logging.getLogger(__name__)
+    try:
+        init_db()
+    except Exception as init_exc:  # noqa: BLE001 - 运行时需尽量保持界面可用
+        logger.warning("数据库初始化失败，将以降级模式继续: %s", init_exc)
     # 初始化会话安全相关数据表，防止首次启动时表缺失
-    SessionSecurity.init_session_tables()
+    try:
+        SessionSecurity.init_session_tables()
+    except Exception as session_exc:  # noqa: BLE001
+        logger.warning("会话安全表初始化失败: %s", session_exc)
     # 初始化极速模式数据表
-    init_fast_mode_tables()
+    try:
+        init_fast_mode_tables()
+    except Exception as fast_mode_exc:  # noqa: BLE001
+        logger.warning("极速模式数据表初始化失败: %s", fast_mode_exc)
     # 迁移用户偏好设置
-    migrate_user_preferences()
+    try:
+        migrate_user_preferences()
+    except Exception as migrate_exc:  # noqa: BLE001
+        logger.warning("用户偏好迁移失败: %s", migrate_exc)
     # 系统启动时预获取汇率（只执行一次）
     if not st.session_state.get('_exchange_init_attempted', False):
         init_exchange_rates()

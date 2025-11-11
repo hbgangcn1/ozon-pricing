@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 import logging
 from contextlib import contextmanager
+from typing import Optional, TypedDict
 
 # 配置日志
 
@@ -120,14 +121,17 @@ class AutoBackupSystem:
         try:
             backup_files = []
             for fname in os.listdir(self.backup_dir):
-                if (
-                    fname.startswith("auto_backup_") and
-                    fname.endswith(".db")
+                if not fname.endswith(".db"):
+                    continue
+                if not (
+                    fname.startswith("auto_backup_")
+                    or fname.startswith("manual_backup_")
                 ):
-                    file_path = os.path.join(self.backup_dir, fname)
-                    backup_files.append(
-                        (file_path, os.path.getmtime(file_path))
-                    )
+                    continue
+                file_path = os.path.join(self.backup_dir, fname)
+                backup_files.append(
+                    (file_path, os.path.getmtime(file_path))
+                )
 
             # 按修改时间排序，保留最新的
             backup_files.sort(key=lambda x: x[1], reverse=True)
@@ -163,8 +167,10 @@ class AutoBackupSystem:
                     backup_files.append(
                         {
                             'name': fname,
+                            'path': file_path,
                             'size': size,
                             'mtime': datetime.fromtimestamp(mtime),
+                            'type': 'auto' if is_auto_backup else 'manual',
                         }
                     )
                     total_size += size
@@ -183,10 +189,34 @@ class AutoBackupSystem:
             logging.error(f"获取备份统计失败: {str(e)}")
             return None
 
+    def get_backup_file_path(self, backup_filename: str) -> str:
+        """获取备份文件的完整路径"""
+        return os.path.join(self.backup_dir, backup_filename)
+
+    def delete_backup(self, backup_filename: str) -> bool:
+        """删除指定的备份文件"""
+        backup_path = self.get_backup_file_path(backup_filename)
+        if not os.path.exists(backup_path):
+            logging.warning("尝试删除不存在的备份文件: %s", backup_filename)
+            return False
+        try:
+            os.remove(backup_path)
+            logging.info("🗑️ 已删除备份文件: %s", backup_filename)
+            return True
+        except OSError as exc:
+            logging.error("删除备份文件失败 %s: %s", backup_filename, exc)
+            return False
+
+    def read_backup_file(self, backup_filename: str) -> bytes:
+        """读取备份文件内容"""
+        backup_path = self.get_backup_file_path(backup_filename)
+        with open(backup_path, "rb") as file_obj:
+            return file_obj.read()
+
     def restore_from_backup(self, backup_filename):
         """从备份文件恢复数据库"""
         try:
-            backup_path = os.path.join(self.backup_dir, backup_filename)
+            backup_path = self.get_backup_file_path(backup_filename)
 
             if not os.path.exists(backup_path):
                 logging.error(f"备份文件不存在: {backup_filename}")
@@ -301,6 +331,7 @@ class AutoBackupSystem:
             # 验证备份
             if self.verify_backup(backup_path):
                 logging.info(f"✅ 手动备份成功: {backup_filename}")
+                self.cleanup_old_backups()
                 return True
             else:
                 logging.error(f"❌ 手动备份验证失败: {backup_filename}")
@@ -318,6 +349,11 @@ backup_system = AutoBackupSystem()
 
 def start_backup_service():
     """启动备份服务"""
+    settings = get_auto_backup_settings()
+    if not settings['enabled']:
+        logging.info("自动备份已禁用，跳过启动。")
+        return
+    backup_system.backup_interval_hours = settings['interval_hours']
     backup_system.start_auto_backup()
 
 
@@ -336,9 +372,246 @@ def get_backup_info():
     return backup_system.get_backup_stats()
 
 
-def restore_database(backup_filename):
-    """恢复数据库"""
+def list_backup_files():
+    """列出所有备份文件"""
+    stats = get_backup_info()
+    if not stats:
+        return []
+    return stats['files']
+
+
+def verify_backup_file(backup_filename: str) -> bool:
+    """验证指定备份文件"""
+    backup_path = backup_system.get_backup_file_path(backup_filename)
+    return backup_system.verify_backup(backup_path)
+
+
+def delete_backup_file(backup_filename: str) -> bool:
+    """删除指定备份文件"""
+    return backup_system.delete_backup(backup_filename)
+
+
+def read_backup_file(backup_filename: str) -> bytes:
+    """读取备份文件内容"""
+    return backup_system.read_backup_file(backup_filename)
+
+
+# noinspection PyUnusedLocal
+def restore_database(backup_filename, create_snapshot=True):
+    """恢复数据库
+
+    Args:
+        backup_filename: 备份文件名
+        create_snapshot: 是否在恢复前创建快照 (仅PostgreSQL支持)
+
+    Note:
+        create_snapshot 参数仅在 PostgreSQL 模式下有效。
+        在 SQLite 模式下此参数被忽略，保留是为了接口一致性。
+        PostgreSQL 模式下，此函数会被运行时替换。
+    """
     return backup_system.restore_from_backup(backup_filename)
+
+
+class AutoBackupSettings(TypedDict):
+    enabled: bool
+    interval_hours: int
+    max_backups: int
+
+
+def get_auto_backup_settings() -> AutoBackupSettings:
+    """获取自动备份配置"""
+    try:
+        from db_utils import get_system_config  # type: ignore
+    except ImportError:
+        get_system_config = None  # type: ignore
+
+    enabled = True
+    interval = backup_system.backup_interval_hours
+    max_backups = backup_system.max_backups
+
+    if get_system_config is not None:
+        enabled_raw = get_system_config('auto_backup_enabled', 'true')
+        interval_raw = get_system_config(
+            'auto_backup_interval_hours',
+            str(interval)
+        )
+        max_backups_raw = get_system_config(
+            'auto_backup_max_backups',
+            str(max_backups)
+        )
+        enabled = str(enabled_raw).lower() == 'true'
+        try:
+            interval_val = int(str(interval_raw))
+            if interval_val > 0:
+                interval = interval_val
+        except (TypeError, ValueError):
+            pass
+        try:
+            max_backups_val = int(str(max_backups_raw))
+            if max_backups_val > 0:
+                max_backups = max_backups_val
+        except (TypeError, ValueError):
+            pass
+
+    result: AutoBackupSettings = {
+        'enabled': enabled,
+        'interval_hours': interval,
+        'max_backups': max_backups,
+    }
+    return result
+
+
+def update_auto_backup_settings(
+    settings: Optional[AutoBackupSettings] = None,
+    *,
+    enabled: Optional[bool] = None,
+    interval_hours: Optional[int] = None,
+    max_backups: Optional[int] = None
+) -> bool:
+    """更新自动备份配置并实时应用
+
+    可以传递完整的设置字典或单独的关键字参数
+    """
+    try:
+        current_settings = get_auto_backup_settings()
+
+        # 如果传递了字典，从字典中获取值
+        if settings is not None:
+            new_enabled = settings.get('enabled', current_settings['enabled'])
+            new_interval = settings.get(
+                'interval_hours',
+                current_settings['interval_hours']
+            )
+            new_max_backups = settings.get(
+                'max_backups',
+                current_settings['max_backups']
+            )
+        else:
+            # 否则从关键字参数获取
+            new_enabled = (
+                current_settings['enabled'] if enabled is None else enabled
+            )
+            new_interval = (
+                current_settings['interval_hours']
+                if interval_hours is None
+                else max(1, interval_hours)
+            )
+            new_max_backups = (
+                current_settings['max_backups']
+                if max_backups is None
+                else max(1, max_backups)
+            )
+
+        try:
+            new_interval = max(1, int(new_interval))
+        except (TypeError, ValueError):
+            new_interval = current_settings['interval_hours']
+
+        try:
+            new_max_backups = max(1, int(new_max_backups))
+        except (TypeError, ValueError):
+            new_max_backups = current_settings['max_backups']
+
+        try:
+            from db_utils import set_system_config  # type: ignore
+        except ImportError:
+            set_system_config = None  # type: ignore
+
+        if set_system_config is not None:
+            set_system_config(
+                'auto_backup_enabled',
+                'true' if new_enabled else 'false',
+                '是否启用自动备份'
+            )
+            set_system_config(
+                'auto_backup_interval_hours',
+                str(new_interval),
+                '自动备份间隔（小时）'
+            )
+            set_system_config(
+                'auto_backup_max_backups',
+                str(new_max_backups),
+                '最多保留备份数量'
+            )
+
+        backup_was_running = backup_system.is_running
+        restart_required = (
+            backup_was_running
+            and new_interval != backup_system.backup_interval_hours
+        )
+
+        backup_system.backup_interval_hours = new_interval
+        backup_system.max_backups = new_max_backups
+
+        if not new_enabled and backup_was_running:
+            stop_backup_service()
+            return True
+
+        if new_enabled and not backup_was_running:
+            start_backup_service()
+            return True
+
+        if new_enabled and restart_required:
+            stop_backup_service()
+            start_backup_service()
+            return True
+
+        return True
+    except (KeyError, ValueError, TypeError, AttributeError) as e:
+        logging.error("更新自动备份设置失败: %s", e)
+        return False
+
+
+try:  # pragma: no cover - 避免导入错误导致初始化失败
+    from db_config import DB_TYPE  # type: ignore
+except ImportError:  # pragma: no cover
+    DB_TYPE = 'sqlite'  # type: ignore
+
+
+if DB_TYPE == 'postgresql':  # pragma: no cover - 运行时动态切换
+    from postgres_backup_service import (  # type: ignore
+        backup_system as _pg_backup_system,
+        create_manual_backup as _pg_create_manual_backup,
+        delete_backup_file as _pg_delete_backup_file,
+        get_auto_backup_settings as _pg_get_auto_backup_settings,
+        get_backup_info as _pg_get_backup_info,
+        list_backup_files as _pg_list_backup_files,
+        read_backup_file as _pg_read_backup_file,
+        restore_database as _pg_restore_database,
+        start_backup_service as _pg_start_backup_service,
+        stop_backup_service as _pg_stop_backup_service,
+        update_auto_backup_settings as _pg_update_auto_backup_settings,
+        verify_backup_file as _pg_verify_backup_file,
+    )
+
+    backup_system = _pg_backup_system  # type: ignore
+    create_manual_backup = (  # noqa: F811
+        _pg_create_manual_backup  # type: ignore
+    )
+    delete_backup_file = (  # noqa: F811
+        _pg_delete_backup_file  # type: ignore
+    )
+    get_auto_backup_settings = (  # noqa: F811
+        _pg_get_auto_backup_settings  # type: ignore
+    )
+    get_backup_info = _pg_get_backup_info  # type: ignore  # noqa: F811
+    list_backup_files = (  # noqa: F811
+        _pg_list_backup_files  # type: ignore
+    )
+    read_backup_file = _pg_read_backup_file  # type: ignore  # noqa: F811
+    restore_database = _pg_restore_database  # type: ignore  # noqa: F811
+    start_backup_service = (  # noqa: F811
+        _pg_start_backup_service  # type: ignore
+    )
+    stop_backup_service = (  # noqa: F811
+        _pg_stop_backup_service  # type: ignore
+    )
+    update_auto_backup_settings = (  # noqa: F811
+        _pg_update_auto_backup_settings  # type: ignore
+    )
+    verify_backup_file = (  # noqa: F811
+        _pg_verify_backup_file  # type: ignore
+    )
 
 
 if __name__ == "__main__":
@@ -352,15 +625,17 @@ if __name__ == "__main__":
         print("❌ 手动备份测试失败")
 
     # 获取备份信息
-    stats = get_backup_info()
-    if stats:
+    backup_stats = get_backup_info()
+    if backup_stats:
         print(
-            f"📊 备份统计: {stats['count']} 个备份文件，"
-            f"总大小: {stats['total_size_mb']} MB",
+            f"📊 备份统计: {backup_stats['count']} 个备份文件，"
+            f"总大小: {backup_stats['total_size_mb']} MB",
         )
-        print("📋 最新备份文件:")
-        for entry in stats['files'][:3]:
-            ts = entry['mtime'].strftime('%Y-%m-%d %H:%M:%S')
-            print(f"  - {entry['name']} ({ts})")
+        files = backup_stats.get('files')
+        if isinstance(files, list):
+            print("📋 最新备份文件:")
+            for entry in files[:3]:
+                ts = entry['mtime'].strftime('%Y-%m-%d %H:%M:%S')
+                print(f"  - {entry['name']} ({ts})")
 
     print("🎯 备份系统测试完成")
