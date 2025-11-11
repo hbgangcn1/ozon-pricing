@@ -1,9 +1,10 @@
-# 启动物流定价系统
-Write-Host "🚀 启动物流定价系统..." -ForegroundColor Green
-Write-Host ""
+# Streamlit 应用启动脚本
+# 添加 PostgreSQL bin 到 PATH
+$env:PATH += ";C:\Program Files\PostgreSQL\18\bin"
 
-# 激活虚拟环境
-& .\.venv\Scripts\Activate.ps1
+Write-Host "✅ 已添加 PostgreSQL 到 PATH"
+Write-Host "正在启动 Streamlit..."
 
-# 启动Streamlit应用
+# 激活虚拟环境并启动应用
+.\.venv\Scripts\Activate.ps1
 streamlit run app.py
