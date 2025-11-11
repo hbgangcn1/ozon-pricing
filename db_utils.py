@@ -87,6 +87,60 @@ def _is_postgresql_connection(conn):
         return False
 
 
+def _subscription_expires_to_datetime(
+    raw_value: Optional[Any],
+) -> Optional[datetime]:
+    """
+    将 subscription_expires 原始值转换为 datetime 对象。
+
+    支持整型/浮点型（Unix 时间戳）、仅包含数字的字符串、
+    以及已经是 ISO 格式的字符串。转换失败时返回 None。
+    """
+    if raw_value in (None, '', 0):
+        return None
+
+    try:
+        if isinstance(raw_value, (int, float)):
+            return datetime.fromtimestamp(int(raw_value))
+
+        cleaned = str(raw_value).strip()
+        if cleaned == '':
+            return None
+        if cleaned.isdigit():
+            return datetime.fromtimestamp(int(cleaned))
+        return datetime.fromisoformat(cleaned)
+    except (ValueError, TypeError, OSError):
+        return None
+
+
+def _serialize_subscription_expires(value: Optional[Any]) -> Optional[int]:
+    """
+    将外部传入的订阅到期值转换为 Unix 时间戳（秒）。
+
+    支持 datetime、ISO 字符串、整型/浮点型或数字字符串。
+    转换失败时返回 None。
+    """
+    if value in (None, '', 0):
+        return None
+
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+
+    cleaned = str(value).strip()
+    if cleaned == '':
+        return None
+    try:
+        return int(datetime.fromisoformat(cleaned).timestamp())
+    except ValueError:
+        try:
+            return int(float(cleaned))
+        except (ValueError, TypeError):
+            return None
+
+
 _TIMESTAMP_NUMERIC_PATTERN = r'^\d+(\.\d+)?$'
 _TIMESTAMP_DATE_PATTERN = r'^\d{4}-\d{2}-\d{2}$'
 _TIMESTAMP_FULL_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$'
@@ -4209,21 +4263,25 @@ def get_all_users(
             params.append(user_type_filter)
 
         if status_filter:
+            current_ts = int(time.time())
             if status_filter == 'expired':
                 where_conditions.append(
-                    "(subscription_end IS NOT NULL AND "
-                    "subscription_end < datetime('now'))"
+                    "(subscription_expires IS NOT NULL "
+                    "AND subscription_expires < ?)"
                 )
+                params.append(current_ts)
             elif status_filter == 'expiring_soon':
                 where_conditions.append(
-                    "(subscription_end IS NOT NULL AND subscription_end "
-                    "BETWEEN datetime('now') AND datetime('now', '+7 days'))"
+                    "(subscription_expires IS NOT NULL "
+                    "AND subscription_expires BETWEEN ? AND ?)"
                 )
+                params.extend([current_ts, current_ts + 7 * 24 * 3600])
             elif status_filter == 'active':
                 where_conditions.append(
-                    "(subscription_end IS NULL OR "
-                    "subscription_end >= datetime('now'))"
+                    "(subscription_expires IS NULL "
+                    "OR subscription_expires >= ?)"
                 )
+                params.append(current_ts)
 
         # 导入SQL安全工具
         try:
@@ -4245,7 +4303,7 @@ def get_all_users(
         offset = (page - 1) * per_page
         query = f"""
         SELECT id, username, email, role, user_type,
-               subscription_start, subscription_end,
+               subscription_start, subscription_expires,
                remaining_calculations, logistics_templates_limit,
                is_auto_renew, created_at, last_login, is_frozen
         FROM users
@@ -4271,20 +4329,21 @@ def get_all_users(
         formatted_users = []
         for user in users:
             (user_id, username, email, role, user_type, subscription_start,
-             subscription_end, remaining_calculations,
+             subscription_expires_raw, remaining_calculations,
              logistics_templates_limit, is_auto_renew, created_at,
              last_login, is_frozen) = user
 
             # 计算剩余天数
             remaining_days = None
-            if subscription_end:
-                from datetime import datetime, date
-                try:
-                    expiry = datetime.fromisoformat(subscription_end)
-                    today = date.today()
-                    remaining_days = (expiry.date() - today).days
-                except (ValueError, TypeError):
-                    pass
+            subscription_end_iso = None
+            expiry_dt = _subscription_expires_to_datetime(
+                subscription_expires_raw
+            )
+            if expiry_dt is not None:
+                from datetime import date
+                subscription_end_iso = expiry_dt.isoformat()
+                today = date.today()
+                remaining_days = (expiry_dt.date() - today).days
 
             formatted_users.append({
                 'id': user_id,
@@ -4293,7 +4352,7 @@ def get_all_users(
                 'role': role,
                 'user_type': user_type,
                 'subscription_start': subscription_start,
-                'subscription_end': subscription_end,
+                'subscription_end': subscription_end_iso,
                 'remaining_days': remaining_days,
                 'remaining_calculations': remaining_calculations,
                 'logistics_templates_limit': logistics_templates_limit,
@@ -4320,7 +4379,7 @@ def get_user_detail(user_id):
         c.execute(
             (
                 "SELECT id, username, email, role, user_type, "
-                "subscription_start, subscription_end, "
+                "subscription_start, subscription_expires, "
                 "remaining_calculations, logistics_templates_limit, "
                 "is_auto_renew, created_at, last_login, "
                 "is_frozen FROM users WHERE id = ?"
@@ -4334,7 +4393,7 @@ def get_user_detail(user_id):
 
         (
             user_id, username, email, role, user_type, subscription_start,
-            subscription_end, remaining_calculations,
+            subscription_expires_raw, remaining_calculations,
             logistics_templates_limit, is_auto_renew, created_at,
             last_login, is_frozen,
         ) = user
@@ -4355,14 +4414,13 @@ def get_user_detail(user_id):
 
         # 计算剩余天数
         remaining_days = None
-        if subscription_end:
-            from datetime import datetime, date
-            try:
-                expiry = datetime.fromisoformat(subscription_end)
-                today = date.today()
-                remaining_days = (expiry.date() - today).days
-            except (ValueError, TypeError):
-                pass
+        subscription_end_iso = None
+        expiry_dt = _subscription_expires_to_datetime(subscription_expires_raw)
+        if expiry_dt is not None:
+            from datetime import date
+            subscription_end_iso = expiry_dt.isoformat()
+            today = date.today()
+            remaining_days = (expiry_dt.date() - today).days
 
         return {
             'id': user_id,
@@ -4371,7 +4429,7 @@ def get_user_detail(user_id):
             'role': role,
             'user_type': user_type,
             'subscription_start': subscription_start,
-            'subscription_end': subscription_end,
+            'subscription_end': subscription_end_iso,
             'remaining_days': remaining_days,
             'remaining_calculations': remaining_calculations,
             'logistics_templates_limit': logistics_templates_limit,
@@ -4392,9 +4450,14 @@ def update_user_subscription_admin(user_id, updates, admin_id):
         values = []
 
         for field, value in updates.items():
+            if field == 'subscription_end':
+                serialized = _serialize_subscription_expires(value)
+                set_clauses.append("subscription_expires = ?")
+                values.append(serialized)
+                continue
+
             if field in [
                 'user_type', 'subscription_start',
-                'subscription_end',
                 'remaining_calculations',
                 'logistics_templates_limit',
                 'is_auto_renew', 'is_frozen',
@@ -4587,9 +4650,14 @@ def batch_update_users(user_ids, updates, admin_id):
             values = []
 
             for field, value in updates.items():
+                if field == 'subscription_end':
+                    serialized = _serialize_subscription_expires(value)
+                    set_clauses.append("subscription_expires = ?")
+                    values.append(serialized)
+                    continue
+
                 if field in [
                     'user_type', 'subscription_start',
-                    'subscription_end',
                     'remaining_calculations',
                     'logistics_templates_limit',
                     'is_auto_renew', 'is_frozen',

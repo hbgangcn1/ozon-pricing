@@ -4,10 +4,30 @@
 """
 
 import time
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
 import sqlite3
 import streamlit as st
-from datetime import datetime, timedelta, date
-from typing import Optional, Dict, Any, List, Tuple
+
+
+def _subscription_expires_to_datetime(raw_value):
+    if raw_value in (None, '', 0):
+        return None
+
+    try:
+        if isinstance(raw_value, (int, float)):
+            return datetime.fromtimestamp(int(raw_value))
+
+        cleaned = str(raw_value).strip()
+        if cleaned == '':
+            return None
+        if cleaned.isdigit():
+            return datetime.fromtimestamp(int(cleaned))
+        return datetime.fromisoformat(cleaned)
+    except (ValueError, TypeError, OSError):
+        return None
+
 
 # 定义数据库异常类型（兼容SQLite和PostgreSQL）
 try:
@@ -736,7 +756,7 @@ def get_user_retention_details(
                 SELECT
                     u.id, u.username, u.email, u.user_type,
                     u.created_at, u.last_login,
-                    u.subscription_end, u.remaining_calculations,
+                    u.subscription_expires, u.remaining_calculations,
                     COUNT(l.id) as login_count,
                     MIN(l.login_time) as first_login_time,
                     MAX(l.login_time) as last_login_time
@@ -765,14 +785,13 @@ def get_user_retention_details(
                     retention_days = 0
 
                 # 检查是否续费
-                subscription_end = user[6]
+                subscription_expires_raw = user[6]
                 is_renewed = False
-                if subscription_end:
-                    try:
-                        end_date = datetime.fromisoformat(subscription_end)
-                        is_renewed = end_date > datetime.now()
-                    except (ValueError, TypeError):
-                        pass
+                end_date = _subscription_expires_to_datetime(
+                    subscription_expires_raw
+                )
+                if end_date is not None:
+                    is_renewed = end_date > datetime.now()
 
                 user_details.append({
                     'user_id': user[0],
