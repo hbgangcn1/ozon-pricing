@@ -1205,10 +1205,23 @@ def show_main_interface():
             # 欢迎信息
             # noinspection PyUnboundLocalVariable
             _username = current_user.get("username", "")
+            # 获取用户类型并转换为中文显示
+            # noinspection PyUnboundLocalVariable
+            user_type = subscription_status.get('user_type', 'free')
+            user_type_map = {
+                'free': '免费版',
+                'efficiency': '效率版',
+                'professional': '专业版',
+                'enterprise': '企业版',
+                'gratitude': '感谢版',
+                'test': '测试版',
+                'admin': '管理员'
+            }
+            user_type_display = user_type_map.get(user_type, '免费版')
             content = (
                 '<div style="text-align: right;"><div style="font-size: 18px; '
-                'font-weight: 600; color: #2c3e50;">'
-                f'欢迎回来，{_username}！'
+                'font-weight: 600; color: #2c3e50; white-space: nowrap;">'
+                f'（{user_type_display}）欢迎回来，{_username}！'
                 '</div></div>'
             )
             st.markdown(content, unsafe_allow_html=True)
