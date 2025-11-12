@@ -266,10 +266,22 @@ def handle_payment_success(order_id: str, plan_name: str):
     st.balloons()
     st.success("🎉 支付成功！正在跳转到主界面...")
 
+    # 获取用户ID并清除用户数据缓存
+    user_id = current_user_id()
+    if user_id:
+        # 清除用户数据缓存，强制下次从数据库重新获取
+        cache_key = f'user_data_{user_id}'
+        try:
+            if (hasattr(st.session_state, '__contains__') and
+                    cache_key in st.session_state):
+                del st.session_state[cache_key]
+                print(f"✅ 已清除用户数据缓存: {cache_key}")
+        except (TypeError, AttributeError):
+            pass
+
     # 如果是效率版首月优惠订单，标记用户已使用优惠
     promo_mark_key = f"mark_efficiency_promo_{order_id}"
     if promo_mark_key in st.session_state and st.session_state[promo_mark_key]:
-        user_id = current_user_id()
         if user_id:
             try:
                 with get_db_connection() as (conn, cursor):

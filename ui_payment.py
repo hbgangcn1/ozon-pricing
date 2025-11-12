@@ -38,6 +38,24 @@ def handle_payment_success(order_id: str):
     print(f"🔧 handle_payment_success 开始: 订单ID={order_id}")
     st.success("🎉 支付成功！正在跳转到订阅管理页面...")
 
+    # 获取用户ID并清除用户数据缓存
+    user_id = None
+    if 'user' in st.session_state and st.session_state.user:
+        user_id = st.session_state.user.get('id')
+    elif 'user_id' in st.session_state:
+        user_id = st.session_state.user_id
+
+    if user_id:
+        # 清除用户数据缓存，强制下次从数据库重新获取
+        cache_key = f'user_data_{user_id}'
+        try:
+            if (hasattr(st.session_state, '__contains__') and
+                    cache_key in st.session_state):
+                del st.session_state[cache_key]
+                print(f"✅ 已清除用户数据缓存: {cache_key}")
+        except (TypeError, AttributeError):
+            pass
+
     # 清除监控状态
     if order_id in st.session_state.payment_monitoring:
         del st.session_state.payment_monitoring[order_id]
