@@ -664,6 +664,7 @@ def check_payment_status_in_db(order_id: str) -> bool:
 def handle_upgrade_payment_success(order_id: str):
     """处理升级支付成功后的跳转逻辑"""
     print(f"🔧 handle_upgrade_payment_success 开始: 订单ID={order_id}")
+    st.balloons()
     st.success("🎉 支付成功！正在跳转到主页面...")
 
     # 获取用户ID并清除用户数据缓存
