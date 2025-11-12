@@ -5269,14 +5269,15 @@ def show_password_change_form():
                 st.error("新密码和确认密码不匹配")
                 return
 
-        # 验证密码强度
+            # 验证密码强度
             password_validation = validate_password_strength(new_password)
-            if not password_validation['valid']:
+            if not password_validation.get('is_valid', False):
                 st.error("密码强度不符合要求：")
-                for error in password_validation['errors']:
+                for error in password_validation.get('errors', []):
                     st.error(f"• {error}")
                 return
-        # 验证当前密码并更新
+
+            # 验证当前密码并更新
             user_id = st.session_state.user['id']
             if update_user_password(user_id, current_password, new_password):
                 st.success("密码修改成功！")
