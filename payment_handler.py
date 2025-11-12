@@ -847,7 +847,8 @@ class PaymentHandler:
                             # PostgreSQL中事务失败后需要回滚
                             try:
                                 conn.rollback()
-                            except Exception:
+                            except (AttributeError, TypeError, RuntimeError,
+                                    ConnectionError):
                                 pass  # 忽略回滚错误
                             # 重新执行UPDATE，使用to_timestamp()
                             sql = adapt_sql("""
