@@ -325,19 +325,34 @@ class SubscriptionUpgrade:
             from db_utils import _is_postgresql_connection as is_pg
             with get_db_connection() as (conn, cursor):
                 # 检测连接类型并适配SQL
-                # 注意：subscription_start 字段是 INTEGER 类型，存储时间戳
-                # 不需要转换为 timestamp，直接使用整数时间戳
-                sql = adapt_sql("""
-                    UPDATE users
-                    SET subscription_type = ?,
-                        user_type = ?,
-                        subscription_expires = ?,
-                        billing_cycle = ?,
-                        last_paid_amount = ?,
-                        subscription_start = ?,
-                        efficiency_promo_used = ?
-                    WHERE id = ?
-                """)
+                # 注意：PostgreSQL中subscription_start可能是timestamp类型
+                # SQLite中是INTEGER类型，需要根据数据库类型处理
+                if is_pg(conn):
+                    # PostgreSQL：需要转换为timestamp类型
+                    sql = adapt_sql("""
+                        UPDATE users
+                        SET subscription_type = ?,
+                            user_type = ?,
+                            subscription_expires = ?,
+                            billing_cycle = ?,
+                            last_paid_amount = ?,
+                            subscription_start = to_timestamp(?),
+                            efficiency_promo_used = ?
+                        WHERE id = ?
+                    """)
+                else:
+                    # SQLite：直接使用整数时间戳
+                    sql = adapt_sql("""
+                        UPDATE users
+                        SET subscription_type = ?,
+                            user_type = ?,
+                            subscription_expires = ?,
+                            billing_cycle = ?,
+                            last_paid_amount = ?,
+                            subscription_start = ?,
+                            efficiency_promo_used = ?
+                        WHERE id = ?
+                    """)
                 cursor.execute(sql, (
                     actual_subscription_type, actual_subscription_type,
                     new_end_time, billing_cycle, upgrade_info['target_price'],

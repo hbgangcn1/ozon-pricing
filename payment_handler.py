@@ -598,7 +598,9 @@ class PaymentHandler:
                     SET wechat_transaction_id = ?, updated_at = ?
                     WHERE order_id = ?
                 """)
-                cursor.execute(sql, (transaction_id, int(time.time()), order_id))
+                cursor.execute(
+                    sql, (transaction_id, int(time.time()), order_id)
+                )
                 conn.commit()
         except Exception as e:
             logger.error(f"标记订单已处理失败: {e}")
@@ -800,19 +802,35 @@ class PaymentHandler:
                               "efficiency_promo_used=1")
 
                     # 更新订阅信息（包含计费周期和支付金额）
-                    # 注意：subscription_start 字段是 INTEGER 类型，存储时间戳
-                    # 不需要转换为 timestamp，直接使用整数时间戳
-                    sql = adapt_sql("""
-                        UPDATE users
-                        SET subscription_type = ?,
-                            subscription_expires = ?,
-                            user_type = ?,
-                            billing_cycle = ?,
-                            last_paid_amount = ?,
-                            subscription_start = ?,
-                            efficiency_promo_used = ?
-                        WHERE id = ?
-                    """)
+                    # 注意：PostgreSQL中subscription_start可能是timestamp类型
+                    # SQLite中是INTEGER类型，需要根据数据库类型处理
+                    from db_utils import _is_postgresql_connection as is_pg
+                    if is_pg(conn):
+                        # PostgreSQL：需要转换为timestamp类型
+                        sql = adapt_sql("""
+                            UPDATE users
+                            SET subscription_type = ?,
+                                subscription_expires = ?,
+                                user_type = ?,
+                                billing_cycle = ?,
+                                last_paid_amount = ?,
+                                subscription_start = to_timestamp(?),
+                                efficiency_promo_used = ?
+                            WHERE id = ?
+                        """)
+                    else:
+                        # SQLite：直接使用整数时间戳
+                        sql = adapt_sql("""
+                            UPDATE users
+                            SET subscription_type = ?,
+                                subscription_expires = ?,
+                                user_type = ?,
+                                billing_cycle = ?,
+                                last_paid_amount = ?,
+                                subscription_start = ?,
+                                efficiency_promo_used = ?
+                            WHERE id = ?
+                        """)
                     cursor.execute(sql, (
                         subscription_type, new_expires,
                         subscription_type, billing_cycle,

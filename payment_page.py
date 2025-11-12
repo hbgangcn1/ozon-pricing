@@ -685,10 +685,11 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
         promo_used = False
         if "效率版" in plan_name:
             with get_db_connection() as (conn, cursor):
-                cursor.execute(
+                sql = _safe_adapt_sql(
                     "SELECT efficiency_promo_used FROM users WHERE id = ?",
-                    (user_id,)
+                    conn
                 )
+                cursor.execute(sql, (user_id,))
                 result = cursor.fetchone()
                 if result and result[0]:
                     promo_used = True
@@ -765,7 +766,7 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
                 )
                 c.execute(sql, (user_id,))
                 user_info = c.fetchone()
-                if user_info:
+                if user_info and len(user_info) >= 2:
                     subscription_type = user_info[0]
                     user_type = user_info[1]
                     # 如果订阅类型是free或None，或者user_type是free，则可以使用优惠
