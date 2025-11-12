@@ -802,19 +802,36 @@ class PaymentHandler:
                               "efficiency_promo_used=1")
 
                     # 更新订阅信息（包含计费周期和支付金额）
-                    # 注意：subscription_start 字段在PostgreSQL和SQLite中都是INTEGER类型
-                    # 直接使用整数时间戳，不需要转换为timestamp
-                    sql = adapt_sql("""
-                        UPDATE users
-                        SET subscription_type = ?,
-                            subscription_expires = ?,
-                            user_type = ?,
-                            billing_cycle = ?,
-                            last_paid_amount = ?,
-                            subscription_start = ?,
-                            efficiency_promo_used = ?
-                        WHERE id = ?
-                    """)
+                    # 根据数据库类型动态处理subscription_start字段
+                    # PostgreSQL中可能是timestamp类型，需要使用to_timestamp()
+                    # SQLite中是INTEGER类型，直接使用整数
+                    from db_utils import _is_postgresql_connection as is_pg
+                    if is_pg(conn):
+                        # PostgreSQL：使用to_timestamp()转换整数时间戳
+                        sql = adapt_sql("""
+                            UPDATE users
+                            SET subscription_type = ?,
+                                subscription_expires = ?,
+                                user_type = ?,
+                                billing_cycle = ?,
+                                last_paid_amount = ?,
+                                subscription_start = to_timestamp(?),
+                                efficiency_promo_used = ?
+                            WHERE id = ?
+                        """)
+                    else:
+                        # SQLite：直接使用整数时间戳
+                        sql = adapt_sql("""
+                            UPDATE users
+                            SET subscription_type = ?,
+                                subscription_expires = ?,
+                                user_type = ?,
+                                billing_cycle = ?,
+                                last_paid_amount = ?,
+                                subscription_start = ?,
+                                efficiency_promo_used = ?
+                            WHERE id = ?
+                        """)
                     cursor.execute(sql, (
                         subscription_type, new_expires,
                         subscription_type, billing_cycle,
