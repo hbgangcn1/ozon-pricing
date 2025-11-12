@@ -248,34 +248,16 @@ class SubscriptionUpgrade:
             升级结果
         """
         from db_utils import get_db_connection
-        from logger_config import SensitiveFormatter
-
-        masked_user_id = SensitiveFormatter.mask_user_id(user_id)
-        masked_order_id = (
-            SensitiveFormatter.mask_order_id(payment_order_id)
-            if payment_order_id else "None"
-        )
-        print("[execute_upgrade] 开始执行升级")
-        print(f"   用户ID: {masked_user_id}")
-        print(f"   目标套餐: {target_plan}, 目标周期: {target_cycle}")
-        print(f"   支付订单ID: {masked_order_id}")
 
         try:
             # 1. 获取当前订阅信息
-            print("[execute_upgrade] 步骤1: 获取当前订阅信息")
             current_sub = SubscriptionUpgrade.get_current_subscription_info(
                 user_id
             )
             if not current_sub:
-                print("[execute_upgrade] 无法获取当前订阅信息")
                 return {'success': False, 'message': '无法获取当前订阅信息'}
-            print(f"✅ [execute_upgrade] 当前订阅信息: "
-                  f"subscription_type={current_sub.get('subscription_type')}, "
-                  f"billing_cycle={current_sub.get('billing_cycle')}, "
-                  f"expires={current_sub.get('subscription_expires')}")
 
             # 2. 计算升级成本
-            print("[execute_upgrade] 步骤2: 计算升级成本")
             upgrade_info = SubscriptionUpgrade.calculate_upgrade_cost(
                 current_plan=current_sub['subscription_type'],
                 current_cycle=current_sub['billing_cycle'],
@@ -284,14 +266,8 @@ class SubscriptionUpgrade:
                 target_plan=target_plan,
                 target_cycle=target_cycle
             )
-            print(f"✅ [execute_upgrade] 升级成本计算完成: "
-                  f"can_upgrade={upgrade_info.get('can_upgrade')}, "
-                  f"target_price={upgrade_info.get('target_price')}, "
-                  f"actual_payment={upgrade_info.get('actual_payment')}")
 
             if not upgrade_info['can_upgrade']:
-                print(f"❌ [execute_upgrade] 无法升级: "
-                      f"{upgrade_info.get('message', '未知原因')}")
                 return {
                     'success': False,
                     'message': upgrade_info.get('message', '无法升级')
@@ -352,27 +328,7 @@ class SubscriptionUpgrade:
             except ImportError:
                 pg_errors = None
 
-            print("[execute_upgrade] 步骤3: 更新数据库用户信息")
-            print(f"   准备更新: subscription_type={actual_subscription_type}, "
-                  f"user_type={actual_subscription_type}, "
-                  f"subscription_expires={new_end_time}, "
-                  f"billing_cycle={billing_cycle}, "
-                  f"efficiency_promo_used={efficiency_promo_used}")
-
             with get_db_connection() as (conn, cursor):
-                # 更新前先查询用户当前状态
-                sql_check = adapt_sql(
-                    "SELECT subscription_type, user_type, "
-                    "subscription_expires FROM users WHERE id = ?"
-                )
-                cursor.execute(sql_check, (user_id,))
-                before_update = cursor.fetchone()
-                if before_update:
-                    print(f"📊 [execute_upgrade] 更新前用户状态: "
-                          f"subscription_type={before_update[0]}, "
-                          f"user_type={before_update[1]}, "
-                          f"subscription_expires={before_update[2]}")
-
                 # 尝试使用整数时间戳（适用于生产环境INTEGER类型）
                 # 如果失败，回退到to_timestamp()（适用于测试环境timestamp类型）
                 try:
@@ -387,14 +343,12 @@ class SubscriptionUpgrade:
                             efficiency_promo_used = ?
                         WHERE id = ?
                     """)
-                    print("[execute_upgrade] 执行UPDATE语句...")
                     cursor.execute(sql, (
                         actual_subscription_type, actual_subscription_type,
                         new_end_time, billing_cycle,
                         upgrade_info['target_price'],
                         current_time, efficiency_promo_used, user_id
                     ))
-                    print("[execute_upgrade] UPDATE语句执行成功")
                 except Exception as e:
                     # 如果失败且是PostgreSQL，尝试使用to_timestamp()
                     # 检查是否是类型不匹配错误
@@ -460,28 +414,7 @@ class SubscriptionUpgrade:
                 ))
 
                 conn.commit()
-                print("[execute_upgrade] 数据库事务已提交")
 
-                # 更新后验证用户状态
-                cursor.execute(sql_check, (user_id,))
-                after_update = cursor.fetchone()
-                if after_update:
-                    print(f"📊 [execute_upgrade] 更新后用户状态: "
-                          f"subscription_type={after_update[0]}, "
-                          f"user_type={after_update[1]}, "
-                          f"subscription_expires={after_update[2]}")
-                    if (after_update[0] == actual_subscription_type and
-                            after_update[1] == actual_subscription_type):
-                        print("[execute_upgrade] 用户状态验证成功")
-                    else:
-                        print(
-                            "[execute_upgrade] 用户状态验证失败: "
-                            f"期望 subscription_type="
-                            f"{actual_subscription_type}, "
-                            f"实际={after_update[0]}"
-                        )
-
-            print("[execute_upgrade] 升级流程完成")
             return {
                 'success': True,
                 'message': '升级成功',
@@ -490,7 +423,7 @@ class SubscriptionUpgrade:
             }
 
         except Exception as e:
-            print(f"❌ [execute_upgrade] 执行升级失败: {e}")
+            print(f"执行升级失败: {e}")
             import traceback
             traceback.print_exc()
             return {'success': False, 'message': f'升级失败: {str(e)}'}

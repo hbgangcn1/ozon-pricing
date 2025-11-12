@@ -942,44 +942,27 @@ class PaymentHandler:
         # 高优先级安全改进：使用脱敏日志
         from logger_config import log_safe_info, SensitiveFormatter
         masked_order_id = SensitiveFormatter.mask_order_id(order_id)
-        print("[_handle_upgrade_payment_success] 开始处理升级支付")
-        print(f"   订单ID: {masked_order_id}")
         log_safe_info(
             f"🔄 处理套餐升级支付: 订单ID={masked_order_id}"
         )
         masked_user_id = SensitiveFormatter.mask_user_id(user_id)
-        print(f"   用户ID: {masked_user_id}")
         log_safe_info(
             f"   用户ID={masked_user_id}, 目标套餐={target_plan}"
         )
         masked_amount = SensitiveFormatter.mask_amount(paid_amount)
         masked_value = SensitiveFormatter.mask_amount(remaining_value)
-        print(f"   目标套餐: {target_plan}, 目标周期: {target_cycle}")
-        print(f"   支付金额: {masked_amount}, 折抵价值: {masked_value}")
         log_safe_info(f"   支付金额={masked_amount}, 折抵价值={masked_value}")
 
         try:
             from subscription_upgrade import SubscriptionUpgrade
 
-            # 检查是否是首月优惠订单（通过支付金额判断，1元=100分）
-            # 如果是首月优惠，需要在execute_upgrade中标记
-            # 这里我们通过传递paid_amount信息来帮助判断
-            # 注意：execute_upgrade会重新计算升级成本，但我们可以通过
-            # 实际支付金额来判断是否是首月优惠
-
             # 执行升级
-            print("📞 准备调用 SubscriptionUpgrade.execute_upgrade")
-            print(f"   参数: user_id={masked_user_id}, "
-                  f"target_plan={target_plan}, "
-                  f"target_cycle={target_cycle}, "
-                  f"payment_order_id={masked_order_id}")
             result = SubscriptionUpgrade.execute_upgrade(
                 user_id=user_id,
                 target_plan=target_plan,
                 target_cycle=target_cycle,
                 payment_order_id=order_id
             )
-            print(f"📥 execute_upgrade 返回结果: {result}")
 
             # 检查订单描述中是否包含"首月优惠"标记（更严谨的方式）
             # 从订单信息中读取描述，判断是否是首月优惠订单
@@ -1008,43 +991,15 @@ class PaymentHandler:
                 print(f"⚠️ 标记首月优惠使用失败: {e}")
 
             if result['success']:
-                print(f"✅ [_handle_upgrade_payment_success] 套餐升级成功: "
-                      f"{target_plan}")
+                print(f"✅ 套餐升级成功: {target_plan}")
                 print(f"   新到期时间: {result.get('new_end_time')}")
-                # 验证用户状态
-                try:
-                    from db_utils import get_db_connection
-                    from db_adapter import adapt_sql
-                    with get_db_connection() as (conn, cursor):
-                        sql = adapt_sql(
-                            "SELECT subscription_type, user_type, "
-                            "subscription_expires FROM users WHERE id = ?"
-                        )
-                        cursor.execute(sql, (user_id,))
-                        user_info = cursor.fetchone()
-                        if user_info:
-                            print(f"🔍 [_handle_upgrade_payment_success] "
-                                  f"验证用户状态: subscription_type="
-                                  f"{user_info[0]}, user_type={user_info[1]}, "
-                                  f"expires={user_info[2]}")
-                        else:
-                            print(
-                                "[_handle_upgrade_payment_success] "
-                                "未找到用户记录"
-                            )
-                except Exception as verify_e:
-                    print(f"⚠️ [_handle_upgrade_payment_success] "
-                          f"验证用户状态失败: {verify_e}")
             else:
-                print(f"❌ [_handle_upgrade_payment_success] 套餐升级失败: "
-                      f"{result.get('message')}")
+                print(f"❌ 套餐升级失败: {result.get('message')}")
 
         except Exception as e:
-            print(f"❌ [_handle_upgrade_payment_success] 处理升级支付失败: {e}")
+            print(f"❌ 处理升级支付失败: {e}")
             import traceback
             traceback.print_exc()
-        finally:
-            print("[_handle_upgrade_payment_success] 处理完成")
 
 
 def show_payment_page():
