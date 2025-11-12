@@ -52,10 +52,11 @@ def show_duration_selection(plan_name: str):
 
     if "效率版" in plan_name:
         with get_db_connection() as (conn, cursor):
-            cursor.execute(
+            sql = _safe_adapt_sql(
                 "SELECT efficiency_promo_used FROM users WHERE id = ?",
-                (user_id,)
+                conn
             )
+            cursor.execute(sql, (user_id,))
             result = cursor.fetchone()
             if result and result[0]:
                 promo_used = True
