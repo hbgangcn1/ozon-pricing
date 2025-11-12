@@ -163,26 +163,43 @@ class PaymentCallbackEnhanced:
 
     def process_order(self, order_id: str) -> bool:
         """处理单个订单"""
+        from utils import mask_sensitive
+        masked_order_id = mask_sensitive(order_id, 'order_id')
+        logger.info(f"🚀 [process_order] 开始处理订单: {masked_order_id}")
         try:
             from payment_handler import PaymentHandler
+            logger.info(
+                "[process_order] 调用 PaymentHandler.handle_payment_success"
+            )
             PaymentHandler.handle_payment_success(order_id)
             with self.stats_lock:
                 self.stats['processed'] += 1
-            logger.info(f"✅ 订单处理成功: {order_id}")
+            logger.info(f"✅ [process_order] 订单处理成功: {masked_order_id}")
             return True
         except Exception as e:
             with self.stats_lock:
                 self.stats['failed'] += 1
-            logger.error(f"❌ 订单处理失败: {order_id}, 错误: {e}")
+            logger.error(
+                f"❌ [process_order] 订单处理失败: {masked_order_id}, "
+                f"错误: {e}"
+            )
+            import traceback
+            logger.error(
+                f"❌ [process_order] 异常堆栈: {traceback.format_exc()}"
+            )
 
             # 添加到重试队列
             retry_count = self._get_retry_count(order_id)
             if retry_count < self.max_retries:
+                logger.info(
+                    f"🔄 [process_order] 添加到重试队列: {masked_order_id}, "
+                    f"重试次数: {retry_count + 1}/{self.max_retries}"
+                )
                 self._add_to_retry_queue(order_id, retry_count, str(e))
             else:
-                alert_msg = f"订单 {order_id} 重试次数已耗尽"
+                alert_msg = f"订单 {masked_order_id} 重试次数已耗尽"
                 logger.critical(
-                    f"订单重试次数已耗尽: {order_id}, "
+                    f"❌ [process_order] 订单重试次数已耗尽: {masked_order_id}, "
                     f"需要人工介入处理"
                 )
                 self.record_alert(
