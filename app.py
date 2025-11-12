@@ -1219,8 +1219,10 @@ def show_main_interface():
             }
             user_type_display = user_type_map.get(user_type, '免费版')
             content = (
-                '<div style="text-align: right;"><div style="font-size: 18px; '
-                'font-weight: 600; color: #2c3e50; white-space: nowrap;">'
+                '<div style="display: flex; justify-content: flex-end; '
+                'width: 100%;"><div style="font-size: 18px; '
+                'font-weight: 600; color: #2c3e50; white-space: nowrap; '
+                'text-align: right;">'
                 f'（{user_type_display}）欢迎回来，{_username}！'
                 '</div></div>'
             )
