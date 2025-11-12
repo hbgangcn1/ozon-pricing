@@ -832,7 +832,8 @@ class PaymentHandler:
                         # 如果失败且是PostgreSQL，尝试使用to_timestamp()
                         # 检查是否是类型不匹配错误
                         is_datatype_error = False
-                        if pg_errors and isinstance(e, pg_errors.DatatypeMismatch):
+                        if (pg_errors and
+                                isinstance(e, pg_errors.DatatypeMismatch)):
                             is_datatype_error = True
                         else:
                             error_str = str(e)

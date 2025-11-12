@@ -345,7 +345,8 @@ class SubscriptionUpgrade:
                     """)
                     cursor.execute(sql, (
                         actual_subscription_type, actual_subscription_type,
-                        new_end_time, billing_cycle, upgrade_info['target_price'],
+                        new_end_time, billing_cycle,
+                        upgrade_info['target_price'],
                         current_time, efficiency_promo_used, user_id
                     ))
                 except Exception as e:
@@ -384,7 +385,8 @@ class SubscriptionUpgrade:
                         """)
                         cursor.execute(sql, (
                             actual_subscription_type, actual_subscription_type,
-                            new_end_time, billing_cycle, upgrade_info['target_price'],
+                            new_end_time, billing_cycle,
+                            upgrade_info['target_price'],
                             current_time, efficiency_promo_used, user_id
                         ))
                     else:
