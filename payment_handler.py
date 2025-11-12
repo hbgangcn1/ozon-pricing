@@ -591,12 +591,14 @@ class PaymentHandler:
             transaction_id: 微信交易号
         """
         try:
+            from db_adapter import adapt_sql
             with get_db_connection() as (conn, cursor):
-                cursor.execute("""
+                sql = adapt_sql("""
                     UPDATE payment_orders
                     SET wechat_transaction_id = ?, updated_at = ?
                     WHERE order_id = ?
-                """, (transaction_id, int(time.time()), order_id))
+                """)
+                cursor.execute(sql, (transaction_id, int(time.time()), order_id))
                 conn.commit()
         except Exception as e:
             logger.error(f"标记订单已处理失败: {e}")
@@ -798,32 +800,19 @@ class PaymentHandler:
                               "efficiency_promo_used=1")
 
                     # 更新订阅信息（包含计费周期和支付金额）
-                    # 检测数据库类型以正确处理时间戳
-                    from db_config import DB_TYPE
-                    if DB_TYPE == 'postgresql':
-                        sql = adapt_sql("""
-                            UPDATE users
-                            SET subscription_type = ?,
-                                subscription_expires = ?,
-                                user_type = ?,
-                                billing_cycle = ?,
-                                last_paid_amount = ?,
-                                subscription_start = to_timestamp(?),
-                                efficiency_promo_used = ?
-                            WHERE id = ?
-                        """)
-                    else:
-                        sql = adapt_sql("""
-                            UPDATE users
-                            SET subscription_type = ?,
-                                subscription_expires = ?,
-                                user_type = ?,
-                                billing_cycle = ?,
-                                last_paid_amount = ?,
-                                subscription_start = ?,
-                                efficiency_promo_used = ?
-                            WHERE id = ?
-                        """)
+                    # 注意：subscription_start 字段是 INTEGER 类型，存储时间戳
+                    # 不需要转换为 timestamp，直接使用整数时间戳
+                    sql = adapt_sql("""
+                        UPDATE users
+                        SET subscription_type = ?,
+                            subscription_expires = ?,
+                            user_type = ?,
+                            billing_cycle = ?,
+                            last_paid_amount = ?,
+                            subscription_start = ?,
+                            efficiency_promo_used = ?
+                        WHERE id = ?
+                    """)
                     cursor.execute(sql, (
                         subscription_type, new_expires,
                         subscription_type, billing_cycle,
