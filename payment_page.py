@@ -3,6 +3,7 @@
 处理订阅升级的支付流程
 """
 
+import os
 import streamlit as st
 import time
 import qrcode
@@ -14,6 +15,7 @@ from db_utils import (
     current_user_id,
     get_plan_price,
     get_plan_by_code,
+    _safe_adapt_sql,
 )
 from payment_auto_refresh import (
     show_enhanced_auto_check_indicator
@@ -350,13 +352,14 @@ def auto_check_and_redirect(order_id: str, plan_name: str):
 
     try:
         with get_db_connection() as (conn, cursor):
-            cursor.execute(
+            sql = _safe_adapt_sql(
                 """
                 SELECT status, created_at FROM payment_orders
                 WHERE order_id = ?
                 """,
-                (order_id,),
+                conn
             )
+            cursor.execute(sql, (order_id,))
             row = cursor.fetchone()
             if row:
                 status_in_db = row[0]
@@ -547,13 +550,14 @@ def show_existing_payment(
                 paid_in_db = False
                 try:
                     with get_db_connection() as (conn, cursor):
-                        cursor.execute(
+                        sql = _safe_adapt_sql(
                             """
                             SELECT status FROM payment_orders
                             WHERE order_id = ?
                             """,
-                            (order_id,),
+                            conn
                         )
+                        cursor.execute(sql, (order_id,))
                         row = cursor.fetchone()
                         if row:
                             status_in_db = row[0]
@@ -718,13 +722,18 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
             st.error("❌ 该套餐暂未开放")
             return
 
-        # 判断用户是否为管理员
+        # 判断是否使用测试价格（根据TEST_MODE环境变量）
+        # 如果TEST_MODE=true，所有用户都使用测试价格
+        # 如果TEST_MODE=false，只有管理员使用测试价格
+        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
         is_user_admin = False
         with get_db_connection() as (conn, c):
-            user_role = c.execute(
+            sql = _safe_adapt_sql(
                 "SELECT role FROM users WHERE id = ?",
-                (user_id,)
-            ).fetchone()
+                conn
+            )
+            c.execute(sql, (user_id,))
+            user_role = c.fetchone()
             if user_role and user_role[0] == 'admin':
                 is_user_admin = True
 
@@ -735,17 +744,35 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
         }
         price_duration = duration_map.get(duration, "month")
 
-        # 获取价格（根据用户角色）
+        # 获取价格：TEST_MODE=true时所有用户使用测试价，否则只有管理员使用测试价
+        use_test_price = test_mode or is_user_admin
         price = get_plan_price(
-            plan_code, price_duration, use_test_price=is_user_admin
+            plan_code, price_duration, use_test_price=use_test_price
         )
 
         # 特殊处理：效率版首月优惠
-        is_efficiency_promo = (
-            plan_code == "efficiency" and
-            duration == "1_month" and
-            not promo_used
-        )
+        # 条件：1. 目标套餐是效率版 2. 选择1个月 3. 用户未使用过优惠
+        # 4. 用户当前是免费版（从免费版升级到效率版）
+        is_efficiency_promo = False
+        if (plan_code == "efficiency" and duration == "1_month" and
+                not promo_used):
+            # 检查用户当前套餐是否为免费版
+            with get_db_connection() as (conn, c):
+                sql = _safe_adapt_sql(
+                    "SELECT subscription_type, user_type FROM users "
+                    "WHERE id = ?",
+                    conn
+                )
+                c.execute(sql, (user_id,))
+                user_info = c.fetchone()
+                if user_info:
+                    subscription_type = user_info[0]
+                    user_type = user_info[1]
+                    # 如果订阅类型是free或None，或者user_type是free，则可以使用优惠
+                    if (not subscription_type or subscription_type == 'free' or
+                            user_type == 'free'):
+                        is_efficiency_promo = True
+
         if is_efficiency_promo:
             amount = 100  # 首月1元优惠
             description = f"物流系统{plan_name}订阅 - 首月优惠(1个月)"

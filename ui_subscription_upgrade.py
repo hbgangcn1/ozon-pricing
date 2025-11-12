@@ -8,7 +8,9 @@ import streamlit as st
 import time
 from subscription_upgrade import SubscriptionUpgrade
 from payment_handler import PaymentHandler
-from db_utils import current_user_id, get_db_connection
+from db_utils import (
+    current_user_id, get_db_connection, _safe_adapt_sql
+)
 from payment_auto_refresh import show_enhanced_auto_check_indicator
 import qrcode
 import io
@@ -300,46 +302,126 @@ def show_single_upgrade_option(
             unsafe_allow_html=True
         )
 
+        # 检查是否是首月优惠
+        is_promo = option.get('is_promo', False)
+
         # 价格明细
-        st.markdown("**💰 价格明细**")
-
-        # 使用 metrics 显示价格信息
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("套餐原价", f"¥{target_price:.2f}")
-        with col2:
-            st.metric(
-                "剩余价值折抵",
-                f"-¥{remaining_value:.2f}",
-                delta=None,
-                delta_color="normal"
+        if is_promo:
+            # 首月优惠显示
+            st.markdown(
+                """
+                <div style="background: linear-gradient(135deg,
+                     #FFF3E0, #FFE0B2);
+                     border-radius: 12px; padding: 20px;
+                     margin-bottom: 15px;
+                     border: 3px solid #FF9800;">
+                    <h4 style="color: #E65100; text-align: center;
+                        margin-bottom: 10px;">
+                        🎉 首月特惠
+                    </h4>
+                    <h2 style="color: #F57C00; text-align: center;
+                        margin: 15px 0;">
+                        ¥1
+                    </h2>
+                    <p style="text-align: center; color: #EF6C00;
+                        margin: 0; font-size: 0.9rem;">
+                        仅首月，次月起¥9.9/月
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
+        else:
+            st.markdown("**💰 价格明细**")
 
-        # 实际应付
-        st.markdown(
-            f"""
-            <div style="background: {color_scheme['bg']};
-                 padding: 15px; border-radius: 8px;
-                 border: 2px solid {color_scheme['border']};
-                 margin: 10px 0;">
-                <div style="text-align: center;">
-                    <div style="color: #666; font-size: 14px;">
-                        实际应付
-                    </div>
-                    <div style="color: {color_scheme['text']};
-                         font-size: 28px; font-weight: bold;">
-                        ¥{actual_payment:.2f}
+            # 使用 metrics 显示价格信息
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("套餐原价", f"¥{target_price:.2f}")
+            with col2:
+                st.metric(
+                    "剩余价值折抵",
+                    f"-¥{remaining_value:.2f}",
+                    delta=None,
+                    delta_color="normal"
+                )
+
+            # 实际应付
+            st.markdown(
+                f"""
+                <div style="background: {color_scheme['bg']};
+                     padding: 15px; border-radius: 8px;
+                     border: 2px solid {color_scheme['border']};
+                     margin: 10px 0;">
+                    <div style="text-align: center;">
+                        <div style="color: #666; font-size: 14px;">
+                            实际应付
+                        </div>
+                        <div style="color: {color_scheme['text']};
+                             font-size: 28px; font-weight: bold;">
+                            ¥{actual_payment:.2f}
+                        </div>
                     </div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+                """,
+                unsafe_allow_html=True
+            )
 
         # 功能特色
         with st.expander("✨ 功能特色", expanded=False):
-            for feature in features:
-                st.write(f"• {feature}")
+            # 从app.py中的套餐信息映射获取功能特色（确保一致性）
+            plan_features_map = {
+                'free': ['极速模式计算', '基础物流模板'],
+                'efficiency': ['无限极速模式计算', '3个物流模板'],
+                'professional': [
+                    '极速模式 + 精准模式',
+                    '无限物流模板',
+                    '多物流比价'
+                ],
+                'enterprise': [
+                    '专业版所有功能',
+                    '多人协作子账号',
+                    'API接入',
+                    '专属客服'
+                ],
+                'gratitude': ['专业版所有功能']
+            }
+
+            # 优先使用映射中的功能特色
+            plan_key = option.get('plan_key', '')
+            if plan_key in plan_features_map:
+                features = plan_features_map[plan_key]
+            else:
+                # 如果映射中没有，尝试使用传入的features
+                # 确保features是列表格式
+                if isinstance(features, str):
+                    # 如果是字符串，尝试解析为列表
+                    import json
+                    try:
+                        # 尝试解析JSON格式的字符串
+                        features = json.loads(features)
+                    except (json.JSONDecodeError, ValueError):
+                        # 如果解析失败，检查是否是空列表字符串
+                        if features.strip() in ['[]', "[]", "''", '""']:
+                            features = []
+                        else:
+                            # 按换行符分割
+                            features = [
+                                f.strip() for f in features.split('\n')
+                                if f.strip()
+                            ]
+
+                # 确保features是列表
+                if not isinstance(features, list):
+                    features = [str(features)] if features else []
+
+            # 显示功能列表
+            if features:
+                for feature in features:
+                    if feature and str(feature).strip():  # 确保不是空字符串
+                        st.write(f"• {feature}")
+            else:
+                st.info("暂无功能特色说明")
 
         # 升级按钮
         button_key = f"upgrade_{option['plan_key']}_{option['cycle']}"
@@ -354,8 +436,14 @@ def show_single_upgrade_option(
             ):
                 handle_free_upgrade(user_id, option)
         else:
+            # 根据是否是首月优惠显示不同的按钮文本
+            if is_promo:
+                button_text = "🎉 首月仅需¥1 - 立即升级"
+            else:
+                button_text = f"💳 立即升级 - ¥{actual_payment:.2f}"
+
             if st.button(
-                f"💳 立即升级 - ¥{actual_payment:.2f}",
+                button_text,
                 key=button_key,
                 type="primary",
                 width='stretch'
@@ -392,6 +480,7 @@ def handle_paid_upgrade(user_id: int, option: dict):
     amount_cents = int(option['actual_payment'] * 100)
 
     # 构建升级信息
+    is_promo = option.get('is_promo', False)
     upgrade_info = {
         'current_plan': st.session_state.get('user', {}).get(
             'subscription_type', 'free'
@@ -399,14 +488,22 @@ def handle_paid_upgrade(user_id: int, option: dict):
         'target_plan': option['plan_key'],
         'target_cycle': option['cycle'],
         'remaining_value': option['remaining_value'],
-        'actual_payment': option['actual_payment']
+        'actual_payment': option['actual_payment'],
+        'is_promo': is_promo  # 明确标记是否是首月优惠
     }
 
     # 创建升级支付订单
-    description = (
-        f"套餐升级: {option['plan_name']} - {option['cycle_display']}"
-        f"（折抵¥{option['remaining_value']:.2f}）"
-    )
+    # 检查是否是首月优惠（已在upgrade_info中标记）
+    if is_promo:
+        description = (
+            f"套餐升级: {option['plan_name']} - {option['cycle_display']}"
+            f" - 首月优惠（折抵¥{option['remaining_value']:.2f}）"
+        )
+    else:
+        description = (
+            f"套餐升级: {option['plan_name']} - {option['cycle_display']}"
+            f"（折抵¥{option['remaining_value']:.2f}）"
+        )
 
     with st.spinner("正在创建支付订单..."):
         result = PaymentHandler.create_payment_order(
@@ -543,10 +640,11 @@ def check_payment_status_in_db(order_id: str) -> bool:
     """检查数据库中订单的支付状态"""
     try:
         with get_db_connection() as (conn, cursor):
-            cursor.execute("""
+            sql = _safe_adapt_sql("""
                 SELECT status FROM payment_orders
                 WHERE order_id = ?
-            """, (order_id,))
+            """, conn)
+            cursor.execute(sql, (order_id,))
 
             result = cursor.fetchone()
             if result:

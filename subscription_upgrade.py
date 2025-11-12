@@ -4,6 +4,7 @@
 实现统一的升级计费逻辑
 """
 
+import os
 from typing import Dict, Any, Optional
 import time
 
@@ -103,11 +104,20 @@ class SubscriptionUpgrade:
                 'message': f'目标套餐不存在: {target_plan}'
             }
 
-        # 从数据库读取价格
-        if target_cycle == 'year':
-            target_price = target_plan_config.get('actual_price_year')
+        # 从数据库读取价格（根据TEST_MODE决定使用测试价还是实际价）
+        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+        if test_mode:
+            # 测试模式：使用测试价格
+            if target_cycle == 'year':
+                target_price = target_plan_config.get('test_price_year')
+            else:
+                target_price = target_plan_config.get('test_price_month')
         else:
-            target_price = target_plan_config.get('actual_price_month')
+            # 正式模式：使用实际价格
+            if target_cycle == 'year':
+                target_price = target_plan_config.get('actual_price_year')
+            else:
+                target_price = target_plan_config.get('actual_price_month')
 
         if target_price is None or target_price == 0:
             return {
@@ -274,8 +284,36 @@ class SubscriptionUpgrade:
                   f"is_year={is_year}, days={target_days}")
 
             # 处理 efficiency_promo：实际订阅类型是 efficiency
+            # 检查是否是首月优惠订单（从订单描述中读取，更严谨）
             actual_subscription_type = target_plan
             efficiency_promo_used = 0
+
+            # 从订单信息中读取首月优惠标记（最可靠的方式）
+            # 优先从订单描述中判断，因为订单描述在创建时就已经包含了
+            # "首月优惠"标记
+            if payment_order_id:
+                try:
+                    from db_utils import _safe_adapt_sql
+                    with get_db_connection() as (conn, cursor):
+                        sql = _safe_adapt_sql(
+                            "SELECT description FROM payment_orders "
+                            "WHERE order_id = ?",
+                            conn
+                        )
+                        cursor.execute(sql, (payment_order_id,))
+                        order_result = cursor.fetchone()
+                        if order_result and '首月优惠' in order_result[0]:
+                            if (target_plan == 'efficiency' and
+                                    target_cycle in ['month', '1_month']):
+                                efficiency_promo_used = 1
+                                print(
+                                    "🎉 检测到首月优惠升级（从订单描述确认），"
+                                    "标记 efficiency_promo_used=1"
+                                )
+                except Exception as e:
+                    print(f"⚠️ 读取订单信息失败: {e}")
+
+            # 兼容旧的efficiency_promo类型
             if target_plan == 'efficiency_promo':
                 actual_subscription_type = 'efficiency'
                 efficiency_promo_used = 1
@@ -382,6 +420,41 @@ class SubscriptionUpgrade:
             current_plan_name = '未知'
             current_level = 0
 
+        # 检查用户是否使用过效率版首月优惠
+        promo_used = False
+        from db_utils import get_db_connection, _safe_adapt_sql
+        import sqlite3
+        try:
+            import psycopg2.errors as pg_errors
+        except ImportError:
+            pg_errors = None
+
+        try:
+            with get_db_connection() as (conn, cursor):
+                sql = _safe_adapt_sql(
+                    "SELECT efficiency_promo_used FROM users WHERE id = ?",
+                    conn
+                )
+                cursor.execute(sql, (user_id,))
+                result = cursor.fetchone()
+                if result and result[0]:
+                    promo_used = True
+        except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+            # SQLite数据库错误
+            print(f"⚠️ 查询用户优惠状态失败（SQLite）: {e}")
+            promo_used = False
+        except Exception as e:
+            # PostgreSQL或其他数据库错误
+            if pg_errors and isinstance(
+                e, (pg_errors.UndefinedColumn, pg_errors.UndefinedTable)
+            ):
+                print(f"⚠️ 查询用户优惠状态失败（PostgreSQL）: {e}")
+                promo_used = False
+            else:
+                # 其他未知错误，记录并继续
+                print(f"⚠️ 查询用户优惠状态失败: {e}")
+                promo_used = False
+
         # 从数据库获取所有可用套餐
         all_plans = get_plans()
         upgrade_options = []
@@ -401,37 +474,78 @@ class SubscriptionUpgrade:
                 continue
 
             # 计算月付和年付的升级成本
+            # 根据TEST_MODE决定使用测试价还是实际价
+            test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
             for cycle in ['month', 'year']:
-                if cycle == 'year':
-                    target_price = plan_config.get('actual_price_year')
-                else:
-                    target_price = plan_config.get('actual_price_month')
-
-                if target_price is None or target_price == 0:
-                    continue
-
-                # 计算升级成本
-                upgrade_cost = SubscriptionUpgrade.calculate_upgrade_cost(
-                    current_plan=current_sub['subscription_type'],
-                    current_cycle=current_sub['billing_cycle'],
-                    current_paid=current_sub['last_paid_amount'],
-                    current_end=current_sub.get('subscription_expires', 0),
-                    target_plan=plan_code,
-                    target_cycle=cycle
+                # 检查是否可以使用效率版首月优惠
+                # 条件：1. 当前套餐是免费版 2. 目标套餐是效率版 3. 选择月付 4. 用户未使用过优惠
+                is_efficiency_promo = (
+                    current_plan == 'free' and
+                    plan_code == 'efficiency' and
+                    cycle == 'month' and
+                    not promo_used
                 )
 
-                if upgrade_cost['can_upgrade']:
-                    upgrade_options.append({
-                        'plan_key': plan_code,
-                        'plan_name': plan_config['plan_name'],
-                        'cycle': cycle,
-                        'cycle_display': '月付' if cycle == 'month' else '年付',
-                        'target_price': target_price,
-                        'remaining_value': upgrade_cost['remaining_value'],
-                        'difference': upgrade_cost['difference'],
-                        'actual_payment': upgrade_cost['actual_payment'],
-                        'features': plan_config.get('features', '[]')
-                    })
+                if is_efficiency_promo:
+                    # 使用首月优惠价：1元
+                    target_price = 1.0
+                    actual_payment = 1.0
+                    remaining_value = 0.0
+                    difference = 1.0
+                    is_promo = True
+                else:
+                    # 正常价格计算
+                    if test_mode:
+                        # 测试模式：使用测试价格
+                        if cycle == 'year':
+                            target_price = plan_config.get('test_price_year')
+                        else:
+                            target_price = plan_config.get('test_price_month')
+                    else:
+                        # 正式模式：使用实际价格
+                        if cycle == 'year':
+                            target_price = plan_config.get(
+                                'actual_price_year'
+                            )
+                        else:
+                            target_price = plan_config.get(
+                                'actual_price_month'
+                            )
+
+                    if target_price is None or target_price == 0:
+                        continue
+
+                    # 计算升级成本
+                    upgrade_cost = SubscriptionUpgrade.calculate_upgrade_cost(
+                        current_plan=current_sub['subscription_type'],
+                        current_cycle=current_sub['billing_cycle'],
+                        current_paid=current_sub['last_paid_amount'],
+                        current_end=current_sub.get('subscription_expires', 0),
+                        target_plan=plan_code,
+                        target_cycle=cycle
+                    )
+
+                    if not upgrade_cost['can_upgrade']:
+                        continue
+
+                    actual_payment = upgrade_cost['actual_payment']
+                    remaining_value = upgrade_cost['remaining_value']
+                    difference = upgrade_cost['difference']
+                    is_promo = False
+
+                # 添加到升级选项
+                upgrade_options.append({
+                    'plan_key': plan_code,
+                    'plan_name': plan_config['plan_name'],
+                    'cycle': cycle,
+                    'cycle_display': '月付' if cycle == 'month' else '年付',
+                    'target_price': target_price,
+                    'remaining_value': remaining_value,
+                    'difference': difference,
+                    'actual_payment': actual_payment,
+                    'is_promo': is_promo,  # 标记是否为优惠订单
+                    'features': plan_config.get('features', [])
+                })
 
         return {
             'success': True,

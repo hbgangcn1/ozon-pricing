@@ -94,6 +94,85 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+USER_TYPE_LABELS = {
+    "free": "免费版",
+    "efficiency": "效率版",
+    "professional": "专业版",
+    "enterprise": "企业版",
+    "gratitude": "感谢版",
+}
+
+
+def _format_admin_role(raw_role):
+    """规范管理员角色显示，确保展示为admin。"""
+    if raw_role is None:
+        return "admin"
+    role_str = str(raw_role).strip() or "admin"
+    if role_str.lower() == "enterprise":
+        return "admin"
+    return role_str
+
+
+def _format_templates_limit(limit):
+    """将物流模板上限转为展示文本。"""
+    if limit == -1:
+        return "无限"
+    return limit
+
+
+def _format_remaining_calculations(value):
+    """将剩余次数转为展示文本。"""
+    if value == -1:
+        return "无限"
+    return value
+
+
+def _format_user_status(user):
+    """根据用户冻结状态与剩余天数生成状态标签。"""
+    if user.get('is_frozen'):
+        return "❄️ 已冻结"
+    remaining_days = user.get('remaining_days')
+    if remaining_days is None:
+        return "✅ 永久有效"
+    if remaining_days <= 0:
+        return "❌ 已过期"
+    if remaining_days <= 7:
+        return f"⚠️ {remaining_days}天后到期"
+    return f"✅ {remaining_days}天"
+
+
+def _build_user_overview(user):
+    """构建列表展示所需的用户概览信息。"""
+    status = _format_user_status(user)
+    remaining_calc = _format_remaining_calculations(
+        user.get('remaining_calculations')
+    )
+    templates_limit = _format_templates_limit(
+        user.get('logistics_templates_limit')
+    )
+    user_type = USER_TYPE_LABELS.get(user.get('user_type'), user.get(
+        'user_type'
+    ))
+    return {
+        "ID": user.get('id'),
+        "用户名": user.get('username'),
+        "邮箱": user.get('email'),
+        "用户类型": user_type,
+        "状态": status,
+        "剩余次数": remaining_calc,
+        "物流模板": (
+            f"{user.get('current_logistics_count')}/"
+            f"{templates_limit}"
+        ),
+        "注册时间": (
+            user.get('created_at')[:10] if user.get('created_at') else "未知"
+        ),
+        "最后登录": (
+            user.get('last_login')[:10] if user.get('last_login') else "从未登录"
+        ),
+    }
+
+
 def init_session_state():
     """初始化会话状态"""
     if 'admin_logged_in' not in st.session_state:
@@ -158,8 +237,10 @@ def admin_sidebar():
         </div>
         """, unsafe_allow_html=True)
 
-        st.write(f"**管理员:** {st.session_state.admin_user['username']}")
-        st.write(f"**角色:** {st.session_state.admin_user['role']}")
+        admin_user = st.session_state.admin_user or {}
+        st.write(f"**管理员:** {admin_user.get('username', 'admin')}")
+        role_display = _format_admin_role(admin_user.get('role'))
+        st.write(f"**角色:** {role_display}")
 
         st.divider()
 
@@ -285,51 +366,7 @@ def user_management_page():
         # 创建用户数据表格
         user_data = []
         for user in users_data['users']:
-            templates_limit_display = (
-                user['logistics_templates_limit']
-                if user['logistics_templates_limit'] != -1
-                else '无限'
-            )
-            # 格式化状态
-            if user['is_frozen']:
-                status = "❄️ 已冻结"
-            elif user['remaining_days'] is not None:
-                if user['remaining_days'] <= 0:
-                    status = "❌ 已过期"
-                elif user['remaining_days'] <= 7:
-                    status = f"⚠️ {user['remaining_days']}天后到期"
-                else:
-                    status = f"✅ {user['remaining_days']}天"
-            else:
-                status = "✅ 永久有效"
-
-            user_data.append({
-                "ID": user['id'],
-                "用户名": user['username'],
-                "邮箱": user['email'],
-                "用户类型": {
-                    "free": "免费版",
-                    "efficiency": "效率版",
-                    "professional": "专业版",
-                    "enterprise": "企业版",
-                    "gratitude": "感谢版"
-                }.get(user['user_type'], user['user_type']),
-                "状态": status,
-                "剩余次数": (
-                    user['remaining_calculations']
-                    if user['remaining_calculations'] != -1 else "无限"
-                ),
-                "物流模板": (
-                    f"{user['current_logistics_count']}/"
-                    f"{templates_limit_display}"
-                ),
-                "注册时间": (
-                    user['created_at'][:10] if user['created_at'] else "未知"
-                ),
-                "最后登录": (
-                    user['last_login'][:10] if user['last_login'] else "从未登录"
-                )
-            })
+            user_data.append(_build_user_overview(user))
 
         # 显示用户列表（每个用户一行，带操作按钮）
         for i, user in enumerate(users_data['users']):
@@ -342,36 +379,18 @@ def user_management_page():
                     st.write(f"邮箱: {user['email'] or '无'}")
 
                 with col2:
-                    user_type_name = {
-                        "free": "免费版",
-                        "efficiency": "效率版",
-                        "professional": "专业版",
-                        "enterprise": "企业版",
-                        "gratitude": "感谢版"
-                    }.get(user['user_type'], user['user_type'])
+                    user_type_name = USER_TYPE_LABELS.get(
+                        user['user_type'], user['user_type']
+                    )
                     st.write(f"**{user_type_name}**")
-
-                    # 状态显示
-                    if user['is_frozen']:
-                        st.write("❄️ 已冻结")
-                    elif user['remaining_days'] is not None:
-                        if user['remaining_days'] <= 0:
-                            st.write("❌ 已过期")
-                        elif user['remaining_days'] <= 7:
-                            st.write(f"⚠️ {user['remaining_days']}天后到期")
-                        else:
-                            st.write(f"✅ {user['remaining_days']}天")
-                    else:
-                        st.write("✅ 永久有效")
+                    st.write(_format_user_status(user))
 
                 with col3:
-                    calc_display = (
+                    calc_display = _format_remaining_calculations(
                         user['remaining_calculations']
-                        if user['remaining_calculations'] != -1 else '无限'
                     )
-                    tmpl_limit_display = (
+                    tmpl_limit_display = _format_templates_limit(
                         user['logistics_templates_limit']
-                        if user['logistics_templates_limit'] != -1 else '无限'
                     )
                     st.write(f"计算次数: {calc_display}")
                     st.write(

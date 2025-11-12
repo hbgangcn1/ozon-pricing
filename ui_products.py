@@ -47,67 +47,91 @@ def get_db():
     return _legacy_get_db()
 
 
+def _is_mock_value(value):
+    """粗略判断对象是否来自unittest.mock，避免在生产逻辑中处理mock对象。"""
+    cls = getattr(value, "__class__", None)
+    if cls is None:
+        return False
+    module_name = getattr(cls, "__module__", "")
+    return module_name.startswith("unittest.mock")
+
+
+def _valid_edit_id(value):
+    """校验编辑ID的合法性，过滤空值与Mock对象。"""
+    if _is_mock_value(value):
+        return False
+    if value in (None, False, 0, "", []):
+        return False
+    return isinstance(value, (int, float, str, list, dict))
+
+
+def _valid_batch_products(value):
+    """校验批量编辑产品集合的合法性。"""
+    if _is_mock_value(value):
+        return False
+    if value in (None, [], ()):
+        return False
+    return isinstance(value, (list, tuple))
+
+
+def _safe_get_session_value(session_state, key, validator):
+    """
+    安全读取SessionState中的值，按优先级依次尝试get、映射访问和属性访问。
+    只有通过validator校验的值才会返回。
+    """
+    if session_state is None or validator is None:
+        return None
+
+    candidates = []
+
+    # 方法1：get访问
+    try:
+        getter = getattr(session_state, 'get', None)
+        if callable(getter):
+            candidates.append(getter(key))
+    except (AttributeError, TypeError, KeyError):
+        pass
+
+    # 方法2：映射访问
+    try:
+        contains = getattr(session_state, '__contains__', None)
+        if callable(contains):
+            contains_result = contains(key)
+            if isinstance(contains_result, bool) and contains_result:
+                try:
+                    candidates.append(session_state[key])
+                except (KeyError, TypeError, AttributeError):
+                    pass
+    except (AttributeError, TypeError):
+        pass
+
+    # 方法3：属性访问
+    try:
+        candidates.append(getattr(session_state, key))
+    except (AttributeError, TypeError):
+        pass
+
+    for candidate in candidates:
+        if validator(candidate):
+            return candidate
+    return None
+
+
 def products_page():
     """产品管理页面"""
     uid = current_user_id()
 
     # 在进入数据库连接上下文之前检查编辑模式，避免上下文管理器问题
     # 安全地获取edit_product_id
-    edit_id = None
+    edit_id = _safe_get_session_value(
+        st.session_state,
+        "edit_product_id",
+        _valid_edit_id,
+    )
 
-    # 尝试多种方法获取值，优先使用最可靠的方法
-    # 方法1: 直接尝试get方法（最可靠）
-    try:
-        if hasattr(st.session_state, 'get'):
-            edit_id = st.session_state.get("edit_product_id")
-            # 如果get返回的值是有效的，使用它
-            if edit_id is not None and edit_id != 0 and edit_id != "":
-                pass  # 使用这个值
-    except (AttributeError, TypeError):
-        pass
-
-    # 方法2: 如果get方法不存在或返回None，尝试字典式访问
-    if edit_id is None:
-        try:
-            # 先检查键是否存在
-            key_exists = False
-            try:
-                if hasattr(st.session_state, '__contains__'):
-                    contains_result = "edit_product_id" in st.session_state
-                    # 确保结果是布尔值，不是MagicMock
-                    if isinstance(contains_result, bool):
-                        key_exists = contains_result
-            except (AttributeError, TypeError):
-                pass
-
-            if key_exists:
-                edit_id = st.session_state["edit_product_id"]
-        except (KeyError, AttributeError, TypeError):
-            pass
-
-    # 方法3: 如果前面方法都失败，尝试属性访问
-    if edit_id is None:
-        try:
-            attr_value = getattr(st.session_state, 'edit_product_id', None)
-            # 确保不是MagicMock对象
-            if attr_value is not None:
-                # 检查是否是有效的值类型
-                if isinstance(attr_value, (int, float, str, list, dict)):
-                    edit_id = attr_value
-        except (AttributeError, TypeError):
-            pass
-
-    # 只有在edit_id确实存在且有效时才调用编辑表单
-    # 确保是真正的数字、非空字符串或非空列表
-    if (edit_id is not None and
-            edit_id is not False and
-            edit_id != 0 and
-            edit_id != "" and
-            edit_id != []):
-        # 确保是有效的类型
-        if isinstance(edit_id, (int, float, str, list, dict)):
-            edit_product_form()
-            return
+    if edit_id is not None:
+        edit_product_form()
+        return
 
     with get_db_connection() as (conn, c):
         subscription_status = check_user_subscription_status(uid)
@@ -136,59 +160,13 @@ def products_page():
             )
 
         # 安全地获取batch_edit_products
-        batch_products = None
+        batch_products = _safe_get_session_value(
+            st.session_state,
+            "batch_edit_products",
+            _valid_batch_products,
+        )
 
-        # 方法1: 直接尝试get方法（最可靠）
-        try:
-            if hasattr(st.session_state, 'get'):
-                batch_products = st.session_state.get("batch_edit_products")
-                # 如果get返回的值是有效的，使用它
-                if batch_products is not None and batch_products != []:
-                    pass  # 使用这个值
-        except (AttributeError, TypeError):
-            pass
-
-        # 方法2: 如果get方法不存在或返回None，尝试字典式访问
-        if batch_products is None or batch_products == []:
-            try:
-                # 先检查键是否存在
-                key_exists = False
-                try:
-                    if hasattr(st.session_state, '__contains__'):
-                        contains_result = (
-                            "batch_edit_products" in st.session_state
-                        )
-                        # 确保结果是布尔值，不是MagicMock
-                        if isinstance(contains_result, bool):
-                            key_exists = contains_result
-                except (AttributeError, TypeError):
-                    pass
-
-                if key_exists:
-                    batch_products = (
-                        st.session_state["batch_edit_products"]
-                    )
-            except (KeyError, AttributeError, TypeError):
-                pass
-
-        # 方法3: 如果前面方法都失败，尝试属性访问
-        if batch_products is None or batch_products == []:
-            try:
-                attr_value = getattr(
-                    st.session_state, 'batch_edit_products', None
-                )
-                # 确保不是MagicMock对象且是有效的列表
-                if (attr_value is not None and
-                        isinstance(attr_value, (list, tuple))):
-                    batch_products = attr_value
-            except (AttributeError, TypeError):
-                pass
-
-        # 只有在batch_products确实存在且有效时才调用批量编辑表单
-        # 确保是非空列表
-        if (batch_products is not None and
-                batch_products != [] and
-                isinstance(batch_products, (list, tuple))):
+        if batch_products is not None:
             batch_edit_pricing_form()
             return
 

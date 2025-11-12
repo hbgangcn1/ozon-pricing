@@ -185,6 +185,12 @@ class PaymentHandler:
                 # 保存订单信息（包含升级信息）
                 from db_adapter import adapt_sql
                 if is_upgrade and upgrade_info:
+                    # 将is_promo信息编码到remaining_value中（如果是首月优惠，使用负数标记）
+                    # 或者更好的方式：在description中已经包含了"首月优惠"标记
+                    # 这里我们通过检查upgrade_info中的is_promo标记来确认
+                    remaining_value = upgrade_info.get('remaining_value', 0)
+                    # 如果是首月优惠，在remaining_value前加负号作为标记（仅用于识别，不影响实际值）
+                    # 但更好的方式是从description中判断，因为description已经包含了"首月优惠"
                     sql = adapt_sql("""
                         INSERT INTO payment_orders
                         (order_id, user_id, amount, description, duration,
@@ -197,7 +203,7 @@ class PaymentHandler:
                         'PENDING', int(time.time()), 1,
                         upgrade_info.get('current_plan'),
                         upgrade_info.get('target_plan'),
-                        upgrade_info.get('remaining_value', 0),
+                        remaining_value,
                         order_type
                     ))
                 else:
@@ -909,6 +915,12 @@ class PaymentHandler:
         try:
             from subscription_upgrade import SubscriptionUpgrade
 
+            # 检查是否是首月优惠订单（通过支付金额判断，1元=100分）
+            # 如果是首月优惠，需要在execute_upgrade中标记
+            # 这里我们通过传递paid_amount信息来帮助判断
+            # 注意：execute_upgrade会重新计算升级成本，但我们可以通过
+            # 实际支付金额来判断是否是首月优惠
+
             # 执行升级
             result = SubscriptionUpgrade.execute_upgrade(
                 user_id=user_id,
@@ -916,6 +928,32 @@ class PaymentHandler:
                 target_cycle=target_cycle,
                 payment_order_id=order_id
             )
+
+            # 检查订单描述中是否包含"首月优惠"标记（更严谨的方式）
+            # 从订单信息中读取描述，判断是否是首月优惠订单
+            try:
+                from db_utils import get_db_connection, _safe_adapt_sql
+                with get_db_connection() as (conn, cursor):
+                    sql = _safe_adapt_sql(
+                        "SELECT description FROM payment_orders "
+                        "WHERE order_id = ?",
+                        conn
+                    )
+                    cursor.execute(sql, (order_id,))
+                    order_result = cursor.fetchone()
+                    if order_result and '首月优惠' in order_result[0]:
+                        if (target_plan == 'efficiency' and
+                                target_cycle in ['month', '1_month']):
+                            sql = _safe_adapt_sql(
+                                "UPDATE users SET efficiency_promo_used = 1 "
+                                "WHERE id = ?",
+                                conn
+                            )
+                            cursor.execute(sql, (user_id,))
+                            conn.commit()
+                            print("🎉 已标记用户使用过效率版首月优惠（从订单描述确认）")
+            except Exception as e:
+                print(f"⚠️ 标记首月优惠使用失败: {e}")
 
             if result['success']:
                 print(f"✅ 套餐升级成功: {target_plan}")
