@@ -806,6 +806,11 @@ class PaymentHandler:
                     # 如果失败，回退到to_timestamp()（适用于测试环境timestamp类型）
                     from db_utils import _is_postgresql_connection as is_pg
                     try:
+                        import psycopg2.errors as pg_errors
+                    except ImportError:
+                        pg_errors = None
+
+                    try:
                         sql = adapt_sql("""
                             UPDATE users
                             SET subscription_type = ?,
@@ -826,11 +831,25 @@ class PaymentHandler:
                     except Exception as e:
                         # 如果失败且是PostgreSQL，尝试使用to_timestamp()
                         # 检查是否是类型不匹配错误
-                        error_str = str(e)
-                        if (is_pg(conn) and
-                                ('subscription_start' in error_str or
-                                 'DatatypeMismatch' in error_str or
-                                 'timestamp' in error_str.lower())):
+                        is_datatype_error = False
+                        if pg_errors and isinstance(e, pg_errors.DatatypeMismatch):
+                            is_datatype_error = True
+                        else:
+                            error_str = str(e)
+                            if (is_pg(conn) and
+                                    ('subscription_start' in error_str or
+                                     'DatatypeMismatch' in error_str or
+                                     'timestamp' in error_str.lower() or
+                                     'integer' in error_str.lower())):
+                                is_datatype_error = True
+
+                        if is_datatype_error and is_pg(conn):
+                            # PostgreSQL中事务失败后需要回滚
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass  # 忽略回滚错误
+                            # 重新执行UPDATE，使用to_timestamp()
                             sql = adapt_sql("""
                                 UPDATE users
                                 SET subscription_type = ?,
