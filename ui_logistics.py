@@ -1,5 +1,13 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
+
+try:
+    import psycopg2
+    from psycopg2 import errors as pg_errors
+except ImportError:
+    psycopg2 = None
+    pg_errors = None
 
 try:
     from .db_utils import (
@@ -422,17 +430,52 @@ def logistics_page():
                     result = cur.fetchone()
                     current_count = result[0] if result else 0
                     # 获取用户类型和物流模板限制
-                    sql = _safe_adapt_sql(
-                        "SELECT user_type, "
-                        "logistics_templates_limit "
-                        "FROM users "
-                        "WHERE id = ?",
-                        conn2
-                    )
-                    cur.execute(sql, (uid,))
-                    result = cur.fetchone()
-                    if result:
-                        user_type, _db_limit = result
+                    # 先检查列是否存在，如果不存在则只查询user_type
+                    user_type = None
+                    try:
+                        sql = _safe_adapt_sql(
+                            "SELECT user_type, "
+                            "logistics_templates_limit "
+                            "FROM users "
+                            "WHERE id = ?",
+                            conn2
+                        )
+                        cur.execute(sql, (uid,))
+                        result = cur.fetchone()
+                        if result:
+                            user_type = result[0]
+                    except (sqlite3.OperationalError,
+                            sqlite3.DatabaseError) as e:
+                        # SQLite: 列不存在错误
+                        if 'no such column' in str(e).lower():
+                            # 如果列不存在，只查询user_type
+                            sql = _safe_adapt_sql(
+                                "SELECT user_type FROM users WHERE id = ?",
+                                conn2
+                            )
+                            cur.execute(sql, (uid,))
+                            result = cur.fetchone()
+                            if result:
+                                user_type = result[0]
+                        else:
+                            raise
+                    except Exception as e:
+                        # PostgreSQL: 检查是否是列不存在错误
+                        if (pg_errors and
+                                isinstance(e, pg_errors.UndefinedColumn)):
+                            # 如果列不存在，只查询user_type
+                            sql = _safe_adapt_sql(
+                                "SELECT user_type FROM users WHERE id = ?",
+                                conn2
+                            )
+                            cur.execute(sql, (uid,))
+                            result = cur.fetchone()
+                            if result:
+                                user_type = result[0]
+                        else:
+                            raise
+
+                    if user_type:
                         # 依据套餐强制限制：free=1，efficiency=3，其它不限
                         if user_type == 'free':
                             effective_limit = 1
@@ -440,208 +483,210 @@ def logistics_page():
                             effective_limit = 3
                         else:
                             effective_limit = -1  # 不限
+                    else:
+                        effective_limit = -1
 
-                        # 检查是否达到上限（严格按套餐限制）
-                        if (effective_limit != -1 and
-                                current_count >= effective_limit):
-                            # 使用toast显示临时消息（5秒后自动消失）
-                            st.toast(
-                                f"❌ 物流模板数量已达上限（当前：{current_count}个）",
-                                icon="❌"
+                    # 检查是否达到上限（严格按套餐限制）
+                    if (effective_limit != -1 and
+                            current_count >= effective_limit):
+                        # 使用toast显示临时消息（5秒后自动消失）
+                        st.toast(
+                            f"❌ 物流模板数量已达上限（当前：{current_count}个）",
+                            icon="❌"
+                        )
+                        st.toast(
+                            "💡 请升级套餐以获得更多物流模板",
+                            icon="💡"
+                        )
+                        # 不return，继续显示物流列表
+                    else:
+                        # 只有在未达到上限时才继续检查和保存
+                        # 检查必填字段
+                        missing_fields = []
+                        if not name:
+                            missing_fields.append("物流名称")
+
+                        if missing_fields:
+                            st.error(
+                                f"请填写以下必填字段：{', '.join(missing_fields)}"
                             )
-                            st.toast(
-                                "💡 请升级套餐以获得更多物流模板",
-                                icon="💡"
-                            )
-                            # 不return，继续显示物流列表
                         else:
-                            # 只有在未达到上限时才继续检查和保存
-                            # 检查必填字段
-                            missing_fields = []
-                            if not name:
-                                missing_fields.append("物流名称")
+                            # 货币转换 - 用户计算时只使用兜底汇率，不调用API
+                            if price_currency == "卢布":
+                                try:
+                                    rub_rate = get_fallback_exchange_rate()
+                                except (KeyError, TypeError, ValueError):
+                                    rub_rate = 0.0904  # 默认兜底汇率
+                                price_limit_cny = (
+                                    round(price_limit * rub_rate, 4)
+                                    if price_limit > 0
+                                    else 0
+                                )
+                                price_limit_rub = price_limit
+                                price_min_rub = price_min
+                            else:  # 美元
+                                try:
+                                    usd_rate = get_fallback_usd_rate()
+                                except (KeyError, TypeError, ValueError):
+                                    usd_rate = 7.2  # 默认美元汇率
+                                price_limit_cny = (
+                                    round(price_limit * usd_rate, 4)
+                                    if price_limit > 0
+                                    else 0
+                                )
+                                price_limit_rub = price_limit
+                                price_min_rub = price_min
 
-                            if missing_fields:
-                                st.error(
-                                    f"请填写以下必填字段：{', '.join(missing_fields)}"
+                            type_en = {
+                                "陆运": "land", "空运": "air"
+                            }[logistic_type]
+                            fee_mode_key = (
+                                "base_plus_continue"
+                                if fee_mode == "基础费用+续重费用"
+                                else "first_plus_continue"
+                            )
+                            continue_unit_val = unit_map[continue_unit]
+
+                            # 送货方式映射
+                            delivery_method_map = {
+                                "送货上门": "home_delivery",
+                                "送货到取货点": "pickup_point",
+                                "未知": "unknown",
+                            }
+
+                            placeholders = ",".join(["?"] * 35)
+                            # 根据数据库类型决定是否添加 RETURNING 子句
+                            is_pg = _is_postgresql_connection(conn)
+                            returning_clause = (
+                                " RETURNING id" if is_pg else ""
+                            )
+                            insert_sql_raw = (
+                                "INSERT INTO logistics ("
+                                "user_id, name, type, min_days, max_days, "
+                                "price_limit, price_limit_rub, "
+                                "price_min_rub, "
+                                "base_fee, min_weight, max_weight, "
+                                "max_sum_of_sides, max_longest_side, "
+                                "max_second_side, "
+                                "min_second_side, min_length, "
+                                "max_cylinder_sum, "
+                                "min_cylinder_sum, max_cylinder_length, "
+                                "min_cylinder_length, volume_mode, "
+                                "longest_side_threshold, "
+                                "volume_coefficient, "
+                                "allow_battery, allow_flammable, "
+                                "battery_capacity_limit_wh, require_msds, "
+                                "fee_mode, "
+                                "first_fee, first_weight_g, continue_fee, "
+                                "continue_unit, delivery_method, "
+                                "price_limit_currency, "
+                                "price_min_currency) "
+                                f"VALUES ({placeholders})"
+                                f"{returning_clause}"
+                            )
+                            insert_sql = _safe_adapt_sql(
+                                insert_sql_raw, conn
+                            )
+                            c.execute(
+                                insert_sql,
+                                (
+                                    uid,
+                                    name,
+                                    type_en,
+                                    min_days,
+                                    max_days,
+                                    price_limit_cny,
+                                    price_limit_rub,
+                                    price_min_rub,
+                                    base_fee,
+                                    min_weight,
+                                    max_weight,
+                                    max_sum_of_sides,
+                                    max_longest_side,
+                                    max_second_side,
+                                    min_second_side,
+                                    min_length,
+                                    max_cylinder_sum,
+                                    min_cylinder_sum,
+                                    max_cylinder_length,
+                                    min_cylinder_length,
+                                    volume_mode,
+                                    longest_side_threshold,
+                                    volume_coefficient,
+                                    int(allow_battery),
+                                    int(allow_flammable),
+                                    battery_capacity_limit_wh,
+                                    int(require_msds),
+                                    fee_mode_key,
+                                    (
+                                        first_fee
+                                        if fee_mode_key ==
+                                        "first_plus_continue"
+                                        else 0.0
+                                    ),
+                                    (
+                                        first_weight_g
+                                        if fee_mode_key ==
+                                        "first_plus_continue"
+                                        else 0
+                                    ),
+                                    continue_fee,
+                                    continue_unit_val,
+                                    delivery_method_map[delivery_method],
+                                    (
+                                        "USD" if price_currency == "美元"
+                                        else "RUB"
+                                    ),
+                                    (
+                                        "USD" if price_currency == "美元"
+                                        else "RUB"
+                                    ),
+                                ),
+                            )
+                            # PostgreSQL 使用 RETURNING 子句，
+                            # SQLite 使用 lastrowid
+                            if is_pg:
+                                result = c.fetchone()
+                                new_logistic_id = (
+                                    result[0] if result else None
                                 )
                             else:
-                                # 货币转换 - 用户计算时只使用兜底汇率，不调用API
-                                if price_currency == "卢布":
-                                    try:
-                                        rub_rate = get_fallback_exchange_rate()
-                                    except (KeyError, TypeError, ValueError):
-                                        rub_rate = 0.0904  # 默认兜底汇率
-                                    price_limit_cny = (
-                                        round(price_limit * rub_rate, 4)
-                                        if price_limit > 0
-                                        else 0
+                                new_logistic_id = c.lastrowid
+                            conn.commit()
+                            # 记录审计日志（如果是admin操作）
+                            try:
+                                from app import is_admin
+                                if is_admin() and uid is not None:
+                                    from db_utils import log_admin_action
+                                    log_admin_action(
+                                        admin_id=uid,
+                                        action_type='创建物流规则',
+                                        action_detail=(
+                                            f"创建物流规则: {name} "
+                                            f"(类型: {logistic_type}, "
+                                            f"ID: {new_logistic_id})"
+                                        ),
+                                        target_user_id=uid,
+                                        target_type='logistics'
                                     )
-                                    price_limit_rub = price_limit
-                                    price_min_rub = price_min
-                                else:  # 美元
-                                    try:
-                                        usd_rate = get_fallback_usd_rate()
-                                    except (KeyError, TypeError, ValueError):
-                                        usd_rate = 7.2  # 默认美元汇率
-                                    price_limit_cny = (
-                                        round(price_limit * usd_rate, 4)
-                                        if price_limit > 0
-                                        else 0
-                                    )
-                                    price_limit_rub = price_limit
-                                    price_min_rub = price_min
+                            except (
+                                ImportError,
+                                AttributeError,
+                                TypeError,
+                                ValueError
+                            ):
+                                pass  # 审计日志记录失败不影响主流程
 
-                                type_en = {
-                                    "陆运": "land", "空运": "air"
-                                }[logistic_type]
-                                fee_mode_key = (
-                                    "base_plus_continue"
-                                    if fee_mode == "基础费用+续重费用"
-                                    else "first_plus_continue"
-                                )
-                                continue_unit_val = unit_map[continue_unit]
+                            # 重新计算优先级分组
+                            calculate_and_update_priority_groups(uid)
 
-                                # 送货方式映射
-                                delivery_method_map = {
-                                    "送货上门": "home_delivery",
-                                    "送货到取货点": "pickup_point",
-                                    "未知": "unknown",
-                                }
+                            # 清除物流数据缓存
+                            cache_key = f"logistics_data_{uid}"
+                            if cache_key in st.session_state:
+                                del st.session_state[cache_key]
 
-                                placeholders = ",".join(["?"] * 35)
-                                # 根据数据库类型决定是否添加 RETURNING 子句
-                                is_pg = _is_postgresql_connection(conn)
-                                returning_clause = (
-                                    " RETURNING id" if is_pg else ""
-                                )
-                                insert_sql_raw = (
-                                    "INSERT INTO logistics ("
-                                    "user_id, name, type, min_days, max_days, "
-                                    "price_limit, price_limit_rub, "
-                                    "price_min_rub, "
-                                    "base_fee, min_weight, max_weight, "
-                                    "max_sum_of_sides, max_longest_side, "
-                                    "max_second_side, "
-                                    "min_second_side, min_length, "
-                                    "max_cylinder_sum, "
-                                    "min_cylinder_sum, max_cylinder_length, "
-                                    "min_cylinder_length, volume_mode, "
-                                    "longest_side_threshold, "
-                                    "volume_coefficient, "
-                                    "allow_battery, allow_flammable, "
-                                    "battery_capacity_limit_wh, require_msds, "
-                                    "fee_mode, "
-                                    "first_fee, first_weight_g, continue_fee, "
-                                    "continue_unit, delivery_method, "
-                                    "price_limit_currency, "
-                                    "price_min_currency) "
-                                    f"VALUES ({placeholders})"
-                                    f"{returning_clause}"
-                                )
-                                insert_sql = _safe_adapt_sql(
-                                    insert_sql_raw, conn
-                                )
-                                c.execute(
-                                    insert_sql,
-                                    (
-                                        uid,
-                                        name,
-                                        type_en,
-                                        min_days,
-                                        max_days,
-                                        price_limit_cny,
-                                        price_limit_rub,
-                                        price_min_rub,
-                                        base_fee,
-                                        min_weight,
-                                        max_weight,
-                                        max_sum_of_sides,
-                                        max_longest_side,
-                                        max_second_side,
-                                        min_second_side,
-                                        min_length,
-                                        max_cylinder_sum,
-                                        min_cylinder_sum,
-                                        max_cylinder_length,
-                                        min_cylinder_length,
-                                        volume_mode,
-                                        longest_side_threshold,
-                                        volume_coefficient,
-                                        int(allow_battery),
-                                        int(allow_flammable),
-                                        battery_capacity_limit_wh,
-                                        int(require_msds),
-                                        fee_mode_key,
-                                        (
-                                            first_fee
-                                            if fee_mode_key ==
-                                            "first_plus_continue"
-                                            else 0.0
-                                        ),
-                                        (
-                                            first_weight_g
-                                            if fee_mode_key ==
-                                            "first_plus_continue"
-                                            else 0
-                                        ),
-                                        continue_fee,
-                                        continue_unit_val,
-                                        delivery_method_map[delivery_method],
-                                        (
-                                            "USD" if price_currency == "美元"
-                                            else "RUB"
-                                        ),
-                                        (
-                                            "USD" if price_currency == "美元"
-                                            else "RUB"
-                                        ),
-                                    ),
-                                )
-                                # PostgreSQL 使用 RETURNING 子句，
-                                # SQLite 使用 lastrowid
-                                if is_pg:
-                                    result = c.fetchone()
-                                    new_logistic_id = (
-                                        result[0] if result else None
-                                    )
-                                else:
-                                    new_logistic_id = c.lastrowid
-                                conn.commit()
-                                # 记录审计日志（如果是admin操作）
-                                try:
-                                    from app import is_admin
-                                    if is_admin() and uid is not None:
-                                        from db_utils import log_admin_action
-                                        log_admin_action(
-                                            admin_id=uid,
-                                            action_type='创建物流规则',
-                                            action_detail=(
-                                                f"创建物流规则: {name} "
-                                                f"(类型: {logistic_type}, "
-                                                f"ID: {new_logistic_id})"
-                                            ),
-                                            target_user_id=uid,
-                                            target_type='logistics'
-                                        )
-                                except (
-                                    ImportError,
-                                    AttributeError,
-                                    TypeError,
-                                    ValueError
-                                ):
-                                    pass  # 审计日志记录失败不影响主流程
-
-                                # 重新计算优先级分组
-                                calculate_and_update_priority_groups(uid)
-
-                                # 清除物流数据缓存
-                                cache_key = f"logistics_data_{uid}"
-                                if cache_key in st.session_state:
-                                    del st.session_state[cache_key]
-
-                                st.success("物流规则添加成功！")
-                                st.rerun()
+                            st.success("物流规则添加成功！")
+                            st.rerun()
         # ------------------------------------------------------------------
         # 物流列表
         # ------------------------------------------------------------------

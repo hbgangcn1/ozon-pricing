@@ -2140,6 +2140,28 @@ def _upgrade_users_security_questions():
         conn.commit()
 
 
+def _upgrade_users_logistics_templates_limit():
+    """升级：新增用户物流模板限制字段"""
+    # 白名单：只允许这些列名，防止SQL注入
+    allowed_users_columns = {
+        "logistics_templates_limit"
+    }
+
+    with get_db_connection() as (conn, c):
+        cols = _get_table_columns(c, 'users')
+        new_cols = {
+            "logistics_templates_limit": "INTEGER DEFAULT -1"
+        }
+        for col, def_sql in new_cols.items():
+            # 使用安全的ALTER TABLE函数
+            if col not in cols:
+                _safe_alter_table_add_column(
+                    c, 'users', col, def_sql,
+                    allowed_users_columns
+                )
+        conn.commit()
+
+
 def _safe_execute_create_table(cursor, sql: str):
     """安全执行CREATE TABLE语句，自动处理AUTOINCREMENT"""
     import re
@@ -2896,6 +2918,7 @@ def init_db():
         _upgrade_statistics_tables()
         _upgrade_performance_indexes()
         _upgrade_users_security_questions()
+        _upgrade_users_logistics_templates_limit()
         # 3. 初始管理员（避免递归调用）
         # 检测实际连接类型
         is_pg = _is_postgresql_connection(conn)
@@ -4301,16 +4324,32 @@ def get_all_users(
 
         # 获取分页数据
         offset = (page - 1) * per_page
-        query = f"""
-        SELECT id, username, email, role, user_type,
-               subscription_start, subscription_expires,
-               remaining_calculations, logistics_templates_limit,
-               is_auto_renew, created_at, last_login, is_frozen
-        FROM users
-        WHERE {where_clause}
-        ORDER BY created_at DESC
-        LIMIT ? OFFSET ?
-        """
+        # 检查logistics_templates_limit列是否存在
+        cols = _get_table_columns(c, 'users')
+        has_logistics_limit = 'logistics_templates_limit' in cols
+
+        if has_logistics_limit:
+            query = f"""
+            SELECT id, username, email, role, user_type,
+                   subscription_start, subscription_expires,
+                   remaining_calculations, logistics_templates_limit,
+                   is_auto_renew, created_at, last_login, is_frozen
+            FROM users
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """
+        else:
+            query = f"""
+            SELECT id, username, email, role, user_type,
+                   subscription_start, subscription_expires,
+                   remaining_calculations, -1,
+                   is_auto_renew, created_at, last_login, is_frozen
+            FROM users
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """
         c.execute(query, safe_params + [per_page, offset])
         users = c.fetchall()
 
