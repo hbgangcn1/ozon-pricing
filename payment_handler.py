@@ -802,25 +802,10 @@ class PaymentHandler:
                               "efficiency_promo_used=1")
 
                     # 更新订阅信息（包含计费周期和支付金额）
-                    # 根据数据库类型动态处理subscription_start字段
-                    # PostgreSQL中可能是timestamp类型，需要使用to_timestamp()
-                    # SQLite中是INTEGER类型，直接使用整数
+                    # 尝试使用整数时间戳（适用于生产环境INTEGER类型）
+                    # 如果失败，回退到to_timestamp()（适用于测试环境timestamp类型）
                     from db_utils import _is_postgresql_connection as is_pg
-                    if is_pg(conn):
-                        # PostgreSQL：使用to_timestamp()转换整数时间戳
-                        sql = adapt_sql("""
-                            UPDATE users
-                            SET subscription_type = ?,
-                                subscription_expires = ?,
-                                user_type = ?,
-                                billing_cycle = ?,
-                                last_paid_amount = ?,
-                                subscription_start = to_timestamp(?),
-                                efficiency_promo_used = ?
-                            WHERE id = ?
-                        """)
-                    else:
-                        # SQLite：直接使用整数时间戳
+                    try:
                         sql = adapt_sql("""
                             UPDATE users
                             SET subscription_type = ?,
@@ -832,12 +817,39 @@ class PaymentHandler:
                                 efficiency_promo_used = ?
                             WHERE id = ?
                         """)
-                    cursor.execute(sql, (
-                        subscription_type, new_expires,
-                        subscription_type, billing_cycle,
-                        paid_amount, current_time,
-                        efficiency_promo_used, user_id
-                    ))
+                        cursor.execute(sql, (
+                            subscription_type, new_expires,
+                            subscription_type, billing_cycle,
+                            paid_amount, current_time,
+                            efficiency_promo_used, user_id
+                        ))
+                    except Exception as e:
+                        # 如果失败且是PostgreSQL，尝试使用to_timestamp()
+                        # 检查是否是类型不匹配错误
+                        error_str = str(e)
+                        if (is_pg(conn) and
+                                ('subscription_start' in error_str or
+                                 'DatatypeMismatch' in error_str or
+                                 'timestamp' in error_str.lower())):
+                            sql = adapt_sql("""
+                                UPDATE users
+                                SET subscription_type = ?,
+                                    subscription_expires = ?,
+                                    user_type = ?,
+                                    billing_cycle = ?,
+                                    last_paid_amount = ?,
+                                    subscription_start = to_timestamp(?),
+                                    efficiency_promo_used = ?
+                                WHERE id = ?
+                            """)
+                            cursor.execute(sql, (
+                                subscription_type, new_expires,
+                                subscription_type, billing_cycle,
+                                paid_amount, current_time,
+                                efficiency_promo_used, user_id
+                            ))
+                        else:
+                            raise
 
                     # 验证更新结果
                     sql = adapt_sql("""
