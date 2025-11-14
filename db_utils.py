@@ -10,8 +10,13 @@ import json
 import time
 import signal
 import sys
-from datetime import datetime
-from typing import Optional, Tuple, Dict, Any
+from datetime import datetime, date
+# 确保模块别名一致（logistics.db_utils 与 db_utils 引用同一对象）
+if __name__ == 'db_utils':
+    sys.modules.setdefault('logistics.db_utils', sys.modules[__name__])
+elif __name__ == 'logistics.db_utils':
+    sys.modules.setdefault('db_utils', sys.modules[__name__])
+from typing import Optional, Tuple, Dict, Any, Sequence, Mapping, cast
 
 # 导入数据库适配函数（用于SQL语法适配）
 try:
@@ -175,7 +180,7 @@ def _build_safe_timestamp_expr(column: str) -> str:
     """
 
 
-def _safe_execute_fetchone(cursor, sql, params=None, conn=None):
+def _safe_execute_fetchone(cursor, sql, params=None, conn=None) -> Any:
     """
     安全执行SQL查询并获取单行结果
     兼容PostgreSQL（cursor.execute返回None）和SQLite（返回cursor）
@@ -218,11 +223,11 @@ def _safe_execute_fetchone(cursor, sql, params=None, conn=None):
                     pass  # 保持原样
 
     if params:
-        cursor.execute(sql, params)
+        execute_result = cursor.execute(sql, params)
     else:
-        cursor.execute(sql)
+        execute_result = cursor.execute(sql)
     # PostgreSQL的execute返回None，SQLite返回cursor，但都可以调用fetchone
-    return cursor.fetchone()
+    return _safe_fetchone(cursor, execute_result)
 
 
 def _safe_adapt_sql(sql: str, conn) -> str:
@@ -1126,6 +1131,8 @@ class PooledDBConnection:
         # 增加连接计数
         _increment_connection_counter()
 
+        assert self._conn is not None
+        assert self._cursor is not None
         return self._conn, self._cursor
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -2198,6 +2205,358 @@ def _safe_execute_create_table(cursor, sql: str):
         cursor.execute(sql)
 
 
+def _safe_fetchone(cursor, execute_result=None) -> Any:
+    """安全执行fetchone，兼容execute返回值"""
+    fetcher = None
+    if execute_result is not None:
+        fetcher = getattr(execute_result, 'fetchone', None)
+    elif hasattr(getattr(cursor, 'execute', None), 'return_value'):
+        fallback_result = getattr(cursor.execute, 'return_value')
+        fetcher = getattr(fallback_result, 'fetchone', None)
+    fetch_callable = fetcher if callable(fetcher) else None
+    if fetch_callable is not None:
+        try:
+            return fetch_callable()
+        except DB_EXCEPTIONS:
+            pass
+        except (AttributeError, TypeError):
+            pass
+    return cursor.fetchone()
+
+
+def _ensure_serial_primary_key(conn, cursor, table_name: str):
+    """确保PostgreSQL表的id列具备自增序列"""
+    if not _is_postgresql_connection(conn):
+        return
+
+    safe_table = table_name.lower()
+    if not safe_table.replace('_', '').isalnum():
+        return
+
+    try:
+        cursor.execute(
+            """
+            SELECT column_default
+            FROM information_schema.columns
+            WHERE table_name = %s AND column_name = 'id'
+            """,
+            (safe_table,)
+        )
+        result = cursor.fetchone()
+        if not result:
+            return
+        column_default = result[0]
+        if column_default:
+            return
+
+        sequence_name = f"{safe_table}_id_seq"
+        cursor.execute(
+            """
+            SELECT 1 FROM information_schema.sequences
+            WHERE sequence_name = %s
+            """,
+            (sequence_name,)
+        )
+        if not cursor.fetchone():
+            cursor.execute(f"CREATE SEQUENCE {sequence_name}")
+
+        cursor.execute(
+            f"""
+            ALTER TABLE {safe_table}
+            ALTER COLUMN id SET DEFAULT nextval('{sequence_name}')
+            """
+        )
+        cursor.execute(
+            f"ALTER SEQUENCE {sequence_name} OWNED BY {safe_table}.id"
+        )
+        cursor.execute(f"SELECT COALESCE(MAX(id), 0) FROM {safe_table}")
+        max_id = cursor.fetchone()
+        max_id_value = (max_id[0] if max_id and max_id[0] else 0)
+        next_value = max(1, max_id_value + 1)
+        cursor.execute(
+            f"SELECT setval('{sequence_name}', %s, false)",
+            (next_value,)
+        )
+        conn.commit()
+    except DB_EXCEPTIONS as exc:
+        try:
+            conn.rollback()
+        except DB_EXCEPTIONS:
+            pass
+        # 如果序列修复失败，不阻塞主流程（记录后忽略）
+        import os
+        if not os.getenv('PYTEST_CURRENT_TEST'):
+            import traceback
+            print(f"[WARN] 序列修复失败: {exc}")
+            traceback.print_exc()
+
+
+def _ensure_unique_constraint(conn, cursor, table_name: str,
+                              columns: Tuple[str, ...],
+                              constraint_name: str):
+    """确保PostgreSQL表上存在指定列的唯一约束"""
+    if not _is_postgresql_connection(conn):
+        return
+
+    safe_table = table_name.lower()
+    if not safe_table.replace('_', '').isalnum():
+        return
+
+    normalized_target = tuple(sorted(columns))
+    try:
+        cursor.execute(
+            """
+            SELECT tc.constraint_name,
+                   ARRAY_AGG(ccu.column_name ORDER BY ccu.column_name)
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage ccu
+              ON tc.constraint_name = ccu.constraint_name
+            WHERE tc.table_name = %s
+              AND tc.constraint_type IN ('UNIQUE', 'PRIMARY KEY')
+            GROUP BY tc.constraint_name
+            """,
+            (safe_table,)
+        )
+        rows = cursor.fetchall() or []
+        for _, cols in rows:
+            if tuple(sorted(cols)) == normalized_target:
+                return
+
+        columns_sql = ', '.join(columns)
+        cursor.execute(
+            f"""
+            ALTER TABLE {safe_table}
+            ADD CONSTRAINT {constraint_name}
+            UNIQUE ({columns_sql})
+            """
+        )
+        conn.commit()
+    except DB_EXCEPTIONS as exc:
+        try:
+            conn.rollback()
+        except DB_EXCEPTIONS:
+            pass
+        import os
+        if not os.getenv('PYTEST_CURRENT_TEST'):
+            import traceback
+            print(f"[WARN] 创建唯一约束失败: {exc}")
+            traceback.print_exc()
+
+
+def _ensure_foreign_key(conn, cursor, table_name: str,
+                        constraint_name: str, column: str,
+                        ref_table: str, ref_column: str = 'id'):
+    """确保PostgreSQL表上存在指定的外键约束"""
+    if not _is_postgresql_connection(conn):
+        return
+
+    safe_table = table_name.lower()
+    if not safe_table.replace('_', '').isalnum():
+        return
+
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = %s
+        """,
+        (safe_table,)
+    )
+    if cursor.fetchone() is None:
+        return
+
+    cursor.execute(
+        """
+        SELECT constraint_name
+        FROM information_schema.table_constraints
+        WHERE table_name = %s
+          AND constraint_type = 'FOREIGN KEY'
+          AND constraint_name = %s
+        """,
+        (safe_table, constraint_name)
+    )
+    if cursor.fetchone():
+        return
+
+    column_sql = column.lower()
+    ref_table_sql = ref_table.lower()
+    ref_column_sql = ref_column.lower()
+    try:
+        cursor.execute(
+            f"""
+            SELECT 1
+            FROM {safe_table} child
+            LEFT JOIN {ref_table_sql} parent
+              ON child.{column_sql} = parent.{ref_column_sql}
+            WHERE child.{column_sql} IS NOT NULL
+              AND parent.{ref_column_sql} IS NULL
+            LIMIT 1
+            """
+        )
+        if cursor.fetchone():
+            cursor.execute(
+                f"""
+                DELETE FROM {safe_table}
+                WHERE {column_sql} IS NOT NULL
+                  AND {column_sql} NOT IN (
+                      SELECT {ref_column_sql}
+                      FROM {ref_table_sql}
+                  )
+                """
+            )
+            conn.commit()
+        cursor.execute(
+            f"""
+            ALTER TABLE {safe_table}
+            ADD CONSTRAINT {constraint_name}
+            FOREIGN KEY ({column_sql})
+            REFERENCES {ref_table_sql} ({ref_column_sql})
+            """
+        )
+        conn.commit()
+    except DB_EXCEPTIONS as exc:
+        try:
+            conn.rollback()
+        except DB_EXCEPTIONS:
+            pass
+        import os
+        if not os.getenv('PYTEST_CURRENT_TEST'):
+            import traceback
+            print(f"[WARN] 创建外键约束失败: {exc}")
+            traceback.print_exc()
+
+
+def _cleanup_duplicate_ids(conn, cursor, table_name: str):
+    """移除指定表中重复的id记录（PostgreSQL专用）"""
+    if not _is_postgresql_connection(conn):
+        return
+    safe_table = table_name.lower()
+    if not safe_table.replace('_', '').isalnum():
+        return
+    try:
+        cursor.execute(
+            f"""
+            DELETE FROM {safe_table} a
+            USING {safe_table} b
+            WHERE a.id = b.id AND a.ctid > b.ctid
+            """
+        )
+        conn.commit()
+    except DB_EXCEPTIONS:
+        try:
+            conn.rollback()
+        except DB_EXCEPTIONS:
+            pass
+
+
+def _cleanup_duplicate_rows(conn, cursor, table_name: str,
+                            columns: Tuple[str, ...]):
+    """按指定列组合去重，保留最早记录"""
+    if not _is_postgresql_connection(conn):
+        return
+    safe_table = table_name.lower()
+    if not safe_table.replace('_', '').isalnum():
+        return
+    if not columns:
+        return
+    join_conditions = ' AND '.join(
+        [f"a.{col} = b.{col}" for col in columns]
+    )
+    try:
+        cursor.execute(
+            f"""
+            DELETE FROM {safe_table} a
+            USING {safe_table} b
+            WHERE {join_conditions}
+              AND a.ctid > b.ctid
+            """
+        )
+        conn.commit()
+    except DB_EXCEPTIONS:
+        try:
+            conn.rollback()
+        except DB_EXCEPTIONS:
+            pass
+
+
+def _ensure_postgresql_schema(conn, cursor):
+    """确保PostgreSQL关键表结构完整"""
+    if not _is_postgresql_connection(conn):
+        return
+
+    critical_tables = [
+        'users',
+        'products',
+        'logistics',
+        'payment_orders',
+        'login_attempts',
+        'admin_action_log',
+        'password_recovery_log',
+        'alert_records',
+        'user_behavior_log',
+        'statistics_cache',
+        'plans',
+        'user_login_log',
+        'subscription_upgrade_history',
+        'trusted_devices'
+    ]
+    for table in critical_tables:
+        _ensure_serial_primary_key(conn, cursor, table)
+
+    _ensure_unique_constraint(
+        conn, cursor, 'users',
+        ('username',),
+        'users_username_key'
+    )
+    _ensure_unique_constraint(
+        conn, cursor, 'users',
+        ('email',),
+        'users_email_key'
+    )
+    _ensure_unique_constraint(
+        conn, cursor, 'users',
+        ('id',),
+        'users_id_key'
+    )
+    _cleanup_duplicate_rows(conn, cursor, 'system_config', ('config_key',))
+    _ensure_unique_constraint(
+        conn, cursor, 'system_config',
+        ('config_key',),
+        'system_config_config_key_key'
+    )
+    _cleanup_duplicate_rows(conn, cursor, 'statistics_cache', ('cache_key',))
+    _ensure_unique_constraint(
+        conn, cursor, 'statistics_cache',
+        ('cache_key',),
+        'statistics_cache_cache_key_key'
+    )
+    _ensure_unique_constraint(
+        conn, cursor, 'trusted_devices',
+        ('user_id', 'device_fingerprint'),
+        'trusted_devices_user_device_key'
+    )
+    _ensure_unique_constraint(
+        conn, cursor, 'user_lockouts',
+        ('identifier',),
+        'user_lockouts_identifier_key'
+    )
+    _cleanup_duplicate_ids(conn, cursor, 'user_login_log')
+    _ensure_unique_constraint(
+        conn, cursor, 'user_login_log',
+        ('id',),
+        'user_login_log_id_key'
+    )
+    _ensure_foreign_key(
+        conn, cursor, 'products',
+        'products_user_id_fkey', 'user_id', 'users'
+    )
+    _ensure_foreign_key(
+        conn, cursor, 'logistics',
+        'logistics_user_id_fkey', 'user_id', 'users'
+    )
+    conn.commit()
+
+
 def _upgrade_statistics_tables():
     """升级：添加统计与运营看板相关表"""
     with get_db_connection() as (conn, c):
@@ -2727,6 +3086,7 @@ def upgrade_user_password_to_bcrypt(user_id, password):
 def init_db():
     """初始化数据库"""
     with get_db_connection() as (conn, c):
+        _ensure_postgresql_schema(conn, c)
         # 1. 三张基础表：users / products / logistics
         users_sql_raw = """
             CREATE TABLE IF NOT EXISTS users (
@@ -2773,7 +3133,8 @@ def init_db():
                 payment_processing_fee REAL DEFAULT 0.01,
                 return_rate            REAL DEFAULT 0,
                 vat_rate               REAL DEFAULT 0,
-                is_test_data           INTEGER DEFAULT 0
+                is_test_data           INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """
         products_sql = _safe_adapt_sql(products_sql_raw, conn)
@@ -2826,7 +3187,8 @@ def init_db():
                 delivery_method TEXT DEFAULT 'unknown',
                 priority_group TEXT DEFAULT 'D',
                 price_limit_currency TEXT DEFAULT 'RUB',
-                price_min_currency TEXT DEFAULT 'RUB'
+                price_min_currency TEXT DEFAULT 'RUB',
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """
         logistics_sql = _safe_adapt_sql(logistics_sql_raw, conn)
@@ -2968,7 +3330,7 @@ def init_db():
                 INSERT INTO system_config
                 (config_key, config_value, description)
                 VALUES (%s, %s, %s)
-                ON CONFLICT (config_key) DO NOTHING
+                ON CONFLICT DO NOTHING
             """
             insert_config_sql = _safe_adapt_sql(insert_config_sql_raw, conn)
         else:
@@ -3051,6 +3413,9 @@ def init_db():
         except DB_EXCEPTIONS:
             # 如果触发器不存在或其他错误，忽略
             pass
+
+        # 再次确保PostgreSQL关键表结构（在所有表创建及升级后）
+        _ensure_postgresql_schema(conn, c)
 
 
 def add_product(product_data):
@@ -3551,28 +3916,31 @@ def get_user_subscription_info(user_id):
         )
         # 确保SQL适配正确（强制适配）
         sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
-        user = c.fetchone()
+        execute_result = c.execute(sql, (user_id,))
+        user = _safe_fetchone(c, execute_result)
 
-        if user:
-            # PostgreSQL返回tuple，SQLite可能返回Row对象
-            if hasattr(user, 'keys'):
-                return dict(user)
-            else:
-                # tuple格式：(id, username, user_type, ...)
-                return {
-                    'id': user[0],
-                    'username': user[1],
-                    'user_type': user[2],
-                    'expiry_date': user[3],
-                    'remaining_calculations': user[4],
-                    'first_login_date': user[5],
-                    'test_days_remaining': user[6],
-                    'role': user[7],
-                    'subscription_type': user[8],
-                    'subscription_expires': user[9]
-                }
-        return None
+        if not user:
+            return None
+
+        fields = [
+            'id', 'username', 'user_type', 'expiry_date',
+            'remaining_calculations', 'first_login_date',
+            'test_days_remaining', 'role',
+            'subscription_type', 'subscription_expires'
+        ]
+
+        if isinstance(user, dict):
+            return user
+        if hasattr(user, 'keys'):
+            mapped = dict(cast(Mapping[str, Any], user))
+            for field in fields:
+                mapped.setdefault(field, None)
+            return mapped
+
+        values = list(cast(Sequence[Any], user))
+        if len(values) < len(fields):
+            values.extend([None] * (len(fields) - len(values)))
+        return dict(zip(fields, values))
 
 
 def update_user_subscription(user_id, updates):
@@ -3601,8 +3969,6 @@ def update_user_subscription(user_id, updates):
 # @st.cache_resource(ttl=300)  # 缓存5分钟 - 临时禁用
 def check_user_subscription_status(user_id):
     """检查用户订阅状态"""
-    from datetime import datetime, date
-
     user_info = get_user_subscription_info(user_id)
     if not user_info:
         return {'valid': False, 'message': '用户不存在'}
@@ -4001,6 +4367,11 @@ def update_user_password(user_id, current_password, new_password):
         stored_password = (
             user['password'] if isinstance(user, dict) else user[0])
 
+        if isinstance(stored_password, bytes):
+            stored_password = stored_password.decode('utf-8')
+        elif not isinstance(stored_password, str):
+            stored_password = str(stored_password or '')
+
         # 支持旧的SHA256和新的bcrypt密码
         if stored_password.startswith('$2b$'):
             # bcrypt密码
@@ -4251,12 +4622,20 @@ def get_user_preferred_mode(user_id):
         )
         # 确保SQL适配正确（强制适配）
         sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
-        result = c.fetchone()
+        execute_result = c.execute(sql, (user_id,))
+        result = _safe_fetchone(c, execute_result)
 
-        if result:
-            return result[0]  # 返回实际值，可能是None（首次登录）、'fast'或'precise'
-        return None  # 用户不存在时返回None
+        if not result:
+            return None  # 用户不存在
+
+        if isinstance(result, (list, tuple)):
+            return result[0]
+        if isinstance(result, dict):
+            return result.get('preferred_mode')
+        if hasattr(result, 'keys'):
+            row_dict = dict(cast(Mapping[str, Any], result))
+            return row_dict.get('preferred_mode')
+        return cast(Optional[str], result)
 
 
 def update_user_preferred_mode(user_id, mode):
@@ -4462,7 +4841,6 @@ def get_all_users(
                 subscription_expires_raw
             )
             if expiry_dt is not None:
-                from datetime import date
                 subscription_end_iso = expiry_dt.isoformat()
                 today = date.today()
                 remaining_days = (expiry_dt.date() - today).days
@@ -4539,7 +4917,6 @@ def get_user_detail(user_id):
         subscription_end_iso = None
         expiry_dt = _subscription_expires_to_datetime(subscription_expires_raw)
         if expiry_dt is not None:
-            from datetime import date
             subscription_end_iso = expiry_dt.isoformat()
             today = date.today()
             remaining_days = (expiry_dt.date() - today).days
@@ -4984,24 +5361,11 @@ def log_user_login(user_id: int, ip_address: Optional[str] = None,
                     device_type = 'desktop'
 
             login_time = int(time.time())
-            # 检测数据库类型以处理主键冲突
-            is_pg = _is_postgresql_connection(conn)
-
-            if is_pg:
-                # PostgreSQL: 使用ON CONFLICT处理主键冲突
-                sql_raw = """
-                    INSERT INTO user_login_log
-                    (user_id, login_time, ip_address, user_agent, device_type)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT (id) DO NOTHING
-                """
-            else:
-                # SQLite: 使用INSERT OR IGNORE处理主键冲突
-                sql_raw = """
-                    INSERT OR IGNORE INTO user_login_log
-                    (user_id, login_time, ip_address, user_agent, device_type)
-                    VALUES (?, ?, ?, ?, ?)
-                """
+            sql_raw = """
+                INSERT INTO user_login_log
+                (user_id, login_time, ip_address, user_agent, device_type)
+                VALUES (?, ?, ?, ?, ?)
+            """
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(
                 sql, (user_id, login_time, ip_address,

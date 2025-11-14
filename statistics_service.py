@@ -527,7 +527,7 @@ def get_user_activity_stats(start_date: Optional[str] = None,
                 FROM users u
                 INNER JOIN user_login_log l ON u.id = l.user_id
                 WHERE l.login_time >= ? AND l.login_time <= ?
-                GROUP BY u.id
+                GROUP BY u.id, u.username, u.user_type
                 ORDER BY login_count DESC
                 LIMIT 10
             """, conn)
@@ -609,10 +609,14 @@ def get_revenue_stats(start_date: Optional[str] = None,
             if not start_date:
                 start_date = (date.today() - timedelta(days=30)).isoformat()
 
-            end_timestamp = int(
-                datetime.fromisoformat(end_date).timestamp())
-            start_timestamp = int(
-                datetime.fromisoformat(start_date).timestamp())
+            # 开始日期设置为当天的 00:00:00
+            start_datetime = datetime.fromisoformat(start_date)
+            start_timestamp = int(start_datetime.timestamp())
+
+            # 结束日期设置为当天的 23:59:59，确保包含当天的所有订单
+            end_datetime = datetime.fromisoformat(end_date)
+            end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+            end_timestamp = int(end_datetime.timestamp())
 
             # 订单列表
             sql = _safe_adapt_sql("""
@@ -643,8 +647,9 @@ def get_revenue_stats(start_date: Optional[str] = None,
 
             # 总订单数和总金额
             total_orders = len(order_list)
+            # 包含PAID和SUCCESS状态的订单（支付成功）
             success_list = [o for o in order_list
-                            if o['status'] == 'SUCCESS']
+                            if o['status'] in ('SUCCESS', 'PAID')]
             total_amount = sum(o['amount'] for o in success_list)
 
             # 平均客单价
@@ -661,7 +666,7 @@ def get_revenue_stats(start_date: Optional[str] = None,
                 sql = _safe_adapt_sql("""
                     SELECT COALESCE(SUM(amount), 0) / 100.0
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND created_at >= ? AND created_at < ?
                 """, conn)
                 c.execute(sql, (day_start, day_end))
@@ -682,7 +687,7 @@ def get_revenue_stats(start_date: Optional[str] = None,
                 SELECT description, COUNT(*) as count,
                        SUM(amount) / 100.0 as total_amount
                 FROM payment_orders
-                WHERE status = 'SUCCESS'
+                WHERE status IN ('SUCCESS', 'PAID')
                 AND created_at >= ? AND created_at <= ?
                 GROUP BY description
             """, conn)
@@ -763,7 +768,10 @@ def get_user_retention_details(
                 FROM users u
                 LEFT JOIN user_login_log l ON u.id = l.user_id
                 WHERE u.role != 'admin'
-                GROUP BY u.id
+                GROUP BY
+                    u.id, u.username, u.email, u.user_type,
+                    u.created_at, u.last_login,
+                    u.subscription_expires, u.remaining_calculations
                 ORDER BY {order_clause}
                 LIMIT {placeholder} OFFSET {placeholder}
             """

@@ -54,6 +54,15 @@ except ImportError:
             """占位函数：减少连接计数"""
             return 0
 
+if pool is not None:
+    POOL_ERROR_TYPE = getattr(pool, 'PoolError', Exception)
+else:
+    class _DummyPoolError(Exception):
+        """占位PoolError，确保异常捕获范围有限"""
+        pass
+
+    POOL_ERROR_TYPE = _DummyPoolError
+
 
 def init_connection_pool():
     """初始化连接池"""
@@ -182,7 +191,15 @@ def get_db_connection():
                     else:
                         # 连接已关闭，丢弃它
                         pass
-                except (AttributeError, RuntimeError, OSError) as e:
+                except POOL_ERROR_TYPE:
+                    try:
+                        if hasattr(conn, 'close'):
+                            conn.close()
+                    except (AttributeError, RuntimeError, OSError,
+                            ConnectionError):
+                        pass
+                except (AttributeError, RuntimeError, OSError,
+                        ConnectionError, TypeError) as e:
                     # 如果putconn失败（比如连接已损坏），尝试强制关闭连接
                     try:
                         if hasattr(conn, 'close'):
@@ -287,44 +304,15 @@ def adapt_sql(sql: str) -> str:
 
         # 转换SQLite的datetime函数为PostgreSQL语法（必须在占位符转换前）
         # 处理INSERT OR IGNORE -> PostgreSQL ON CONFLICT语法
-        # INSERT OR IGNORE INTO table (...) VALUES (...)
-        # -> INSERT INTO table (...) VALUES (...) ON CONFLICT (key) DO NOTHING
-        if 'INSERT OR IGNORE' in sql:
-            # 提取表名和列（支持有列列表和没有列列表两种情况）
-            match = re.search(
-                r"INSERT OR IGNORE INTO\s+(\w+)(?:\s*\(([^)]+)\))?\s*VALUES",
-                sql, re.IGNORECASE
+        # 直接使用无目标的 ON CONFLICT DO NOTHING，避免依赖特定约束
+        if re.search(r'INSERT\s+OR\s+IGNORE', sql, re.IGNORECASE):
+            sql = re.sub(
+                r'INSERT\s+OR\s+IGNORE',
+                'INSERT',
+                sql,
+                flags=re.IGNORECASE
             )
-            if match:
-                table_name = match.group(1)
-                columns = match.group(2) if match.group(2) else None
-
-                # 如果没有列列表，尝试从表结构推断主键
-                # 对于常见表，使用默认主键
-                if columns:
-                    # 查找主键或唯一约束（通常是第一个列或config_key）
-                    pk_col = ('id' if 'id' in columns
-                              else columns.split(',')[0].strip())
-                    if 'config_key' in columns:
-                        pk_col = 'config_key'
-                else:
-                    # 没有列列表时，默认使用id作为主键
-                    pk_col = 'id'
-
-                # 替换整个语句
-                if columns:
-                    sql = re.sub(
-                        r'INSERT OR IGNORE INTO\s+\w+\s*\([^)]+\)\s*VALUES',
-                        f'INSERT INTO {table_name} ({columns}) VALUES',
-                        sql, flags=re.IGNORECASE
-                    )
-                else:
-                    sql = re.sub(
-                        r'INSERT OR IGNORE INTO\s+(\w+)\s*VALUES',
-                        r'INSERT INTO \1 VALUES',
-                        sql, flags=re.IGNORECASE
-                    )
-                sql = sql.rstrip(';') + f' ON CONFLICT ({pk_col}) DO NOTHING'
+            sql = sql.rstrip(';') + ' ON CONFLICT DO NOTHING'
 
         # 处理INSERT OR REPLACE -> PostgreSQL ON CONFLICT语法
         if 'INSERT OR REPLACE' in sql:
