@@ -1410,12 +1410,15 @@ def get_conversion_funnel(
             # 1. 注册用户数
             is_pg = _is_postgresql_connection(conn)
             if is_pg:
-                sql = """
-                    SELECT COUNT(*)
-                    FROM users
-                    WHERE role != 'admin'
-                      AND created_at >= to_timestamp(%s)
-                      AND created_at <= to_timestamp(%s)
+                safe_created_expr = _build_safe_timestamp_expr('created_at')
+                sql = f"""
+                    SELECT COUNT(*) FROM (
+                        SELECT {safe_created_expr} AS created_ts
+                        FROM users
+                        WHERE role != 'admin'
+                    ) normalized_users
+                    WHERE created_ts >= to_timestamp(%s)
+                      AND created_ts <= to_timestamp(%s)
                 """
                 c.execute(sql, (start_timestamp, end_timestamp))
             else:
