@@ -8205,10 +8205,16 @@ def show_statistics_conversion_funnel():
 
         import plotly.graph_objects as go
 
+        base_registered = funnel[0]['count'] if funnel else 0
+        rate_texts = [
+            '-' if base_registered == 0 else f"{step['rate']}%"
+            for step in funnel
+        ]
         fig = go.Figure(go.Funnel(
             y=[step['step'] for step in funnel],
             x=[step['count'] for step in funnel],
-            textinfo="value+percent initial",
+            text=rate_texts,
+            textinfo="value+text",
             marker=dict(
                 color=['#4CAF50', '#2196F3', '#FF9800', '#FF5722', '#9C27B0']
             )
@@ -8229,18 +8235,24 @@ def show_statistics_conversion_funnel():
             st.subheader("📋 漏斗详细数据")
             funnel_df = pd.DataFrame(funnel)
             funnel_df.columns = ['阶段', '用户数', '转化率(%)']
+            if base_registered == 0:
+                funnel_df['转化率(%)'] = '-'
             st.dataframe(funnel_df, width='stretch')
 
         with col2:
             st.subheader("📈 阶段转化率")
-            for key, value in conversion_rates.items():
-                label_map = {
-                    'register_to_login': '注册→登录',
-                    'login_to_calculate': '登录→计算',
-                    'calculate_to_pay': '计算→充值',
-                    'pay_to_upgrade': '充值→升级'
-                }
-                st.write(f"**{label_map.get(key, key)}:** {value}%")
+            label_map = {
+                'register_to_login': '注册→登录',
+                'login_to_calculate': '登录→计算',
+                'calculate_to_pay': '计算→充值',
+                'pay_to_upgrade': '充值→升级'
+            }
+            for key in label_map:
+                value = conversion_rates.get(key)
+                display_value = (
+                    '-' if value is None else f"{value}%"
+                )
+                st.write(f"**{label_map.get(key, key)}:** {display_value}")
 
     else:
         st.info("暂无数据")

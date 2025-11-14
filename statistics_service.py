@@ -1383,7 +1383,7 @@ def get_conversion_funnel(
             'timestamp': 1729411200
         }
     """
-    cache_key = f"conversion_funnel_{start_date}_{end_date}"
+    cache_key = f"conversion_funnel_v2_{start_date}_{end_date}"
     cached = get_statistics_cache(cache_key)
     if cached:
         return cached
@@ -1588,7 +1588,11 @@ def get_conversion_funnel(
 
             # 构建漏斗数据
             funnel = []
-            base_count = registered_users if registered_users > 0 else 1
+
+            def _percent_of_registered(count: int) -> float:
+                if registered_users > 0:
+                    return round(count / registered_users * 100, 2)
+                return 0.0
 
             funnel.append({
                 'step': '注册',
@@ -1599,29 +1603,29 @@ def get_conversion_funnel(
             funnel.append({
                 'step': '首次登录',
                 'count': logged_in_users,
-                'rate': round(logged_in_users / base_count * 100, 2)
+                'rate': _percent_of_registered(logged_in_users)
             })
 
             funnel.append({
                 'step': '首次计算',
                 'count': calculated_users,
-                'rate': round(calculated_users / base_count * 100, 2)
+                'rate': _percent_of_registered(calculated_users)
             })
 
             funnel.append({
                 'step': '首次充值',
                 'count': paid_users,
-                'rate': round(paid_users / base_count * 100, 2)
+                'rate': _percent_of_registered(paid_users)
             })
 
             funnel.append({
                 'step': '套餐升级',
                 'count': upgraded_users,
-                'rate': round(upgraded_users / base_count * 100, 2)
+                'rate': _percent_of_registered(upgraded_users)
             })
 
             # 计算阶段转化率
-            conversion_rates = {}
+            conversion_rates: Dict[str, float] = {}
             if registered_users > 0:
                 conversion_rates['register_to_login'] = round(
                     logged_in_users / registered_users * 100, 2
