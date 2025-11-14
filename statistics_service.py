@@ -1408,23 +1408,14 @@ def get_conversion_funnel(
             has_behavior_log = _check_table_exists(c, 'user_behavior_log')
 
             # 1. 注册用户数
-            normalized_users_cte = ""
             is_pg = _is_postgresql_connection(conn)
             if is_pg:
-                safe_created_expr = _build_safe_timestamp_expr('created_at')
-                normalized_users_cte = f"""
-                    WITH normalized_users AS (
-                        SELECT
-                            id,
-                            {safe_created_expr} AS created_ts
-                        FROM users
-                        WHERE role != 'admin'
-                    )
-                """
-                sql = normalized_users_cte + """
-                    SELECT COUNT(*) FROM normalized_users
-                    WHERE created_ts >= to_timestamp(%s)
-                    AND created_ts <= to_timestamp(%s)
+                sql = """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE role != 'admin'
+                      AND created_at >= to_timestamp(%s)
+                      AND created_at <= to_timestamp(%s)
                 """
                 c.execute(sql, (start_timestamp, end_timestamp))
             else:
@@ -1438,24 +1429,25 @@ def get_conversion_funnel(
             result = c.fetchone()
             registered_users = result[0] if result else 0
 
-            # 2. 有登录记录的用户数
+            # 2. 有登录记录的用户数（按登录时间过滤）
             if is_pg:
-                sql = normalized_users_cte + """
-                    SELECT COUNT(DISTINCT nu.id)
-                    FROM normalized_users nu
-                    INNER JOIN user_login_log l ON nu.id = l.user_id
-                    WHERE nu.created_ts >= to_timestamp(%s)
-                    AND nu.created_ts <= to_timestamp(%s)
+                sql = """
+                    SELECT COUNT(DISTINCT l.user_id)
+                    FROM user_login_log l
+                    INNER JOIN users u ON u.id = l.user_id
+                    WHERE u.role != 'admin'
+                      AND l.login_time >= %s
+                      AND l.login_time <= %s
                 """
                 c.execute(sql, (start_timestamp, end_timestamp))
             else:
                 sql = _safe_adapt_sql("""
-                    SELECT COUNT(DISTINCT u.id)
-                    FROM users u
-                    INNER JOIN user_login_log l ON u.id = l.user_id
+                    SELECT COUNT(DISTINCT l.user_id)
+                    FROM user_login_log l
+                    INNER JOIN users u ON u.id = l.user_id
                     WHERE u.role != 'admin'
-                    AND u.created_at >= datetime(?, 'unixepoch')
-                    AND u.created_at <= datetime(?, 'unixepoch')
+                    AND l.login_time >= ?
+                    AND l.login_time <= ?
                 """, conn)
                 c.execute(sql, (start_timestamp, end_timestamp))
             result = c.fetchone()
@@ -1466,24 +1458,25 @@ def get_conversion_funnel(
             calculated_users = 0
             if has_behavior_log:
                 if is_pg:
-                    sql = normalized_users_cte + """
-                        SELECT COUNT(DISTINCT nu.id)
-                        FROM normalized_users nu
-                        INNER JOIN user_behavior_log b ON nu.id = b.user_id
-                        WHERE nu.created_ts >= to_timestamp(%s)
-                        AND nu.created_ts <= to_timestamp(%s)
-                        AND b.behavior_type = 'calculation'
+                    sql = """
+                        SELECT COUNT(DISTINCT b.user_id)
+                        FROM user_behavior_log b
+                        INNER JOIN users u ON u.id = b.user_id
+                        WHERE u.role != 'admin'
+                          AND b.behavior_type = 'calculation'
+                          AND b.created_at >= %s
+                          AND b.created_at <= %s
                     """
                     params = (start_timestamp, end_timestamp)
                 else:
                     sql = _safe_adapt_sql("""
-                        SELECT COUNT(DISTINCT u.id)
-                        FROM users u
-                        INNER JOIN user_behavior_log b ON u.id = b.user_id
+                        SELECT COUNT(DISTINCT b.user_id)
+                        FROM user_behavior_log b
+                        INNER JOIN users u ON u.id = b.user_id
                         WHERE u.role != 'admin'
-                        AND u.created_at >= datetime(?, 'unixepoch')
-                        AND u.created_at <= datetime(?, 'unixepoch')
                         AND b.behavior_type = 'calculation'
+                        AND b.created_at >= ?
+                        AND b.created_at <= ?
                     """, conn)
                     params = (start_timestamp, end_timestamp)
                 try:
@@ -1493,26 +1486,28 @@ def get_conversion_funnel(
                 except DB_EXCEPTIONS:
                     calculated_users = 0
 
-            # 4. 有支付记录的用户数
+            # 4. 有支付记录的用户数（按支付时间过滤）
             if is_pg:
-                sql = normalized_users_cte + """
-                    SELECT COUNT(DISTINCT nu.id)
-                    FROM normalized_users nu
-                    INNER JOIN payment_orders p ON nu.id = p.user_id
-                    WHERE nu.created_ts >= to_timestamp(%s)
-                    AND nu.created_ts <= to_timestamp(%s)
-                    AND p.status = 'SUCCESS'
+                sql = """
+                    SELECT COUNT(DISTINCT p.user_id)
+                    FROM payment_orders p
+                    INNER JOIN users u ON u.id = p.user_id
+                    WHERE u.role != 'admin'
+                      AND p.status IN (%s, %s)
+                      AND p.created_at >= %s
+                      AND p.created_at <= %s
                 """
-                c.execute(sql, (start_timestamp, end_timestamp))
+                c.execute(sql, ('SUCCESS', 'PAID',
+                                start_timestamp, end_timestamp))
             else:
                 sql = _safe_adapt_sql("""
-                    SELECT COUNT(DISTINCT u.id)
-                    FROM users u
-                    INNER JOIN payment_orders p ON u.id = p.user_id
+                    SELECT COUNT(DISTINCT p.user_id)
+                    FROM payment_orders p
+                    INNER JOIN users u ON u.id = p.user_id
                     WHERE u.role != 'admin'
-                    AND u.created_at >= datetime(?, 'unixepoch')
-                    AND u.created_at <= datetime(?, 'unixepoch')
-                    AND p.status = 'SUCCESS'
+                    AND p.status IN ('SUCCESS', 'PAID')
+                    AND p.created_at >= ?
+                    AND p.created_at <= ?
                 """, conn)
                 c.execute(sql, (start_timestamp, end_timestamp))
             result = c.fetchone()
@@ -1524,26 +1519,28 @@ def get_conversion_funnel(
                 c, 'payment_orders', 'order_type')
             if has_order_type:
                 if is_pg:
-                    sql = normalized_users_cte + """
-                        SELECT COUNT(DISTINCT nu.id)
-                        FROM normalized_users nu
-                        INNER JOIN payment_orders p ON nu.id = p.user_id
-                        WHERE nu.created_ts >= to_timestamp(%s)
-                        AND nu.created_ts <= to_timestamp(%s)
-                        AND p.status = 'SUCCESS'
-                        AND p.order_type = 'upgrade'
+                    sql = """
+                        SELECT COUNT(DISTINCT p.user_id)
+                        FROM payment_orders p
+                        INNER JOIN users u ON u.id = p.user_id
+                        WHERE u.role != 'admin'
+                          AND p.status IN (%s, %s)
+                          AND p.order_type = 'upgrade'
+                          AND p.created_at >= %s
+                          AND p.created_at <= %s
                     """
-                    params = (start_timestamp, end_timestamp)
+                    params = ('SUCCESS', 'PAID',
+                              start_timestamp, end_timestamp)
                 else:
                     sql = _safe_adapt_sql("""
-                        SELECT COUNT(DISTINCT u.id)
-                        FROM users u
-                        INNER JOIN payment_orders p ON u.id = p.user_id
+                        SELECT COUNT(DISTINCT p.user_id)
+                        FROM payment_orders p
+                        INNER JOIN users u ON u.id = p.user_id
                         WHERE u.role != 'admin'
-                        AND u.created_at >= datetime(?, 'unixepoch')
-                        AND u.created_at <= datetime(?, 'unixepoch')
-                        AND p.status = 'SUCCESS'
+                        AND p.status IN ('SUCCESS', 'PAID')
                         AND p.order_type = 'upgrade'
+                        AND p.created_at >= ?
+                        AND p.created_at <= ?
                     """, conn)
                     params = (start_timestamp, end_timestamp)
                 try:
@@ -1555,26 +1552,28 @@ def get_conversion_funnel(
             else:
                 # 如果order_type字段不存在，通过is_upgrade字段判断
                 if is_pg:
-                    sql = normalized_users_cte + """
-                        SELECT COUNT(DISTINCT nu.id)
-                        FROM normalized_users nu
-                        INNER JOIN payment_orders p ON nu.id = p.user_id
-                        WHERE nu.created_ts >= to_timestamp(%s)
-                        AND nu.created_ts <= to_timestamp(%s)
-                        AND p.status = 'SUCCESS'
-                        AND p.is_upgrade = 1
+                    sql = """
+                        SELECT COUNT(DISTINCT p.user_id)
+                        FROM payment_orders p
+                        INNER JOIN users u ON u.id = p.user_id
+                        WHERE u.role != 'admin'
+                          AND p.status IN (%s, %s)
+                          AND p.is_upgrade = 1
+                          AND p.created_at >= %s
+                          AND p.created_at <= %s
                     """
-                    params = (start_timestamp, end_timestamp)
+                    params = ('SUCCESS', 'PAID',
+                              start_timestamp, end_timestamp)
                 else:
                     sql = _safe_adapt_sql("""
-                        SELECT COUNT(DISTINCT u.id)
-                        FROM users u
-                        INNER JOIN payment_orders p ON u.id = p.user_id
+                        SELECT COUNT(DISTINCT p.user_id)
+                        FROM payment_orders p
+                        INNER JOIN users u ON u.id = p.user_id
                         WHERE u.role != 'admin'
-                        AND u.created_at >= datetime(?, 'unixepoch')
-                        AND u.created_at <= datetime(?, 'unixepoch')
-                        AND p.status = 'SUCCESS'
+                        AND p.status IN ('SUCCESS', 'PAID')
                         AND p.is_upgrade = 1
+                        AND p.created_at >= ?
+                        AND p.created_at <= ?
                     """, conn)
                     params = (start_timestamp, end_timestamp)
                 try:

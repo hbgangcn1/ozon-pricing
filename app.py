@@ -8491,6 +8491,16 @@ def show_plan_management():
     with tab1:
         # 显示所有套餐
         plans = get_plans()
+        # 去除可能重复的套餐记录，避免Streamlit键冲突
+        unique_plans = []
+        seen_plan_ids = set()
+        for plan in plans:
+            plan_id = plan.get('id')
+            if plan_id in seen_plan_ids:
+                continue
+            seen_plan_ids.add(plan_id)
+            unique_plans.append(plan)
+        plans = unique_plans
 
         if plans:
             for plan in plans:
