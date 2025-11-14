@@ -2302,8 +2302,20 @@ def _ensure_unique_constraint(conn, cursor, table_name: str,
     if not safe_table.replace('_', '').isalnum():
         return
 
-    normalized_target = tuple(sorted(columns))
     try:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.table_constraints
+            WHERE table_name = %s
+              AND constraint_name = %s
+            """,
+            (safe_table, constraint_name)
+        )
+        if cursor.fetchone():
+            return
+
+        normalized_target = tuple(sorted(columns))
         cursor.execute(
             """
             SELECT tc.constraint_name,
