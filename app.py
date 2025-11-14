@@ -4672,6 +4672,50 @@ def calculate_precise_pricing_from_form(
 
 def calculate_precise_pricing():
     """精准模式定价计算（从产品表单）"""
+    # 高优先级安全改进：API限流保护
+    try:
+        from rate_limiter import (
+            get_sliding_window_limiter, record_rate_limit_alert
+        )
+        from session_security import SessionSecurity
+        from db_utils import current_user_id
+
+        user_id = current_user_id()
+        # 获取限流键（用户ID或IP）
+        limiter_key = str(user_id) if user_id else 'anonymous'
+        try:
+            client_info = SessionSecurity.get_client_info()
+            if not user_id:
+                limiter_key = f"ip_{client_info['ip_address']}"
+        except (AttributeError, KeyError, TypeError, ImportError):
+            # 获取客户端信息失败，使用默认限流键
+            pass
+
+        # 使用滑动窗口限流：每分钟最多30次定价计算
+        pricing_limiter = get_sliding_window_limiter(
+            "pricing_calculation", rate=30, per=60
+        )
+        is_allowed, retry_after = pricing_limiter.is_allowed(limiter_key)
+
+        if not is_allowed:
+            record_rate_limit_alert(
+                "pricing_calculation", limiter_key, retry_after
+            )
+            st.error(
+                f"⚠️ 定价计算过于频繁，请 {int(retry_after) + 1} 秒后重试"
+            )
+            st.warning("限流规则: 每分钟最多 30 次定价计算")
+            return
+    except (ImportError, AttributeError, ValueError, RuntimeError) as e:
+        # 限流检查失败不影响正常流程（降级处理）
+        # 记录错误但不影响业务逻辑
+        try:
+            from logger_config import logger
+            if logger:
+                logger.debug(f"限流检查失败（降级处理）: {e}")
+        except ImportError:
+            pass
+
     # 从session state获取表单数据
     selected_data = st.session_state.get("selected_product_data", {})
 
@@ -5571,6 +5615,48 @@ def _debug_filter_reason(logistic: dict, product: dict) -> Optional[str]:
 
 def show_product_list_page(uid):
     """显示产品列表页面"""
+    # 高优先级安全改进：API限流保护（产品查询）
+    try:
+        from rate_limiter import (
+            get_sliding_window_limiter, record_rate_limit_alert
+        )
+        from session_security import SessionSecurity
+
+        # 获取限流键（用户ID或IP）
+        limiter_key = str(uid) if uid else 'anonymous'
+        try:
+            client_info = SessionSecurity.get_client_info()
+            if not uid:
+                limiter_key = f"ip_{client_info['ip_address']}"
+        except (AttributeError, KeyError, TypeError, ImportError):
+            # 获取客户端信息失败，使用默认限流键
+            pass
+
+        # 使用滑动窗口限流：每分钟最多60次产品查询
+        product_query_limiter = get_sliding_window_limiter(
+            "product_query", rate=60, per=60
+        )
+        is_allowed, retry_after = product_query_limiter.is_allowed(limiter_key)
+
+        if not is_allowed:
+            record_rate_limit_alert(
+                "product_query", limiter_key, retry_after
+            )
+            st.error(
+                f"⚠️ 产品查询过于频繁，请 {int(retry_after) + 1} 秒后重试"
+            )
+            st.warning("限流规则: 每分钟最多 60 次产品查询")
+            return
+    except (ImportError, AttributeError, ValueError, RuntimeError) as e:
+        # 限流检查失败不影响正常流程（降级处理）
+        # 记录错误但不影响业务逻辑
+        try:
+            from logger_config import logger
+            if logger:
+                logger.debug(f"限流检查失败（降级处理）: {e}")
+        except ImportError:
+            pass
+
     st.markdown(
         """
         <div style="text-align: center; margin-bottom: 2rem;">

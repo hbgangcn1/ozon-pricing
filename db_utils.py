@@ -2847,6 +2847,88 @@ def init_db():
         from db_adapter import adapt_sql
         _safe_execute_create_table(c, system_config_sql)
 
+        # PostgreSQL需要显式创建唯一约束（如果不存在）
+        # 同时检查并修复id列类型（如果是INTEGER而不是SERIAL）
+        if _is_postgresql_connection(conn):
+            try:
+                # 检查表是否存在以及id列的类型
+                check_table_sql = """
+                    SELECT data_type, column_default
+                    FROM information_schema.columns
+                    WHERE table_name = 'system_config'
+                    AND column_name = 'id'
+                """
+                c.execute(check_table_sql)
+                id_col_info = c.fetchone()
+
+                # 如果表存在但id列不是SERIAL类型，需要修复
+                if (id_col_info and id_col_info[0] == 'integer' and
+                        not id_col_info[1]):
+                    # id列是INTEGER但没有默认值（不是SERIAL）
+                    # 需要创建序列并设置默认值
+                    try:
+                        # 创建序列
+                        create_seq_sql = """
+                            CREATE SEQUENCE IF NOT EXISTS system_config_id_seq
+                        """
+                        c.execute(create_seq_sql)
+
+                        # 设置id列的默认值为序列的下一个值
+                        alter_col_sql = """
+                            ALTER TABLE system_config
+                            ALTER COLUMN id SET DEFAULT
+                            nextval('system_config_id_seq')
+                        """
+                        c.execute(alter_col_sql)
+
+                        # 设置序列的所有者为id列
+                        set_owned_sql = """
+                            ALTER SEQUENCE system_config_id_seq
+                            OWNED BY system_config.id
+                        """
+                        c.execute(set_owned_sql)
+                        conn.commit()
+                    except DB_EXCEPTIONS:
+                        conn.rollback()
+                        # 序列可能已存在，继续
+
+                # 检查唯一约束是否已存在
+                check_constraint_sql = """
+                    SELECT constraint_name
+                    FROM information_schema.table_constraints
+                    WHERE table_name = 'system_config'
+                    AND constraint_type = 'UNIQUE'
+                    AND constraint_name LIKE '%config_key%'
+                """
+                c.execute(check_constraint_sql)
+                if not c.fetchone():
+                    # 创建唯一约束
+                    create_constraint_sql = """
+                        ALTER TABLE system_config
+                        ADD CONSTRAINT system_config_config_key_unique
+                        UNIQUE (config_key)
+                    """
+                    c.execute(create_constraint_sql)
+                    conn.commit()
+            except DB_EXCEPTIONS as e:
+                # 约束可能已存在或其他数据库错误，忽略
+                conn.rollback()
+                # 如果是PostgreSQL的约束已存在错误，这是预期的
+                try:
+                    import psycopg2
+                    if isinstance(e, (
+                        psycopg2.errors.DuplicateObject,
+                        psycopg2.errors.ProgrammingError
+                    )):
+                        # 约束已存在，这是预期的，忽略
+                        pass
+                except (ImportError, AttributeError):
+                    # psycopg2未导入或错误类型不匹配，忽略
+                    pass
+            except (AttributeError, KeyError, TypeError, RuntimeError):
+                # 其他非数据库错误（如连接对象属性错误等），忽略
+                conn.rollback()
+
         # 创建支付订单表
         payment_orders_sql = """
             CREATE TABLE IF NOT EXISTS payment_orders (
@@ -2882,19 +2964,20 @@ def init_db():
         # 检测实际连接类型，而不是依赖全局配置
         # 这样可以兼容测试环境中的monkeypatch
         if _is_postgresql_connection(conn):
-            insert_config_sql = """
+            insert_config_sql_raw = """
                 INSERT INTO system_config
                 (config_key, config_value, description)
                 VALUES (%s, %s, %s)
                 ON CONFLICT (config_key) DO NOTHING
             """
+            insert_config_sql = _safe_adapt_sql(insert_config_sql_raw, conn)
         else:
-            insert_config_sql = """
+            insert_config_sql_raw = """
                 INSERT OR IGNORE INTO system_config
                 (config_key, config_value, description)
                 VALUES (?, ?, ?)
             """
-        # SQL已经根据连接类型正确生成，不需要再次适配
+            insert_config_sql = _safe_adapt_sql(insert_config_sql_raw, conn)
         c.execute(
             insert_config_sql,
             ('open_registration', 'false', '是否开放用户注册'))

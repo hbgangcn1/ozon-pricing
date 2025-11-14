@@ -242,6 +242,50 @@ def pricing_calculator_page():
 
     # 计算按钮
     if st.button("🚀 开始计算", key="calculate_button"):
+        # 高优先级安全改进：API限流保护
+        try:
+            from rate_limiter import (
+                get_sliding_window_limiter, record_rate_limit_alert
+            )
+            from session_security import SessionSecurity
+
+            # 获取限流键（用户ID或IP）
+            limiter_key = str(user_id) if user_id else 'anonymous'
+            try:
+                client_info = SessionSecurity.get_client_info()
+                if not user_id:
+                    limiter_key = f"ip_{client_info['ip_address']}"
+            except (AttributeError, KeyError, TypeError, ImportError):
+                # 获取客户端信息失败，使用默认限流键
+                pass
+
+            # 使用滑动窗口限流：每分钟最多30次定价计算
+            pricing_limiter = get_sliding_window_limiter(
+                "pricing_calculation", rate=30, per=60
+            )
+            is_allowed, retry_after = pricing_limiter.is_allowed(limiter_key)
+
+            if not is_allowed:
+                record_rate_limit_alert(
+                    "pricing_calculation", limiter_key, retry_after
+                )
+                st.error(
+                    f"⚠️ 定价计算过于频繁，请 {int(retry_after) + 1} 秒后重试"
+                )
+                st.warning("限流规则: 每分钟最多 30 次定价计算")
+                return
+        except (ImportError, AttributeError, ValueError, RuntimeError) as e:
+            # 限流检查失败不影响正常流程（降级处理）
+            # 记录错误但不影响业务逻辑
+            try:
+                from logger_config import logger
+            except ImportError:
+                # logger模块不可用，使用None
+                logger = None
+
+            if logger:
+                logger.debug(f"限流检查失败（降级处理）: {e}")
+
         # 检查计算次数限制
         sub_status = check_user_subscription_status(user_id)
         if not sub_status.get("valid", False):

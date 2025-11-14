@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import streamlit as st
 from datetime import datetime, timedelta
+from typing import Optional
 
 # 定义数据库异常类型（兼容SQLite和PostgreSQL）
 try:
@@ -51,13 +52,23 @@ class SessionSecurity:
     """会话安全管理类"""
 
     # 配置常量
-    SESSION_TIMEOUT = 1800  # 30分钟超时（高优先级安全改进：缩短会话超时时间）
+    # 高优先级安全改进：可配置的会话超时时间（根据用户类型）
+    SESSION_TIMEOUT_BY_TYPE = {
+        'free': 900,           # 免费用户：15分钟
+        'efficiency': 1800,    # 效率版：30分钟
+        'professional': 3600,  # 专业版：60分钟
+        'enterprise': 7200,    # 企业版：120分钟
+        'admin': 14400,        # 管理员：240分钟
+    }
+    DEFAULT_SESSION_TIMEOUT = 1800  # 默认30分钟超时
+    SESSION_TIMEOUT = DEFAULT_SESSION_TIMEOUT  # 兼容性别名
+
     MAX_LOGIN_ATTEMPTS = 5  # 最大登录尝试次数
     LOCKOUT_DURATION = 900  # 15分钟锁定时间
     SESSION_REFRESH_INTERVAL = 300  # 5分钟刷新间隔
     SESSION_ROTATION_INTERVAL = 300  # 5分钟会话ID轮换间隔（防止会话固定攻击，已优化）
     IP_CHANGE_CHECK_ENABLED = True  # 启用IP变更检测
-    IP_CHANGE_STRICT_MODE = True  # 严格模式：IP变更时强制重新登录
+    IP_CHANGE_STRICT_MODE = False  # 严格模式：IP变更时强制重新登录（默认关闭，使用白名单机制）
     SUSPICIOUS_IP_WARNING_THRESHOLD = 3  # 异常IP登录警告阈值
     MAX_CONCURRENT_SESSIONS = 3  # 最大并发会话数（高优先级安全改进）
 
@@ -124,6 +135,83 @@ class SessionSecurity:
                     attempt_count INTEGER NOT NULL
                 )
             """)
+
+            # 高优先级安全改进：创建IP白名单表
+            if is_postgresql:
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS trusted_devices (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        ip_address TEXT NOT NULL,
+                        device_fingerprint TEXT NOT NULL,
+                        user_agent TEXT,
+                        trusted_at REAL NOT NULL,
+                        last_used REAL NOT NULL,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        UNIQUE(user_id, device_fingerprint)
+                    )
+                """)
+            else:
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS trusted_devices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        ip_address TEXT NOT NULL,
+                        device_fingerprint TEXT NOT NULL,
+                        user_agent TEXT,
+                        trusted_at REAL NOT NULL,
+                        last_used REAL NOT NULL,
+                        is_active INTEGER DEFAULT 1,
+                        UNIQUE(user_id, device_fingerprint)
+                    )
+                """)
+
+            # 为活动会话表添加设备指纹字段（如果不存在）
+            # 高优先级修复：PostgreSQL兼容性
+            try:
+                # 检测数据库类型
+                try:
+                    from db_utils import _is_postgresql_connection
+                    is_pg = _is_postgresql_connection(conn)
+                except ImportError:
+                    # 如果无法导入，定义备用函数
+                    # 注意：参数名使用 conn 以匹配 db_utils 中的函数签名
+                    # noinspection PyShadowingNames
+                    def _is_postgresql_connection(conn):
+                        """备用PostgreSQL检测函数"""
+                        try:
+                            import psycopg2
+                            return isinstance(
+                                conn, psycopg2.extensions.connection
+                            )
+                        except (ImportError, AttributeError):
+                            return False
+                    is_pg = _is_postgresql_connection(conn)
+
+                if is_pg:
+                    # PostgreSQL: 使用information_schema查询列信息
+                    sql = """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                        AND table_name = 'active_sessions'
+                    """
+                    c.execute(sql)
+                    columns = [row[0] for row in c.fetchall()]
+                else:
+                    # SQLite: 使用PRAGMA
+                    c.execute("PRAGMA table_info(active_sessions)")
+                    columns = [row[1] for row in c.fetchall()]
+
+                if 'device_fingerprint' not in columns:
+                    c.execute("""
+                        ALTER TABLE active_sessions
+                        ADD COLUMN device_fingerprint TEXT
+                    """)
+            except DB_EXCEPTIONS:
+                # 表不存在或其他错误，跳过
+                # 捕获数据库相关异常，包括SQLite和PostgreSQL的错误
+                pass
 
             conn.commit()
 
@@ -401,7 +489,7 @@ class SessionSecurity:
     def generate_device_fingerprint(
             ip_address: str, user_agent: str) -> str:
         """
-        生成设备指纹（高优先级安全改进）
+        生成设备指纹（高优先级安全改进：增强版）
 
         Args:
             ip_address: IP地址
@@ -410,11 +498,232 @@ class SessionSecurity:
         Returns:
             str: 设备指纹哈希值
         """
-        # 组合IP和User-Agent生成指纹
-        fingerprint_data = f"{ip_address}|{user_agent}"
+        # 增强设备指纹：组合IP、User-Agent和浏览器特征
+        # 尝试获取更多浏览器特征（如果可用）
+        try:
+            # 在Streamlit中，可以通过JavaScript获取更多特征
+            # 这里先使用基础特征，后续可以通过前端传递更多信息
+            screen_info = st.session_state.get('screen_info', '')
+            timezone = st.session_state.get('timezone', '')
+            fingerprint_data = (
+                f"{ip_address}|{user_agent}|{screen_info}|{timezone}"
+            )
+        except (AttributeError, KeyError):
+            # 如果无法获取额外信息，使用基础指纹
+            fingerprint_data = f"{ip_address}|{user_agent}"
+
         return hashlib.sha256(
             fingerprint_data.encode('utf-8')
         ).hexdigest()
+
+    @staticmethod
+    def get_session_timeout(
+            user_id: Optional[int] = None,
+            user_type: Optional[str] = None) -> int:
+        """
+        获取会话超时时间（根据用户类型）
+
+        Args:
+            user_id: 用户ID（可选，如果提供会查询用户类型）
+            user_type: 用户类型（可选，如果提供直接使用）
+
+        Returns:
+            int: 会话超时时间（秒）
+        """
+        # 如果提供了user_type，直接使用
+        if user_type:
+            return SessionSecurity.SESSION_TIMEOUT_BY_TYPE.get(
+                user_type, SessionSecurity.DEFAULT_SESSION_TIMEOUT
+            )
+
+        # 如果提供了user_id，查询用户类型
+        if user_id:
+            try:
+                from .db_utils import get_user_subscription_info
+            except ImportError:
+                from db_utils import get_user_subscription_info
+
+            try:
+                user_info = get_user_subscription_info(user_id)
+                if user_info:
+                    # 检查role是否为admin（优先级最高）
+                    role = user_info.get('role')
+                    if role == 'admin':
+                        return SessionSecurity.SESSION_TIMEOUT_BY_TYPE.get(
+                            'admin', SessionSecurity.DEFAULT_SESSION_TIMEOUT
+                        )
+
+                    # 优先使用subscription_type，如果没有则使用user_type
+                    # 这与check_user_subscription_status的逻辑保持一致
+                    subscription_type = user_info.get('subscription_type')
+                    user_type_from_db = user_info.get('user_type')
+                    # 如果subscription_type为空或None，使用user_type
+                    # 注意：空字符串也被视为无效值
+                    # 确保正确处理None值
+                    if (subscription_type is not None and
+                            str(subscription_type).strip()):
+                        user_type_str = str(subscription_type).strip().lower()
+                    elif (user_type_from_db is not None and
+                          str(user_type_from_db).strip()):
+                        user_type_str = str(user_type_from_db).strip().lower()
+                    else:
+                        user_type_str = 'free'
+                    user_type = user_type_str if user_type_str else 'free'
+                    return SessionSecurity.SESSION_TIMEOUT_BY_TYPE.get(
+                        user_type, SessionSecurity.DEFAULT_SESSION_TIMEOUT
+                    )
+            except DB_EXCEPTIONS:
+                # 查询用户信息失败，使用默认超时时间
+                # DB_EXCEPTIONS已包含sqlite3.Error、psycopg2.Error、
+                # OSError和ValueError
+                pass
+            except (TypeError, AttributeError, KeyError):
+                # 捕获数据格式错误等非数据库异常，使用默认超时时间
+                # 这些异常可能来自数据解析或字典访问
+                pass
+
+        # 默认超时时间
+        return SessionSecurity.DEFAULT_SESSION_TIMEOUT
+
+    @staticmethod
+    def is_trusted_device(
+            user_id: int, device_fingerprint: str) -> bool:
+        """
+        检查设备是否为信任设备（IP白名单机制）
+
+        Args:
+            user_id: 用户ID
+            device_fingerprint: 设备指纹
+
+        Returns:
+            bool: 是否为信任设备
+        """
+        try:
+            from .db_utils import get_db_connection
+        except ImportError:
+            from db_utils import get_db_connection
+
+        try:
+            with get_db_connection() as (conn, c):
+                # 检测数据库类型
+                try:
+                    import psycopg2
+                    is_pg = isinstance(conn, psycopg2.extensions.connection)
+                except (ImportError, AttributeError):
+                    is_pg = False
+
+                sql = _safe_adapt_sql("""
+                    SELECT COUNT(*) FROM trusted_devices
+                    WHERE user_id = ? AND device_fingerprint = ?
+                    AND is_active = ?
+                """, conn)
+
+                if is_pg:
+                    c.execute(sql, (user_id, device_fingerprint, True))
+                else:
+                    c.execute(sql, (user_id, device_fingerprint, 1))
+
+                result = c.fetchone()
+                return (result[0] if result else 0) > 0
+        except DB_EXCEPTIONS:
+            # 数据库查询失败，返回False
+            return False
+
+    @staticmethod
+    def add_trusted_device(
+            user_id: int, ip_address: str, device_fingerprint: str,
+            user_agent: str = '') -> bool:
+        """
+        添加信任设备（IP白名单）
+
+        Args:
+            user_id: 用户ID
+            ip_address: IP地址
+            device_fingerprint: 设备指纹
+            user_agent: User-Agent字符串
+
+        Returns:
+            bool: 是否添加成功
+        """
+        try:
+            from .db_utils import get_db_connection
+        except ImportError:
+            from db_utils import get_db_connection
+
+        try:
+            with get_db_connection() as (conn, c):
+                current_time = time.time()
+                # 检测数据库类型
+                try:
+                    import psycopg2
+                    is_pg = isinstance(conn, psycopg2.extensions.connection)
+                except (ImportError, AttributeError):
+                    is_pg = False
+
+                # 使用INSERT OR REPLACE（SQLite）或ON CONFLICT（PostgreSQL）
+                if is_pg:
+                    sql = _safe_adapt_sql("""
+                        INSERT INTO trusted_devices
+                        (user_id, ip_address, device_fingerprint, user_agent,
+                         trusted_at, last_used, is_active)
+                        VALUES (?, ?, ?, ?, ?, ?, TRUE)
+                        ON CONFLICT (user_id, device_fingerprint)
+                        DO UPDATE SET
+                            ip_address = EXCLUDED.ip_address,
+                            last_used = EXCLUDED.last_used,
+                            is_active = TRUE
+                    """, conn)
+                else:
+                    sql = _safe_adapt_sql("""
+                        INSERT OR REPLACE INTO trusted_devices
+                        (user_id, ip_address, device_fingerprint, user_agent,
+                         trusted_at, last_used, is_active)
+                        VALUES (?, ?, ?, ?, ?, ?, 1)
+                    """, conn)
+
+                c.execute(sql, (
+                    user_id, ip_address, device_fingerprint, user_agent,
+                    current_time, current_time
+                ))
+                conn.commit()
+                return True
+        except Exception as e:
+            if logger:
+                logger.error(f"添加信任设备失败: {e}")
+            return False
+
+    @staticmethod
+    def update_trusted_device_last_used(
+            user_id: int, device_fingerprint: str) -> bool:
+        """
+        更新信任设备最后使用时间
+
+        Args:
+            user_id: 用户ID
+            device_fingerprint: 设备指纹
+
+        Returns:
+            bool: 是否更新成功
+        """
+        try:
+            from .db_utils import get_db_connection
+        except ImportError:
+            from db_utils import get_db_connection
+
+        try:
+            with get_db_connection() as (conn, c):
+                current_time = time.time()
+                sql = _safe_adapt_sql("""
+                    UPDATE trusted_devices
+                    SET last_used = ?
+                    WHERE user_id = ? AND device_fingerprint = ?
+                """, conn)
+                c.execute(sql, (current_time, user_id, device_fingerprint))
+                conn.commit()
+                return c.rowcount > 0
+        except DB_EXCEPTIONS:
+            # 数据库更新失败，返回False
+            return False
 
     @staticmethod
     def verify_password_for_sensitive_operation(
@@ -1894,7 +2203,7 @@ class SessionSecurity:
 
                         # 检查会话是否超时（字典格式）
                         if (current_time - last_activity >=
-                                SessionSecurity.SESSION_TIMEOUT):
+                                SessionSecurity.DEFAULT_SESSION_TIMEOUT):
                             # 会话超时，标记为非活跃
                             sql = _safe_adapt_sql(
                                 "UPDATE active_sessions SET is_active = FALSE "
@@ -2187,9 +2496,12 @@ class SessionSecurity:
                                 conn.commit()
                                 return None
 
+                    # 高优先级安全改进：使用可配置的会话超时时间（根据用户类型）
+                    session_timeout = SessionSecurity.get_session_timeout(
+                        user_id=user_id if user_id is not None else None
+                    )
                     # 检查会话是否超时（>= 表示等于或超过阈值都视为超时）
-                    if (current_time - last_activity >=
-                            SessionSecurity.SESSION_TIMEOUT):
+                    if current_time - last_activity >= session_timeout:
                         # 会话超时，标记为非活跃
                         sql = _safe_adapt_sql(
                             "UPDATE active_sessions SET is_active = FALSE "
@@ -2232,17 +2544,34 @@ class SessionSecurity:
                                 stored_ip_str != current_ip_str and
                                 not is_local_current and
                                 not is_local_stored):
+                            # 高优先级安全改进：使用IP白名单机制
+                            # 获取设备指纹
+                            device_fingerprint = (
+                                SessionSecurity.generate_device_fingerprint(
+                                    current_ip_str, client_info['user_agent']
+                                )
+                            )
+
+                            # 检查是否为信任设备
+                            is_trusted = False
+                            if user_id is not None:
+                                is_trusted = SessionSecurity.is_trusted_device(
+                                    user_id, device_fingerprint
+                                )
+
                             # 严格模式：IP变更时强制失效会话并要求重新登录
                             # 但在测试环境中，如果两个IP都是localhost或127.x，
                             # 允许继续
+                            # 如果是信任设备，允许IP变更
                             if (SessionSecurity.IP_CHANGE_STRICT_MODE and
                                     not (is_local_stored or
-                                         is_local_current)):
+                                         is_local_current) and
+                                    not is_trusted):
                                 if logger:
                                     logger.warning(
                                         f"会话IP地址变更: 用户{user_id} "
                                         f"从{stored_ip_str}变更到{current_ip_str}，"
-                                        f"强制失效会话（严格模式）"
+                                        f"强制失效会话（严格模式，非信任设备）"
                                     )
                                 # 失效会话并要求重新登录
                                 sql = _safe_adapt_sql(
@@ -2255,12 +2584,27 @@ class SessionSecurity:
                                 conn.commit()
                                 return None  # 返回None，要求重新登录
                             else:
-                                # 非严格模式：记录警告但允许继续
+                                # 非严格模式或信任设备：记录警告但允许继续
                                 if logger:
-                                    logger.warning(
-                                        f"会话IP地址变更警告: 用户{user_id} "
-                                        f"从{stored_ip_str}变更到{current_ip_str}"
-                                    )
+                                    if is_trusted:
+                                        logger.info(
+                                            f"会话IP地址变更（信任设备）: "
+                                            f"用户{user_id} 从{stored_ip_str}变更到"
+                                            f"{current_ip_str}"
+                                        )
+                                    else:
+                                        logger.warning(
+                                            f"会话IP地址变更警告: 用户{user_id} "
+                                            f"从{stored_ip_str}变更到"
+                                            f"{current_ip_str}"
+                                        )
+                                # 如果是信任设备，更新最后使用时间
+                                if is_trusted and user_id is not None:
+                                    SessionSecurity. \
+                                        update_trusted_device_last_used(
+                                            user_id,
+                                            device_fingerprint
+                                        )
                                 # 更新IP地址到当前IP
                                 sql = _safe_adapt_sql(
                                     "UPDATE active_sessions "
@@ -2482,8 +2826,10 @@ class SessionSecurity:
         except ImportError:
             from db_utils import get_db_connection
         with get_db_connection() as (conn, c):
-            # 清理超时的会话
-            expired_time = time.time() - SessionSecurity.SESSION_TIMEOUT
+            # 清理超时的会话（使用默认超时时间）
+            expired_time = (
+                time.time() - SessionSecurity.DEFAULT_SESSION_TIMEOUT
+            )
             # 检测数据库类型
             try:
                 import psycopg2
