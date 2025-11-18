@@ -2736,15 +2736,19 @@ class SessionSecurity:
                 from .db_utils import get_db_connection
             except ImportError:
                 from db_utils import get_db_connection
-            with get_db_connection() as (conn, c):
-                # 标记会话为非活跃
-                sql = _safe_adapt_sql(
-                    "UPDATE active_sessions SET is_active = FALSE "
-                    "WHERE session_id = ?",
-                    conn
-                )
-                c.execute(sql, (session_id,))
-                conn.commit()
+            try:
+                with get_db_connection() as (conn, c):
+                    # 标记会话为非活跃
+                    sql = _safe_adapt_sql(
+                        "UPDATE active_sessions SET is_active = FALSE "
+                        "WHERE session_id = ?",
+                        conn
+                    )
+                    c.execute(sql, (session_id,))
+                    conn.commit()
+            except DB_EXCEPTIONS:
+                # 优雅处理数据库异常，不抛出异常
+                pass
 
         # 清理session_state
         keys_to_remove = [

@@ -1906,12 +1906,14 @@ def get_enhanced_revenue_stats(
                 start_date = (date.today() - timedelta(days=30)).isoformat()
 
             # 转换为时间戳
-            end_timestamp = int(
-                datetime.fromisoformat(end_date).timestamp()
+            # start_timestamp: 开始日期的 00:00:00
+            # end_timestamp: 结束日期+1天的 00:00:00，确保包含整天的数据
+            start_datetime = datetime.fromisoformat(start_date)
+            end_datetime = datetime.fromisoformat(end_date) + timedelta(
+                days=1
             )
-            start_timestamp = int(
-                datetime.fromisoformat(start_date).timestamp()
-            )
+            start_timestamp = int(start_datetime.timestamp())
+            end_timestamp = int(end_datetime.timestamp())
 
             # 检查 order_type 字段是否存在
             has_order_type = _check_table_column_exists(

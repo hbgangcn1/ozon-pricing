@@ -10,9 +10,9 @@ import logging
 import os
 import threading
 from queue import Queue
-from typing import Optional
 
 from flask import Flask, jsonify, request
+from typing import Dict, Any, Optional
 
 from hmac_utils import get_callback_secret, verify_signature
 from payment_handler import PaymentHandler, payment_handler
@@ -91,6 +91,153 @@ def _default_get_payment_callback_monitor():
     用于满足静态分析要求，当无法导入增强监控时使用
     """
     return None
+
+
+def validate_startup_configuration() -> Dict[str, Any]:
+    """
+    启动时验证关键配置（fail-fast检查）
+    
+    Returns:
+        Dict包含配置检查结果，格式：
+        {
+            'status': 'healthy' | 'degraded' | 'critical',
+            'checks': {
+                'callback_secret': {'status': '...', 'message': '...'},
+                'wechat_pay_module': {'status': '...', 'message': '...'},
+                'enhanced_monitor': {'status': '...', 'message': '...'},
+            },
+            'warnings': [...],
+            'errors': [...]
+        }
+    """
+    result = {
+        'status': 'healthy',
+        'checks': {},
+        'warnings': [],
+        'errors': []
+    }
+    
+    # 1. 检查回调密钥配置
+    try:
+        secret = get_callback_secret()
+        if secret:
+            result['checks']['callback_secret'] = {
+                'status': 'healthy',
+                'message': '回调密钥已配置'
+            }
+        else:
+            result['status'] = 'degraded'
+            result['checks']['callback_secret'] = {
+                'status': 'warning',
+                'message': '回调密钥未配置，签名验证将跳过'
+            }
+            result['warnings'].append('回调密钥未配置，建议设置WECHAT_CALLBACK_SECRET环境变量')
+    except Exception as e:
+        result['status'] = 'degraded'
+        result['checks']['callback_secret'] = {
+            'status': 'warning',
+            'message': f'检查回调密钥配置时出错: {str(e)}'
+        }
+        result['warnings'].append(f'回调密钥检查失败: {str(e)}')
+    
+    # 2. 检查微信支付模块
+    try:
+        from wechat_pay_v3_api import wechat_pay_v3
+        from wechat_pay_config import wechat_config
+        if wechat_pay_v3 and wechat_config:
+            result['checks']['wechat_pay_module'] = {
+                'status': 'healthy',
+                'message': '微信支付模块可用'
+            }
+        else:
+            result['status'] = 'degraded'
+            result['checks']['wechat_pay_module'] = {
+                'status': 'warning',
+                'message': '微信支付模块部分不可用'
+            }
+            result['warnings'].append('微信支付模块配置不完整')
+    except ImportError:
+        wechat_pay_v3 = None  # noqa: F841
+        wechat_config = None  # noqa: F841
+        result['status'] = 'degraded'
+        result['checks']['wechat_pay_module'] = {
+            'status': 'warning',
+            'message': '微信支付模块不可用（ImportError）'
+        }
+        result['warnings'].append('微信支付模块导入失败，支付回调处理可能受限')
+    except Exception as e:
+        wechat_pay_v3 = None  # noqa: F841
+        wechat_config = None  # noqa: F841
+        result['status'] = 'degraded'
+        result['checks']['wechat_pay_module'] = {
+            'status': 'warning',
+            'message': f'检查微信支付模块时出错: {str(e)}'
+        }
+        result['warnings'].append(f'微信支付模块检查失败: {str(e)}')
+    
+    # 3. 检查增强监控模块（可选，不影响核心功能）
+    try:
+        from payment_callback_enhanced import get_payment_callback_monitor
+        monitor = get_payment_callback_monitor()
+        if monitor is not None:
+            result['checks']['enhanced_monitor'] = {
+                'status': 'healthy',
+                'message': '增强监控模块可用'
+            }
+        else:
+            result['checks']['enhanced_monitor'] = {
+                'status': 'info',
+                'message': '增强监控模块未启用，将使用基础队列'
+            }
+            result['warnings'].append('增强监控模块未启用，建议配置以提升可观测性')
+    except ImportError:
+        get_payment_callback_monitor = None  # noqa: F841
+        result['checks']['enhanced_monitor'] = {
+            'status': 'info',
+            'message': '增强监控模块不可用（ImportError），将使用基础队列'
+        }
+        # ImportError不视为错误，因为这是可选模块
+    except Exception as e:
+        get_payment_callback_monitor = None  # noqa: F841
+        result['checks']['enhanced_monitor'] = {
+            'status': 'warning',
+            'message': f'检查增强监控模块时出错: {str(e)}'
+        }
+        result['warnings'].append(f'增强监控模块检查失败: {str(e)}')
+    
+    # 4. 检查数据库连接（关键依赖）
+    try:
+        from db_adapter import get_db_connection
+        with get_db_connection() as (conn, cursor):
+            cursor.execute("SELECT 1")
+            result['checks']['database'] = {
+                'status': 'healthy',
+                'message': '数据库连接正常'
+            }
+    except ImportError:
+        get_db_connection = None  # noqa: F841
+        result['status'] = 'critical'
+        result['checks']['database'] = {
+            'status': 'critical',
+            'message': '数据库适配器不可用（ImportError）'
+        }
+        result['errors'].append('数据库适配器导入失败，服务无法正常运行')
+    except Exception as e:
+        get_db_connection = None  # noqa: F841
+        result['status'] = 'critical'
+        result['checks']['database'] = {
+            'status': 'critical',
+            'message': f'数据库连接失败: {str(e)}'
+        }
+        result['errors'].append(f'数据库连接失败: {str(e)}')
+    
+    # 如果有错误，状态设为critical
+    if result['errors']:
+        result['status'] = 'critical'
+    elif result['warnings'] and result['status'] == 'healthy':
+        result['status'] = 'degraded'
+    
+    return result
 
 
 @app.route('/wechat/notify', methods=['POST'])
@@ -439,6 +586,24 @@ def health_check():
             'failed_total': queue_stats['failed'],
             'pending': queue_stats['pending']
         }
+    
+    # 5. 添加配置检查结果（暴露启动时配置状态）
+    try:
+        config_check = validate_startup_configuration()
+        health_status['configuration'] = {
+            'status': config_check['status'],
+            'checks': config_check['checks'],
+            'warnings_count': len(config_check.get('warnings', [])),
+            'errors_count': len(config_check.get('errors', []))
+        }
+        # 如果有配置错误，影响整体健康状态
+        if config_check['status'] == 'critical' and health_status['status'] == 'healthy':
+            health_status['status'] = 'degraded'
+    except Exception as e:
+        health_status['configuration'] = {
+            'status': 'unknown',
+            'message': f'配置检查失败: {str(e)}'
+        }
 
     # 根据健康状态返回不同的HTTP状态码
     http_status = 200
@@ -482,13 +647,47 @@ def get_callback_port() -> int:
 def run_callback_server(
     host: str = '0.0.0.0',
     port: Optional[int] = None,
+    skip_config_check: bool = False,
 ) -> None:
     """
     启动微信支付回调服务。
 
     在嵌入式模式（由 Streamlit 调用）与独立脚本运行时复用。
+    
+    Args:
+        host: 监听地址
+        port: 监听端口
+        skip_config_check: 是否跳过配置检查（用于测试环境）
     """
     from werkzeug.serving import WSGIRequestHandler
+
+    # 启动时配置检查（fail-fast）
+    if not skip_config_check:
+        config_result = validate_startup_configuration()
+        if config_result['status'] == 'critical':
+            logger.error("=" * 60)
+            logger.error("❌ 启动配置检查失败（CRITICAL）")
+            logger.error("=" * 60)
+            for error in config_result.get('errors', []):
+                logger.error(f"  ❌ {error}")
+            for warning in config_result.get('warnings', []):
+                logger.warning(f"  ⚠️  {warning}")
+            logger.error("=" * 60)
+            logger.error("服务无法启动，请修复上述配置问题后重试")
+            raise RuntimeError(
+                "启动配置检查失败，存在关键配置缺失。"
+                "请检查日志中的错误信息。"
+            )
+        elif config_result['status'] == 'degraded':
+            logger.warning("=" * 60)
+            logger.warning("⚠️  启动配置检查发现警告（DEGRADED）")
+            logger.warning("=" * 60)
+            for warning in config_result.get('warnings', []):
+                logger.warning(f"  ⚠️  {warning}")
+            logger.warning("=" * 60)
+            logger.warning("服务将以降级模式启动，部分功能可能受限")
+        else:
+            logger.info("✅ 启动配置检查通过")
 
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
     WSGIRequestHandler.protocol_version = "HTTP/1.1"

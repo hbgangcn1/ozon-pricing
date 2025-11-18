@@ -1870,26 +1870,27 @@ def statistics_enhanced_revenue_page():
             st.plotly_chart(
                 fig, width='stretch', config={'displayModeBar': False}
             )
+        else:
+            st.info("暂无订单数据")
 
     with col2:
         st.subheader("💹 转化率分析")
         conversion_rate = revenue_data.get('conversion_rate', {})
-        if conversion_rate:
-            st.write(
-                f"**免费转付费率:** "
-                f"{conversion_rate.get('free_to_paid', 0)}%"
-            )
-            st.write(
-                f"**效率版升级率:** "
-                f"{conversion_rate.get('efficiency_to_pro', 0)}%"
-            )
+        free_to_paid = conversion_rate.get('free_to_paid', 0)
+        efficiency_to_pro = conversion_rate.get('efficiency_to_pro', 0)
+        st.write(f"**免费转付费率:** {free_to_paid}%")
+        st.write(f"**效率版升级率:** {efficiency_to_pro}%")
 
         st.divider()
         st.subheader("📋 订单类型详情")
         if order_dist:
             dist_df = pd.DataFrame(order_dist)
+            # 确保列的顺序正确
+            dist_df = dist_df[['type', 'count', 'percentage']]
             dist_df.columns = ['类型', '订单数', '占比(%)']
             st.dataframe(dist_df, width='stretch')
+        else:
+            st.info("暂无订单数据")
 
     # 未标记订单提示
     unmarked = revenue_data.get('unmarked', {})
