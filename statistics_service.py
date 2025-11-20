@@ -1919,6 +1919,30 @@ def get_enhanced_revenue_stats(
             has_order_type = _check_table_column_exists(
                 c, 'payment_orders', 'order_type')
 
+            # 如果字段存在但在时间范围内没有任何有效值，则退回旧逻辑
+            if has_order_type:
+                order_type_usage_sql = _safe_adapt_sql("""
+                    SELECT COUNT(*)
+                    FROM payment_orders
+                    WHERE status = 'SUCCESS'
+                    AND order_type IS NOT NULL
+                    AND TRIM(order_type) <> ''
+                    AND created_at >= ?
+                    AND created_at <= ?
+                """, conn)
+                try:
+                    c.execute(order_type_usage_sql,
+                              (start_timestamp, end_timestamp))
+                    usage_result = c.fetchone()
+                    order_type_in_use = bool(
+                        usage_result and usage_result[0]
+                    )
+                except DB_EXCEPTIONS:
+                    order_type_in_use = False
+
+                if not order_type_in_use:
+                    has_order_type = False
+
             # 1. 首充订单统计
             if has_order_type:
                 sql = _safe_adapt_sql("""
