@@ -75,10 +75,11 @@ except ImportError:
 def _stats_debug(message: str) -> None:
     """统一的调试日志输出，便于临时排查生产问题。"""
     prefix = "[StatisticsDebug]"
+    formatted = f"{prefix} {message}"
     if logger:
-        logger.info("%s %s", prefix, message)
+        logger.info(formatted)
     else:
-        print(prefix, message)
+        print(formatted)
 
 
 def _build_safe_in_clause(
