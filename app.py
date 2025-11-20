@@ -43,6 +43,10 @@ POLICE_FILING_MODE = (
     os.getenv('POLICE_FILING_MODE', 'false').lower() == 'true'
 )
 # ===== 公安备案配置结束 =====
+
+CALLBACK_SERVER_STARTED = False
+CALLBACK_SERVER_LOCK = threading.Lock()
+
 try:
     from .db_utils import (
         init_db,
@@ -7334,28 +7338,39 @@ def restart_gunicorn_callback_server():
 
 def start_wechat_callback_server():
     """启动微信支付回调服务器（后台线程）"""
-    if st.session_state.get('callback_server_started', False):
+    global CALLBACK_SERVER_STARTED
+    if CALLBACK_SERVER_STARTED:
         return
 
-    try:
-        from wechat_callback_server import (  # type: ignore
-            get_callback_port,
-            run_callback_server,
-        )
+    with CALLBACK_SERVER_LOCK:
+        if CALLBACK_SERVER_STARTED:
+            return
 
-        port = get_callback_port()
-        threading.Thread(
-            target=run_callback_server,
-            kwargs={'host': '0.0.0.0', 'port': port},
-            daemon=True,
-            name="WechatCallbackServer",
-        ).start()
+        if st.session_state.get('callback_server_started', False):
+            CALLBACK_SERVER_STARTED = True
+            return
 
-        st.session_state['callback_server_started'] = True
-        print(f"✅ 微信支付回调服务器已启动 (端口: {port})")
-    except Exception as exc:
-        print(f"⚠️ 启动微信支付回调服务器失败: {exc}")
-        st.session_state['callback_server_started'] = False
+        try:
+            from wechat_callback_server import (  # type: ignore
+                get_callback_port,
+                run_callback_server,
+            )
+
+            port = get_callback_port()
+            threading.Thread(
+                target=run_callback_server,
+                kwargs={'host': '0.0.0.0', 'port': port},
+                daemon=True,
+                name="WechatCallbackServer",
+            ).start()
+
+            st.session_state['callback_server_started'] = True
+            CALLBACK_SERVER_STARTED = True
+            print(f"✅ 微信支付回调服务器已启动 (端口: {port})")
+        except Exception as exc:
+            print(f"⚠️ 启动微信支付回调服务器失败: {exc}")
+            st.session_state['callback_server_started'] = False
+            CALLBACK_SERVER_STARTED = False
 
 
 def show_admin_statistics():
