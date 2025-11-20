@@ -58,7 +58,8 @@ def determine_order_type(user_id: int, target_plan: str,
         # 2. 查询用户历史成功订单数
         sql1 = adapt_placeholders("""
             SELECT COUNT(*) FROM payment_orders
-            WHERE user_id = ? AND status = 'SUCCESS'
+            WHERE user_id = ?
+            AND status IN ('SUCCESS', 'PAID')
         """, 1)
         c.execute(sql1, (user_id,))
         result = c.fetchone()

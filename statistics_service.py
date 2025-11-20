@@ -2225,7 +2225,7 @@ def get_enhanced_revenue_stats(
                     sql = _safe_adapt_sql("""
                         SELECT COUNT(DISTINCT user_id)
                         FROM payment_orders
-                        WHERE status = 'SUCCESS'
+                        WHERE status IN ('SUCCESS', 'PAID')
                         AND is_upgrade = 1
                         AND description LIKE '%专业版%'
                         AND created_at >= ?
