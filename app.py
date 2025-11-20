@@ -5338,6 +5338,24 @@ def show_password_change_form():
 
             # 验证当前密码并更新
             user_id = st.session_state.user['id']
+
+            # 高优先级安全改进：在敏感操作前强制刷新会话ID
+            try:
+                from session_security import SessionSecurity
+                session_id = st.session_state.get('session_id')
+                if session_id:
+                    new_session_id = SessionSecurity.force_refresh_session_id(
+                        session_id, user_id
+                    )
+                    if new_session_id:
+                        st.session_state.session_id = new_session_id
+            except Exception as e:
+                # 如果刷新失败，记录日志但继续执行（不阻断用户操作）
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"强制刷新会话ID失败: {e}"
+                )
+
             if update_user_password(user_id, current_password, new_password):
                 st.success("密码修改成功！")
             else:

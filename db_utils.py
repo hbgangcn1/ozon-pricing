@@ -191,6 +191,23 @@ def _safe_execute_fetchone(cursor, sql, params=None, conn=None) -> Any:
         params: 参数（可选）
         conn: 数据库连接（可选，用于SQL适配）
     """
+    # 高优先级安全改进：SQL注入检测
+    # （仅在开发/测试环境启用，生产环境可选）
+    try:
+        import os
+        if (os.getenv('ENABLE_SQL_INJECTION_DETECTION', 'false').lower() ==
+                'true'):
+            from sql_injection_protection import detect_sql_injection
+            is_safe, warning = detect_sql_injection(sql, params)
+            if not is_safe:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"SQL注入检测警告: {warning}")
+                logger.warning(f"SQL语句: {sql[:200]}...")
+    except (ImportError, Exception):
+        # 如果检测模块不可用或出错，继续执行（不阻断正常流程）
+        pass
+
     # 如果提供了连接对象，先适配SQL
     if conn is not None:
         sql = _safe_adapt_sql(sql, conn)

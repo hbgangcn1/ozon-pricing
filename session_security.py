@@ -5,7 +5,7 @@ import hashlib
 import importlib
 import streamlit as st
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 
 # 定义数据库异常类型（兼容SQLite和PostgreSQL）
 try:
@@ -66,11 +66,12 @@ class SessionSecurity:
     MAX_LOGIN_ATTEMPTS = 5  # 最大登录尝试次数
     LOCKOUT_DURATION = 900  # 15分钟锁定时间
     SESSION_REFRESH_INTERVAL = 300  # 5分钟刷新间隔
-    SESSION_ROTATION_INTERVAL = 300  # 5分钟会话ID轮换间隔（防止会话固定攻击，已优化）
+    SESSION_ROTATION_INTERVAL = 180  # 3分钟会话ID轮换间隔（防止会话固定攻击，高优先级安全改进）
     IP_CHANGE_CHECK_ENABLED = True  # 启用IP变更检测
     IP_CHANGE_STRICT_MODE = False  # 严格模式：IP变更时强制重新登录（默认关闭，使用白名单机制）
     SUSPICIOUS_IP_WARNING_THRESHOLD = 3  # 异常IP登录警告阈值
     MAX_CONCURRENT_SESSIONS = 3  # 最大并发会话数（高优先级安全改进）
+    SESSION_BINDING_ENABLED = True  # 启用会话绑定（IP、User-Agent），高优先级安全改进
 
     @staticmethod
     def init_session_tables():
@@ -2518,6 +2519,29 @@ class SessionSecurity:
                     client_info = SessionSecurity.get_client_info()
                     current_ip = client_info['ip_address']
 
+                    # 高优先级安全改进：检查会话绑定（IP、User-Agent）
+                    if (SessionSecurity.SESSION_BINDING_ENABLED and
+                            user_id is not None):
+                        is_valid, binding_msg = (
+                            SessionSecurity.check_session_binding(
+                                session_id, user_id
+                            )
+                        )
+                        if not is_valid:
+                            if logger:
+                                logger.warning(
+                                    f"会话绑定检查失败: 用户{user_id}, {binding_msg}"
+                                )
+                            # 会话绑定失败，失效会话
+                            sql = _safe_adapt_sql(
+                                "UPDATE active_sessions SET is_active = FALSE "
+                                "WHERE session_id = ?",
+                                conn
+                            )
+                            c.execute(sql, (session_id,))
+                            conn.commit()
+                            return None
+
                     # 增强的IP地址验证（防止会话劫持和会话固定攻击）
                     if SessionSecurity.IP_CHANGE_CHECK_ENABLED:
                         # 如果IP地址变更且不是本地地址，可能是会话劫持
@@ -2724,6 +2748,216 @@ class SessionSecurity:
             return None
 
         return None
+
+    @staticmethod
+    def force_refresh_session_id(
+        session_id: str, user_id: int
+    ) -> Optional[str]:
+        """
+        强制刷新会话ID（高优先级安全改进：在敏感操作前调用）
+
+        Args:
+            session_id: 当前会话ID
+            user_id: 用户ID
+
+        Returns:
+            新的会话ID，如果刷新失败则返回None
+        """
+        try:
+            from .db_utils import get_db_connection
+        except ImportError:
+            from db_utils import get_db_connection
+
+        try:
+            with get_db_connection() as (conn, c):
+                # 生成新的会话ID
+                new_session_id = SessionSecurity.generate_session_id(user_id)
+                current_time = time.time()
+
+                # 获取客户端信息（用于会话绑定）
+                client_info = SessionSecurity.get_client_info()
+                current_ip = client_info['ip_address']
+                current_user_agent = client_info.get('user_agent', '')
+
+                # 检测数据库类型
+                try:
+                    import psycopg2
+                    is_pg = isinstance(
+                        conn, psycopg2.extensions.connection
+                    )
+                except (ImportError, AttributeError):
+                    is_pg = False
+
+                # 更新会话ID（原子操作）
+                if is_pg:
+                    sql = _safe_adapt_sql("""
+                        UPDATE active_sessions
+                        SET session_id = ?, last_rotation = ?,
+                            ip_address = ?, user_agent = ?,
+                            last_activity = ?
+                        WHERE session_id = ? AND is_active = TRUE
+                    """, conn)
+                else:
+                    sql = _safe_adapt_sql("""
+                        UPDATE active_sessions
+                        SET session_id = ?, last_rotation = ?,
+                            ip_address = ?, user_agent = ?,
+                            last_activity = ?
+                        WHERE session_id = ? AND is_active = 1
+                    """, conn)
+
+                c.execute(sql, (
+                    new_session_id, current_time,
+                    current_ip, current_user_agent, current_time,
+                    session_id
+                ))
+
+                # 验证更新是否成功
+                if hasattr(c, 'rowcount') and c.rowcount == 0:
+                    if logger:
+                        logger.warning(
+                            f"强制刷新会话ID失败: "
+                            f"会话{session_id[:8]}...不存在或已失效"
+                        )
+                    return None
+
+                conn.commit()
+
+                # 更新Streamlit session_state
+                try:
+                    if 'session_id' in st.session_state:
+                        st.session_state.session_id = new_session_id
+                except (AttributeError, KeyError, RuntimeError):
+                    pass
+
+                if logger:
+                    logger.info(
+                        f"强制刷新会话ID: 用户{user_id} "
+                        f"从{session_id[:8]}...刷新到{new_session_id[:8]}..."
+                    )
+
+                return new_session_id
+
+        except DB_EXCEPTIONS as e:
+            if logger:
+                logger.error(f"强制刷新会话ID时数据库错误: {e}")
+            return None
+        except Exception as e:
+            if logger:
+                logger.error(f"强制刷新会话ID时未知错误: {e}")
+            return None
+
+    @staticmethod
+    def check_session_binding(
+        session_id: str, user_id: int
+    ) -> Tuple[bool, str]:
+        """
+        检查会话绑定（IP、User-Agent）（高优先级安全改进）
+
+        Args:
+            session_id: 会话ID
+            user_id: 用户ID
+
+        Returns:
+            (is_valid, message): 会话绑定是否有效，错误消息
+        """
+        if not SessionSecurity.SESSION_BINDING_ENABLED:
+            return True, ""
+
+        try:
+            from .db_utils import get_db_connection
+        except ImportError:
+            from db_utils import get_db_connection
+
+        try:
+            with get_db_connection() as (conn, c):
+                # 获取存储的会话信息
+                sql = _safe_adapt_sql("""
+                    SELECT ip_address, user_agent
+                    FROM active_sessions
+                    WHERE session_id = ? AND user_id = ? AND is_active = 1
+                """, conn)
+                c.execute(sql, (session_id, user_id))
+                result = c.fetchone()
+
+                if not result:
+                    return False, "会话不存在或已失效"
+
+                stored_ip = result[0] or ''
+                stored_user_agent = result[1] or ''
+
+                # 获取当前客户端信息
+                client_info = SessionSecurity.get_client_info()
+                current_ip = client_info['ip_address']
+                current_user_agent = client_info.get('user_agent', '')
+
+                # 检查IP地址绑定
+                local_addresses = ['localhost', '127.0.0.1', '', None]
+                is_local_stored = (
+                    not stored_ip or
+                    stored_ip in local_addresses or
+                    str(stored_ip).startswith('127.')
+                )
+                is_local_current = (
+                    not current_ip or
+                    current_ip in local_addresses or
+                    str(current_ip).startswith('127.')
+                )
+
+                # 如果IP地址变更（且不是本地地址），检查是否为信任设备
+                if (stored_ip and current_ip and
+                        str(stored_ip) != str(current_ip) and
+                        not is_local_current and
+                        not is_local_stored):
+                    # 检查是否为信任设备
+                    device_fingerprint = (
+                        SessionSecurity.generate_device_fingerprint(
+                            current_ip, current_user_agent
+                        )
+                    )
+                    is_trusted = SessionSecurity.is_trusted_device(
+                        user_id, device_fingerprint
+                    )
+
+                    if not is_trusted:
+                        return False, (
+                            f"会话IP地址不匹配: "
+                            f"存储IP={stored_ip}, 当前IP={current_ip}"
+                        )
+
+                # 检查User-Agent绑定（允许部分匹配，因为User-Agent可能变化）
+                if stored_user_agent and current_user_agent:
+                    # 提取User-Agent的主要部分（浏览器类型和版本）
+                    if '/' in stored_user_agent:
+                        stored_ua_main = stored_user_agent.split('/')[0]
+                    else:
+                        stored_ua_main = stored_user_agent
+                    if '/' in current_user_agent:
+                        current_ua_main = current_user_agent.split('/')[0]
+                    else:
+                        current_ua_main = current_user_agent
+
+                    # 如果主要部分不匹配，可能是会话劫持
+                    if stored_ua_main != current_ua_main:
+                        if logger:
+                            logger.warning(
+                                f"会话User-Agent不匹配: "
+                                f"存储UA={stored_ua_main}, "
+                                f"当前UA={current_ua_main}"
+                            )
+                        # 不强制失败，只记录警告
+                        # （因为User-Agent可能因浏览器更新而变化）
+
+                return True, ""
+
+        except DB_EXCEPTIONS as e:
+            if logger:
+                logger.error(f"检查会话绑定时数据库错误: {e}")
+            return False, f"数据库错误: {str(e)}"
+        except Exception as e:
+            if logger:
+                logger.error(f"检查会话绑定时未知错误: {e}")
+            return False, f"未知错误: {str(e)}"
 
     @staticmethod
     def invalidate_session(session_id=None):

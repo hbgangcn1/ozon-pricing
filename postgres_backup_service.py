@@ -205,6 +205,7 @@ class PostgresBackupSystem:
             "--if-exists",
             "--no-owner",
             "--no-privileges",
+            "--exit-on-error",
             "--dbname",
             POSTGRES_CONFIG.get("database", "postgres"),
             backup_path,
@@ -215,9 +216,153 @@ class PostgresBackupSystem:
             cmd.extend(["-o", options])
 
         logger.debug("执行 pg_restore: %s", " ".join(cmd))
-        subprocess.run(
-            cmd, check=True, env=self._build_env(), capture_output=True
+        result = subprocess.run(
+            cmd,
+            check=True,
+            env=self._build_env(),
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5分钟超时
         )
+        if result.stdout:
+            logger.debug(f"pg_restore 输出: {result.stdout}")
+        if result.stderr:
+            logger.debug(f"pg_restore 警告: {result.stderr}")
+
+    # noinspection PyMethodMayBeStatic
+    def _drop_all_foreign_keys(self) -> None:
+        """删除所有外键约束，为恢复做准备"""
+        logger.info("正在删除所有外键约束...")
+        dsn = (
+            f"host={POSTGRES_CONFIG.get('host', 'localhost')} "
+            f"port={POSTGRES_CONFIG.get('port', 5432)} "
+            f"dbname={POSTGRES_CONFIG.get('database', 'postgres')} "
+            f"user={POSTGRES_CONFIG.get('user', 'postgres')}"
+        )
+        password = POSTGRES_CONFIG.get("password", "")
+        if password:
+            dsn += f" password={password}"
+        options = POSTGRES_CONFIG.get("options")
+        if options:
+            dsn += f" options='{options}'"
+
+        try:
+            with closing(psycopg2.connect(dsn)) as conn:
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    # 查询所有外键约束
+                    cur.execute("""
+                        SELECT
+                            tc.table_schema,
+                            tc.table_name,
+                            tc.constraint_name
+                        FROM information_schema.table_constraints AS tc
+                        WHERE tc.constraint_type = 'FOREIGN KEY'
+                          AND tc.table_schema = 'public'
+                        ORDER BY tc.table_name, tc.constraint_name
+                    """)
+                    fk_constraints = cur.fetchall()
+
+                    if not fk_constraints:
+                        logger.info("未发现外键约束")
+                        return
+
+                    logger.info(f"发现 {len(fk_constraints)} 个外键约束")
+
+                    # 删除所有外键约束
+                    dropped_count = 0
+                    for schema, table, constraint in fk_constraints:
+                        try:
+                            drop_sql = (
+                                f"ALTER TABLE {schema}.{table} "
+                                f"DROP CONSTRAINT IF EXISTS {constraint} "
+                                f"CASCADE"
+                            )
+                            cur.execute(drop_sql)
+                            dropped_count += 1
+                            logger.debug(
+                                f"已删除外键约束: {schema}.{table}.{constraint}"
+                            )
+                        except psycopg2.Error as drop_err:
+                            logger.warning(
+                                f"删除外键约束失败 "
+                                f"{schema}.{table}.{constraint}: {drop_err}"
+                            )
+
+                    logger.info(f"✅ 已删除 {dropped_count} 个外键约束")
+        except psycopg2.Error as e:
+            logger.warning(f"删除外键约束时出现错误: {e}")
+            raise
+
+    # noinspection PyMethodMayBeStatic
+    def _drop_sequence_dependencies(self) -> None:
+        """删除所有序列的默认值依赖，为恢复做准备"""
+        logger.info("正在删除序列的默认值依赖...")
+        dsn = (
+            f"host={POSTGRES_CONFIG.get('host', 'localhost')} "
+            f"port={POSTGRES_CONFIG.get('port', 5432)} "
+            f"dbname={POSTGRES_CONFIG.get('database', 'postgres')} "
+            f"user={POSTGRES_CONFIG.get('user', 'postgres')}"
+        )
+        password = POSTGRES_CONFIG.get("password", "")
+        if password:
+            dsn += f" password={password}"
+        options = POSTGRES_CONFIG.get("options")
+        if options:
+            dsn += f" options='{options}'"
+
+        try:
+            with closing(psycopg2.connect(dsn)) as conn:
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    # 查询所有使用序列作为默认值的列
+                    cur.execute("""
+                        SELECT
+                            t.table_schema,
+                            t.table_name,
+                            c.column_name,
+                            c.column_default
+                        FROM information_schema.columns c
+                        JOIN information_schema.tables t
+                            ON c.table_schema = t.table_schema
+                            AND c.table_name = t.table_name
+                        WHERE c.table_schema = 'public'
+                          AND c.column_default LIKE 'nextval%'
+                        ORDER BY t.table_name, c.column_name
+                    """)
+                    seq_columns = cur.fetchall()
+
+                    if not seq_columns:
+                        logger.info("未发现序列依赖")
+                        return
+
+                    logger.info(f"发现 {len(seq_columns)} 个序列依赖")
+
+                    # 删除所有序列的默认值
+                    dropped_count = 0
+                    for schema, table, column, default in seq_columns:
+                        try:
+                            # 提取序列名称（从 nextval('sequence_name'::regclass) 中提取）
+                            drop_sql = (
+                                f"ALTER TABLE {schema}.{table} "
+                                f"ALTER COLUMN {column} DROP DEFAULT"
+                            )
+                            cur.execute(drop_sql)
+                            dropped_count += 1
+                            logger.debug(
+                                f"已删除序列默认值: "
+                                f"{schema}.{table}.{column}"
+                            )
+                        except psycopg2.Error as drop_err:
+                            logger.warning(
+                                f"删除序列默认值失败 "
+                                f"{schema}.{table}.{column}: {drop_err}"
+                            )
+
+                    logger.info(f"✅ 已删除 {dropped_count} 个序列依赖")
+        except psycopg2.Error as e:
+            logger.warning(f"删除序列依赖时出现错误: {e}")
+            raise
 
     # noinspection PyMethodMayBeStatic
     def _terminate_active_connections(self) -> None:
@@ -235,17 +380,76 @@ class PostgresBackupSystem:
         if options:
             dsn += f" options='{options}'"
 
-        with closing(psycopg2.connect(dsn)) as conn:
-            conn.autocommit = True
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE datname = %s AND pid <> pg_backend_pid()
-                    """,
-                    (POSTGRES_CONFIG.get("database"),),
-                )
+        try:
+            with closing(psycopg2.connect(dsn)) as conn:
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    # 先查询活动连接数
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM pg_stat_activity
+                        WHERE datname = %s AND pid <> pg_backend_pid()
+                        """,
+                        (POSTGRES_CONFIG.get("database"),),
+                    )
+                    active_count = cur.fetchone()[0]
+                    logger.info(f"发现 {active_count} 个活动连接")
+
+                    if active_count > 0:
+                        # 终止所有活动连接
+                        cur.execute(
+                            """
+                            SELECT pg_terminate_backend(pid)
+                            FROM pg_stat_activity
+                            WHERE datname = %s AND pid <> pg_backend_pid()
+                            """,
+                            (POSTGRES_CONFIG.get("database"),),
+                        )
+                        terminated_count = cur.rowcount
+                        logger.info(f"已终止 {terminated_count} 个连接")
+
+                        # 等待连接真正关闭（最多等待5秒）
+                        max_wait = 5
+                        wait_interval = 0.5
+                        waited = 0
+                        while waited < max_wait:
+                            time.sleep(wait_interval)
+                            waited += wait_interval
+                            cur.execute(
+                                """
+                                SELECT COUNT(*)
+                                FROM pg_stat_activity
+                                WHERE datname = %s AND pid <> pg_backend_pid()
+                                """,
+                                (POSTGRES_CONFIG.get("database"),),
+                            )
+                            remaining = cur.fetchone()[0]
+                            if remaining == 0:
+                                logger.info("所有连接已关闭")
+                                break
+                            logger.debug(
+                                f"等待连接关闭... "
+                                f"剩余 {remaining} 个连接"
+                            )
+                        else:
+                            # 如果还有剩余连接，记录警告但继续
+                            cur.execute(
+                                """
+                                SELECT COUNT(*)
+                                FROM pg_stat_activity
+                                WHERE datname = %s AND pid <> pg_backend_pid()
+                                """,
+                                (POSTGRES_CONFIG.get("database"),),
+                            )
+                            final_count = cur.fetchone()[0]
+                            if final_count > 0:
+                                logger.warning(
+                                    f"仍有 {final_count} 个连接未关闭，"
+                                    f"继续恢复流程"
+                                )
+        except psycopg2.Error as e:
+            logger.warning(f"终止连接时出现错误: {e}，继续恢复流程")
 
     def _filter_backup_files(self) -> List[BackupRecord]:
         records: List[BackupRecord] = []
@@ -429,17 +633,160 @@ class PostgresBackupSystem:
         except Exception as conn_exc:  # noqa: B902
             logger.warning("终止连接时出现异常: %s", conn_exc)
 
+        # 在恢复前等待一小段时间，确保连接真正关闭
+        time.sleep(1)
+
+        # 在恢复前删除所有外键约束，避免 --clean 失败
         try:
-            self._run_pg_restore(backup_path)
-            logger.info("✅ 数据库恢复成功: %s", backup_filename)
-            return True
-        except subprocess.CalledProcessError as restore_exc:
-            logger.error(
-                "pg_restore 执行失败: %s",
-                restore_exc.stderr.decode("utf-8", "ignore"),
+            self._drop_all_foreign_keys()
+        except Exception as fk_exc:  # noqa: B902
+            logger.warning(
+                f"删除外键约束时出现异常: {fk_exc}，"
+                f"继续恢复流程"
             )
-        except Exception as restore_err:  # noqa: B902
-            logger.exception("数据库恢复失败: %s", restore_err)
+
+        # 在恢复前删除所有序列的默认值依赖，避免 --clean 失败
+        try:
+            self._drop_sequence_dependencies()
+        except Exception as seq_exc:  # noqa: B902
+            logger.warning(
+                f"删除序列依赖时出现异常: {seq_exc}，"
+                f"继续恢复流程"
+            )
+
+        # 尝试恢复，最多重试3次
+        max_retries = 3
+        retry_delay = 2
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(
+                    f"尝试恢复数据库 (第 {attempt}/{max_retries} 次)..."
+                )
+                self._run_pg_restore(backup_path)
+                logger.info("✅ 数据库恢复成功: %s", backup_filename)
+
+                # 恢复成功后，关闭并重新初始化连接池
+                logger.info("正在重新初始化连接池...")
+                try:
+                    from db_adapter import (
+                        close_connection_pool,
+                        init_connection_pool
+                    )
+                except ImportError:
+                    close_connection_pool = None
+                    init_connection_pool = None
+                    logger.warning(
+                        "无法导入连接池管理函数，跳过连接池重新初始化"
+                    )
+
+                if (close_connection_pool is not None and
+                        init_connection_pool is not None):
+                    try:
+                        close_connection_pool()
+                        time.sleep(2)  # 等待连接完全关闭
+                        init_connection_pool()
+                        logger.info("✅ 连接池重新初始化成功")
+                    except Exception as pool_err:  # noqa: B902
+                        logger.warning(
+                            f"重新初始化连接池时出现错误: {pool_err}，"
+                            f"但恢复可能已成功"
+                        )
+
+                # 等待数据库稳定
+                time.sleep(3)
+
+                # 验证关键表是否存在
+                try:
+                    dsn = (
+                        f"host={POSTGRES_CONFIG.get('host', 'localhost')} "
+                        f"port={POSTGRES_CONFIG.get('port', 5432)} "
+                        f"dbname="
+                        f"{POSTGRES_CONFIG.get('database', 'postgres')} "
+                        f"user={POSTGRES_CONFIG.get('user', 'postgres')}"
+                    )
+                    password = POSTGRES_CONFIG.get("password", "")
+                    if password:
+                        dsn += f" password={password}"
+                    test_conn = psycopg2.connect(dsn)
+                    with test_conn.cursor() as test_cur:
+                        # 检查关键表是否存在
+                        test_cur.execute("""
+                            SELECT table_name
+                            FROM information_schema.tables
+                            WHERE table_schema = 'public'
+                              AND table_name IN (
+                                  'users', 'products', 'logistics'
+                              )
+                            ORDER BY table_name
+                        """)
+                        existing_tables = [
+                            row[0] for row in test_cur.fetchall()
+                        ]
+                        expected_tables = ['users', 'products', 'logistics']
+                        missing_tables = [
+                            t for t in expected_tables
+                            if t not in existing_tables
+                        ]
+                        if missing_tables:
+                            logger.warning(
+                                f"⚠️ 恢复后缺少关键表: "
+                                f"{', '.join(missing_tables)}"
+                            )
+                        else:
+                            logger.info(
+                                f"✅ 关键表验证成功: "
+                                f"{', '.join(existing_tables)}"
+                            )
+                    test_conn.close()
+                    logger.info("✅ 数据库连接验证成功")
+                except psycopg2.Error as verify_err:
+                    logger.warning(
+                        f"数据库连接验证失败: {verify_err}，"
+                        f"但恢复可能已成功"
+                    )
+
+                return True
+            except subprocess.CalledProcessError as restore_exc:
+                if restore_exc.stderr:
+                    error_msg = (
+                        restore_exc.stderr
+                        if isinstance(restore_exc.stderr, str)
+                        else restore_exc.stderr.decode("utf-8", "ignore")
+                    )
+                else:
+                    error_msg = str(restore_exc)
+                logger.error(
+                    f"pg_restore 执行失败 (第 {attempt}/{max_retries} 次): "
+                    f"{error_msg}"
+                )
+                if attempt < max_retries:
+                    logger.info(f"等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+                    # 再次尝试终止连接
+                    try:
+                        self._terminate_active_connections()
+                        time.sleep(1)
+                    except (
+                        psycopg2.Error,
+                        OSError,
+                        ConnectionError
+                    ) as retry_conn_err:
+                        logger.debug(
+                            f"重试时终止连接失败: {retry_conn_err}，"
+                            f"继续恢复流程"
+                        )
+                else:
+                    logger.error("所有恢复尝试均失败")
+            except Exception as restore_err:  # noqa: B902
+                logger.exception(
+                    f"数据库恢复失败 (第 {attempt}/{max_retries} 次): "
+                    f"{restore_err}"
+                )
+                if attempt < max_retries:
+                    logger.info(f"等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error("所有恢复尝试均失败")
         return False
 
     # ------------------------------------------------------------------ #
