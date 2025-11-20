@@ -72,6 +72,15 @@ except ImportError:
     logger = None
 
 
+def _stats_debug(message: str) -> None:
+    """统一的调试日志输出，便于临时排查生产问题。"""
+    prefix = "[StatisticsDebug]"
+    if logger:
+        logger.info("%s %s", prefix, message)
+    else:
+        print(prefix, message)
+
+
 def _build_safe_in_clause(
     values: List[int],
     max_size: int = _MAX_IN_CLAUSE_SIZE,
@@ -1915,6 +1924,11 @@ def get_enhanced_revenue_stats(
             start_timestamp = int(start_datetime.timestamp())
             end_timestamp = int(end_datetime.timestamp())
 
+            _stats_debug(
+                "enhanced_revenue range "
+                f"{start_date}~{end_date}, ts={start_timestamp}->{end_timestamp}"
+            )
+
             # 检查 order_type 字段是否存在
             has_order_type = _check_table_column_exists(
                 c, 'payment_orders', 'order_type')
@@ -1942,6 +1956,12 @@ def get_enhanced_revenue_stats(
 
                 if not order_type_in_use:
                     has_order_type = False
+
+                _stats_debug(
+                    "enhanced_revenue order_type "
+                    f"exists={order_type_in_use} using"
+                    f"={'new' if has_order_type else 'fallback'}"
+                )
 
             # 1. 首充订单统计
             if has_order_type:
@@ -2277,6 +2297,15 @@ def get_enhanced_revenue_stats(
                 },
                 'timestamp': int(time.time())
             }
+
+            _stats_debug(
+                "enhanced_revenue summary: "
+                f"first={first_payment_data} "
+                f"renewal={renewal_data} "
+                f"upgrade={upgrade_data} "
+                f"unmarked={unmarked_data} "
+                f"total={result['total']}"
+            )
 
             # 缓存5分钟
             set_statistics_cache(cache_key, result, 300)
