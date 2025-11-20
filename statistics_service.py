@@ -76,17 +76,16 @@ def _stats_debug(message: str) -> None:
     """统一的调试日志输出，便于临时排查生产问题。"""
     prefix = "[StatisticsDebug]"
     formatted = f"{prefix} {message}"
-    if logger:
-        try:
-            opt_logger = getattr(logger, "opt", None)
-            if opt_logger:
-                opt_logger(lazy=True).info("{}", formatted)
-            else:
-                logger.info(formatted)
-        except (KeyError, ValueError, TypeError, AttributeError):
-            logger.info(formatted)
-    else:
+    if not logger:
         print(formatted)
+        return
+
+    safe_message = (
+        formatted
+        .replace("{", "{{")
+        .replace("}", "}}")
+    )
+    logger.info(safe_message)
 
 
 def _build_safe_in_clause(
