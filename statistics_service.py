@@ -904,7 +904,7 @@ def get_plan_stats(start_date: Optional[str] = None,
                 sql = _safe_adapt_sql("""
                     SELECT description, SUM(amount) / 100.0 as revenue
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     GROUP BY description
                     ORDER BY revenue DESC
                 """, conn)
@@ -932,7 +932,7 @@ def get_plan_stats(start_date: Optional[str] = None,
                     LEFT JOIN (
                         SELECT user_id, SUM(amount) / 100.0 as amount
                         FROM payment_orders
-                        WHERE status = 'SUCCESS'
+                        WHERE status IN ('SUCCESS', 'PAID')
                         GROUP BY user_id
                     ) total ON u.id = total.user_id
                     WHERE u.role != 'admin'
@@ -1945,7 +1945,7 @@ def get_enhanced_revenue_stats(
                 order_type_usage_sql = _safe_adapt_sql("""
                     SELECT COUNT(*)
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND order_type IS NOT NULL
                     AND TRIM(order_type) <> ''
                     AND created_at >= ?
@@ -1977,7 +1977,7 @@ def get_enhanced_revenue_stats(
                         COUNT(*) as count,
                         COALESCE(SUM(amount), 0) / 100.0 as amount
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND order_type = 'first_payment'
                     AND created_at >= ?
                     AND created_at <= ?
@@ -2000,7 +2000,7 @@ def get_enhanced_revenue_stats(
                         COUNT(*) as count,
                         COALESCE(SUM(amount), 0) / 100.0 as amount
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND (is_upgrade IS NULL OR is_upgrade = 0)
                     AND created_at >= ?
                     AND created_at <= ?
@@ -2024,7 +2024,7 @@ def get_enhanced_revenue_stats(
                         COUNT(*) as count,
                         COALESCE(SUM(amount), 0) / 100.0 as amount
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND order_type = 'renewal'
                     AND created_at >= ?
                     AND created_at <= ?
@@ -2051,7 +2051,7 @@ def get_enhanced_revenue_stats(
                         COUNT(*) as count,
                         COALESCE(SUM(amount), 0) / 100.0 as amount
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND order_type = 'upgrade'
                     AND created_at >= ?
                     AND created_at <= ?
@@ -2074,7 +2074,7 @@ def get_enhanced_revenue_stats(
                         COUNT(*) as count,
                         COALESCE(SUM(amount), 0) / 100.0 as amount
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND is_upgrade = 1
                     AND created_at >= ?
                     AND created_at <= ?
@@ -2098,7 +2098,7 @@ def get_enhanced_revenue_stats(
                         COUNT(*) as count,
                         COALESCE(SUM(amount), 0) / 100.0 as amount
                     FROM payment_orders
-                    WHERE status = 'SUCCESS'
+                    WHERE status IN ('SUCCESS', 'PAID')
                     AND (order_type IS NULL OR order_type = '')
                     AND created_at >= ?
                     AND created_at <= ?
@@ -2175,7 +2175,7 @@ def get_enhanced_revenue_stats(
                         FROM payment_orders p
                         INNER JOIN normalized_users nu
                             ON p.user_id = nu.id
-                        WHERE p.status = 'SUCCESS'
+                        WHERE p.status IN ('SUCCESS', 'PAID')
                         AND nu.user_type = 'free'
                         AND nu.created_ts >= to_timestamp(%s)
                         AND nu.created_ts <= to_timestamp(%s)
@@ -2184,7 +2184,7 @@ def get_enhanced_revenue_stats(
                     sql = _safe_adapt_sql("""
                         SELECT COUNT(DISTINCT user_id)
                         FROM payment_orders
-                        WHERE status = 'SUCCESS'
+                        WHERE status IN ('SUCCESS', 'PAID')
                         AND user_id IN (
                             SELECT id FROM users
                             WHERE user_type = 'free'
@@ -2215,7 +2215,7 @@ def get_enhanced_revenue_stats(
                     sql = _safe_adapt_sql("""
                         SELECT COUNT(DISTINCT user_id)
                         FROM payment_orders
-                        WHERE status = 'SUCCESS'
+                        WHERE status IN ('SUCCESS', 'PAID')
                         AND order_type = 'upgrade'
                         AND description LIKE '%专业版%'
                         AND created_at >= ?
