@@ -131,7 +131,9 @@ def validate_startup_configuration() -> Dict[str, Any]:
                 'status': 'warning',
                 'message': '回调密钥未配置，签名验证将跳过'
             }
-            result['warnings'].append('回调密钥未配置，建议设置WECHAT_CALLBACK_SECRET环境变量')
+            result['warnings'].append(
+                '回调密钥未配置，建议设置CALLBACK_HMAC_SECRET环境变量'
+            )
     except Exception as e:
         result['status'] = 'degraded'
         result['checks']['callback_secret'] = {
