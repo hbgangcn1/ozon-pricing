@@ -77,7 +77,10 @@ def _stats_debug(message: str) -> None:
     prefix = "[StatisticsDebug]"
     formatted = f"{prefix} {message}"
     if logger:
-        logger.info(formatted)
+        try:
+            logger.info("{}", formatted)
+        except (KeyError, ValueError, TypeError):
+            logger.info(formatted)
     else:
         print(formatted)
 
