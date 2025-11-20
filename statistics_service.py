@@ -78,8 +78,12 @@ def _stats_debug(message: str) -> None:
     formatted = f"{prefix} {message}"
     if logger:
         try:
-            logger.info("{}", formatted)
-        except (KeyError, ValueError, TypeError):
+            opt_logger = getattr(logger, "opt", None)
+            if opt_logger:
+                opt_logger(lazy=True).info("{}", formatted)
+            else:
+                logger.info(formatted)
+        except (KeyError, ValueError, TypeError, AttributeError):
             logger.info(formatted)
     else:
         print(formatted)
