@@ -17,6 +17,7 @@ try:
         check_user_subscription_status,
         _safe_adapt_sql,
         _is_postgresql_connection,
+        is_admin,
     )
 except ImportError:
     from db_utils import (
@@ -26,6 +27,7 @@ except ImportError:
         check_user_subscription_status,
         _safe_adapt_sql,
         _is_postgresql_connection,
+        is_admin,
     )
 try:
     from .exchange_service import (
@@ -655,7 +657,7 @@ def logistics_page():
                             conn.commit()
                             # 记录审计日志（如果是admin操作）
                             try:
-                                from app import is_admin
+                                # from app import is_admin  # 使用顶部导入
                                 if is_admin() and uid is not None:
                                     from db_utils import log_admin_action
                                     log_admin_action(
@@ -1013,7 +1015,7 @@ def logistics_page():
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
-                        from app import is_admin
+                        # from app import is_admin  # 使用顶部导入
                         if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
@@ -1130,7 +1132,7 @@ def logistics_page():
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
-                        from app import is_admin
+                        # from app import is_admin  # 使用顶部导入
                         if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
@@ -1230,7 +1232,7 @@ def logistics_page():
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
-                        from app import is_admin
+                        # from app import is_admin  # 使用顶部导入
                         if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
@@ -1766,7 +1768,7 @@ def edit_logistic_form():
                 conn.commit()
                 # 记录审计日志（如果是admin操作）
                 try:
-                    from app import is_admin
+                    # from app import is_admin  # 使用顶部导入
                     if is_admin() and uid is not None:
                         from db_utils import log_admin_action
                         log_admin_action(

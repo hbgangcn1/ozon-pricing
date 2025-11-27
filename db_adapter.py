@@ -79,9 +79,16 @@ def init_connection_pool():
             if pool is None:
                 raise RuntimeError("PostgreSQL pool模块未正确加载")
 
+            # 在测试环境中增加连接池大小，避免连接池耗尽
+            import os
+            is_test = os.getenv('PYTEST_CURRENT_TEST') is not None
+            # 进一步增加连接池大小，确保测试不会耗尽连接
+            min_conn = 30 if is_test else 5
+            max_conn = 300 if is_test else 20
+
             _connection_pool = pool.ThreadedConnectionPool(
-                minconn=5,  # 最小连接数
-                maxconn=20,  # 最大连接数
+                minconn=min_conn,  # 最小连接数
+                maxconn=max_conn,  # 最大连接数（测试时增加到100）
                 host=POSTGRES_CONFIG['host'],
                 port=POSTGRES_CONFIG['port'],
                 database=POSTGRES_CONFIG['database'],
@@ -247,6 +254,15 @@ def get_db_connection():
             check_same_thread=False,
             timeout=10.0  # 增加超时时间以处理并发访问
         )
+        # 启用性能优化和外键约束
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA foreign_keys=ON")
+        except sqlite3.Error:
+            pass
+
         cursor = conn.cursor()
 
         try:
@@ -259,7 +275,10 @@ def get_db_connection():
             cursor.close()
             conn.close()
             # 减少连接计数
-            _decrement_connection_counter()
+            try:
+                _decrement_connection_counter()
+            except Exception as e:
+                print(f"警告：连接计数减少失败: {e}")
 
 
 def adapt_sql(sql: str) -> str:

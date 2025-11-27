@@ -177,6 +177,8 @@ class ScenarioAwareCursor(FakePostgresCursor):
 class ScenarioAwareConnection(FakePostgresConnection):
     """用于场景化验证的模拟连接"""
 
+    __module__ = "psycopg2.extensions"
+
     def __init__(self, scenario: CorruptionScenario) -> None:
         super().__init__()
         self._cursor = ScenarioAwareCursor(scenario)

@@ -639,57 +639,69 @@ def _get_table_columns(cursor, table_name: str) -> list:
 
 def _check_connections_at_exit():
     """程序退出时检查并强制关闭所有连接"""
-    count = get_connection_count()
+    try:
+        count = get_connection_count()
+    except (AttributeError, RuntimeError, TypeError):
+        # 如果获取连接数失败（锁错误、属性错误等），直接继续清理
+        count = 0
+    skip_cleanup = os.getenv("DBUTILS_SKIP_EXIT_CLEANUP") == "1"
+
     if count > 0:
         print(f"⚠️  警告: 程序退出时仍有 {count} 个数据库连接未关闭")
         print("🔧 正在强制关闭所有连接...")
 
-    # 1. 清理SQLite连接池
-    closed_count = 0
-    max_iterations = 1000  # 防止无限循环
-    iteration = 0
-    try:
-        while not _CONNECTION_POOL.empty() and iteration < max_iterations:
-            try:
-                conn = _CONNECTION_POOL.get_nowait()
+    if not skip_cleanup:
+        # 1. 清理SQLite连接池
+        closed_count = 0
+        max_iterations = 1000  # 防止无限循环
+        iteration = 0
+        try:
+            while not _CONNECTION_POOL.empty() and iteration < max_iterations:
                 try:
-                    conn.close()
-                    closed_count += 1
-                except (sqlite3.Error, AttributeError, OSError, RuntimeError):
-                    # 连接可能已关闭或无效，忽略错误
-                    pass
-                iteration += 1
-            except queue.Empty:
-                break
-            except (AttributeError, RuntimeError, OSError):
-                # 其他错误（如连接池对象无效），继续尝试
-                iteration += 1
-                if iteration >= max_iterations:
+                    conn = _CONNECTION_POOL.get_nowait()
+                    try:
+                        conn.close()
+                        closed_count += 1
+                    except (
+                        sqlite3.Error,
+                        AttributeError,
+                        OSError,
+                        RuntimeError,
+                    ):
+                        # 连接可能已关闭或无效，忽略错误
+                        pass
+                    iteration += 1
+                except queue.Empty:
                     break
-    except (AttributeError, RuntimeError, OSError):
-        # 清理过程中的任何错误都忽略（连接池可能未初始化）
-        pass
-
-    if closed_count > 0:
-        print(f"✅ 已关闭 {closed_count} 个SQLite连接")
-
-    # 2. 关闭PostgreSQL连接池（如果使用）
-    try:
-        from db_adapter import close_connection_pool
-    except ImportError:
-        # 如果db_adapter不存在，定义占位函数
-        def close_connection_pool():
+                except (AttributeError, RuntimeError, OSError):
+                    # 其他错误（如连接池对象无效），继续尝试
+                    iteration += 1
+                    if iteration >= max_iterations:
+                        break
+        except (AttributeError, RuntimeError, OSError):
+            # 清理过程中的任何错误都忽略（连接池可能未初始化）
             pass
 
-    try:
-        close_connection_pool()
-        global _postgres_pool_closed_logged
-        if not _postgres_pool_closed_logged:
-            print("✅ PostgreSQL连接池已关闭")
-            _postgres_pool_closed_logged = True
-    except (AttributeError, RuntimeError, OSError, ConnectionError):
-        # 忽略关闭PostgreSQL连接池时的错误（连接池可能未初始化或已关闭）
-        pass
+        if closed_count > 0:
+            print(f"✅ 已关闭 {closed_count} 个SQLite连接")
+
+        # 2. 关闭PostgreSQL连接池（如果使用）
+        try:
+            from db_adapter import close_connection_pool
+        except ImportError:
+            # 如果db_adapter不存在，定义占位函数
+            def close_connection_pool():
+                pass
+
+        try:
+            close_connection_pool()
+            global _postgres_pool_closed_logged
+            if not _postgres_pool_closed_logged:
+                print("✅ PostgreSQL连接池已关闭")
+                _postgres_pool_closed_logged = True
+        except (AttributeError, RuntimeError, OSError, ConnectionError):
+            # 忽略关闭PostgreSQL连接池时的错误（连接池可能未初始化或已关闭）
+            pass
 
     # 3. 清理连接时间戳记录
     try:
@@ -2243,7 +2255,10 @@ def _safe_fetchone(cursor, execute_result=None) -> Any:
 
 def _ensure_serial_primary_key(conn, cursor, table_name: str):
     """确保PostgreSQL表的id列具备自增序列"""
-    if not _is_postgresql_connection(conn):
+    # print(f"DEBUG: Checking table {table_name}")
+    is_pg = _is_postgresql_connection(conn)
+    if not is_pg:
+        # print(f"DEBUG: Not PostgreSQL connection for {table_name}")
         return
 
     safe_table = table_name.lower()
@@ -2259,7 +2274,11 @@ def _ensure_serial_primary_key(conn, cursor, table_name: str):
             """,
             (safe_table,)
         )
-        result = cursor.fetchone()
+        try:
+            result = cursor.fetchone()
+        except DB_EXCEPTIONS:
+            # fetchone失败时返回
+            return
         if not result:
             return
         column_default = result[0]
@@ -2329,7 +2348,12 @@ def _ensure_unique_constraint(conn, cursor, table_name: str,
             """,
             (safe_table, constraint_name)
         )
-        if cursor.fetchone():
+        try:
+            if cursor.fetchone():
+                return
+        except DB_EXCEPTIONS:
+            # fetchone失败时继续执行（可能约束不存在）
+            pass
             return
 
         normalized_target = tuple(sorted(columns))
@@ -2361,6 +2385,11 @@ def _ensure_unique_constraint(conn, cursor, table_name: str,
         )
         conn.commit()
     except DB_EXCEPTIONS as exc:
+        # 执行或commit失败时尝试回滚
+        try:
+            conn.rollback()
+        except DB_EXCEPTIONS:
+            pass
         try:
             conn.rollback()
         except DB_EXCEPTIONS:
@@ -2470,7 +2499,14 @@ def _cleanup_duplicate_ids(conn, cursor, table_name: str):
             WHERE a.id = b.id AND a.ctid > b.ctid
             """
         )
-        conn.commit()
+        try:
+            conn.commit()
+        except DB_EXCEPTIONS:
+            # commit失败时尝试回滚
+            try:
+                conn.rollback()
+            except DB_EXCEPTIONS:
+                pass
     except DB_EXCEPTIONS:
         try:
             conn.rollback()
@@ -2527,7 +2563,8 @@ def _ensure_postgresql_schema(conn, cursor):
         'plans',
         'user_login_log',
         'subscription_upgrade_history',
-        'trusted_devices'
+        'trusted_devices',
+        'audit_logs'
     ]
     for table in critical_tables:
         _ensure_serial_primary_key(conn, cursor, table)
@@ -2583,7 +2620,14 @@ def _ensure_postgresql_schema(conn, cursor):
         conn, cursor, 'logistics',
         'logistics_user_id_fkey', 'user_id', 'users'
     )
-    conn.commit()
+    try:
+        conn.commit()
+    except DB_EXCEPTIONS:
+        # commit失败时尝试回滚
+        try:
+            conn.rollback()
+        except DB_EXCEPTIONS:
+            pass
 
 
 def _upgrade_statistics_tables():
@@ -2902,6 +2946,35 @@ def _upgrade_statistics_tables():
                 '无限次计算|无限物流模板|API接口|定制开发|7x24服务',
                 4
             ))
+
+        # 10. 创建审计日志表（audit_logs）
+        audit_logs_sql_raw = """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (admin_id) REFERENCES users(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """
+        audit_logs_sql = _safe_adapt_sql(audit_logs_sql_raw, conn)
+        _safe_execute_create_table(c, audit_logs_sql)
+
+        c.execute(_safe_adapt_sql("""
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_admin_id
+            ON audit_logs(admin_id)
+        """, conn))
+        c.execute(_safe_adapt_sql("""
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id
+            ON audit_logs(user_id)
+        """, conn))
+        c.execute(_safe_adapt_sql("""
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp
+            ON audit_logs(timestamp)
+        """, conn))
 
         conn.commit()
 
@@ -4720,14 +4793,13 @@ def migrate_user_preferences():
 def authenticate_admin(username, password):
     """验证管理员登录"""
     with get_db_connection() as (conn, c):
-        c.execute(
-            (
-                "SELECT id, username, password, role, email "
-                "FROM users "
-                "WHERE username = ? AND role = 'admin'"
-            ),
-            (username,),
+        sql = _safe_adapt_sql(
+            "SELECT id, username, password, role, email "
+            "FROM users "
+            "WHERE username = ? AND role = 'admin'",
+            conn
         )
+        c.execute(sql, (username,))
         result = c.fetchone()
 
         if result:
@@ -4737,13 +4809,19 @@ def authenticate_admin(username, password):
                 password.encode('utf-8'), password_hash.encode('utf-8')
             ):
                 # 更新最后登录时间
-                c.execute(
-                    (
+                if _is_postgresql_connection(conn):
+                    update_sql = _safe_adapt_sql(
+                        "UPDATE users SET last_login = CURRENT_TIMESTAMP "
+                        "WHERE id = ?",
+                        conn
+                    )
+                else:
+                    update_sql = _safe_adapt_sql(
                         "UPDATE users SET last_login = datetime('now') "
-                        "WHERE id = ?"
-                    ),
-                    (admin_id,),
-                )
+                        "WHERE id = ?",
+                        conn
+                    )
+                c.execute(update_sql, (admin_id,))
                 conn.commit()
                 return {
                     'id': admin_id,
@@ -4810,6 +4888,7 @@ def get_all_users(
 
         # 获取总数
         count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
+        count_query = _safe_adapt_sql(count_query, conn)
         c.execute(count_query, safe_params)
         total_count = c.fetchone()[0]
 
@@ -4827,7 +4906,7 @@ def get_all_users(
                    is_auto_renew, created_at, last_login, is_frozen
             FROM users
             WHERE {where_clause}
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT ? OFFSET ?
             """
         else:
@@ -4838,9 +4917,10 @@ def get_all_users(
                    is_auto_renew, created_at, last_login, is_frozen
             FROM users
             WHERE {where_clause}
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT ? OFFSET ?
             """
+        query = _safe_adapt_sql(query, conn)
         c.execute(query, safe_params + [per_page, offset])
         users = c.fetchall()
 
@@ -4848,10 +4928,11 @@ def get_all_users(
         user_logistics_counts = {}
         for user in users:
             user_id = user[0]
-            c.execute(
+            sql = _safe_adapt_sql(
                 "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
-                (user_id,),
+                conn
             )
+            c.execute(sql, (user_id,))
             logistics_count = c.fetchone()[0]
             user_logistics_counts[user_id] = logistics_count
 
@@ -4905,16 +4986,15 @@ def get_all_users(
 def get_user_detail(user_id):
     """获取用户详细信息"""
     with get_db_connection() as (conn, c):
-        c.execute(
-            (
-                "SELECT id, username, email, role, user_type, "
-                "subscription_start, subscription_expires, "
-                "remaining_calculations, logistics_templates_limit, "
-                "is_auto_renew, created_at, last_login, "
-                "is_frozen FROM users WHERE id = ?"
-            ),
-            (user_id,),
+        sql = _safe_adapt_sql(
+            "SELECT id, username, email, role, user_type, "
+            "subscription_start, subscription_expires, "
+            "remaining_calculations, logistics_templates_limit, "
+            "is_auto_renew, created_at, last_login, "
+            "is_frozen FROM users WHERE id = ?",
+            conn
         )
+        c.execute(sql, (user_id,))
         user = c.fetchone()
 
         if not user:
@@ -4928,17 +5008,19 @@ def get_user_detail(user_id):
         ) = user
 
         # 获取物流模板数量
-        c.execute(
+        sql = _safe_adapt_sql(
             "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
-            (user_id,),
+            conn
         )
+        c.execute(sql, (user_id,))
         logistics_count = c.fetchone()[0]
 
         # 获取产品数量
-        c.execute(
+        sql = _safe_adapt_sql(
             "SELECT COUNT(*) FROM products WHERE user_id = ?",
-            (user_id,),
+            conn
         )
+        c.execute(sql, (user_id,))
         products_count = c.fetchone()[0]
 
         # 计算剩余天数
@@ -5013,11 +5095,15 @@ def update_user_subscription_admin(user_id, updates, admin_id):
             action_details = (
                 "管理员更新用户订阅: " + ", ".join(details_pairs)
             )
-            c.execute(
+            sql = _safe_adapt_sql(
                 """
                 INSERT INTO audit_logs (admin_id, user_id, action, details)
                 VALUES (?, ?, ?, ?)
                 """,
+                conn
+            )
+            c.execute(
+                sql,
                 (admin_id, user_id, 'update_subscription', action_details),
             )
 
@@ -5044,8 +5130,19 @@ def update_user_subscription_admin(user_id, updates, admin_id):
 def freeze_user(user_id, admin_id):
     """冻结用户"""
     with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql(
-            "UPDATE users SET is_frozen = 1 WHERE id = ?", conn)
+        # 检测数据库类型，PostgreSQL使用TRUE，SQLite使用1
+        try:
+            import psycopg2
+            is_pg = isinstance(conn, psycopg2.extensions.connection)
+        except (ImportError, AttributeError):
+            is_pg = False
+
+        if is_pg:
+            sql = _safe_adapt_sql(
+                "UPDATE users SET is_frozen = TRUE WHERE id = ?", conn)
+        else:
+            sql = _safe_adapt_sql(
+                "UPDATE users SET is_frozen = 1 WHERE id = ?", conn)
         c.execute(sql, (user_id,))
 
         if c.rowcount > 0:
@@ -5079,8 +5176,19 @@ def freeze_user(user_id, admin_id):
 def unfreeze_user(user_id, admin_id):
     """解冻用户"""
     with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql(
-            "UPDATE users SET is_frozen = 0 WHERE id = ?", conn)
+        # 检测数据库类型，PostgreSQL使用FALSE，SQLite使用0
+        try:
+            import psycopg2
+            is_pg = isinstance(conn, psycopg2.extensions.connection)
+        except (ImportError, AttributeError):
+            is_pg = False
+
+        if is_pg:
+            sql = _safe_adapt_sql(
+                "UPDATE users SET is_frozen = FALSE WHERE id = ?", conn)
+        else:
+            sql = _safe_adapt_sql(
+                "UPDATE users SET is_frozen = 0 WHERE id = ?", conn)
         c.execute(sql, (user_id,))
 
         if c.rowcount > 0:
@@ -5141,11 +5249,16 @@ def delete_user_admin(user_id, admin_id):
 
         if c.rowcount > 0:
             # 记录审计日志（保留兼容性）
-            sql = _safe_adapt_sql("""
-            INSERT INTO audit_logs (admin_id, user_id, action, details)
-            VALUES (?, ?, ?, ?)
-            """, conn)
-            c.execute(sql, (admin_id, user_id, 'delete_user', '管理员删除用户'))
+            # 注意：用户已删除，audit_logs.user_id 有 NOT NULL 约束且存在外键
+            # 因此无法在 audit_logs 中记录已删除用户，跳过旧表记录
+            # sql = _safe_adapt_sql("""
+            # INSERT INTO audit_logs (admin_id, user_id, action, details)
+            # VALUES (?, ?, ?, ?)
+            # """, conn)
+            # c.execute(
+            #     sql,
+            #     (admin_id, None, 'delete_user', f'管理员删除用户 (ID: {user_id})')
+            # )
 
             conn.commit()
 
@@ -5154,8 +5267,10 @@ def delete_user_admin(user_id, admin_id):
                 log_admin_action(
                     admin_id=admin_id,
                     action_type='删除用户',
-                    action_detail=f'管理员删除了用户: {username} (ID: {user_id})',
-                    target_user_id=user_id,
+                    action_detail=(
+                        f'管理员删除了用户: {username} (ID: {user_id})'
+                    ),
+                    target_user_id=None,  # 用户已删除，设为None
                     target_type='user'
                 )
             except Exception as e:

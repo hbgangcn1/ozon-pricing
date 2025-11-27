@@ -1933,7 +1933,8 @@ def get_enhanced_revenue_stats(
 
             _stats_debug(
                 "enhanced_revenue range "
-                f"{start_date}~{end_date}, ts={start_timestamp}->{end_timestamp}"
+                f"{start_date}~{end_date}, "
+                f"ts={start_timestamp}->{end_timestamp}"
             )
 
             # 检查 order_type 字段是否存在

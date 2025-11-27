@@ -155,10 +155,10 @@ def pricing_calculator_page():
         from exchange_service import get_fallback_exchange_rate
         current_rate = get_fallback_exchange_rate()
     except (KeyError, TypeError, ValueError) as e:
-        st.sidebar.warning(f"汇率获取失败: {str(e)}")
+        st.warning(f"汇率获取失败: {str(e)}")
         current_rate = 0.0904  # 默认兜底汇率
 
-    st.sidebar.success(f"当前汇率: 1 CNY = {current_rate:.2f} RUB")
+    st.success(f"当前汇率: 1 CNY = {current_rate:.2f} RUB")
 
     with get_db_connection() as (conn, cursor):
         uid = current_user_id()

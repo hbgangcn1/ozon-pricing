@@ -3,6 +3,7 @@ import sqlite3
 import secrets
 import hashlib
 import importlib
+import sys
 import streamlit as st
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
@@ -20,6 +21,17 @@ try:
     from logger_config import logger
 except ImportError:
     logger = None
+
+
+def _should_debug_output() -> bool:
+    argv0 = sys.argv[0] if sys.argv else ""
+    return 'pytest' in sys.modules or 'test' in argv0.lower()
+
+
+def _debug_print(message: str) -> None:
+    if _should_debug_output():
+        print(message, file=sys.stderr)
+
 
 # 高优先级安全改进：导入CSRF保护
 try:
@@ -1399,32 +1411,80 @@ class SessionSecurity:
                 session_id = SessionSecurity.generate_session_id(user_id)
 
                 # 如果增强模块可用，使用原子性操作
+                # 如果增强模块失败，降级到原有逻辑
+                use_enhanced = False
                 if session_security_enhanced_module:
-                    success, msg = (
-                        session_security_enhanced_module.
-                        check_and_create_session_atomic(
-                            user_id, session_id, current_ip,
-                            client_info['user_agent']
+                    try:
+                        success, msg = (
+                            session_security_enhanced_module.
+                            check_and_create_session_atomic(
+                                user_id, session_id, current_ip,
+                                client_info['user_agent']
+                            )
                         )
-                    )
-                    if not success:
+                        if success:
+                            use_enhanced = True
+                        else:
+                            # 增强模块失败，降级到原有逻辑
+                            debug_msg = (
+                                "[DEBUG] Enhanced module check failed "
+                                f"for user {user_id}: {msg}. "
+                                "Falling back to standard logic"
+                            )
+                            _debug_print(debug_msg)
+                            if logger:
+                                logger.warning(
+                                    f"用户{user_id}增强模块创建会话失败: {msg}, "
+                                    "降级到标准逻辑"
+                                )
+                    except Exception as enhanced_error:
+                        # 增强模块抛出异常，降级到原有逻辑
+                        import traceback
+                        debug_msg = (
+                            "[DEBUG] Enhanced module exception for user "
+                            f"{user_id}: {enhanced_error}, falling back to "
+                            "standard logic"
+                        )
+                        _debug_print(debug_msg)
+                        traceback_msg = (
+                            f"[DEBUG] Traceback:\n{traceback.format_exc()}"
+                        )
+                        _debug_print(traceback_msg)
                         if logger:
                             logger.warning(
-                                f"用户{user_id}创建会话失败: {msg}"
+                                f"用户{user_id}增强模块异常: {enhanced_error}, "
+                                "降级到标准逻辑"
                             )
-                        return None
-                else:
+                        use_enhanced = False
+
+                # 如果增强模块未使用或失败，使用标准逻辑
+                if not use_enhanced:
                     # 降级到原有逻辑
                     is_allowed, concurrent_msg = (
                         SessionSecurity.check_concurrent_sessions(user_id)
                     )
                     if not is_allowed:
+                        debug_msg = (
+                            "[DEBUG] Concurrent session check failed for user "
+                            f"{user_id}: {concurrent_msg}"
+                        )
+                        _debug_print(debug_msg)
                         if logger:
                             logger.warning(
                                 f"用户{user_id}创建会话失败: "
                                 f"{concurrent_msg}"
                             )
                         return None
+                    # 添加调试信息：如果is_allowed为True但后续失败，记录日志
+                    debug_pass_msg = (
+                        "[DEBUG] Concurrent session check passed for user "
+                        f"{user_id}, proceeding to create session"
+                    )
+                    _debug_print(debug_pass_msg)
+                    if logger:
+                        logger.debug(
+                            f"用户{user_id}并发会话检查通过，继续创建会话"
+                        )
 
                 try:
                     # 检查表是否有device_fingerprint字段
@@ -1566,10 +1626,80 @@ class SessionSecurity:
                              ),
                         )
                     else:
+                        # 记录详细错误信息用于调试
+                        if logger:
+                            logger.error(
+                                f"[SessionSecurity.create_session] "
+                                f"INSERT failed for user {user_id}: {oe}"
+                            )
                         raise
 
                 # 确保事务已提交
-                conn.commit()
+                try:
+                    conn.commit()
+                except Exception as commit_error:
+                    if logger:
+                        logger.error(
+                            f"[SessionSecurity.create_session] "
+                            f"Commit failed for user {user_id}: {commit_error}"
+                        )
+                    # 提交失败时回滚并返回None
+                    try:
+                        conn.rollback()
+                    except DB_EXCEPTIONS:
+                        pass
+                    return None
+
+                # 验证会话是否真的被插入
+                try:
+                    verify_sql = _safe_adapt_sql(
+                        "SELECT session_id FROM active_sessions "
+                        "WHERE session_id = ?",
+                        conn
+                    )
+                    c.execute(verify_sql, (session_id,))
+                    verify_result = c.fetchone()
+                    if not verify_result:
+                        # 在测试环境中输出详细调试信息
+                        debug_msg = (
+                            "[DEBUG] Session "
+                            f"{session_id} not found after commit "
+                            f"for user {user_id}"
+                        )
+                        _debug_print(debug_msg)
+                        # 检查是否有其他会话
+                        try:
+                            check_sql = _safe_adapt_sql(
+                                "SELECT session_id, user_id "
+                                "FROM active_sessions WHERE user_id = ?",
+                                conn
+                            )
+                            c.execute(check_sql, (user_id,))
+                            all_sessions = c.fetchall()
+                            sessions_msg = (
+                                f"[DEBUG] All sessions for user {user_id}: "
+                                f"{all_sessions}"
+                            )
+                            _debug_print(sessions_msg)
+                        except Exception as check_error:
+                            _debug_print(
+                                "[DEBUG] Failed to check sessions: "
+                                f"{check_error}"
+                            )
+                        if logger:
+                            logger.warning(
+                                f"[SessionSecurity.create_session] "
+                                f"Session {session_id} not found after commit "
+                                f"for user {user_id}"
+                            )
+                        return None
+                except Exception as verify_error:
+                    if logger:
+                        logger.warning(
+                            f"[SessionSecurity.create_session] "
+                            f"Failed to verify session for user {user_id}: "
+                            f"{verify_error}"
+                        )
 
             # 在Streamlit session_state中存储会话信息（在非Streamlit环境下静默忽略）
             try:
@@ -1583,7 +1713,17 @@ class SessionSecurity:
             return session_id
         except Exception as e:
             # 捕获所有异常，包括PostgreSQL错误
+            import traceback
+            error_trace = traceback.format_exc()
             error_str = str(e).lower()
+
+            # 在测试环境中，输出详细错误信息
+            _debug_print(
+                f"[DEBUG] create_session exception for user {user_id}: {e}"
+            )
+            _debug_print(f"[DEBUG] Error type: {type(e).__name__}")
+            _debug_print(f"[DEBUG] Traceback:\n{error_trace}")
+
             # 数据库锁定错误（SQLite）或其他数据库错误，尝试重试
             # 也处理SQL语法错误（可能是并发导致的临时问题）
             if ("database is locked" in error_str or
@@ -1800,7 +1940,66 @@ class SessionSecurity:
                                 current_ip,
                                 client_info['user_agent'],
                             ))
-                        conn.commit()
+                        try:
+                            conn.commit()
+                            # 验证会话是否真的被插入
+                            verify_sql = _safe_adapt_sql(
+                                "SELECT session_id FROM active_sessions "
+                                "WHERE session_id = ?",
+                                conn
+                            )
+                            c.execute(verify_sql, (session_id,))
+                            verify_result = c.fetchone()
+                            if not verify_result:
+                                debug_msg = (
+                                    "[DEBUG] Session "
+                                    f"{session_id} not found after commit "
+                                    f"for user {user_id}"
+                                )
+                                _debug_print(debug_msg)
+                                # 检查是否有其他会话
+                                check_sql = _safe_adapt_sql(
+                                    "SELECT session_id, user_id "
+                                    "FROM active_sessions WHERE user_id = ?",
+                                    conn
+                                )
+                                c.execute(check_sql, (user_id,))
+                                all_sessions = c.fetchall()
+                                sessions_msg = (
+                                    "[DEBUG] All sessions for user "
+                                    f"{user_id}: {all_sessions}"
+                                )
+                                _debug_print(sessions_msg)
+                                if logger:
+                                    logger.warning(
+                                        "[SessionSecurity.create_session "
+                                        "retry] "
+                                        f"Session {session_id} not found "
+                                        "after commit for user "
+                                        f"{user_id}"
+                                    )
+                                return None
+                        except Exception as commit_error:
+                            import traceback
+                            _debug_print(
+                                "[DEBUG] Commit failed for user "
+                                f"{user_id}: {commit_error}"
+                            )
+                            _debug_print(
+                                "[DEBUG] Traceback:\n"
+                                f"{traceback.format_exc()}"
+                            )
+                            if logger:
+                                logger.error(
+                                    "[SessionSecurity.create_session retry] "
+                                    f"Commit failed for user {user_id}: "
+                                    f"{commit_error}"
+                                )
+                            try:
+                                conn.rollback()
+                            except DB_EXCEPTIONS:
+                                pass
+                            return None
                         return session_id
                 except Exception as retry_error:
                     # 重试失败，返回 None
@@ -1812,18 +2011,31 @@ class SessionSecurity:
                     return None
             # 其他不可重试的错误，打印错误并返回 None
             # 添加更详细的错误信息用于调试
+            import traceback
+            error_trace = traceback.format_exc()
             error_type = type(e).__name__
             error_message = str(e)
             session_id_str = (
                 session_id if 'session_id' in locals() else None
             )
+
+            # 在测试环境中，输出详细错误信息到stderr
+            _debug_print(
+                f"[DEBUG] create_session exception for user {user_id}: {e}"
+            )
+            _debug_print(f"[DEBUG] Error type: {error_type}")
+            _debug_print(f"[DEBUG] Error message: {error_message}")
+            _debug_print(f"[DEBUG] Session ID: {session_id_str}")
+            _debug_print(f"[DEBUG] Full traceback:\n{error_trace}")
+
             if logger:
                 logger.error(
                     f"[SessionSecurity.create_session] error: {e} "
                     f"(error_type: {error_type}, "
                     f"error_message: {error_message}, "
                     f"user_id: {user_id}, "
-                    f"session_id: {session_id_str})"
+                    f"session_id: {session_id_str})\n"
+                    f"Traceback: {error_trace}"
                 )
             else:
                 print(
@@ -2883,8 +3095,25 @@ class SessionSecurity:
                 if not result:
                     return False, "会话不存在或已失效"
 
-                stored_ip = result[0] or ''
-                stored_user_agent = result[1] or ''
+                def _extract(row, column_name, index):
+                    if row is None:
+                        return ''
+                    # dict 或 sqlite3.Row 支持 key
+                    if isinstance(row, dict):
+                        return row.get(column_name, '') or row.get(index, '')
+                    if hasattr(row, 'keys'):
+                        try:
+                            if column_name in row.keys():
+                                return row[column_name]
+                        except (KeyError, TypeError):
+                            pass
+                    try:
+                        return row[index]
+                    except (KeyError, IndexError, TypeError):
+                        return getattr(row, column_name, '')
+
+                stored_ip = _extract(result, 'ip_address', 0) or ''
+                stored_user_agent = _extract(result, 'user_agent', 1) or ''
 
                 # 获取当前客户端信息
                 client_info = SessionSecurity.get_client_info()
@@ -3566,33 +3795,50 @@ def show_session_info():
     if 'user' in st.session_state:
         user_info = SessionSecurity.get_user_session_info(
             st.session_state.user['id'])
+        warning_message = None
         if user_info:
             # 检查是否需要显示锁定警告
             try:
                 from .db_utils import get_db_connection
             except ImportError:
                 from db_utils import get_db_connection
-            with get_db_connection() as (conn, c):
-                recent_time = time.time() - SessionSecurity.LOCKOUT_DURATION
-                sql = _safe_adapt_sql("""
-                    SELECT COUNT(*) FROM login_attempts
-                    WHERE identifier = ? AND success = FALSE
-                    AND timestamp > ?
-                """, conn)
-                c.execute(
-                    sql,
-                    (st.session_state.user['username'], recent_time)
-                )
-                result = c.fetchone()
-                # 确保failed_count是int类型（兼容PostgreSQL的Decimal）
-                failed_count_raw = result[0] if result else 0
-                try:
-                    failed_count = int(failed_count_raw)
-                except (TypeError, ValueError):
-                    failed_count = 0
 
-                if failed_count > 0:
-                    st.sidebar.warning(f"注意：最近有 {failed_count} 次失败登录尝试")
+            try:
+                with get_db_connection() as (conn, c):
+                    recent_time = (
+                        time.time() - SessionSecurity.LOCKOUT_DURATION
+                    )
+                    sql = _safe_adapt_sql("""
+                        SELECT COUNT(*) FROM login_attempts
+                        WHERE identifier = ? AND success = FALSE
+                        AND timestamp > ?
+                    """, conn)
+                    c.execute(
+                        sql,
+                        (
+                            st.session_state.user['username'],
+                            recent_time
+                        )
+                    )
+                    result = c.fetchone()
+                    # 确保failed_count是int类型
+                    failed_raw = result[0] if result else 0
+                    try:
+                        failed_count = int(failed_raw)
+                    except (TypeError, ValueError):
+                        failed_count = 0
+
+                    if failed_count > 0:
+                        warning_message = (
+                            f"注意：最近有 {failed_count} 次失败登录尝试"
+                        )
+            except Exception as lock_check_err:
+                if logger:
+                    logger.warning(
+                        "[SessionSecurity.show_session_info] "
+                        "无法获取失败登录次数: %s",
+                        lock_check_err
+                    )
 
             # 确保last_activity是数值类型（兼容PostgreSQL的Decimal）
             last_activity_val = user_info.get('last_activity')
@@ -3605,10 +3851,16 @@ def show_session_info():
             except (TypeError, ValueError):
                 last_activity_float = time.time()
 
-            st.sidebar.info(f"""
-            **会话信息**
-            - 用户: {st.session_state.user['username']}
-            - 会话ID: {user_info['session_id'][:8]}...
-            - 最后活动: {time.strftime(
-                '%H:%M:%S', time.localtime(last_activity_float))}
-            """)
+            last_activity_display = time.strftime(
+                '%H:%M:%S',
+                time.localtime(last_activity_float)
+            )
+            info_text = (
+                "**会话信息**\n"
+                f"- 用户: {st.session_state.user['username']}\n"
+                f"- 会话ID: {user_info['session_id'][:8]}...\n"
+                f"- 最后活动: {last_activity_display}"
+            )
+            if warning_message:
+                st.warning(warning_message)
+            st.info(info_text)

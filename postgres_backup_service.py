@@ -449,7 +449,15 @@ class PostgresBackupSystem:
                                     f"继续恢复流程"
                                 )
         except psycopg2.Error as e:
-            logger.warning(f"终止连接时出现错误: {e}，继续恢复流程")
+            error_msg = str(e)
+            # 如果是权限错误，记录警告但继续（测试环境常见）
+            if 'permission denied' in error_msg.lower():
+                logger.warning(
+                    f"终止连接权限不足: {e}，"
+                    f"跳过连接终止，继续恢复流程"
+                )
+            else:
+                logger.warning(f"终止连接时出现错误: {e}，继续恢复流程")
 
     def _filter_backup_files(self) -> List[BackupRecord]:
         records: List[BackupRecord] = []

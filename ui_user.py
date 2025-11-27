@@ -23,6 +23,8 @@ try:
         check_user_subscription_status,
         _safe_adapt_sql,
         _is_postgresql_connection,
+        is_admin,
+        current_user_id,
     )
     from .password_utils import (
         validate_password_strength,
@@ -38,6 +40,8 @@ except ImportError:  # 当作为顶层脚本运行时
         check_user_subscription_status,
         _safe_adapt_sql,
         _is_postgresql_connection,
+        is_admin,
+        current_user_id,
     )
     from password_utils import (
         validate_password_strength,
@@ -404,7 +408,6 @@ def user_management_page():
                             conn.commit()
                             # 记录审计日志（admin创建用户）
                             try:
-                                from app import is_admin, current_user_id
                                 if is_admin():
                                     from db_utils import log_admin_action
                                     admin_id = current_user_id()

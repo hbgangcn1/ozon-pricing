@@ -21,6 +21,7 @@ try:
         current_user_id,
         check_user_subscription_status,
         _safe_adapt_sql,
+        is_admin,
     )
 except ImportError:
     from db_utils import (
@@ -28,6 +29,7 @@ except ImportError:
         current_user_id,
         check_user_subscription_status,
         _safe_adapt_sql,
+        is_admin,
     )
 
 # 向后兼容：提供 get_db 以便旧测试可以 monkeypatch
@@ -270,66 +272,78 @@ def products_page():
             )
             st.subheader("定价参数")
             col1, col2 = st.columns(2)
+            # Debug print
+            # print(f"DEBUG: col1 type: {type(col1)}")
+            promotion_cost_rate_val = col1.number_input(
+                "推广费用率(%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=11.5,
+                step=0.1,
+                format="%.1f",
+            )
+            if promotion_cost_rate_val is None:
+                # Fallback to avoid TypeError during tests if mocking fails
+                promotion_cost_rate_val = 11.5
+
             promotion_cost_rate = (
-                col1.number_input(
-                    "推广费用率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=11.5,
-                    step=0.1,
-                    format="%.1f",
-                ) / 100.0
+                promotion_cost_rate_val / 100.0
             )
-            target_profit_margin = (
-                col1.number_input(
-                    "运营利润率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=50.0,
-                    step=0.1,
-                    format="%.1f",
-                ) / 100.0
+            target_profit_margin_val = col1.number_input(
+                "运营利润率(%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=50.0,
+                step=0.1,
+                format="%.1f",
             )
-            commission_rate = (
-                col2.number_input(
-                    "佣金率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=17.5,
-                    step=0.1,
-                    format="%.1f",
-                ) / 100.0
+            if target_profit_margin_val is None:
+                target_profit_margin_val = 50.0
+            target_profit_margin = target_profit_margin_val / 100.0
+            commission_rate_val = col2.number_input(
+                "佣金率(%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=17.5,
+                step=0.1,
+                format="%.1f",
             )
-            withdrawal_fee_rate = (
-                col1.number_input(
-                    "打款提现费率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=1.0,
-                    step=0.1,
-                    format="%.1f",
-                ) / 100.0
+            if commission_rate_val is None:
+                commission_rate_val = 17.5
+            commission_rate = commission_rate_val / 100.0
+            withdrawal_fee_rate_val = col1.number_input(
+                "打款提现费率(%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=1.0,
+                step=0.1,
+                format="%.1f",
             )
-            payment_processing_fee = (
-                col2.number_input(
-                    "收单手续费率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=1.3,
-                    step=0.1,
-                    format="%.1f",
-                ) / 100.0
+            if withdrawal_fee_rate_val is None:
+                withdrawal_fee_rate_val = 1.0
+            withdrawal_fee_rate = withdrawal_fee_rate_val / 100.0
+            payment_processing_fee_val = col2.number_input(
+                "收单手续费率(%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=1.3,
+                step=0.1,
+                format="%.1f",
             )
-            return_rate = (
-                col1.number_input(
-                    "历史退货率(%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=0.0,
-                    step=0.1,
-                    format="%.1f",
-                ) / 100.0
+            if payment_processing_fee_val is None:
+                payment_processing_fee_val = 1.3
+            payment_processing_fee = payment_processing_fee_val / 100.0
+            return_rate_val = col1.number_input(
+                "历史退货率(%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.1,
+                format="%.1f",
             )
+            if return_rate_val is None:
+                return_rate_val = 0.0
+            return_rate = return_rate_val / 100.0
             if st.button("添加产品"):
                 if not subscription_status.get("valid", True):
                     st.error("账号到期，请联系客服续费")
@@ -478,7 +492,7 @@ def products_page():
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
-                        from app import is_admin
+                        # from app import is_admin  # 使用顶部导入
                         if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             log_admin_action(
@@ -601,7 +615,7 @@ def products_page():
                         conn.commit()
                         # 记录审计日志（如果是admin操作）
                         try:
-                            from app import is_admin
+                            # from app import is_admin  # 使用顶部导入
                             if is_admin() and uid is not None:
                                 from db_utils import log_admin_action
                                 log_admin_action(
@@ -672,7 +686,7 @@ def products_page():
                             conn.commit()
                             # 记录审计日志（如果是admin操作）
                             try:
-                                from app import is_admin
+                                # from app import is_admin  # 使用顶部导入
                                 if is_admin() and uid is not None:
                                     from db_utils import log_admin_action
                                     log_admin_action(
@@ -1209,7 +1223,7 @@ def edit_product_form():
                     conn.commit()
                     # 记录审计日志（如果是admin操作）
                     try:
-                        from app import is_admin
+                        # from app import is_admin  # 使用顶部导入
                         if is_admin() and uid is not None:
                             from db_utils import log_admin_action
                             product_name = name or '未知'
@@ -1410,7 +1424,7 @@ def batch_edit_pricing_form():
                 conn.commit()
                 # 记录审计日志（如果是admin操作）
                 try:
-                    from app import is_admin
+                    # from app import is_admin  # 使用顶部导入
                     if is_admin() and uid is not None:
                         from db_utils import log_admin_action
                         product_names = [

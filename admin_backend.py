@@ -229,8 +229,8 @@ def admin_login():
 
 
 def admin_sidebar():
-    """管理员侧边栏"""
-    with st.sidebar:
+    """管理员顶部导航（替换侧边栏）"""
+    with st.container():
         st.markdown("""
         <div class="admin-sidebar">
             <h3>🔧 管理员后台</h3>
@@ -238,19 +238,25 @@ def admin_sidebar():
         """, unsafe_allow_html=True)
 
         admin_user = st.session_state.admin_user or {}
-        st.write(f"**管理员:** {admin_user.get('username', 'admin')}")
-        role_display = _format_admin_role(admin_user.get('role'))
-        st.write(f"**角色:** {role_display}")
+        info_cols = st.columns([3, 2, 1])
+        with info_cols[0]:
+            st.write(f"**管理员:** {admin_user.get('username', 'admin')}")
+        with info_cols[1]:
+            role_display = _format_admin_role(admin_user.get('role'))
+            st.write(f"**角色:** {role_display}")
+        with info_cols[2]:
+            if st.button("退出登录"):
+                st.session_state.admin_logged_in = False
+                st.session_state.admin_user = None
+                st.rerun()
 
         st.divider()
 
-        # 导航菜单
         menu_options = [
             "用户管理", "订阅管理", "操作日志",
             "📈 数据统计"
         ]
 
-        # 如果当前页面是统计的子页面，需要特殊处理
         current_idx = 0
         if st.session_state.current_page in menu_options:
             current_idx = menu_options.index(st.session_state.current_page)
@@ -263,7 +269,6 @@ def admin_sidebar():
             index=current_idx
         )
 
-        # 如果选择了数据统计，显示子菜单
         if page == "📈 数据统计":
             st.markdown("---")
             stats_submenu = st.radio(
@@ -282,13 +287,6 @@ def admin_sidebar():
         if page != st.session_state.current_page:
             st.session_state.current_page = page
             st.session_state.selected_user_id = None
-            st.rerun()
-
-        st.divider()
-
-        if st.button("退出登录"):
-            st.session_state.admin_logged_in = False
-            st.session_state.admin_user = None
             st.rerun()
 
 
