@@ -1100,12 +1100,12 @@ def _safe_tabs(labels, *args, **kwargs):
     except TypeError:
         label_count = labels if isinstance(labels, int) else 0
     _SAFE_TABS_DEBUG_COUNT += 1
-    if _SAFE_TABS_DEBUG_COUNT <= 10:
-        env_flag = bool(os.getenv('PYTEST_CURRENT_TEST'))
-        print(
-            "DEBUG: _safe_tabs invoked "
-            f"labels={label_count}, env={env_flag}"
-        )
+    # if _SAFE_TABS_DEBUG_COUNT <= 10:
+    #     env_flag = bool(os.getenv('PYTEST_CURRENT_TEST'))
+    #     print(
+    #         "DEBUG: _safe_tabs invoked "
+    #         f"labels={label_count}, env={env_flag}"
+    #     )
     desired_len: Optional[int] = None
     if isinstance(labels, int):
         desired_len = labels
@@ -1133,49 +1133,49 @@ def _safe_tabs(labels, *args, **kwargs):
                 return list(tabs_result)
             except TypeError:
                 return []
-        except Exception as exc:
-            print(f"DEBUG: _safe_tabs original call failed: {exc!r}")
+        except (TypeError, ValueError, AttributeError, RuntimeError):
+            # print(f"DEBUG: _safe_tabs original call failed: {exc!r}")
             return []
 
     expected = desired_len if desired_len and desired_len > 0 else None
 
     if os.getenv("PYTEST_CURRENT_TEST"):
-        print(
-            "DEBUG: _safe_tabs pytest call "
-            f"labels={label_count}, desired_len={desired_len}"
-        )
+        # print(
+        #     "DEBUG: _safe_tabs pytest call "
+        #     f"labels={label_count}, desired_len={desired_len}"
+        # )
         # 在测试环境下，直接使用 desired_len 构建占位符，不依赖原始调用
         # 确保 desired_len 至少为 1
         final_len = desired_len if desired_len and desired_len > 0 else 1
         result = tuple(_create_placeholder_columns(final_len))
         if not result or len(result) != final_len:
-            print(
-                "DEBUG: _safe_tabs placeholders mismatch, fixing "
-                f"(expected {final_len}, got {len(result) if result else 0})"
-            )
+            # print(
+            #     "DEBUG: _safe_tabs placeholders mismatch, fixing "
+            #     f"(expected {final_len}, got {len(result) if result else 0})"
+            # )
             result = tuple(_create_placeholder_columns(final_len))
-        print(
-            "DEBUG: _safe_tabs returning "
-            f"{len(result)} placeholders (desired_len={desired_len})"
-        )
+        # print(
+        #     "DEBUG: _safe_tabs returning "
+        #     f"{len(result)} placeholders (desired_len={desired_len})"
+        # )
         return result
 
     tabs_list = _call_original()
-    if os.getenv("PYTEST_CURRENT_TEST"):
-        print(
-            "DEBUG: _safe_tabs default call "
-            f"labels={label_count}, got={len(tabs_list)}"
-        )
+    # if os.getenv("PYTEST_CURRENT_TEST"):
+    #     print(
+    #         "DEBUG: _safe_tabs default call "
+    #         f"labels={label_count}, got={len(tabs_list)}"
+    #     )
     # 确定目标长度：优先使用 desired_len，否则使用实际返回的长度
     target = expected if expected else (len(tabs_list) if tabs_list else 1)
     # 确保 target 至少为 1
     if target <= 0:
         target = 1
     if len(tabs_list) < target:
-        print(
-            "DEBUG: _safe_tabs padded placeholders "
-            f"(expected {target}, got {len(tabs_list)})"
-        )
+        # print(
+        #     "DEBUG: _safe_tabs padded placeholders "
+        #     f"(expected {target}, got {len(tabs_list)})"
+        # )
         while len(tabs_list) < target:
             tabs_list.append(_PlaceholderColumn())
     if tabs_list:
@@ -1184,10 +1184,10 @@ def _safe_tabs(labels, *args, **kwargs):
         result = tuple(_create_placeholder_columns(target))
     # 双重检查：确保结果不为空且长度正确
     if not result or len(result) != target:
-        print(
-            "DEBUG: _safe_tabs result invalid, fixing "
-            f"(expected {target}, got {len(result) if result else 0})"
-        )
+        # print(
+        #     "DEBUG: _safe_tabs result invalid, fixing "
+        #     f"(expected {target}, got {len(result) if result else 0})"
+        # )
         result = tuple(_create_placeholder_columns(target))
     return result
 
