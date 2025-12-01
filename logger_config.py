@@ -235,11 +235,13 @@ def configure_logger(
         message = str(record["message"])
         # 自动脱敏敏感信息
         message = SensitiveFormatter.sanitize_message(message)
+        # 转义函数名中的特殊字符，防止loguru解析错误
+        fn_name = record['function'].replace('<', '\\<').replace('>', '\\>')
         return (
             f"<green>{record['time']:YYYY-MM-DD HH:mm:ss}</green> | "
             f"<level>{record['level'].name: <8}</level> | "
             f"<cyan>{record['name']}</cyan>:"
-            f"<cyan>{record['function']}</cyan>:"
+            f"<cyan>{fn_name}</cyan>:"
             f"<cyan>{record['line']}</cyan> | "
             f"<level>{message}</level>"
         )
@@ -250,7 +252,7 @@ def configure_logger(
             sys.stdout,
             colorize=True,
             format=format_log,
-            level="DEBUG",
+            level=log_level,  # 使用传入的日志级别
             enqueue=True  # 异步写入，避免阻塞
         )
 

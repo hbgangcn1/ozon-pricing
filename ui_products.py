@@ -1479,3 +1479,134 @@ def _close_conn_if_sqlite(candidate):
                 close()
     except (sqlite3.Error, AttributeError, TypeError):
         pass
+
+
+def save_product_to_db(
+    name: str,
+    russian_name: str,
+    category: str,
+    model: str,
+    unit_price: float,
+    weight_g: float,
+    is_cylinder: bool,
+    length_cm: float,
+    width_cm: float,
+    height_cm: float,
+    cylinder_diameter: float,
+    cylinder_length: float,
+    has_battery: bool,
+    battery_capacity_wh: float,
+    battery_capacity_mah: int,
+    battery_voltage: float,
+    has_msds: bool,
+    has_flammable: bool,
+    labeling_fee: float,
+    shipping_fee: float,
+    promotion_cost_rate: float,
+    target_profit_margin: float,
+    commission_rate: float,
+    withdrawal_fee_rate: float,
+    payment_processing_fee: float,
+    return_rate: float,
+    vat_rate: float,
+    user_id: int | None = None,
+) -> bool:
+    """保存产品到数据库（带重名检查）"""
+    try:
+        with get_db_connection() as (conn, c):
+            # 检查产品名称是否重复
+            if user_id is None:
+                user_id = current_user_id()
+            
+            check_sql = _safe_adapt_sql(
+                """
+                SELECT id, name FROM products
+                WHERE user_id = ? AND name = ?
+                """,
+                conn,
+            )
+            c.execute(check_sql, (user_id, name))
+            existing_product = c.fetchone()
+
+            if existing_product:
+                st.error(f"❌ 产品名称重复！已存在同名产品：'{name}'")
+                st.warning("💡 请更改产品名称后再保存")
+                return False
+
+            # 名称不重复，继续保存
+            insert_sql = _safe_adapt_sql(
+                """
+                INSERT INTO products (
+                    user_id, name, russian_name, category, model, unit_price,
+                    weight_g, length_cm, width_cm, height_cm, is_cylinder,
+                    cylinder_diameter, cylinder_length, has_battery,
+                    battery_capacity_wh, battery_capacity_mah, battery_voltage,
+                    has_msds, has_flammable, labeling_fee, shipping_fee,
+                    promotion_cost_rate,
+                    target_profit_margin,
+                    commission_rate, withdrawal_fee_rate,
+                    payment_processing_fee,
+                    return_rate, vat_rate
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                conn,
+            )
+            c.execute(
+                insert_sql,
+                (
+                    user_id,
+                    name,
+                    russian_name,
+                    category,
+                    model,
+                    unit_price,
+                    weight_g,
+                    length_cm,
+                    width_cm,
+                    height_cm,
+                    1 if is_cylinder else 0,
+                    cylinder_diameter,
+                    cylinder_length,
+                    1 if has_battery else 0,
+                    battery_capacity_wh,
+                    battery_capacity_mah,
+                    battery_voltage,
+                    1 if has_msds else 0,
+                    1 if has_flammable else 0,
+                    labeling_fee,
+                    shipping_fee,
+                    promotion_cost_rate,
+                    target_profit_margin,
+                    commission_rate,
+                    withdrawal_fee_rate,
+                    payment_processing_fee,
+                    return_rate,
+                    vat_rate,
+                ),
+            )
+            conn.commit()
+
+            # 记录审计日志（如果是admin操作）
+            try:
+                if is_admin():
+                    from db_utils import log_admin_action
+
+                    product_id = c.lastrowid
+                    log_admin_action(
+                        admin_id=user_id,
+                        action_type='创建产品',
+                        action_detail=f"创建产品: {name} (ID: {product_id})",
+                        target_user_id=user_id,
+                        target_type='product',
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass  # 审计日志记录失败不影响主流程
+
+            return True
+    except (sqlite3.Error, ValueError, TypeError) as error:
+        st.error(f"保存产品失败: {error}")
+        return False  # 失败时返回False
+

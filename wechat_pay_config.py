@@ -8,6 +8,13 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+# 导入 logger
+try:
+    from logger_config import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 # 尝试加载.env文件
 try:
     from dotenv import load_dotenv
@@ -106,12 +113,14 @@ def get_wechat_pay_config() -> WeChatPayConfig:
     config.api_v3_key = os.getenv("WECHAT_API_V3_KEY", "")
 
     # 调试信息：检查环境变量是否被正确加载
-    print("🔧 环境变量调试信息:")
-    print(f"  WECHAT_APP_ID: {'已设置' if config.app_id else '未设置'}")
-    print(f"  WECHAT_MCH_ID: {'已设置' if config.mch_id else '未设置'}")
-    print(f"  WECHAT_API_V3_KEY: {'已设置' if config.api_v3_key else '未设置'}")
+    logger.debug("🔧 环境变量调试信息:")
+    logger.debug(f"  WECHAT_APP_ID: {'已设置' if config.app_id else '未设置'}")
+    logger.debug(f"  WECHAT_MCH_ID: {'已设置' if config.mch_id else '未设置'}")
+    logger.debug(
+        f"  WECHAT_API_V3_KEY: {'已设置' if config.api_v3_key else '未设置'}"
+    )
     if config.api_v3_key:
-        print(f"  API_V3_KEY长度: {len(config.api_v3_key)}")
+        logger.debug(f"  API_V3_KEY长度: {len(config.api_v3_key)}")
 
     # 证书配置（使用环境变量，支持多环境部署）
     cert_dir = os.getenv('WECHAT_CERT_DIR', 'cert')
@@ -137,13 +146,15 @@ def get_wechat_pay_config() -> WeChatPayConfig:
         config.cert_serial_no = None
 
     # 调试信息
-    print("🔧 微信支付配置加载:")
-    print(f"  AppID: {config.app_id[:10] if config.app_id else 'None'}...")
-    print(f"  商户号: {config.mch_id}")
-    print(f"  私钥路径: {config.private_key_path}")
-    print(f"  公钥路径: {config.public_key_path}")
-    print(f"  证书序列号: {config.cert_serial_no}")
-    print(f"  API密钥: {'已设置' if config.api_v3_key else '未设置'}")
+    logger.debug("🔧 微信支付配置加载:")
+    logger.debug(
+        f"  AppID: {config.app_id[:10] if config.app_id else 'None'}..."
+    )
+    logger.debug(f"  商户号: {config.mch_id}")
+    logger.debug(f"  私钥路径: {config.private_key_path}")
+    logger.debug(f"  公钥路径: {config.public_key_path}")
+    logger.debug(f"  证书序列号: {config.cert_serial_no}")
+    logger.debug(f"  API密钥: {'已设置' if config.api_v3_key else '未设置'}")
 
     # 回调地址
     config.notify_url = os.getenv("WECHAT_NOTIFY_URL",
@@ -158,6 +169,6 @@ def get_wechat_pay_config() -> WeChatPayConfig:
 
 
 # 全局配置实例
-print("🔍 开始创建微信支付配置实例...")
+logger.debug("🔍 开始创建微信支付配置实例...")
 wechat_config = get_wechat_pay_config()
-print("✅ 微信支付配置实例创建完成")
+logger.debug("✅ 微信支付配置实例创建完成")

@@ -7,6 +7,12 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 import warnings
 
+# 导入 logger
+try:
+    from logger_config import logger
+except ImportError:
+    logger = logging.getLogger(__name__)
+
 import pandas as pd
 import sqlite3
 import streamlit as st
@@ -7490,21 +7496,21 @@ def subscription_management_page():
 def init_exchange_rates():
     """系统启动时预获取汇率"""
     try:
-        print("🔄 系统启动：正在初始化汇率服务...")
+        logger.info("🔄 系统启动：正在初始化汇率服务...")
 
     # 获取CNY到RUB汇率
         cny_rub_service = ExchangeRateService()
         cny_rub_rate = cny_rub_service.get_exchange_rate()
-        print(f"✅ CNY到RUB汇率: {cny_rub_rate:.4f}")
+        logger.info(f"✅ CNY到RUB汇率: {cny_rub_rate:.4f}")
 
     # 获取USD到CNY汇率
         usd_cny_rate = get_usd_rate()
-        print(f"✅ USD到CNY汇率: {usd_cny_rate:.4f}")
-        print("✅ 汇率服务初始化完成")
+        logger.info(f"✅ USD到CNY汇率: {usd_cny_rate:.4f}")
+        logger.info("✅ 汇率服务初始化完成")
 
     except (Exception,) as e:
-        print(f"⚠️ 汇率服务初始化失败: {e}")
-        print("📝 将使用本地兜底汇率")
+        logger.warning(f"⚠️ 汇率服务初始化失败: {e}")
+        logger.warning("📝 将使用本地兜底汇率")
 
 
 def restart_gunicorn_callback_server():
@@ -7521,10 +7527,10 @@ def restart_gunicorn_callback_server():
         if os.path.exists(lock_file):
             lock_time = os.path.getmtime(lock_file)
             if time.time() - lock_time < 300:  # 5分钟内
-                print("⏭️  Gunicorn 最近已重启，跳过本次重启")
+                logger.info("⏭️  Gunicorn 最近已重启，跳过本次重启")
                 return
 
-        print("🔄 检查并重启 Gunicorn 回调服务器...")
+        logger.info("🔄 检查并重启 Gunicorn 回调服务器...")
 
         venv_python = os.path.join(project_dir, 'venv', 'bin', 'gunicorn')
 
@@ -7614,9 +7620,9 @@ def start_wechat_callback_server():
 
             st.session_state['callback_server_started'] = True
             CALLBACK_SERVER_STARTED = True
-            print(f"✅ 微信支付回调服务器已启动 (端口: {port})")
+            logger.info(f"✅ 微信支付回调服务器已启动 (端口: {port})")
         except Exception as exc:
-            print(f"⚠️ 启动微信支付回调服务器失败: {exc}")
+            logger.warning(f"⚠️ 启动微信支付回调服务器失败: {exc}")
             st.session_state['callback_server_started'] = False
             CALLBACK_SERVER_STARTED = False
 
@@ -9155,9 +9161,9 @@ def main():
             )
             if not backup_system.is_running:
                 start_backup_service()
-                print("🚀 自动备份服务已启动")
+                logger.info("🚀 自动备份服务已启动")
         except Exception as backup_exc:
-            print(f"⚠️ 自动备份服务启动失败: {backup_exc}")
+            logger.warning(f"⚠️ 自动备份服务启动失败: {backup_exc}")
         st.session_state['_backup_init_attempted'] = True
 
     # 启动告警检查定时任务（只在第一次调用时启动）
@@ -9165,9 +9171,9 @@ def main():
         try:
             from scheduled_tasks import start_scheduler_thread
             start_scheduler_thread()
-            print("🚀 告警检查定时任务已启动")
+            logger.info("🚀 告警检查定时任务已启动")
         except Exception as alert_exc:
-            print(f"⚠️ 告警检查定时任务启动失败: {alert_exc}")
+            logger.warning(f"⚠️ 告警检查定时任务启动失败: {alert_exc}")
         st.session_state['_alert_scheduler_init_attempted'] = True
 
     # 启动微信支付回调服务器（后台线程）
@@ -9183,7 +9189,6 @@ def main():
             restart_gunicorn_callback_server()
         st.session_state['_callback_init_attempted'] = True
 
-    logger = logging.getLogger(__name__)
     try:
         init_db()
     except Exception as init_exc:  # noqa: BLE001 - 运行时需尽量保持界面可用

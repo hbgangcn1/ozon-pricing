@@ -85,7 +85,7 @@ def _stats_debug(message: str) -> None:
         .replace("{", "{{")
         .replace("}", "}}")
     )
-    logger.info(safe_message)
+    logger.debug(safe_message)
 
 
 def _build_safe_in_clause(

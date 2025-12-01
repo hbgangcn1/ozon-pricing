@@ -6,7 +6,6 @@
 
 import importlib
 import json
-import logging
 import os
 import threading
 import time
@@ -21,8 +20,12 @@ from rate_limiter import get_limiter
 from utils import mask_sensitive
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+try:
+    from logger_config import logger
+except ImportError:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -701,6 +704,7 @@ def run_callback_server(
         else:
             logger.info("✅ 启动配置检查通过")
 
+    import logging
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
     WSGIRequestHandler.protocol_version = "HTTP/1.1"
     if port is None:

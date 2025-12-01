@@ -6,18 +6,21 @@
 
 import time
 import threading
-import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass
 from queue import Queue
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+try:
+    from logger_config import logger
+except ImportError:
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
 
 
 @dataclass

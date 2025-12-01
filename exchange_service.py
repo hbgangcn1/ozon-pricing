@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import requests
 import threading
@@ -36,7 +35,11 @@ except ImportError:
     aiohttp = None  # type: ignore
 
 
-logging.basicConfig(level=logging.INFO)
+try:
+    from logger_config import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 
 # ==================== 限流器配置 ====================
@@ -152,13 +155,13 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                     resp.raise_for_status()
                     data = await resp.json()
                     rate = source['parser'](data)
-                    logging.info(
+                    logger.info(
                         f"异步汇率获取成功 - 来源: {source['name']}, "
                         f"汇率: {rate}"
                     )
                     return rate
         except Exception as e:
-            logging.debug(f"{source['name']} 异步获取失败: {e}")
+            logger.debug(f"{source['name']} 异步获取失败: {e}")
             return None
 
     async def get_rate_async(self) -> float:
@@ -168,7 +171,7 @@ class MultiSourceRubProvider(ExchangeRateProvider):
         """
         if not AIOHTTP_AVAILABLE:
             # 降级到同步方法
-            logging.warning("aiohttp 未安装，使用同步方法获取汇率")
+            logger.warning("aiohttp 未安装，使用同步方法获取汇率")
             return self.get_rate_sync()
 
         # 限流检查
@@ -182,7 +185,7 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 retry_after = int(
                     exchange_limiter.get_retry_after(limiter_key)
                 ) + 1
-                logging.warning(
+                logger.warning(
                     f"汇率API请求过于频繁，需等待 {retry_after} 秒"
                 )
                 raise ValueError(
@@ -195,7 +198,7 @@ class MultiSourceRubProvider(ExchangeRateProvider):
             # 跳过需要API密钥但未配置的数据源
             if (source.get('requires_key') and
                     'YOUR_API_KEY' in source.get('url', '')):
-                logging.debug(f"跳过需要API密钥的数据源: {source['name']}")
+                logger.debug(f"跳过需要API密钥的数据源: {source['name']}")
                 continue
             tasks.append(
                 asyncio.create_task(
@@ -223,7 +226,7 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                             pass
                         return rate
                 except Exception as e:
-                    logging.debug(f"并发获取汇率异常: {e}")
+                    logger.debug(f"并发获取汇率异常: {e}")
                     continue
         finally:
             # 确保所有任务被取消并完成收尾（即使抛出异常）
@@ -251,7 +254,7 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 retry_after = int(
                     exchange_limiter.get_retry_after(limiter_key)
                 ) + 1
-                logging.warning(
+                logger.warning(
                     f"汇率API请求过于频繁，需等待 {retry_after} 秒"
                 )
                 raise ValueError(
@@ -266,12 +269,12 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 r.raise_for_status()
                 data = r.json()
                 rate = source['parser'](data)
-                logging.info(
+                logger.info(
                     f"同步汇率获取成功 - 来源: {source['name']}, 汇率: {rate}"
                 )
                 return rate
             except Exception as e:
-                logging.warning(f"{source['name']} 同步获取失败: {e}")
+                logger.warning(f"{source['name']} 同步获取失败: {e}")
                 last_error = e
                 continue
 
@@ -300,7 +303,7 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                     finally:
                         loop.close()
             except Exception as e:
-                logging.warning(f"异步获取汇率失败，降级到同步: {e}")
+                logger.warning(f"异步获取汇率失败，降级到同步: {e}")
 
         # 降级到同步方法
         return self.get_rate_sync()
@@ -380,20 +383,20 @@ class ExchangeRateService:
                 with self._read_lock:
                     self._rate = data["rate"]
                     self._last = data["ts"]
-            logging.info("兜底汇率已加载: %.5f", self._rate)
+            logger.info(f"兜底汇率已加载: {self._rate:.5f}")
         except (FileNotFoundError, json.JSONDecodeError, KeyError):
             with self._write_lock:
                 with self._read_lock:
                     self._rate = self._fallback.get_rate()
                     self._last = time.time()
-            logging.warning("兜底文件缺失，使用默认值: %.5f", self._rate)
+            logger.warning(f"兜底文件缺失，使用默认值: {self._rate:.5f}")
 
     def _save_fallback(self, rate: float):
         try:
             with open(self._fallback_file, "w", encoding="utf-8") as f:
                 json.dump({"rate": rate, "ts": time.time()}, f)
         except OSError:
-            logging.exception("无法保存兜底汇率")
+            logger.exception("无法保存兜底汇率")
 
     def _start_async_refresh(self):
         if not getattr(self, "_refresher_started", False):
@@ -412,9 +415,9 @@ class ExchangeRateService:
                         self._rate = new_rate
                         self._last = time.time()
                 self._save_fallback(new_rate)
-                logging.info("后台刷新汇率成功: %.5f", new_rate)
+                logger.info(f"后台刷新汇率成功: {new_rate:.5f}")
             except (requests.RequestException, ValueError, Exception) as e:
-                logging.warning("后台获取汇率失败，继续使用旧值: %s", e)
+                logger.warning(f"后台获取汇率失败，继续使用旧值: {e}")
             time.sleep(900)  # 15分钟（缩短缓存时间）
 
     def get_exchange_rate(self) -> float:
@@ -474,7 +477,7 @@ class UsdProvider(ExchangeRateProvider):
                 retry_after = int(
                     usd_limiter.get_retry_after(limiter_key)
                 ) + 1
-                logging.warning(
+                logger.warning(
                     f"美元汇率API请求过于频繁，需等待 {retry_after} 秒"
                 )
                 raise ValueError(
@@ -488,7 +491,7 @@ class UsdProvider(ExchangeRateProvider):
             # rates.CNY 即 1 USD 兑多少 CNY
             return float(data["rates"]["CNY"])
         except requests.RequestException as e:
-            logging.warning("美元汇率接口失败: %s", e)
+            logger.warning(f"美元汇率接口失败: {e}")
         raise ValueError("第三方接口未返回美元汇率")
 
 
@@ -542,18 +545,18 @@ class UsdExchangeRateService:
                 data = json.load(f)
             self._rate = data["rate"]
             self._last = data["ts"]
-            logging.info("美元兜底汇率已加载: %.5f", self._rate)
+            logger.info(f"美元兜底汇率已加载: {self._rate:.5f}")
         except (FileNotFoundError, json.JSONDecodeError, KeyError):
             self._rate = self._fallback.get_rate()
             self._last = time.time()
-            logging.warning("美元兜底文件缺失，使用默认值: %.5f", self._rate)
+            logger.warning(f"美元兜底文件缺失，使用默认值: {self._rate:.5f}")
 
     def _save_fallback(self, rate: float):
         try:
             with open(self._fallback_file, "w", encoding="utf-8") as f:
                 json.dump({"rate": rate, "ts": time.time()}, f)
         except OSError:
-            logging.exception("无法保存美元兜底汇率")
+            logger.exception("无法保存美元兜底汇率")
 
     def _start_async_refresh(self):
         if not getattr(self, "_refresher_started", False):
@@ -567,9 +570,9 @@ class UsdExchangeRateService:
                 self._rate = new_rate
                 self._last = time.time()
                 self._save_fallback(new_rate)
-                logging.info("异步刷新美元汇率: %.5f", new_rate)
+                logger.info(f"异步刷新美元汇率: {new_rate:.5f}")
             except (requests.RequestException, ValueError):
-                logging.exception("异步获取美元汇率失败，继续使用旧值")
+                logger.exception("异步获取美元汇率失败，继续使用旧值")
             time.sleep(900)  # 15分钟（缩短缓存时间）
 
     def get_exchange_rate(self) -> float:
