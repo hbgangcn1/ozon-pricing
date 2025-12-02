@@ -509,10 +509,28 @@ def wechat_notify():
                         )
                     else:
                         # 降级到原始队列
-                        payment_processing_queue.put_nowait(order_id)
-                        logger.warning(
-                            f"增强监控队列满，使用原始队列: {order_id}"
-                        )
+                        try:
+                            payment_processing_queue.put_nowait(order_id)
+                            logger.warning(
+                                f"增强监控队列满，使用原始队列: {order_id}"
+                            )
+                        except Exception as put_error:
+                            # 如果 put_nowait 失败，尝试使用 put（带超时）
+                            logger.error(
+                                f"put_nowait 失败，尝试使用 put: {put_error}"
+                            )
+                            try:
+                                payment_processing_queue.put(
+                                    order_id, timeout=1
+                                )
+                                logger.warning(
+                                    f"增强监控队列满，使用原始队列（put）: "
+                                    f"{order_id}"
+                                )
+                            except Exception:
+                                logger.error(
+                                    f"无法将订单放入队列: {order_id}"
+                                )
                 else:
                     # 降级到原始队列
                     payment_processing_queue.put_nowait(order_id)
