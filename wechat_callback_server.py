@@ -396,10 +396,13 @@ def wechat_notify():
         if not result['success']:
             # 处理失败，记录详细错误信息
             error_msg = result.get('message', '未知错误')
+            result_success = result.get('success', 'N/A')
+            result_out_trade_no = result.get('out_trade_no', 'N/A')
             logger.error(
                 f"支付通知处理失败: {error_msg}, "
                 f"order_id={order_id if 'order_id' in locals() else 'N/A'}, "
-                f"result={result}"
+                f"result.success={result_success}, "
+                f"result.out_trade_no={result_out_trade_no}"
             )
             return jsonify({
                 'code': 'FAIL',
