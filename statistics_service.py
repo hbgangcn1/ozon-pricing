@@ -668,9 +668,11 @@ def get_revenue_stats(start_date: Optional[str] = None,
                             if o['status'] in ('SUCCESS', 'PAID')]
             total_amount = sum(o['amount'] for o in success_list)
 
-            # 平均客单价
-            avg_order_value = (total_amount / len(success_list)
-                               if success_list else 0)
+            # 平均客单价：总金额 / 充值的唯一用户数
+            unique_paid_users = len(set(o['user_id'] for o in success_list
+                                       if o['user_id']))
+            avg_order_value = (total_amount / unique_paid_users
+                               if unique_paid_users > 0 else 0)
 
             # 收入趋势图（按日）
             revenue_trend = []
