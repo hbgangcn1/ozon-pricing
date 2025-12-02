@@ -987,6 +987,7 @@ def subscription_management_page():
                 'subscription_expires'
             )
             current_expiry = user_info.get('expiry_date')
+            new_expiry = None
 
             if current_subscription_expires:
                 # 优先使用subscription_expires（时间戳）
@@ -1018,15 +1019,17 @@ def subscription_management_page():
                 st.error("用户没有到期时间")
                 st.rerun()
 
-            # 计算新的subscription_expires时间戳
-            new_subscription_expires = int(new_expiry.timestamp())
+            # 只有当 new_expiry 被正确定义时才执行更新
+            if new_expiry is not None:
+                # 计算新的subscription_expires时间戳
+                new_subscription_expires = int(new_expiry.timestamp())
 
-            update_user_subscription(user_id, {
-                'expiry_date': new_expiry.isoformat(),
-                'subscription_expires': new_subscription_expires
-            })
-            st.success(f"已减少{reduce_days}天！")
-            st.rerun()
+                update_user_subscription(user_id, {
+                    'expiry_date': new_expiry.isoformat(),
+                    'subscription_expires': new_subscription_expires
+                })
+                st.success(f"已减少{reduce_days}天！")
+                st.rerun()
 
     with col2:
         reduce_calculations = st.number_input("减少使用次数", min_value=1, value=1)
