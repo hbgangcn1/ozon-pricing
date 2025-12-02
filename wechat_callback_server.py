@@ -30,7 +30,7 @@ except ImportError:
 app = Flask(__name__)
 
 
-def verify_signature(signature: str, data: str, secret: str) -> bool:
+def verify_signature(_signature: str, _data: str, _secret: str) -> bool:
     """
     验证签名（占位符函数，用于向后兼容测试代码）
     
@@ -40,9 +40,9 @@ def verify_signature(signature: str, data: str, secret: str) -> bool:
     此函数仅用于保持测试代码的兼容性。
     
     Args:
-        signature: 签名
-        data: 数据
-        secret: 密钥
+        _signature: 签名（未使用，仅用于兼容性）
+        _data: 数据（未使用，仅用于兼容性）
+        _secret: 密钥（未使用，仅用于兼容性）
     
     Returns:
         bool: 总是返回 True（实际验证在 process_notify 中）
