@@ -9127,6 +9127,12 @@ def main():
     # 设置页面配置（必须在任何其他 Streamlit 命令之前调用，且只能调用一次）
     # 如果已经设置过，Streamlit 会抛出异常，我们捕获并忽略
     try:
+        from streamlit.errors import StreamlitAPIException
+    except ImportError:
+        # 如果导入失败，使用通用异常
+        StreamlitAPIException = Exception
+
+    try:
         st.set_page_config(
             page_title="物流定价系统",
             page_icon="🚚",
@@ -9138,7 +9144,7 @@ def main():
                 'About': None
             }
         )
-    except Exception:
+    except StreamlitAPIException:
         # 如果已经设置过，忽略错误（Streamlit 不允许重复调用）
         pass
 
