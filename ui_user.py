@@ -982,20 +982,53 @@ def subscription_management_page():
     with col1:
         reduce_days = st.number_input("减少使用天数", min_value=1, value=1)
         if st.button("减少天数"):
+            # 优先使用subscription_expires，如果没有则使用expiry_date
+            current_subscription_expires = user_info.get('subscription_expires')
             current_expiry = user_info.get('expiry_date')
-            if current_expiry:
-                new_expiry = (
-                    datetime.fromisoformat(current_expiry) -
-                    timedelta(days=reduce_days)
-                )
-                update_user_subscription(
-                    user_id,
-                    {'expiry_date': new_expiry.isoformat()}
-                )
-                st.success(f"已减少{reduce_days}天！")
-                st.rerun()
+            
+            if current_subscription_expires:
+                # 优先使用subscription_expires（时间戳）
+                try:
+                    expires_timestamp = int(current_subscription_expires)
+                    expires_dt = datetime.fromtimestamp(expires_timestamp)
+                    new_expiry = expires_dt - timedelta(days=reduce_days)
+                except (ValueError, TypeError, OSError):
+                    st.error("订阅时间格式错误")
+                    st.rerun()
+                    return
+            elif current_expiry:
+                # 如果没有subscription_expires，使用expiry_date
+                try:
+                    if isinstance(current_expiry, str):
+                        expiry = datetime.fromisoformat(current_expiry)
+                    elif isinstance(current_expiry, datetime):
+                        expiry = current_expiry
+                    else:
+                        expiry = None
+                    if expiry:
+                        new_expiry = expiry - timedelta(days=reduce_days)
+                    else:
+                        st.error("无法解析到期时间")
+                        st.rerun()
+                        return
+                except (ValueError, TypeError):
+                    st.error("到期时间格式错误")
+                    st.rerun()
+                    return
             else:
                 st.error("用户没有到期时间")
+                st.rerun()
+                return
+            
+            # 计算新的subscription_expires时间戳
+            new_subscription_expires = int(new_expiry.timestamp())
+            
+            update_user_subscription(user_id, {
+                'expiry_date': new_expiry.isoformat(),
+                'subscription_expires': new_subscription_expires
+            })
+            st.success(f"已减少{reduce_days}天！")
+            st.rerun()
 
     with col2:
         reduce_calculations = st.number_input("减少使用次数", min_value=1, value=1)
