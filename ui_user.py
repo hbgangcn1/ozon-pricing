@@ -995,7 +995,6 @@ def subscription_management_page():
                 except (ValueError, TypeError, OSError):
                     st.error("订阅时间格式错误")
                     st.rerun()
-                    return
             elif current_expiry:
                 # 如果没有subscription_expires，使用expiry_date
                 try:
@@ -1010,15 +1009,12 @@ def subscription_management_page():
                     else:
                         st.error("无法解析到期时间")
                         st.rerun()
-                        return
                 except (ValueError, TypeError):
                     st.error("到期时间格式错误")
                     st.rerun()
-                    return
             else:
                 st.error("用户没有到期时间")
                 st.rerun()
-                return
             
             # 计算新的subscription_expires时间戳
             new_subscription_expires = int(new_expiry.timestamp())
