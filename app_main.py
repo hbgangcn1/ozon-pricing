@@ -35,13 +35,8 @@ logging.getLogger('streamlit.runtime').setLevel(logging.ERROR)
 #         handle_streamlit_error, get_error_summary
 #     )
 
-# 配置 Streamlit 服务器设置
-st.set_page_config(
-    page_title="物流系统",
-    page_icon="🚚",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+# 注意：st.set_page_config() 已移至 main() 函数中调用
+# 因为 Streamlit 要求它必须在任何其他命令之前调用，且只能调用一次
 
 # ===== 公安备案配置 =====
 # 从环境变量读取，默认为False（正常登录流程）
@@ -183,18 +178,8 @@ except ImportError:  # Fallback when run as a top-level module
         get_login_records,
     )
 
-# 设置页面配置
-st.set_page_config(
-    page_title="物流定价系统",
-    page_icon="🚚",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-    menu_items={
-        'Get Help': None,
-        'Report a bug': None,
-        'About': None
-    }
-)
+# 注意：st.set_page_config() 已移至 main() 函数中调用
+# 因为 Streamlit 要求它必须在任何其他命令之前调用，且只能调用一次
 
 
 def init_ui_styles():
@@ -9139,6 +9124,24 @@ def show_plan_management():
 
 
 def main():
+    # 设置页面配置（必须在任何其他 Streamlit 命令之前调用，且只能调用一次）
+    # 如果已经设置过，Streamlit 会抛出异常，我们捕获并忽略
+    try:
+        st.set_page_config(
+            page_title="物流定价系统",
+            page_icon="🚚",
+            layout="wide",
+            initial_sidebar_state="collapsed",
+            menu_items={
+                'Get Help': None,
+                'Report a bug': None,
+                'About': None
+            }
+        )
+    except Exception:
+        # 如果已经设置过，忽略错误（Streamlit 不允许重复调用）
+        pass
+
     # 初始化UI样式（必须在每次rerun时调用）
     init_ui_styles()
 
