@@ -278,10 +278,36 @@ class SubscriptionUpgrade:
             # duration可能是 "year", "1_year", "month", "1_month"
             is_year = target_cycle in ['year', '1_year']
             target_days = 365 if is_year else 30
-            new_end_time = current_time + target_days * 24 * 3600
+            
+            # 判断是否为续费（当前套餐和目标套餐相同）
+            current_plan = current_sub['subscription_type']
+            is_renewal = (current_plan == target_plan or
+                         (current_plan == 'efficiency_promo' and
+                          target_plan == 'efficiency'))
+            
+            if is_renewal:
+                # 续费：从到期时间开始累加
+                current_expires = current_sub.get('subscription_expires', 0)
+                if current_expires and current_expires > current_time:
+                    # 如果还未到期，从到期时间开始累加
+                    new_end_time = current_expires + target_days * 24 * 3600
+                    print(f"🔧 续费模式: 从到期时间累加, "
+                          f"原到期时间={current_expires}, "
+                          f"增加{target_days}天, 新到期时间={new_end_time}")
+                else:
+                    # 如果已到期，从当前时间开始计算
+                    new_end_time = current_time + target_days * 24 * 3600
+                    print(f"🔧 续费模式: 已过期，从当前时间开始, "
+                          f"增加{target_days}天, 新到期时间={new_end_time}")
+            else:
+                # 升级：从当前时间开始计算
+                new_end_time = current_time + target_days * 24 * 3600
+                print(f"🔧 升级模式: 从当前时间开始, "
+                      f"增加{target_days}天, 新到期时间={new_end_time}")
 
             print(f"🔧 计算新到期时间: target_cycle={target_cycle}, "
-                  f"is_year={is_year}, days={target_days}")
+                  f"is_year={is_year}, days={target_days}, "
+                  f"is_renewal={is_renewal}")
 
             # 处理 efficiency_promo：实际订阅类型是 efficiency
             # 检查是否是首月优惠订单（从订单描述中读取，更严谨）
