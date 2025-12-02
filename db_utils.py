@@ -4337,17 +4337,23 @@ def check_user_subscription_status(user_id):
                 user_type,
                 f'{user_type}用户',
             )
-            # 格式化计算次数显示
-            if remaining_calculations == -1:
-                calculations_display = "无限次"
-            else:
-                calculations_display = f"{remaining_calculations}次"
-            return {
-                'valid': True,
-                'message': (
+            # 只有免费版用户才显示计算次数，付费用户都是无限次
+            if user_type == 'free':
+                # 格式化计算次数显示
+                if remaining_calculations == -1:
+                    calculations_display = "无限次"
+                else:
+                    calculations_display = f"{remaining_calculations}次"
+                message = (
                     f'{display_name}，剩余{days_remaining}天，'
                     f'剩余{calculations_display}计算'
-                ),
+                )
+            else:
+                # 付费用户不显示计算次数（都是无限次）
+                message = f'{display_name}，剩余{days_remaining}天'
+            return {
+                'valid': True,
+                'message': message,
                 'remaining_days': days_remaining,
                 'remaining_calculations': remaining_calculations,
                 'user_type': user_type,
