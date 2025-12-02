@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 def determine_order_type(user_id: int, target_plan: str,
-                         is_upgrade: bool = False) -> str:
+                         is_upgrade: bool = False,
+                         is_promo: bool = False) -> str:
     """
     判断订单类型
 
@@ -44,6 +45,7 @@ def determine_order_type(user_id: int, target_plan: str,
         user_id: 用户ID
         target_plan: 目标套餐类型
         is_upgrade: 是否标记为升级
+        is_promo: 是否是首月优惠
 
     Returns:
         'first_payment': 首充
@@ -51,11 +53,23 @@ def determine_order_type(user_id: int, target_plan: str,
         'upgrade': 升级
     """
     with get_db_connection() as (conn, c):
-        # 1. 如果明确标记为升级，直接返回
-        if is_upgrade:
+        # 1. 查询当前用户类型
+        sql2 = adapt_placeholders("""
+            SELECT user_type FROM users WHERE id = ?
+        """, 1)
+        c.execute(sql2, (user_id,))
+        user_info = c.fetchone()
+        current_user_type = user_info[0] if user_info else 'free'
+
+        # 2. 首月优惠且用户是免费版，视为首充
+        if is_promo and current_user_type == 'free':
+            return 'first_payment'
+
+        # 3. 如果明确标记为升级，且不是首月优惠，直接返回升级
+        if is_upgrade and not is_promo:
             return 'upgrade'
 
-        # 2. 查询用户历史成功订单数
+        # 4. 查询用户历史成功订单数
         sql1 = adapt_placeholders("""
             SELECT COUNT(*) FROM payment_orders
             WHERE user_id = ?
@@ -65,19 +79,7 @@ def determine_order_type(user_id: int, target_plan: str,
         result = c.fetchone()
         history_count = result[0] if result else 0
 
-        # 3. 查询当前用户类型
-        sql2 = adapt_placeholders("""
-            SELECT user_type FROM users WHERE id = ?
-        """, 1)
-        c.execute(sql2, (user_id,))
-        user_info = c.fetchone()
-
-        if not user_info:
-            return 'first_payment'
-
-        current_user_type = user_info[0]
-
-        # 4. 判断逻辑
+        # 5. 判断逻辑
         if history_count == 0:
             # 无历史订单，首充
             return 'first_payment'
@@ -177,10 +179,19 @@ class PaymentHandler:
                 elif '首月优惠' in description:
                     target_plan_type = 'efficiency_promo'
 
+                # 从upgrade_info中提取is_promo信息
+                is_promo = False
+                if is_upgrade and upgrade_info:
+                    is_promo = upgrade_info.get('is_promo', False)
+                # 如果description中包含"首月优惠"，也视为首月优惠
+                if '首月优惠' in description:
+                    is_promo = True
+
                 order_type = determine_order_type(
                     user_id,
                     target_plan_type,
-                    is_upgrade
+                    is_upgrade,
+                    is_promo
                 )
 
                 # 保存订单信息（包含升级信息）
