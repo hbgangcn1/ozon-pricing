@@ -438,9 +438,9 @@ def show_single_upgrade_option(
         else:
             # 根据是否是首月优惠显示不同的按钮文本
             if is_promo:
-                button_text = "🎉 首月仅需¥1 - 立即升级"
+                button_text = "🎉 首月仅需¥1: 立即升级"
             else:
-                button_text = f"💳 立即升级 - ¥{actual_payment:.2f}"
+                button_text = f"💳 立即升级: ¥{actual_payment:.2f}"
 
             if st.button(
                 button_text,
