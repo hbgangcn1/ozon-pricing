@@ -726,6 +726,7 @@ def get_revenue_stats(start_date: Optional[str] = None,
             result = {
                 'total_orders': total_orders,
                 'total_amount': round(total_amount, 2),
+                'unique_paid_users': unique_paid_users,
                 'avg_order_value': round(avg_order_value, 2),
                 'order_list': order_list,
                 'revenue_trend': revenue_trend,

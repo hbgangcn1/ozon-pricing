@@ -7999,12 +7999,14 @@ def show_statistics_revenue():
         return
 
     # 核心指标
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("订单总数", revenue_data.get('total_orders', 0))
     with col2:
         st.metric("总金额", f"¥{revenue_data.get('total_amount', 0):.2f}")
     with col3:
+        st.metric("充值用户数", revenue_data.get('unique_paid_users', 0))
+    with col4:
         st.metric("平均客单价", f"¥{revenue_data.get('avg_order_value', 0):.2f}")
 
     st.divider()
