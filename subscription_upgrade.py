@@ -278,13 +278,13 @@ class SubscriptionUpgrade:
             # duration可能是 "year", "1_year", "month", "1_month"
             is_year = target_cycle in ['year', '1_year']
             target_days = 365 if is_year else 30
-            
+
             # 判断是否为续费（当前套餐和目标套餐相同）
             current_plan = current_sub['subscription_type']
             is_renewal = (current_plan == target_plan or
-                         (current_plan == 'efficiency_promo' and
-                          target_plan == 'efficiency'))
-            
+                          (current_plan == 'efficiency_promo' and
+                           target_plan == 'efficiency'))
+
             if is_renewal:
                 # 续费：从到期时间开始累加
                 current_expires = current_sub.get('subscription_expires', 0)
