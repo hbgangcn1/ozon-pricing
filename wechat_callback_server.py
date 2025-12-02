@@ -14,7 +14,7 @@ from queue import Queue, Empty
 from flask import Flask, jsonify, request
 from typing import Dict, Any, Optional
 
-from hmac_utils import get_callback_secret, verify_signature
+from hmac_utils import get_callback_secret
 from payment_handler import PaymentHandler, payment_handler
 from rate_limiter import get_limiter
 from utils import mask_sensitive
