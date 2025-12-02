@@ -379,12 +379,31 @@ def wechat_notify():
                 window_seconds=300,
             )
             if not ok:
+                logger.warning(
+                    f"⚠️ HMAC签名验证失败: "
+                    f"timestamp={headers.get('Wechatpay-Timestamp', 'N/A')[:20]}"
+                )
                 return jsonify({
                     'code': 'FAIL',
                     'message': 'Signature Invalid'
                 }), 400
+            else:
+                logger.info("✅ HMAC签名验证通过")
 
-        result = payment_handler.process_wechat_notify(notify_data)
+        logger.info("🔧 准备调用 process_wechat_notify")
+        try:
+            result = payment_handler.process_wechat_notify(notify_data)
+        except Exception as e:
+            logger.error(
+                f"❌ process_wechat_notify 抛出异常: {e}, "
+                f"order_id={order_id if 'order_id' in locals() else 'N/A'}"
+            )
+            import traceback
+            logger.error(traceback.format_exc())
+            return jsonify({
+                'code': 'FAIL',
+                'message': f'处理异常: {str(e)}'
+            }), 500
         logger.info(
             f"process_wechat_notify 返回结果: "
             f"success={result.get('success')}, "
