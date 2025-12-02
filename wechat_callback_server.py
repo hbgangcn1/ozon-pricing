@@ -385,30 +385,62 @@ def wechat_notify():
                 }), 400
 
         result = payment_handler.process_wechat_notify(notify_data)
+        logger.info(
+            f"process_wechat_notify 返回结果: "
+            f"success={result.get('success')}, "
+            f"message={result.get('message', 'N/A')}, "
+            f"out_trade_no={result.get('out_trade_no', 'N/A')}"
+        )
 
         if not result['success']:
-            # 签名验证失败，立即返回错误
-            logger.error(f"签名验证失败: {result['message']}")
+            # 处理失败，记录详细错误信息
+            error_msg = result.get('message', '未知错误')
+            logger.error(
+                f"支付通知处理失败: {error_msg}, "
+                f"order_id={order_id if 'order_id' in locals() else 'N/A'}, "
+                f"result={result}"
+            )
             return jsonify({
                 'code': 'FAIL',
-                'message': result['message']
+                'message': error_msg
             }), 400
 
         # ========== 阶段3：提取订单号，放入队列 ==========
         # 从处理结果中获取订单号（如果之前没有获取到）
+        prev_order_id = order_id  # 保存之前解析的订单号
         order_id = result.get('out_trade_no', order_id)
         if not order_id:
-            logger.error("未能从回调中提取订单号")
+            prev_order_id_str = prev_order_id if prev_order_id else 'N/A'
+            logger.error(
+                f"未能从回调中提取订单号, "
+                f"result={result}, "
+                f"previous_order_id={prev_order_id_str}"
+            )
             return jsonify({
                 'code': 'FAIL',
                 'message': '订单号缺失'
             }), 400
 
-        # 更新订单状态为PAID（轻量级数据库操作）
+        logger.info(
+            f"✅ 支付通知处理成功，开始后续处理: "
+            f"订单ID={mask_sensitive(order_id, 'order_id')}"
+        )
+
+        # 注意：订单状态已在 process_wechat_notify 中更新为 PAID
+        # 这里再次更新是为了确保状态一致性（双重保险）
         try:
             PaymentHandler.update_order_status(order_id, "PAID")
+            logger.info(
+                f"✅ 订单状态已确认更新为PAID: "
+                f"{mask_sensitive(order_id, 'order_id')}"
+            )
         except Exception as e:
-            logger.error(f"更新订单状态失败: {e}")
+            logger.error(
+                f"❌ 更新订单状态失败: {e}, "
+                f"订单ID={mask_sensitive(order_id, 'order_id')}"
+            )
+            import traceback
+            logger.error(traceback.format_exc())
             # 即使更新失败，也继续放入队列，补偿服务会处理
 
         # 放入异步处理队列（使用增强监控）

@@ -285,6 +285,7 @@ class PaymentHandler:
     @staticmethod
     def update_order_status(order_id: str, status: str):
         """更新订单状态（公开方法）"""
+        from logger_config import logger
         try:
             with get_db_connection() as (conn, cursor):
                 from db_adapter import adapt_sql
@@ -294,11 +295,28 @@ class PaymentHandler:
                     WHERE order_id = ?
                 """)
                 cursor.execute(sql, (status, int(time.time()), order_id))
+                rows_affected = cursor.rowcount
 
                 conn.commit()
+                if rows_affected > 0:
+                    logger.info(
+                        f"✅ 订单状态更新成功: {order_id}, "
+                        f"新状态={status}, 影响行数={rows_affected}"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️ 订单状态更新未影响任何行: {order_id}, "
+                        f"可能订单不存在"
+                    )
 
         except Exception as e:
-            print(f"更新订单状态失败: {e}")
+            logger.error(
+                f"❌ 更新订单状态失败: {e}, 订单ID={order_id}, "
+                f"目标状态={status}"
+            )
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
 
     @staticmethod
     def get_user_payment_history(user_id: int) -> list:
@@ -343,16 +361,21 @@ class PaymentHandler:
         Returns:
             Dict[str, Any]: 处理结果
         """
-        print("🚀 PaymentHandler.process_wechat_notify 开始处理")
+        from logger_config import logger
+        logger.info("🚀 PaymentHandler.process_wechat_notify 开始处理")
         result = wechat_pay_v3.process_notify(notify_data)
-        print(f"🔧 wechat_pay_v3.process_notify 返回结果: {result}")
+        logger.info(
+            f"🔧 wechat_pay_v3.process_notify 返回结果: "
+            f"success={result.get('success')}, "
+            f"message={result.get('message', 'N/A')}"
+        )
 
         if result["success"]:
             order_id = result.get("out_trade_no")
             transaction_id = result.get("transaction_id")
             decrypted_data = result.get("data", {})
 
-            print(f"🔧 获取到订单ID: {order_id}")
+            logger.info(f"🔧 获取到订单ID: {order_id}")
             if order_id:
                 # 高优先级安全改进：验证订单金额和用户ID
                 validation_result = (
@@ -362,7 +385,10 @@ class PaymentHandler:
                 )
 
                 if not validation_result["valid"]:
-                    print(f"❌ 支付回调验证失败: {validation_result['message']}")
+                    logger.error(
+                        f"❌ 支付回调验证失败: {validation_result['message']}, "
+                        f"订单ID={order_id}"
+                    )
                     return {
                         "success": False,
                         "message": validation_result["message"]
@@ -377,7 +403,7 @@ class PaymentHandler:
                     )
 
                     if not idempotency_result["can_process"]:
-                        print(
+                        logger.warning(
                             f"⚠️ 订单已处理（幂等性检查）: {order_id}, "
                             f"原因: {idempotency_result['reason']}"
                         )
@@ -388,22 +414,53 @@ class PaymentHandler:
                         }
 
                 # 更新订单状态为已支付
-                print(f"🔧 开始更新订单状态: {order_id}")
-                PaymentHandler.update_order_status(order_id, "PAID")
+                logger.info(f"🔧 开始更新订单状态: {order_id}")
+                try:
+                    PaymentHandler.update_order_status(order_id, "PAID")
+                    logger.info(f"✅ 订单状态已更新为PAID: {order_id}")
+                except Exception as e:
+                    logger.error(
+                        f"❌ 更新订单状态失败: {e}, 订单ID={order_id}"
+                    )
+                    import traceback
+                    logger.error(traceback.format_exc())
 
                 # 记录处理状态（防止重复处理）
                 if transaction_id:
-                    PaymentHandler._mark_order_processed(
-                        order_id, str(transaction_id)
-                    )
+                    try:
+                        PaymentHandler._mark_order_processed(
+                            order_id, str(transaction_id)
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ 标记订单处理状态失败: {e}, "
+                            f"订单ID={order_id}"
+                        )
 
                 # 这里可以添加业务逻辑，比如开通会员、增加计算次数等
-                print(f"🔧 开始处理支付成功业务逻辑: {order_id}")
-                PaymentHandler.handle_payment_success(order_id)
+                logger.info(
+                    f"🔧 开始处理支付成功业务逻辑: {order_id}"
+                )
+                try:
+                    PaymentHandler.handle_payment_success(order_id)
+                    logger.info(
+                        f"✅ 支付成功业务逻辑处理完成: {order_id}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"❌ 处理支付成功业务逻辑失败: {e}, "
+                        f"订单ID={order_id}"
+                    )
+                    import traceback
+                    logger.error(traceback.format_exc())
             else:
-                print("❌ 未获取到订单ID")
+                logger.error("❌ 未获取到订单ID")
         else:
-            print(f"❌ 支付通知处理失败: {result.get('message', '未知错误')}")
+            error_msg = result.get('message', '未知错误')
+            logger.error(
+                f"❌ 支付通知处理失败: {error_msg}, "
+                f"result={result}"
+            )
 
         return result
 
@@ -645,7 +702,8 @@ class PaymentHandler:
         Args:
             order_id: 订单ID
         """
-        print(f"🔧 开始处理支付成功逻辑: 订单ID={order_id}")
+        from logger_config import logger
+        logger.info(f"🔧 开始处理支付成功逻辑: 订单ID={order_id}")
         try:
             with get_db_connection() as (conn, cursor):
                 # 获取订单信息（包含升级信息）
@@ -660,10 +718,10 @@ class PaymentHandler:
 
                 order_info = cursor.fetchone()
                 if not order_info:
-                    print(f"❌ 未找到订单记录: {order_id}")
+                    logger.error(f"❌ 未找到订单记录: {order_id}")
                     return
 
-                print(f"✅ 找到订单记录: {order_info}")
+                logger.info(f"✅ 找到订单记录: {order_id}")
 
                 (user_id, amount, description, duration, is_upgrade,
                  upgrade_from, upgrade_to, remaining_value) = order_info
@@ -690,8 +748,10 @@ class PaymentHandler:
 
                 # 判断是否为升级订单
                 if is_upgrade:
-                    print(f"🔄 这是一个升级订单: {upgrade_from} → {upgrade_to}")
-                    print(f"   剩余价值折抵: ¥{remaining_value / 100:.2f}")
+                    logger.info(
+                        f"🔄 这是一个升级订单: {upgrade_from} → {upgrade_to}, "
+                        f"剩余价值折抵: ¥{remaining_value / 100:.2f}"
+                    )
                     # 升级订单使用专门的处理逻辑
                     PaymentHandler._handle_upgrade_payment_success(
                         order_id, user_id, upgrade_to, duration,
@@ -710,10 +770,16 @@ class PaymentHandler:
                     # 如果duration为None或其他值，默认为月付
                     days = 30
                     duration_text = "月付(默认)"
-                    print(f"⚠️ duration字段异常: {duration}, 使用默认月付30天")
+                    logger.warning(
+                        f"⚠️ duration字段异常: {duration}, "
+                        f"使用默认月付30天, 订单ID={order_id}"
+                    )
 
-                print(f"🔧 订阅时长判断: duration={duration}, "
-                      f"{duration_text}, {days}天, 描述={description}")
+                logger.info(
+                    f"🔧 订阅时长判断: duration={duration}, "
+                    f"{duration_text}, {days}天, 描述={description}, "
+                    f"订单ID={order_id}"
+                )
 
                 # 获取用户当前订阅信息
                 sql = adapt_sql("""
@@ -726,15 +792,19 @@ class PaymentHandler:
                 if user_info:
                     (current_sub_type, current_expires,
                      current_user_type) = user_info
-                    print(
+                    logger.info(
                         f"🔍 用户当前状态: "
                         f"subscription_type={current_sub_type}, "
                         f"subscription_expires={current_expires}, "
-                        f"user_type={current_user_type}"
+                        f"user_type={current_user_type}, "
+                        f"用户ID={user_id}"
                     )
                 else:
                     current_expires = None
-                    print(f"⚠️ 未找到用户记录: user_id={user_id}")
+                    logger.warning(
+                        f"⚠️ 未找到用户记录: user_id={user_id}, "
+                        f"订单ID={order_id}"
+                    )
 
                 # 计算新的到期时间：在原有基础上累加
                 current_time = int(time.time())
@@ -745,31 +815,26 @@ class PaymentHandler:
                     old_expires_dt = datetime.fromtimestamp(current_expires)
                     new_expires = current_expires + days * 24 * 3600
                     new_expires_dt = datetime.fromtimestamp(new_expires)
-                    print("🔧 续费模式：")
                     old_time_str = old_expires_dt.strftime('%Y-%m-%d %H:%M:%S')
-                    print(
-                        f"   原到期时间: {old_time_str} "
-                        f"(时间戳={current_expires})"
-                    )
-                    print(f"   增加时长: {days}天")
                     new_time_str = new_expires_dt.strftime('%Y-%m-%d %H:%M:%S')
-                    print(
-                        f"   新到期时间: {new_time_str} "
-                        f"(时间戳={new_expires})"
+                    logger.info(
+                        f"🔧 续费模式: 原到期时间={old_time_str} "
+                        f"(时间戳={current_expires}), 增加时长={days}天, "
+                        f"新到期时间={new_time_str} (时间戳={new_expires}), "
+                        f"订单ID={order_id}"
                     )
                 else:
                     # 如果已过期或没有到期时间，从现在开始计算
                     new_expires = current_time + days * 24 * 3600
                     new_expires_dt = datetime.fromtimestamp(new_expires)
-                    print("🔧 新订阅模式：")
                     current_dt = datetime.fromtimestamp(current_time)
                     current_time_str = current_dt.strftime('%Y-%m-%d %H:%M:%S')
-                    print(f"   当前时间: {current_time_str}")
-                    print(f"   增加时长: {days}天")
                     new_time_str = new_expires_dt.strftime('%Y-%m-%d %H:%M:%S')
-                    print(
-                        f"   新到期时间: {new_time_str} "
-                        f"(时间戳={new_expires})"
+                    logger.info(
+                        f"🔧 新订阅模式: 当前时间={current_time_str}, "
+                        f"增加时长={days}天, "
+                        f"新到期时间={new_time_str} (时间戳={new_expires}), "
+                        f"订单ID={order_id}"
                     )
 
                 # 根据支付金额和描述处理业务逻辑
@@ -777,14 +842,19 @@ class PaymentHandler:
                 if ("专业版" in description or
                         "PROFESSIONAL" in description.upper()):
                     subscription_type = "professional"
-                    print(f"🔧 处理专业版支付成功: 用户ID={user_id}, "
-                          f"{duration_text}, {days}天")
+                    logger.info(
+                        f"🔧 处理专业版支付成功: 用户ID={user_id}, "
+                        f"{duration_text}, {days}天, 订单ID={order_id}"
+                    )
 
                 elif ("效率版" in description or
                       "EFFICIENCY" in description.upper()):
                     subscription_type = "efficiency"
-                    print(f"🔧 处理效率版支付成功: 用户ID={user_id}, "
-                          f"{duration_text}, {days}天, 描述={description}")
+                    logger.info(
+                        f"🔧 处理效率版支付成功: 用户ID={user_id}, "
+                        f"{duration_text}, {days}天, 描述={description}, "
+                        f"订单ID={order_id}"
+                    )
 
                 if subscription_type:
                     # 确定计费周期
@@ -799,8 +869,11 @@ class PaymentHandler:
                     if (subscription_type == "efficiency" and
                             paid_amount <= 1.5 and billing_cycle == 'month'):
                         efficiency_promo_used = 1
-                        print("🎉 检测到首月优惠支付，标记 "
-                              "efficiency_promo_used=1")
+                        logger.info(
+                            f"🎉 检测到首月优惠支付，标记 "
+                            f"efficiency_promo_used=1, 订单ID={order_id}, "
+                            f"用户ID={user_id}"
+                        )
 
                     # 更新订阅信息（包含计费周期和支付金额）
                     # 尝试使用整数时间戳（适用于生产环境INTEGER类型）
@@ -886,25 +959,27 @@ class PaymentHandler:
                         (verify_sub_type, verify_expires,
                          verify_user_type) = verify_info
                         verify_dt = datetime.fromtimestamp(verify_expires)
-                        print(
-                            f"✅ {subscription_type}订阅状态已更新并验证:"
-                        )
-                        print(f"   用户ID: {user_id}")
-                        print(f"   订阅类型: {verify_sub_type}")
-                        print(f"   用户类型: {verify_user_type}")
                         verify_time_str = verify_dt.strftime(
                             '%Y-%m-%d %H:%M:%S'
                         )
-                        print(f"   到期时间: {verify_time_str}")
-                        print(f"   时间戳: {verify_expires}")
-
                         # 计算剩余天数
                         days_remaining = (
                             (verify_expires - current_time) / (24 * 3600)
                         )
-                        print(f"   剩余天数: {days_remaining:.1f}天")
+                        logger.info(
+                            f"✅ {subscription_type}订阅状态已更新并验证: "
+                            f"用户ID={user_id}, 订阅类型={verify_sub_type}, "
+                            f"用户类型={verify_user_type}, "
+                            f"到期时间={verify_time_str} "
+                            f"(时间戳={verify_expires}), "
+                            f"剩余天数={days_remaining:.1f}天, "
+                            f"订单ID={order_id}"
+                        )
                     else:
-                        print("⚠️ 更新后无法验证用户信息")
+                        logger.warning(
+                            f"⚠️ 更新后无法验证用户信息: "
+                            f"用户ID={user_id}, 订单ID={order_id}"
+                        )
 
                 elif "计算次数" in description:
                     # 增加计算次数
@@ -987,20 +1062,35 @@ class PaymentHandler:
                             )
                             cursor.execute(sql, (user_id,))
                             conn.commit()
-                            print("🎉 已标记用户使用过效率版首月优惠（从订单描述确认）")
+                            logger.info(
+                                f"🎉 已标记用户使用过效率版首月优惠（从订单描述确认）: "
+                                f"用户ID={user_id}, 订单ID={order_id}"
+                            )
             except Exception as e:
-                print(f"⚠️ 标记首月优惠使用失败: {e}")
+                logger.warning(
+                    f"⚠️ 标记首月优惠使用失败: {e}, "
+                    f"用户ID={user_id}, 订单ID={order_id}"
+                )
 
             if result['success']:
-                print(f"✅ 套餐升级成功: {target_plan}")
-                print(f"   新到期时间: {result.get('new_end_time')}")
+                logger.info(
+                    f"✅ 套餐升级成功: {target_plan}, "
+                    f"新到期时间={result.get('new_end_time')}, "
+                    f"用户ID={user_id}, 订单ID={order_id}"
+                )
             else:
-                print(f"❌ 套餐升级失败: {result.get('message')}")
+                logger.error(
+                    f"❌ 套餐升级失败: {result.get('message')}, "
+                    f"用户ID={user_id}, 订单ID={order_id}"
+                )
 
         except Exception as e:
-            print(f"❌ 处理升级支付失败: {e}")
+            logger.error(
+                f"❌ 处理升级支付失败: {e}, "
+                f"用户ID={user_id}, 订单ID={order_id}"
+            )
             import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
 
 
 def show_payment_page():
