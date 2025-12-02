@@ -9,7 +9,7 @@ import json
 import os
 import threading
 import time
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 
 from flask import Flask, jsonify, request
 from typing import Dict, Any, Optional
@@ -514,10 +514,11 @@ def wechat_notify():
                             logger.warning(
                                 f"增强监控队列满，使用原始队列: {order_id}"
                             )
-                        except Exception as put_error:
-                            # 如果 put_nowait 失败，尝试使用 put（带超时）
+                        except Full as put_error:
+                            # 如果 put_nowait 失败（队列满），尝试使用 put（带超时）
                             logger.error(
-                                f"put_nowait 失败，尝试使用 put: {put_error}"
+                                f"put_nowait 失败（队列满），尝试使用 put: "
+                                f"{put_error}"
                             )
                             try:
                                 payment_processing_queue.put(
@@ -527,9 +528,10 @@ def wechat_notify():
                                     f"增强监控队列满，使用原始队列（put）: "
                                     f"{order_id}"
                                 )
-                            except Exception:
+                            except (Full, TimeoutError) as retry_error:
                                 logger.error(
-                                    f"无法将订单放入队列: {order_id}"
+                                    f"无法将订单放入队列（队列满或超时）: "
+                                    f"{order_id}, 错误: {retry_error}"
                                 )
                 else:
                     # 降级到原始队列
