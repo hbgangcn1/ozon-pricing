@@ -797,17 +797,22 @@ def subscription_management_page():
         if days_remaining is not None:
             st.write(f"**剩余时长：** {days_remaining} 天")
 
-        # 显示剩余计算次数（如果不是永久用户）
+        # 显示剩余计算次数
+        # 只有免费版用户才有计算次数限制，其他用户都是无限次
         user_type = (
             user_info.get('subscription_type') or
             user_info.get('user_type')
         )
-        if user_type not in ['permanent', 'admin']:
+        if user_type == 'free':
+            # 免费版用户：显示剩余计算次数
             remaining_calculations = user_info.get('remaining_calculations', 0)
             if remaining_calculations == -1:
                 st.write("**剩余计算次数：** 无限次")
             else:
                 st.write(f"**剩余计算次数：** {remaining_calculations} 次")
+        elif user_type not in ['permanent', 'admin']:
+            # 付费用户（efficiency、professional等）：显示无限次
+            st.write("**剩余计算次数：** 无限次")
 
     # 订阅管理操作
     st.subheader("订阅管理")
