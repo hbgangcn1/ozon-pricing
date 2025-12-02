@@ -367,28 +367,10 @@ def wechat_notify():
             )
 
         # ========== 阶段2：验证签名（重量级操作）==========
-        # 先做我们自己的HMAC校验，再走原有的微信v3验签流程
-        secret = get_callback_secret()
-        if secret:
-            ok = verify_signature(
-                secret,
-                headers.get('Wechatpay-Timestamp', ''),
-                headers.get('Wechatpay-Nonce', ''),
-                raw_body,
-                headers.get('Wechatpay-Signature', ''),
-                window_seconds=300,
-            )
-            if not ok:
-                logger.warning(
-                    f"⚠️ HMAC签名验证失败: "
-                    f"timestamp={headers.get('Wechatpay-Timestamp', 'N/A')[:20]}"
-                )
-                return jsonify({
-                    'code': 'FAIL',
-                    'message': 'Signature Invalid'
-                }), 400
-            else:
-                logger.info("✅ HMAC签名验证通过")
+        # 注意：微信支付v3 API使用RSA公钥签名，不是HMAC
+        # 签名验证将在 process_wechat_notify 中通过
+        # verify_notify_signature_with_public_key 进行
+        # 这里不再进行自定义HMAC验证，因为微信支付有自己的签名机制
 
         logger.info("🔧 准备调用 process_wechat_notify")
         try:
