@@ -448,10 +448,29 @@ def wechat_notify():
                 f"result.success={result_success}, "
                 f"result.out_trade_no={result_out_trade_no}"
             )
-            return jsonify({
-                'code': 'FAIL',
-                'message': error_msg
-            }), 400
+            # 区分安全错误和业务错误：
+            # - 安全错误（签名验证失败等）：返回400，微信会停止重试
+            # - 业务错误（订单不存在等）：返回200 OK，但响应体中包含FAIL，微信会停止重试
+            security_errors = [
+                '签名验证失败', '时间戳验证失败', 'nonce验证失败',
+                'Signature verification failed'
+            ]
+            is_security_error = any(
+                err in error_msg for err in security_errors
+            )
+            if is_security_error:
+                # 安全错误：返回400
+                return jsonify({
+                    'code': 'FAIL',
+                    'message': error_msg
+                }), 400
+            else:
+                # 业务错误：返回200 OK，但响应体中包含FAIL
+                # 这样微信支付会停止重试
+                return jsonify({
+                    'code': 'FAIL',
+                    'message': error_msg
+                }), 200
 
         # ========== 阶段3：提取订单号，放入队列 ==========
         # 从处理结果中获取订单号（如果之前没有获取到）
