@@ -49,6 +49,10 @@ POLICE_FILING_MODE = (
 CALLBACK_SERVER_STARTED = False
 CALLBACK_SERVER_LOCK = threading.Lock()
 
+# 全局变量：确保汇率初始化只执行一次
+_EXCHANGE_RATES_INITIALIZED = False
+_EXCHANGE_RATES_LOCK = threading.Lock()
+
 try:
     from .db_utils import (
         init_db,
@@ -7479,23 +7483,45 @@ def subscription_management_page():
 
 
 def init_exchange_rates():
-    """系统启动时预获取汇率"""
-    try:
-        logger.info("🔄 系统启动：正在初始化汇率服务...")
+    """
+    系统启动时预获取汇率（带双重保护：全局变量 + 线程锁）
+    确保即使 session_state 被重置，也不会重复初始化
+    """
+    global _EXCHANGE_RATES_INITIALIZED
 
-    # 获取CNY到RUB汇率
-        cny_rub_service = ExchangeRateService()
-        cny_rub_rate = cny_rub_service.get_exchange_rate()
-        logger.info(f"✅ CNY到RUB汇率: {cny_rub_rate:.4f}")
+    # 第一层保护：检查全局标志
+    if _EXCHANGE_RATES_INITIALIZED:
+        logger.debug("汇率服务已初始化，跳过重复初始化")
+        return
 
-    # 获取USD到CNY汇率
-        usd_cny_rate = get_usd_rate()
-        logger.info(f"✅ USD到CNY汇率: {usd_cny_rate:.4f}")
-        logger.info("✅ 汇率服务初始化完成")
+    # 第二层保护：使用线程锁确保线程安全
+    with _EXCHANGE_RATES_LOCK:
+        # 双重检查（Double-Check Locking 模式）
+        if _EXCHANGE_RATES_INITIALIZED:
+            logger.debug("汇率服务已初始化（锁内检查），跳过重复初始化")
+            return
 
-    except (Exception,) as e:
-        logger.warning(f"⚠️ 汇率服务初始化失败: {e}")
-        logger.warning("📝 将使用本地兜底汇率")
+        try:
+            logger.info("🔄 系统启动：正在初始化汇率服务...")
+
+            # 获取CNY到RUB汇率
+            cny_rub_service = ExchangeRateService()
+            cny_rub_rate = cny_rub_service.get_exchange_rate()
+            logger.info(f"✅ CNY到RUB汇率: {cny_rub_rate:.4f}")
+
+            # 获取USD到CNY汇率
+            usd_cny_rate = get_usd_rate()
+            logger.info(f"✅ USD到CNY汇率: {usd_cny_rate:.4f}")
+            logger.info("✅ 汇率服务初始化完成")
+
+            # 标记为已初始化
+            _EXCHANGE_RATES_INITIALIZED = True
+
+        except (Exception,) as e:
+            logger.warning(f"⚠️ 汇率服务初始化失败: {e}")
+            logger.warning("📝 将使用本地兜底汇率")
+            # 即使失败也标记为已尝试，避免重复尝试
+            _EXCHANGE_RATES_INITIALIZED = True
 
 
 def restart_gunicorn_callback_server():

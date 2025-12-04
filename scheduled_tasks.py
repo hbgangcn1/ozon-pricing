@@ -8,6 +8,11 @@ import time
 import threading
 from logger_config import logger
 
+# 全局变量：确保调度器只启动一次
+_scheduler_thread: threading.Thread | None = None
+_scheduler_lock = threading.Lock()
+_scheduler_started = False
+
 
 def job_reset_free_calculations():
     """定时任务：重置免费用户每日计算次数"""
@@ -126,15 +131,46 @@ def run_scheduler():
 
 
 def start_scheduler_thread():
-    """启动调度器线程"""
-    thread = threading.Thread(
-        target=run_scheduler,
-        daemon=True,
-        name="Scheduler"
-    )
-    thread.start()
-    logger.info("定时任务调度器线程已启动")
-    return thread
+    """
+    启动调度器线程（带双重保护：全局变量 + 线程锁）
+    确保即使 session_state 被重置，也不会重复启动
+    """
+    global _scheduler_thread, _scheduler_started
+
+    # 第一层保护：检查全局标志
+    if _scheduler_started:
+        logger.debug("定时任务调度器已启动，跳过重复初始化")
+        return _scheduler_thread
+
+    # 第二层保护：使用线程锁确保线程安全
+    with _scheduler_lock:
+        # 双重检查（Double-Check Locking 模式）
+        if _scheduler_started:
+            logger.debug("定时任务调度器已启动（锁内检查），跳过重复初始化")
+            return _scheduler_thread
+
+        # 检查线程是否还在运行
+        if _scheduler_thread is not None and _scheduler_thread.is_alive():
+            logger.debug("定时任务调度器线程仍在运行，跳过重复初始化")
+            _scheduler_started = True
+            return _scheduler_thread
+
+        # 启动新线程
+        try:
+            _scheduler_thread = threading.Thread(
+                target=run_scheduler,
+                daemon=True,
+                name="Scheduler"
+            )
+            _scheduler_thread.start()
+            _scheduler_started = True
+            logger.info("✅ 定时任务调度器线程已启动")
+            return _scheduler_thread
+        except Exception as e:
+            logger.error(f"❌ 启动定时任务调度器线程失败: {e}")
+            _scheduler_started = False
+            _scheduler_thread = None
+            raise
 
 
 if __name__ == "__main__":
