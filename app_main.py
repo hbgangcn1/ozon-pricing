@@ -7545,7 +7545,7 @@ def restart_gunicorn_callback_server():
         gunicorn_cmd = (
             f"cd {project_dir} && "
             f"nohup {venv_python} "
-            "-w 2 -b 0.0.0.0:8081 wechat_callback_server:app "
+            "-w 2 -b 127.0.0.1:8081 wechat_callback_server:app "
             "--access-logfile gunicorn_access.log "
             "--error-logfile gunicorn_error.log "
             "--log-level info "
@@ -7598,7 +7598,7 @@ def start_wechat_callback_server():
             port = get_callback_port()
             threading.Thread(
                 target=run_callback_server,
-                kwargs={'host': '0.0.0.0', 'port': port},
+                kwargs={'host': '127.0.0.1', 'port': port},
                 daemon=True,
                 name="WechatCallbackServer",
             ).start()

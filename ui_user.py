@@ -1014,7 +1014,7 @@ def subscription_management_page():
                         st.rerun()
                 except (ValueError, TypeError):
                     st.error("到期时间格式错误")
-                    st.rerun()
+                st.rerun()
             else:
                 st.error("用户没有到期时间")
                 st.rerun()
