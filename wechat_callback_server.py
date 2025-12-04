@@ -519,8 +519,8 @@ def wechat_notify():
                 )
                 monitor = get_payment_callback_monitor()
                 if monitor is not None:
-                    result = monitor.enqueue_order(order_id)
-                    if result['success']:
+                    enqueue_result = monitor.enqueue_order(order_id)
+                    if enqueue_result.get('success', False):
                         logger.info(
                             f"订单已放入处理队列（增强监控）: "
                             f"{mask_sensitive(order_id, 'order_id')}, "
@@ -779,7 +779,7 @@ def get_callback_port() -> int:
 
 
 def run_callback_server(
-    host: str = '0.0.0.0',
+    host: str = '127.0.0.1',
     port: Optional[int] = None,
     skip_config_check: bool = False,
 ) -> None:
@@ -788,8 +788,11 @@ def run_callback_server(
 
     在嵌入式模式（由 Streamlit 调用）与独立脚本运行时复用。
 
+    注意：默认监听 127.0.0.1，通过 Nginx 反向代理接收外网请求。
+    如需直接暴露，可传入 host='0.0.0.0'。
+
     Args:
-        host: 监听地址
+        host: 监听地址（默认 127.0.0.1，通过 Nginx 反向代理）
         port: 监听端口
         skip_config_check: 是否跳过配置检查（用于测试环境）
     """
@@ -838,5 +841,6 @@ def run_callback_server(
 
 if __name__ == '__main__':
     # 在生产环境中，建议使用 gunicorn 等 WSGI 服务器
-    # 微信支付回调需要接受外网请求，必须绑定0.0.0.0
+    # 通过 Nginx 反向代理时，监听 127.0.0.1 即可
+    # 如需直接暴露，可传入 host='0.0.0.0'
     run_callback_server()
