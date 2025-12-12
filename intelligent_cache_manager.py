@@ -19,20 +19,23 @@ try:
             RedisError,
             ConnectionError as RedisConnectionError,
         )
-        REDIS_EXCEPTIONS = (RedisError, RedisConnectionError)
+        _redis_exceptions = (RedisError, RedisConnectionError)
     except ImportError:
         # Redis未安装，使用通用异常类型
         RedisError = Exception  # type: ignore
         RedisConnectionError = Exception  # type: ignore
-        REDIS_EXCEPTIONS = (Exception,)
-    REDIS_AVAILABLE = True
+        _redis_exceptions = (Exception,)
+    _redis_available = True
 except ImportError:
-    REDIS_AVAILABLE = False
+    _redis_available = False
     RedisCache = None  # type: ignore
     RedisError = Exception  # type: ignore
     RedisConnectionError = Exception  # type: ignore
-    REDIS_EXCEPTIONS = (Exception,)
+    _redis_exceptions = (Exception,)
     # Redis未安装，自动使用内存缓存（静默处理）
+
+REDIS_AVAILABLE = _redis_available
+REDIS_EXCEPTIONS = _redis_exceptions
 
 
 class CacheConfig:

@@ -32,19 +32,23 @@ def _subscription_expires_to_datetime(raw_value):
 # 定义数据库异常类型（兼容SQLite和PostgreSQL）
 try:
     import psycopg2
-    DB_EXCEPTIONS = (sqlite3.Error, psycopg2.Error, OSError, ValueError)
+    _db_exceptions_with_pg = (
+        sqlite3.Error, psycopg2.Error, OSError, ValueError
+    )
 except ImportError:
     psycopg2 = None  # type: ignore
-    DB_EXCEPTIONS = (sqlite3.Error, OSError, ValueError)
+    _db_exceptions_with_pg = (sqlite3.Error, OSError, ValueError)
+
+DB_EXCEPTIONS = _db_exceptions_with_pg
 
 # 导入数据库适配函数（用于SQL语法适配）
 try:
-    from db_adapter import adapt_sql, adapt_placeholders, get_placeholder
-    from db_config import DB_TYPE
-    from db_utils import _safe_adapt_sql
+    from db_adapter import get_placeholder
+    from db_utils import (
+        _safe_adapt_sql  # pyright: ignore[reportPrivateUsage]
+    )
 except ImportError:
     # 如果导入失败，定义占位函数（向后兼容）
-    DB_TYPE = 'sqlite'
 
     def adapt_sql(sql: str) -> str:
         return sql
@@ -145,20 +149,20 @@ try:
         get_db_connection,
         get_statistics_cache,
         set_statistics_cache,
-        _is_postgresql_connection,
-        _build_safe_timestamp_expr,
+        _is_postgresql_connection,  # pyright: ignore[reportPrivateUsage]
+        _build_safe_timestamp_expr,  # pyright: ignore[reportPrivateUsage]
     )
-    from .intelligent_cache_manager import cache_result, get_cache_stats
+    from .intelligent_cache_manager import cache_result
 except ImportError:
     from db_utils import (
         get_db_connection,
         get_statistics_cache,
         set_statistics_cache,
-        _is_postgresql_connection,
-        _build_safe_timestamp_expr,
+        _is_postgresql_connection,  # pyright: ignore[reportPrivateUsage]
+        _build_safe_timestamp_expr,  # pyright: ignore[reportPrivateUsage]
     )
     try:
-        from intelligent_cache_manager import cache_result, get_cache_stats
+        from intelligent_cache_manager import cache_result
     except ImportError:
         # 如果智能缓存不可用，使用简单的缓存装饰器
         def cache_result(category='default', ttl=None):
@@ -2586,7 +2590,7 @@ def get_calculation_consumption_stats():
     if cached:
         return cached
 
-    with get_db_connection() as (conn, c):
+    with get_db_connection() as (_, c):
         try:
             # 按套餐统计
             c.execute("""

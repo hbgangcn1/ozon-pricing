@@ -190,7 +190,7 @@ class SubscriptionUpgrade:
 
         try:
             from db_adapter import adapt_sql
-            with get_db_connection() as (conn, cursor):
+            with get_db_connection() as (_, cursor):
                 sql = adapt_sql("""
                     SELECT subscription_type, subscription_expires,
                            last_paid_amount, billing_cycle
@@ -319,7 +319,9 @@ class SubscriptionUpgrade:
             # "首月优惠"标记
             if payment_order_id:
                 try:
-                    from db_utils import _safe_adapt_sql
+                    from db_utils import (
+                        _safe_adapt_sql  # pyright: ignore[reportPrivateUsage]
+                    )
                     with get_db_connection() as (conn, cursor):
                         sql = _safe_adapt_sql(
                             "SELECT description FROM payment_orders "
@@ -348,7 +350,9 @@ class SubscriptionUpgrade:
             billing_cycle = 'year' if is_year else 'month'
 
             from db_adapter import adapt_sql
-            from db_utils import _is_postgresql_connection as is_pg
+            from db_utils import (
+                _is_postgresql_connection as is_pg  # pyright: ignore[reportPrivateUsage]
+            )
             try:
                 import psycopg2.errors as pg_errors
             except ImportError:
@@ -483,7 +487,10 @@ class SubscriptionUpgrade:
 
         # 检查用户是否使用过效率版首月优惠
         promo_used = False
-        from db_utils import get_db_connection, _safe_adapt_sql
+        from db_utils import (
+            get_db_connection,
+            _safe_adapt_sql  # pyright: ignore[reportPrivateUsage]
+        )
         import sqlite3
         try:
             import psycopg2.errors as pg_errors

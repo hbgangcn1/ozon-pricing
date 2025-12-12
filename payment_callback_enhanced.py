@@ -288,7 +288,7 @@ class PaymentCallbackEnhanced:
                 self.record_alert(
                     'high_failure_rate',
                     alert_level,
-                    f"支付处理失败率过高: {failure_rate*100:.1f}%",
+                    f"支付处理失败率过高: {failure_rate * 100:.1f}%",
                     {
                         'failure_rate': failure_rate,
                         'processed': self.stats['processed'],

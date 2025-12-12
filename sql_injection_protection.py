@@ -83,7 +83,7 @@ def detect_sql_injection(
         in_string = False
         quote_char = None
         for i, char in enumerate(sql):
-            if char in ("'", '"') and (i == 0 or sql[i-1] != '\\'):
+            if char in ("'", '"') and (i == 0 or sql[i - 1] != '\\'):
                 if not in_string:
                     in_string = True
                     quote_char = char
@@ -94,7 +94,7 @@ def detect_sql_injection(
                 # 在字符串外的分号
                 if i < len(sql) - 1:
                     # 分号后还有内容，可能是多语句攻击
-                    remaining = sql[i+1:].strip()
+                    remaining = sql[i + 1:].strip()
                     if remaining and not remaining.startswith('--'):
                         return False, "检测到多语句SQL（可能的安全风险）"
 

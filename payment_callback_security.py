@@ -23,14 +23,16 @@ except ImportError:
 
 try:
     from .redis_cache import get_redis_client
-    REDIS_AVAILABLE = True
+    _redis_available = True
 except ImportError:
-    REDIS_AVAILABLE = False
+    _redis_available = False
     # 定义占位函数，防止类型检查错误
 
     def get_redis_client():
         """占位函数，当Redis不可用时返回None"""
         return None
+
+REDIS_AVAILABLE = _redis_available
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,9 @@ import time
 from subscription_upgrade import SubscriptionUpgrade
 from payment_handler import PaymentHandler
 from db_utils import (
-    current_user_id, get_db_connection, _safe_adapt_sql
+    current_user_id,
+    get_db_connection,
+    _safe_adapt_sql  # pyright: ignore[reportPrivateUsage]
 )
 from payment_auto_refresh import show_enhanced_auto_check_indicator
 import qrcode

@@ -441,7 +441,7 @@ def get_password_recovery_logs(
     Returns:
         日志记录列表
     """
-    with get_db_connection() as (conn, c):
+    with get_db_connection() as (_, c):
         if username:
             sql = adapt_sql("""
                 SELECT username, ip_address, event_type, success,

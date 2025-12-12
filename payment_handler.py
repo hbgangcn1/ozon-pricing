@@ -18,9 +18,7 @@ from rate_limiter import get_limiter
 # 导入数据库适配函数
 try:
     from db_adapter import adapt_placeholders
-    from db_config import DB_TYPE
 except ImportError:
-    DB_TYPE = 'sqlite'
 
     def adapt_placeholders(sql: str, param_count: int) -> str:
         # noinspection PyUnusedLocal
@@ -52,7 +50,7 @@ def determine_order_type(user_id: int, target_plan: str,
         'renewal': 续费
         'upgrade': 升级
     """
-    with get_db_connection() as (conn, c):
+    with get_db_connection() as (_, c):
         # 1. 查询当前用户类型
         sql2 = adapt_placeholders("""
             SELECT user_type FROM users WHERE id = ?
@@ -333,7 +331,7 @@ class PaymentHandler:
     def get_user_payment_history(user_id: int) -> list:
         """获取用户支付历史"""
         try:
-            with get_db_connection() as (conn, cursor):
+            with get_db_connection() as (_, cursor):
                 from db_adapter import adapt_sql
                 sql = adapt_sql("""
                     SELECT order_id, amount, description, status, created_at
@@ -490,7 +488,7 @@ class PaymentHandler:
             Dict包含valid(bool)和message(str)
         """
         try:
-            with get_db_connection() as (conn, cursor):
+            with get_db_connection() as (_, cursor):
                 # 查询订单信息
                 from db_adapter import adapt_sql
                 sql = adapt_sql("""
@@ -606,7 +604,7 @@ class PaymentHandler:
             Dict包含can_process(bool)和reason(str)
         """
         try:
-            with get_db_connection() as (conn, cursor):
+            with get_db_connection() as (_, cursor):
                 # 检查订单是否已处理
                 from db_adapter import adapt_sql
                 sql = adapt_sql("""
@@ -889,7 +887,9 @@ class PaymentHandler:
                     # 更新订阅信息（包含计费周期和支付金额）
                     # 尝试使用整数时间戳（适用于生产环境INTEGER类型）
                     # 如果失败，回退到to_timestamp()（适用于测试环境timestamp类型）
-                    from db_utils import _is_postgresql_connection as is_pg
+                    from db_utils import (
+                        _is_postgresql_connection as is_pg  # pyright: ignore[reportPrivateUsage]
+                    )
                     try:
                         import psycopg2.errors as pg_errors
                     except ImportError:
@@ -1054,7 +1054,10 @@ class PaymentHandler:
             # 检查订单描述中是否包含"首月优惠"标记（更严谨的方式）
             # 从订单信息中读取描述，判断是否是首月优惠订单
             try:
-                from db_utils import get_db_connection, _safe_adapt_sql
+                from db_utils import (
+                    get_db_connection,
+                    _safe_adapt_sql  # pyright: ignore[reportPrivateUsage]
+                )
                 with get_db_connection() as (conn, cursor):
                     sql = _safe_adapt_sql(
                         "SELECT description FROM payment_orders "

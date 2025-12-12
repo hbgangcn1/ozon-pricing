@@ -36,7 +36,7 @@ class PaymentCompensationService:
             check_start_time = current_time - self.max_check_age
             pending_threshold = current_time - self.pending_timeout
 
-            with get_db_connection() as (conn, cursor):
+            with get_db_connection() as (_, cursor):
                 from db_adapter import adapt_placeholders
                 sql = """
                     SELECT order_id, user_id, amount, description,
@@ -84,7 +84,7 @@ class PaymentCompensationService:
             # PAID订单超过5分钟未处理需要补偿
             paid_threshold = current_time - 300
 
-            with get_db_connection() as (conn, cursor):
+            with get_db_connection() as (_, cursor):
                 from db_adapter import adapt_placeholders
                 sql = """
                     SELECT order_id, user_id, amount, description,

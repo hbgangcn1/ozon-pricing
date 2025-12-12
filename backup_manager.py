@@ -94,7 +94,7 @@ def list_backups():
 def verify_backup(backup_path):
     """验证备份文件"""
     try:
-        with backup_db_connection(backup_path) as (conn, c):
+        with backup_db_connection(backup_path) as (_, c):
             # 检查关键表
             tables = ['users', 'products', 'logistics']
             stats = {}

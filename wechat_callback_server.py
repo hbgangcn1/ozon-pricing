@@ -119,7 +119,7 @@ for i in range(2):
 # ====================================================
 
 
-def _default_get_payment_callback_monitor():
+def _default_get_payment_callback_monitor():  # pyright: ignore[reportUnusedFunction]
     """
     默认的支付回调监控获取函数（占位函数）
     用于满足静态分析要求，当无法导入增强监控时使用
@@ -244,7 +244,7 @@ def validate_startup_configuration() -> Dict[str, Any]:
     # 4. 检查数据库连接（关键依赖）
     try:
         from db_adapter import get_db_connection
-        with get_db_connection() as (conn, cursor):
+        with get_db_connection() as (_, cursor):
             cursor.execute("SELECT 1")
             result['checks']['database'] = {
                 'status': 'healthy',
@@ -628,7 +628,7 @@ def health_check():
     # 1. 检查数据库连接
     try:
         from db_adapter import get_db_connection
-        with get_db_connection() as (conn, cursor):
+        with get_db_connection() as (_, cursor):
             cursor.execute("SELECT 1")
             health_status['checks']['database'] = {
                 'status': 'healthy',

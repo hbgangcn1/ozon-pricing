@@ -11,7 +11,19 @@ if TYPE_CHECKING:
     from wechat_pay_config import WeChatPayConfig
 
 
-def _require_env(name: str) -> str:
+def require_env(name: str) -> str:
+    """
+    获取必需的环境变量，如果不存在则抛出异常
+
+    Args:
+        name: 环境变量名
+
+    Returns:
+        环境变量值
+
+    Raises:
+        RuntimeError: 如果环境变量不存在
+    """
     value = os.getenv(name)
     if not value:
         raise RuntimeError(f"缺少环境变量: {name}")
@@ -35,7 +47,7 @@ def get_production_config() -> "WeChatPayConfig":
     """
     from wechat_pay_config import WeChatPayConfig
 
-    cert_serial_raw = _require_env("WECHAT_CERT_SERIAL_NO")
+    cert_serial_raw = require_env("WECHAT_CERT_SERIAL_NO")
     cert_serial_no = (
         cert_serial_raw.replace(":", "")
         .replace(" ", "")
@@ -44,13 +56,13 @@ def get_production_config() -> "WeChatPayConfig":
     )
 
     return WeChatPayConfig(
-        app_id=_require_env("WECHAT_APP_ID"),
-        mch_id=_require_env("WECHAT_MCH_ID"),
-        api_v3_key=_require_env("WECHAT_API_V3_KEY"),
-        private_key_path=_require_env("WECHAT_PRIVATE_KEY_PATH"),
+        app_id=require_env("WECHAT_APP_ID"),
+        mch_id=require_env("WECHAT_MCH_ID"),
+        api_v3_key=require_env("WECHAT_API_V3_KEY"),
+        private_key_path=require_env("WECHAT_PRIVATE_KEY_PATH"),
         cert_serial_no=cert_serial_no,
-        public_key_path=_require_env("WECHAT_PUBLIC_KEY_PATH"),
-        notify_url=_require_env("WECHAT_NOTIFY_URL"),
-        return_url=_require_env("WECHAT_RETURN_URL"),
+        public_key_path=require_env("WECHAT_PUBLIC_KEY_PATH"),
+        notify_url=require_env("WECHAT_NOTIFY_URL"),
+        return_url=require_env("WECHAT_RETURN_URL"),
         sandbox=os.getenv("WECHAT_SANDBOX", "false").lower() == "true",
     )

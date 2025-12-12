@@ -99,7 +99,7 @@ class AutoBackupSystem:
     def verify_backup(backup_path):
         """验证备份文件是否有效"""
         try:
-            with backup_db_connection(backup_path) as (conn, c):
+            with backup_db_connection(backup_path) as (_, c):
                 # 检查关键表是否存在
                 tables = ['users', 'products', 'logistics']
                 for table_name in tables:

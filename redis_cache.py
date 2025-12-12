@@ -17,12 +17,14 @@ try:
         RedisError,
         ConnectionError as RedisConnectionError,
     )
-    REDIS_AVAILABLE = True
+    _redis_available = True
 except ImportError:
-    REDIS_AVAILABLE = False
+    _redis_available = False
     redis = None
     RedisError = Exception
     RedisConnectionError = Exception
+
+REDIS_AVAILABLE = _redis_available
 
 # 全局Redis连接
 _redis_client: Optional[Any] = None
@@ -75,6 +77,8 @@ def init_redis_client(config: Optional[Dict[str, Any]] = None) -> bool:
             final_config.update(config)
 
         # 创建连接池
+        if redis is None:
+            return False
         pool = redis.ConnectionPool(**final_config)
         _redis_client = redis.Redis(connection_pool=pool)
 

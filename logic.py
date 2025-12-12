@@ -2,9 +2,12 @@
 
 import math
 
-# 为了测试兼容性，导入ExchangeRateService
+# 为了测试兼容性，导入ExchangeRateService（当前未使用，保留用于未来扩展）
 try:
-    from exchange_service import ExchangeRateService, get_usd_rate
+    from exchange_service import (
+        ExchangeRateService,  # pyright: ignore[reportUnusedImport]
+        get_usd_rate  # pyright: ignore[reportUnusedImport]
+    )
 except ImportError:
     ExchangeRateService = None
     get_usd_rate = None
@@ -1212,8 +1215,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
         }
 
 
-def _debug_filter_reason(logistic: dict, product: dict) -> str:
-    """检查物流被淘汰的原因"""
+def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: ignore[reportUnusedFunction]
+    """检查物流被淘汰的原因（调试用，当前未使用）"""
     # ---------- 1. 重量 ----------
     # 计算体积重量
     length_cm = product.get("length_cm", 0)

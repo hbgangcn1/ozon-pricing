@@ -340,7 +340,7 @@ class PostgresBackupSystem:
 
                     # 删除所有序列的默认值
                     dropped_count = 0
-                    for schema, table, column, default in seq_columns:
+                    for schema, table, column, _ in seq_columns:
                         try:
                             # 提取序列名称（从 nextval('sequence_name'::regclass) 中提取）
                             drop_sql = (
@@ -393,7 +393,8 @@ class PostgresBackupSystem:
                         """,
                         (POSTGRES_CONFIG.get("database"),),
                     )
-                    active_count = cur.fetchone()[0]
+                    result = cur.fetchone()
+                    active_count = result[0] if result else 0
                     logger.info(f"发现 {active_count} 个活动连接")
 
                     if active_count > 0:
@@ -424,7 +425,8 @@ class PostgresBackupSystem:
                                 """,
                                 (POSTGRES_CONFIG.get("database"),),
                             )
-                            remaining = cur.fetchone()[0]
+                            result = cur.fetchone()
+                            remaining = result[0] if result else 0
                             if remaining == 0:
                                 logger.info("所有连接已关闭")
                                 break
@@ -442,7 +444,8 @@ class PostgresBackupSystem:
                                 """,
                                 (POSTGRES_CONFIG.get("database"),),
                             )
-                            final_count = cur.fetchone()[0]
+                            result = cur.fetchone()
+                            final_count = result[0] if result else 0
                             if final_count > 0:
                                 logger.warning(
                                     f"仍有 {final_count} 个连接未关闭，"

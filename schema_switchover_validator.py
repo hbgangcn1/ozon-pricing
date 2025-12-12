@@ -13,8 +13,8 @@ from typing import List, Optional
 
 from db_utils import (
     get_db_connection,
-    _ensure_postgresql_schema,
-    _is_postgresql_connection,
+    _ensure_postgresql_schema,  # pyright: ignore[reportPrivateUsage]
+    _is_postgresql_connection,  # pyright: ignore[reportPrivateUsage]
 )
 
 

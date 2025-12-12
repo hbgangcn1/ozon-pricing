@@ -126,8 +126,8 @@ class ExchangeRateMonitorEnhanced:
                 alert_type='stale_data',
                 level='warning' if rate_age < 14400 else 'critical',  # 4小时
                 message=(
-                    f"汇率数据过期：数据已存在 {rate_age/3600:.1f} 小时，"
-                    f"超过阈值 {self.deprecated_data_threshold/3600:.1f} 小时"
+                    f"汇率数据过期：数据已存在 {rate_age / 3600:.1f} 小时，"
+                    f"超过阈值 {self.deprecated_data_threshold / 3600:.1f} 小时"
                 ),
                 current_rate=current_rate
             )
@@ -145,7 +145,7 @@ class ExchangeRateMonitorEnhanced:
                            else 'critical'),  # 10%
                     message=(
                         f"汇率变化过大：从 {self.last_rate:.5f} 变化到 "
-                        f"{current_rate:.5f}，变化幅度 {rate_change*100:.2f}%"
+                        f"{current_rate:.5f}，变化幅度 {rate_change * 100:.2f}%"
                     ),
                     current_rate=current_rate,
                     previous_rate=self.last_rate

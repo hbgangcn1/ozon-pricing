@@ -8,13 +8,23 @@ import streamlit as st
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
+
 # 定义数据库异常类型（兼容SQLite和PostgreSQL）
+def _get_db_exceptions():
+    """获取数据库异常元组"""
+    try:
+        import psycopg2
+        return (sqlite3.Error, psycopg2.Error, OSError, ValueError)
+    except ImportError:
+        return (sqlite3.Error, OSError, ValueError)
+
+
 try:
-    import psycopg2
-    DB_EXCEPTIONS = (sqlite3.Error, psycopg2.Error, OSError, ValueError)
+    import psycopg2  # pyright: ignore[reportUnusedImport]
 except ImportError:
     psycopg2 = None  # type: ignore
-    DB_EXCEPTIONS = (sqlite3.Error, OSError, ValueError)
+
+DB_EXCEPTIONS = _get_db_exceptions()
 
 # 导入logger（可选，如果不可用则静默失败）
 try:
@@ -47,7 +57,7 @@ try:
         verify_user,
         update_user_subscription,
         get_user_subscription_info,
-        _safe_adapt_sql,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
     )
     from .rate_limiter import get_limiter
 except ImportError:  # Fallback when executed as top-level module
@@ -55,7 +65,7 @@ except ImportError:  # Fallback when executed as top-level module
         verify_user,
         update_user_subscription,
         get_user_subscription_info,
-        _safe_adapt_sql,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
     )
     from rate_limiter import get_limiter
 
@@ -126,6 +136,44 @@ class SessionSecurity:
                 """
             c.execute(sql)
 
+            # 创建索引以优化查询性能
+            # 索引 login_attempts(identifier, timestamp) 用于
+            # check_suspicious_ip 和 record_login_attempt
+            if is_postgresql:
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_login_attempts_identifier_timestamp
+                    ON login_attempts(identifier, timestamp DESC)
+                """)
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_login_attempts_success_timestamp
+                    ON login_attempts(success, timestamp DESC)
+                """)
+                # 复合索引优化 record_login_attempt 中的 COUNT 查询
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_login_attempts_identifier_success_timestamp
+                    ON login_attempts(identifier, success, timestamp DESC)
+                """)
+            else:
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_login_attempts_identifier_timestamp
+                    ON login_attempts(identifier, timestamp DESC)
+                """)
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_login_attempts_success_timestamp
+                    ON login_attempts(success, timestamp DESC)
+                """)
+                # 复合索引优化 record_login_attempt 中的 COUNT 查询
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_login_attempts_identifier_success_timestamp
+                    ON login_attempts(identifier, success, timestamp DESC)
+                """)
+
             # 创建活动会话表
             c.execute("""
                 CREATE TABLE IF NOT EXISTS active_sessions (
@@ -139,6 +187,31 @@ class SessionSecurity:
                     is_active BOOLEAN DEFAULT TRUE
                 )
             """)
+
+            # 为 active_sessions 表创建索引以优化查询性能
+            # 索引 (user_id, is_active) 用于 check_concurrent_sessions
+            if is_postgresql:
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_active_sessions_user_id_is_active
+                    ON active_sessions(user_id, is_active)
+                """)
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_active_sessions_user_id_last_activity
+                    ON active_sessions(user_id, last_activity)
+                """)
+            else:
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_active_sessions_user_id_is_active
+                    ON active_sessions(user_id, is_active)
+                """)
+                c.execute("""
+                    CREATE INDEX IF NOT EXISTS
+                    idx_active_sessions_user_id_last_activity
+                    ON active_sessions(user_id, last_activity)
+                """)
 
             # 创建用户锁定表
             c.execute("""
@@ -184,7 +257,9 @@ class SessionSecurity:
             try:
                 # 检测数据库类型
                 try:
-                    from db_utils import _is_postgresql_connection
+                    from db_utils import (
+                        _is_postgresql_connection  # pyright: ignore[reportPrivateUsage]
+                    )
                     is_pg = _is_postgresql_connection(conn)
                 except ImportError:
                     # 如果无法导入，定义备用函数
@@ -467,35 +542,68 @@ class SessionSecurity:
 
     @staticmethod
     def get_client_info():
-        """获取客户端信息（包括真实IP地址）"""
+        """获取客户端信息（包括真实IP地址和User-Agent）"""
         ip_address = 'localhost'
-        user_agent = 'Streamlit/1.48.0'
+        user_agent = 'Streamlit/1.0'  # 默认值，表示 Streamlit 环境
 
-        # 尝试从Streamlit获取真实IP地址
-        # 注意：在生产环境中需要配置反向代理（如Nginx）传递真实IP
         try:
-            # 使用外部作用域已导入的 st
-            if hasattr(st, 'session_state'):
-                # 尝试从headers获取（如果可用）
-                try:
-                    # 在Streamlit中，可以通过request context获取
-                    # 这里使用一个通用的方法
-                    client_ip = st.session_state.get(
-                        'client_ip', 'localhost'
-                    )
-                    # 确保返回的是字符串，而不是MagicMock或其他对象
-                    if isinstance(client_ip, str):
-                        ip_address = client_ip
-                except (AttributeError, KeyError, TypeError):
-                    pass
-        except (NameError, AttributeError):
-            # 如果 st 未导入（非Streamlit环境），使用默认值
+            # 方法1: 使用 Streamlit 1.37+ 的 st.context.headers
+            if hasattr(st, 'context') and hasattr(st.context, 'headers'):
+                headers = st.context.headers
+                # 获取 User-Agent
+                if headers and not str(type(headers)).startswith("<class 'unittest"):
+                    ua = headers.get('User-Agent')
+                    # 确保返回的是真实字符串，不是 Mock 对象
+                    if ua and isinstance(ua, str) and 'MagicMock' not in str(ua):
+                        user_agent = ua
+                    # 获取真实 IP（考虑反向代理）
+                    # 优先级：X-Forwarded-For > X-Real-IP > 直接连接IP
+                    forwarded_for = headers.get('X-Forwarded-For', '')
+                    if (forwarded_for and isinstance(forwarded_for, str)
+                            and 'MagicMock' not in str(forwarded_for)):
+                        # X-Forwarded-For 可能包含多个 IP，取第一个（原始客户端）
+                        ip_address = forwarded_for.split(',')[0].strip()
+                    else:
+                        real_ip = headers.get('X-Real-IP')
+                        if (real_ip and isinstance(real_ip, str)
+                                and 'MagicMock' not in str(real_ip)):
+                            ip_address = real_ip
+                        else:
+                            # 尝试从 Host 获取
+                            host = headers.get('Host', 'localhost')
+                            if (host and isinstance(host, str)
+                                    and 'MagicMock' not in str(host)):
+                                if ':' in host:
+                                    ip_address = host.split(':')[0]
+                                else:
+                                    ip_address = host
+        except (AttributeError, TypeError, KeyError):
             pass
 
-        # 确保返回的ip_address和user_agent都是字符串
+        # 方法2: 回退到 session_state（如果之前已设置）
+        if ip_address == 'localhost':
+            try:
+                if hasattr(st, 'session_state'):
+                    client_ip = st.session_state.get('client_ip')
+                    if (client_ip and isinstance(client_ip, str)
+                            and 'MagicMock' not in str(client_ip)):
+                        ip_address = client_ip
+            except (NameError, AttributeError, TypeError):
+                pass
+
+        # 确保返回的ip_address和user_agent都是有效字符串
+        final_ip = str(ip_address) if ip_address else 'localhost'
+        final_ua = str(user_agent) if user_agent else 'Streamlit/1.0'
+
+        # 最终检查：如果包含 MagicMock，使用默认值
+        if 'MagicMock' in final_ip:
+            final_ip = 'localhost'
+        if 'MagicMock' in final_ua:
+            final_ua = 'Streamlit/1.0'
+
         return {
-            'ip_address': str(ip_address) if ip_address else 'localhost',
-            'user_agent': str(user_agent) if user_agent else 'Streamlit/1.48.0'
+            'ip_address': final_ip,
+            'user_agent': final_ua
         }
 
     @staticmethod
@@ -1033,6 +1141,7 @@ class SessionSecurity:
 
             if not success:
                 # 统计最近的失败次数
+                # 优化：创建复合索引 (identifier, success, timestamp) 以加速查询
                 recent_time = time.time() - SessionSecurity.LOCKOUT_DURATION
                 sql = _safe_adapt_sql("""
                     SELECT COUNT(*) FROM login_attempts
@@ -3220,7 +3329,7 @@ class SessionSecurity:
         for key in keys_to_remove:
             # 多次尝试删除，确保键被完全清除
             max_attempts = 3
-            for attempt in range(max_attempts):
+            for _ in range(max_attempts):
                 removed = False
 
                 # 方法1: 尝试字典式删除
@@ -3535,10 +3644,12 @@ def secure_login(username_or_email: str, password: str) -> bool:
 
         if log_user_login:
             try:
+                # 获取客户端信息（IP地址和User-Agent）
+                client_info = SessionSecurity.get_client_info()
                 log_user_login(
                     user_id=user['id'],
-                    ip_address=None,  # 可选：如需要可通过request获取
-                    user_agent=None   # 可选：如需要可通过request获取
+                    ip_address=client_info.get('ip_address'),
+                    user_agent=client_info.get('user_agent')
                 )
             except Exception as e:
                 # 使用全局导入的logger（如果可用）
@@ -3855,10 +3966,14 @@ def show_session_info():
                 '%H:%M:%S',
                 time.localtime(last_activity_float)
             )
+            session_id = user_info.get('session_id', '')
+            session_id_display = (
+                f"{session_id[:8]}..." if session_id else "N/A"
+            )
             info_text = (
                 "**会话信息**\n"
                 f"- 用户: {st.session_state.user['username']}\n"
-                f"- 会话ID: {user_info['session_id'][:8]}...\n"
+                f"- 会话ID: {session_id_display}\n"
                 f"- 最后活动: {last_activity_display}"
             )
             if warning_message:

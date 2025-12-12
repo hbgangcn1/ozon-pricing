@@ -201,7 +201,7 @@ def admin_login():
     """, unsafe_allow_html=True)
 
     with st.container():
-        col1, col2, col3 = st.columns([1, 2, 1])
+        _, col2, _ = st.columns([1, 2, 1])
         with col2:
             st.markdown("### 管理员登录")
 
@@ -367,7 +367,7 @@ def user_management_page():
             user_data.append(_build_user_overview(user))
 
         # 显示用户列表（每个用户一行，带操作按钮）
-        for i, user in enumerate(users_data['users']):
+        for user in users_data['users']:
             with st.container():
                 col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 1])
 
@@ -936,8 +936,8 @@ def statistics_dashboard_page():
         )
 
     with col3:
-        revenue_delta = (stats.get('revenue_today', 0)
-                         - stats.get('revenue_yesterday', 0))
+        revenue_delta = (stats.get('revenue_today', 0) -
+                         stats.get('revenue_yesterday', 0))
         st.metric(
             label="今日收入（元）",
             value=f"¥{stats.get('revenue_today', 0):.2f}",
@@ -1343,7 +1343,7 @@ def statistics_admin_logs_page():
     """, unsafe_allow_html=True)
 
     # 刷新和导出
-    col1, col2, col3 = st.columns([9, 1, 1])
+    _, col2, col3 = st.columns([9, 1, 1])
     with col2:
         if st.button("🔄 刷新", key="refresh_admin_logs"):
             st.rerun()
@@ -1379,7 +1379,7 @@ def statistics_admin_logs_page():
 
     # 分页控制
     if logs_data['total_pages'] > 1:
-        col1, col2, col3 = st.columns([1, 2, 1])
+        _, col2, _ = st.columns([1, 2, 1])
         with col2:
             page_numbers = list(range(1, logs_data['total_pages'] + 1))
             current_page = st.selectbox(
@@ -1403,7 +1403,7 @@ def statistics_alerts_page():
     """, unsafe_allow_html=True)
 
     # 筛选条件
-    col1, col2, col3 = st.columns([2, 2, 1])
+    col1, col2, _ = st.columns([2, 2, 1])
     with col1:
         status_filter = st.selectbox(
             "状态筛选",

@@ -53,6 +53,10 @@ CALLBACK_SERVER_LOCK = threading.Lock()
 _EXCHANGE_RATES_INITIALIZED = False
 _EXCHANGE_RATES_LOCK = threading.Lock()
 
+# 全局变量：确保日志监控只启动一次
+_LOG_MONITOR_STARTED = False
+_LOG_MONITOR_LOCK = threading.Lock()
+
 try:
     from .db_utils import (
         init_db,
@@ -9244,6 +9248,24 @@ def main():
     if not st.session_state.get('_exchange_init_attempted', False):
         init_exchange_rates()
         st.session_state['_exchange_init_attempted'] = True
+
+    # 启动日志监控和告警系统（只在第一次调用时启动，带全局保护）
+    global _LOG_MONITOR_STARTED
+    if not _LOG_MONITOR_STARTED:
+        with _LOG_MONITOR_LOCK:
+            if not _LOG_MONITOR_STARTED:
+                try:
+                    from log_monitor import get_log_monitor
+                    monitor = get_log_monitor()
+                    if not monitor.monitoring:
+                        monitor.start_monitoring()
+                        _LOG_MONITOR_STARTED = True
+                        logger.info("🚀 日志监控和告警系统已启动")
+                except Exception as log_monitor_exc:
+                    logger.warning(
+                        f"⚠️ 日志监控系统启动失败: {log_monitor_exc}"
+                    )
+                    _LOG_MONITOR_STARTED = True  # 标记为已尝试，避免重复尝试
 
     # 正常模式：检查会话安全性
     if not check_session_security():

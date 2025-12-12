@@ -21,30 +21,36 @@ try:
         get_cached_exchange_rate,
         init_cache_system
     )
-    CACHE_AVAILABLE = True
+    _cache_available = True
 except ImportError:
-    CACHE_AVAILABLE = False
+    _cache_available = False
     cache_exchange_rate = None
     get_cached_exchange_rate = None
     init_cache_system = None
 
-# 尝试导入aiohttp用于异步请求
+CACHE_AVAILABLE = _cache_available
+
+# 尝试导入aiohttp用于异步请求（当前未使用，保留用于未来扩展）
 try:
-    import aiohttp
-    import asyncio
-    AIOHTTP_AVAILABLE = True
+    import aiohttp  # pyright: ignore[reportUnusedImport]
+    import asyncio  # pyright: ignore[reportUnusedImport]
+    _aiohttp_available = True
 except ImportError:
-    AIOHTTP_AVAILABLE = False
+    _aiohttp_available = False
     aiohttp = None
     asyncio = None
+
+AIOHTTP_AVAILABLE = _aiohttp_available
 
 # 导入requests作为备用
 try:
     import requests
-    REQUESTS_AVAILABLE = True
+    _requests_available = True
 except ImportError:
-    REQUESTS_AVAILABLE = False
+    _requests_available = False
     requests = None
+
+REQUESTS_AVAILABLE = _requests_available
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -110,7 +116,7 @@ class ExchangeRateAPIProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            if not REQUESTS_AVAILABLE:
+            if not REQUESTS_AVAILABLE or requests is None:
                 return None
 
             response = requests.get(self.url, timeout=self.timeout)
@@ -145,7 +151,7 @@ class MOEXProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            if not REQUESTS_AVAILABLE:
+            if not REQUESTS_AVAILABLE or requests is None:
                 return None
 
             response = requests.get(self.url, timeout=self.timeout)
@@ -189,7 +195,7 @@ class FixerIOProvider(ExchangeRateProvider):
             return None
 
         try:
-            if not REQUESTS_AVAILABLE:
+            if not REQUESTS_AVAILABLE or requests is None:
                 return None
 
             response = requests.get(self.url, timeout=self.timeout)
@@ -232,7 +238,7 @@ class CurrencyLayerProvider(ExchangeRateProvider):
             return None
 
         try:
-            if not REQUESTS_AVAILABLE:
+            if not REQUESTS_AVAILABLE or requests is None:
                 return None
 
             response = requests.get(self.url, timeout=self.timeout)

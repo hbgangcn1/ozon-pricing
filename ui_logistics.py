@@ -3,7 +3,7 @@ import pandas as pd
 import sqlite3
 
 try:
-    import psycopg2
+    import psycopg2  # pyright: ignore[reportUnusedImport]
     from psycopg2 import errors as pg_errors
 except ImportError:
     psycopg2 = None
@@ -15,8 +15,8 @@ try:
         current_user_id,
         calculate_and_update_priority_groups,
         check_user_subscription_status,
-        _safe_adapt_sql,
-        _is_postgresql_connection,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
+        _is_postgresql_connection,  # pyright: ignore[reportPrivateUsage]
         is_admin,
     )
 except ImportError:
@@ -25,8 +25,8 @@ except ImportError:
         current_user_id,
         calculate_and_update_priority_groups,
         check_user_subscription_status,
-        _safe_adapt_sql,
-        _is_postgresql_connection,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
+        _is_postgresql_connection,  # pyright: ignore[reportPrivateUsage]
         is_admin,
     )
 try:
@@ -824,7 +824,7 @@ def logistics_page():
                                     st.write(logistics_info)
 
                                 # 在每条规则后面显示对应的编辑和删除按钮
-                                col_edit, col_del, col_space = st.columns(
+                                col_edit, col_del, _ = st.columns(
                                     [3, 3, 14])
                                 with col_edit:
                                     if st.button("编辑",
@@ -931,7 +931,7 @@ def logistics_page():
                             st.write(logistics_info)
 
                         # 在每条规则后面显示对应的编辑和删除按钮
-                        col_edit, col_del, col_space = st.columns([3, 3, 14])
+                        col_edit, col_del, _ = st.columns([3, 3, 14])
                         with col_edit:
                             if st.button("编辑", key=f"edit_air_{row['id']}"):
                                 # 到期拦截

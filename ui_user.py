@@ -21,8 +21,8 @@ try:
         update_user_subscription,
         hash_password,
         check_user_subscription_status,
-        _safe_adapt_sql,
-        _is_postgresql_connection,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
+        _is_postgresql_connection,  # pyright: ignore[reportPrivateUsage]
         is_admin,
         current_user_id,
     )
@@ -38,8 +38,8 @@ except ImportError:  # 当作为顶层脚本运行时
         update_user_subscription,
         hash_password,
         check_user_subscription_status,
-        _safe_adapt_sql,
-        _is_postgresql_connection,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
+        _is_postgresql_connection,  # pyright: ignore[reportPrivateUsage]
         is_admin,
         current_user_id,
     )
@@ -1106,7 +1106,7 @@ def login_or_register_page():
     )
 
     # 在同一行中显示ICP备案号和公安备案信息
-    col1, col2, col3 = st.columns([1, 2, 1])
+    _, col2, _ = st.columns([1, 2, 1])
     with col2:
         # 在同一列中创建水平布局，使用HTML实现真正的左右排列
         import os
@@ -1287,7 +1287,7 @@ def _show_register_form():
         )
 
         # 查看协议和注册按钮
-        col1, col2, col3 = st.columns([1, 1, 6])
+        col1, col2, _ = st.columns([1, 1, 6])
         with col1:
             submitted = st.form_submit_button(
                 "注册并登录",
@@ -1635,7 +1635,7 @@ def _show_terms_modal():
             '<div class="close-btn-container">',
             unsafe_allow_html=True
         )
-        col1, col2, col3 = st.columns([1, 1, 1])
+        _, col2, _ = st.columns([1, 1, 1])
         with col2:
             if st.button(
                 "✖ 关闭协议",

@@ -160,11 +160,11 @@ def pricing_calculator_page():
 
     st.success(f"当前汇率: 1 CNY = {current_rate:.2f} RUB")
 
-    with get_db_connection() as (conn, cursor):
+    with get_db_connection() as (conn, _):
         uid = current_user_id()
 
         # 获取用户的产品列表
-        products = pd.read_sql(
+        products: pd.DataFrame = pd.read_sql(  # type: ignore[assignment]
             "SELECT id, name, category FROM products WHERE user_id = ?",
             conn,
             params=(uid,),
@@ -194,7 +194,7 @@ def pricing_calculator_page():
             return
 
         # 获取选中产品的详细信息
-        product_df = pd.read_sql(
+        product_df: pd.DataFrame = pd.read_sql(  # type: ignore[assignment]
             "SELECT * FROM products WHERE name = ? AND user_id = ?",
             conn,
             params=(selected_product_name, uid),
@@ -298,10 +298,11 @@ def pricing_calculator_page():
         # 显示进度提示
         with st.spinner("正在计算定价，请稍候..."):
             # 为计算部分创建新的数据库连接
-            with get_db_connection() as (calc_conn, calc_cursor):
+            # calc_cursor 未使用，但保留以满足测试要求
+            with get_db_connection() as (calc_conn, calc_cursor):  # pyright: ignore[reportUnusedVariable]
                 # 获取物流数据
                 logistics_query = "SELECT * FROM logistics WHERE user_id = ?"
-                logistics_df = pd.read_sql(
+                logistics_df: pd.DataFrame = pd.read_sql(  # type: ignore[assignment]
                     logistics_query,
                     calc_conn,
                     params=(uid,),
@@ -1313,7 +1314,8 @@ def _display_calculation_results():
     st.session_state.calculation_completed = False
 
 
-def _close_conn_if_sqlite(candidate):
+def _close_conn_if_sqlite(candidate):  # pyright: ignore[reportUnusedFunction]
+    """关闭SQLite连接（如果适用）- 当前未使用，保留用于未来扩展"""
     try:
         if isinstance(candidate, sqlite3.Connection):
             candidate.close()

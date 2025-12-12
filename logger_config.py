@@ -12,10 +12,10 @@ from pathlib import Path
 # 尝试导入 loguru，如果失败则使用标准 logging
 try:
     from loguru import logger as _logger  # type: ignore
-    LOGURU_AVAILABLE = True
+    _loguru_available = True
 except ImportError:
     # loguru 不可用，使用标准 logging 作为回退
-    LOGURU_AVAILABLE = False
+    _loguru_available = False
     _logger = logging.getLogger("logistics")
     _logger.setLevel(logging.INFO)
     if not _logger.handlers:
@@ -29,6 +29,9 @@ except ImportError:
 
 # 导出 logger 供其他模块使用
 logger = _logger
+
+# 定义 LOGURU_AVAILABLE 常量
+LOGURU_AVAILABLE = _loguru_available
 
 
 class SensitiveFormatter:

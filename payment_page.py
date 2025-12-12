@@ -15,7 +15,7 @@ from db_utils import (
     current_user_id,
     get_plan_price,
     get_plan_by_code,
-    _safe_adapt_sql,
+    _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
 )
 from payment_auto_refresh import (
     show_enhanced_auto_check_indicator

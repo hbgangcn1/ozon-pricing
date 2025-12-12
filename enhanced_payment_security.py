@@ -16,26 +16,28 @@ from enum import Enum
 # 导入数据库相关模块
 try:
     from db_utils import get_db_connection
-    from db_adapter import (
-        get_db_connection as get_db_connection_adapter, adapt_sql)
-    DB_AVAILABLE = True
+    from db_adapter import adapt_sql
+    _db_available = True
 except ImportError:
-    DB_AVAILABLE = False
+    _db_available = False
     get_db_connection = None
-    get_db_connection_adapter = None
 
     def adapt_sql(sql: str) -> str:
         return sql
+
+DB_AVAILABLE = _db_available
 
 # 导入微信支付相关模块
 try:
     from wechat_pay_v3_api import wechat_pay_v3
     from wechat_pay_config import wechat_config
-    WECHAT_PAY_AVAILABLE = True
+    _wechat_pay_available = True
 except ImportError:
-    WECHAT_PAY_AVAILABLE = False
+    _wechat_pay_available = False
     wechat_pay_v3 = None
     wechat_config = None
+
+WECHAT_PAY_AVAILABLE = _wechat_pay_available
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -251,7 +253,7 @@ class PaymentSecurityManager:
                 logger.warning("数据库不可用，跳过金额验证")
                 return True
 
-            with get_db_connection() as (conn, c):
+            with get_db_connection() as (_, c):
                 # 查询订单金额
                 sql = adapt_sql("""
                     SELECT amount, status FROM payment_orders
@@ -264,7 +266,7 @@ class PaymentSecurityManager:
                     logger.error(f"订单不存在: {callback_data.order_id}")
                     return False
 
-                expected_amount, current_status = order_data
+                expected_amount, _ = order_data
 
                 # 验证金额
                 if callback_data.amount != expected_amount:
@@ -351,7 +353,7 @@ class PaymentSecurityManager:
                 if not order_exists:
                     return False, f"订单不存在: {callback_data.order_id}"
 
-                order_id, current_status = order_exists
+                _, current_status = order_exists
 
                 # 检查状态是否已更新
                 if current_status == callback_data.status.value:
@@ -504,7 +506,7 @@ class PaymentSecurityManager:
             Tuple[bool, str]: (是否成功, 错误信息)
         """
         try:
-            if not WECHAT_PAY_AVAILABLE:
+            if not WECHAT_PAY_AVAILABLE or wechat_pay_v3 is None:
                 return False, "微信支付模块不可用"
 
             # 查询订单状态
@@ -570,7 +572,7 @@ class PaymentSecurityManager:
             if not DB_AVAILABLE or get_db_connection is None:
                 return None
 
-            with get_db_connection() as (conn, c):
+            with get_db_connection() as (_, c):
                 sql = adapt_sql("""
                     SELECT order_id, amount, status, created_at, updated_at,
                            wechat_order_id, description

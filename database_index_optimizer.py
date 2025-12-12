@@ -33,7 +33,7 @@ class DatabaseIndexOptimizer:
         print("开始优化SQLite索引...")
         indexes = DatabaseIndexOptimizer._get_required_indexes_sqlite()
 
-        with get_db_connection() as (conn, cursor):
+        with get_db_connection() as (_, cursor):
             for index_name, sql in indexes.items():
                 try:
                     cursor.execute(sql)
@@ -54,7 +54,7 @@ class DatabaseIndexOptimizer:
         print("开始优化PostgreSQL索引...")
         indexes = DatabaseIndexOptimizer._get_required_indexes_postgresql()
 
-        with get_adapted_connection() as (conn, cursor):
+        with get_adapted_connection() as (_, cursor):
             for index_name, sql in indexes.items():
                 try:
                     cursor.execute(sql)

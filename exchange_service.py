@@ -7,9 +7,9 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Optional
 
-# 导入streamlit用于缓存
+# 导入streamlit用于缓存（当前未使用，保留用于未来扩展）
 try:
-    import streamlit as st
+    import streamlit as st  # pyright: ignore[reportUnusedImport]
 except ImportError:
     # 如果streamlit不可用，定义占位装饰器
     def cache_data(ttl=None):
@@ -29,10 +29,12 @@ except ImportError:
 # 异步HTTP客户端（可选依赖）
 try:
     import aiohttp
-    AIOHTTP_AVAILABLE = True
+    _aiohttp_available = True
 except ImportError:
-    AIOHTTP_AVAILABLE = False
+    _aiohttp_available = False
     aiohttp = None  # type: ignore
+
+AIOHTTP_AVAILABLE = _aiohttp_available
 
 
 try:
@@ -46,10 +48,12 @@ except ImportError:
 # 导入限流器
 try:
     from rate_limiter import get_limiter
-    RATE_LIMITER_AVAILABLE = True
+    _rate_limiter_available = True
 except ImportError:
-    RATE_LIMITER_AVAILABLE = False
+    _rate_limiter_available = False
     get_limiter = None  # type: ignore
+
+RATE_LIMITER_AVAILABLE = _rate_limiter_available
 # ===================================================
 
 
@@ -272,10 +276,22 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 logger.info(
                     f"同步汇率获取成功 - 来源: {source['name']}, 汇率: {rate}"
                 )
+                # 记录成功，重置告警计数
+                try:
+                    from exchange_rate_alert import record_exchange_success
+                    record_exchange_success()
+                except ImportError:
+                    pass
                 return rate
             except Exception as e:
                 logger.warning(f"{source['name']} 同步获取失败: {e}")
                 last_error = e
+                # 记录单个数据源失败
+                try:
+                    from exchange_rate_alert import record_exchange_failure
+                    record_exchange_failure(str(e), source['name'])
+                except ImportError:
+                    pass
                 continue
 
         # 所有数据源都失败

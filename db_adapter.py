@@ -16,9 +16,9 @@ try:
     import psycopg2.extras  # type: ignore
     from psycopg2 import pool  # type: ignore
     from psycopg2 import InterfaceError  # type: ignore
-    PSYCOPG2_AVAILABLE = True
+    _psycopg2_available = True
 except ImportError:
-    PSYCOPG2_AVAILABLE = False
+    _psycopg2_available = False
     if TYPE_CHECKING:
         # 仅用于类型检查
         from psycopg2 import pool, InterfaceError  # type: ignore
@@ -27,21 +27,23 @@ except ImportError:
         pool = None  # type: ignore
         InterfaceError = ConnectionError  # 回退到通用异常
 
+PSYCOPG2_AVAILABLE = _psycopg2_available
+
 # 全局连接池
 _connection_pool: Optional[Any] = None
 
 # 导入连接计数函数（在模块级别导入，避免循环导入）
 try:
     from db_utils import (
-        _increment_connection_counter,
-        _decrement_connection_counter
+        _increment_connection_counter,  # pyright: ignore[reportPrivateUsage]
+        _decrement_connection_counter  # pyright: ignore[reportPrivateUsage]
     )
 except ImportError:
     # 如果导入失败，尝试使用相对导入
     try:
         from .db_utils import (
-            _increment_connection_counter,
-            _decrement_connection_counter
+            _increment_connection_counter,  # pyright: ignore[reportPrivateUsage]
+            _decrement_connection_counter  # pyright: ignore[reportPrivateUsage]
         )
     except ImportError:
         # 如果都失败，定义占位函数（向后兼容）
@@ -55,13 +57,14 @@ except ImportError:
             return 0
 
 if pool is not None:
-    POOL_ERROR_TYPE = getattr(pool, 'PoolError', Exception)
+    _pool_error_type = getattr(pool, 'PoolError', Exception)
 else:
     class _DummyPoolError(Exception):
         """占位PoolError，确保异常捕获范围有限"""
         pass
+    _pool_error_type = _DummyPoolError
 
-    POOL_ERROR_TYPE = _DummyPoolError
+POOL_ERROR_TYPE = _pool_error_type
 
 
 def init_connection_pool():

@@ -20,7 +20,7 @@ try:
         get_db_connection,
         current_user_id,
         check_user_subscription_status,
-        _safe_adapt_sql,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
         is_admin,
     )
 except ImportError:
@@ -28,7 +28,7 @@ except ImportError:
         get_db_connection,
         current_user_id,
         check_user_subscription_status,
-        _safe_adapt_sql,
+        _safe_adapt_sql,  # pyright: ignore[reportPrivateUsage]
         is_admin,
     )
 
@@ -1469,7 +1469,8 @@ def batch_edit_pricing_form():
             st.rerun()
 
 
-def _close_conn_if_sqlite(candidate):
+def _close_conn_if_sqlite(candidate):  # pyright: ignore[reportUnusedFunction]
+    """关闭SQLite连接（如果适用）- 当前未使用，保留用于未来扩展"""
     try:
         if isinstance(candidate, sqlite3.Connection):
             candidate.close()
@@ -1517,7 +1518,7 @@ def save_product_to_db(
             # 检查产品名称是否重复
             if user_id is None:
                 user_id = current_user_id()
-            
+
             check_sql = _safe_adapt_sql(
                 """
                 SELECT id, name FROM products
@@ -1591,15 +1592,18 @@ def save_product_to_db(
 
             # 记录审计日志（如果是admin操作）
             try:
-                if is_admin():
+                if is_admin() and user_id is not None:
                     from db_utils import log_admin_action
 
+                    # 类型断言：在检查后确保 user_id 是 int
+                    assert isinstance(user_id, int), "user_id must be int"
+                    admin_user_id: int = user_id
                     product_id = c.lastrowid
                     log_admin_action(
-                        admin_id=user_id,
+                        admin_id=admin_user_id,
                         action_type='创建产品',
                         action_detail=f"创建产品: {name} (ID: {product_id})",
-                        target_user_id=user_id,
+                        target_user_id=admin_user_id,
                         target_type='product',
                     )
             except (ImportError, AttributeError, TypeError, ValueError):
@@ -1609,4 +1613,3 @@ def save_product_to_db(
     except (sqlite3.Error, ValueError, TypeError) as error:
         st.error(f"保存产品失败: {error}")
         return False  # 失败时返回False
-
