@@ -507,7 +507,7 @@ def handle_error(severity: Optional[ErrorSeverity] = None,
                 # 创建错误上下文
                 if context is None:
                     error_context = ErrorContext(
-                        module=func.__module__,
+                        module=getattr(func, '__module__', None),
                         function=func.__name__
                     )
                 else:
@@ -577,7 +577,7 @@ def safe_database_operation(operation_name: str = "数据库操作"):
                 return func(*args, **kwargs)
             except sqlite3.Error as e:
                 error_context = ErrorContext(
-                    module=func.__module__,
+                    module=getattr(func, '__module__', None),
                     function=func.__name__
                 )
                 error_info = ErrorInfo(
@@ -591,7 +591,7 @@ def safe_database_operation(operation_name: str = "数据库操作"):
                 return None
             except Exception as e:
                 error_context = ErrorContext(
-                    module=func.__module__,
+                    module=getattr(func, '__module__', None),
                     function=func.__name__
                 )
                 error_info = ErrorInfo(

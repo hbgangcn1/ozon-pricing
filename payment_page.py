@@ -556,7 +556,7 @@ def show_existing_payment(
             type="primary",
             width='stretch'
         ):
-            with st.spinner("正在检查支付状态..."):
+            with st.spinner("正在检查支付状态..."):  # type: ignore[assignment]
                 # 1) 优先查询数据库（可靠、低延迟）
                 order_key = f"payment_order_{plan_name}"
                 qr_key = f"payment_qr_{order_id}"
@@ -687,7 +687,7 @@ def create_new_payment(plan_name: str, payment_handler: PaymentHandler):
             st.rerun()
         return
 
-    with st.spinner("创建订单中..."):
+    with st.spinner("创建订单中..."):  # type: ignore[assignment]
         # 获取当前用户ID
         user_id = current_user_id()
         if not user_id:

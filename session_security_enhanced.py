@@ -211,7 +211,7 @@ class SessionSecurityEnhanced:
         lock = DistributedLock(lock_key, timeout=5, redis_available=True)
 
         try:
-            with lock.acquire():
+            with lock.acquire():  # type: ignore[misc]
                 # 在锁保护下执行检查和创建操作
                 # 1. 检查当前活跃会话数
                 with get_db_connection() as (conn, c):
@@ -275,7 +275,7 @@ class SessionSecurityEnhanced:
         lock = DistributedLock(lock_key, timeout=2, redis_available=True)
 
         try:
-            with lock.acquire():
+            with lock.acquire():  # type: ignore[misc]
                 with get_db_connection() as (conn, c):
                     from db_adapter import adapt_sql
                     current_time = time.time()

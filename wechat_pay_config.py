@@ -101,8 +101,12 @@ def get_wechat_pay_config() -> WeChatPayConfig:
 
     # 检查是否为本地测试模式
     if os.getenv("LOCAL_TEST_MODE", "false").lower() == "true":
-        from local_test_config import get_local_test_config
-        return get_local_test_config()
+        try:
+            from local_test_config import get_local_test_config  # type: ignore[import-untyped]
+            return get_local_test_config()
+        except ImportError:
+            # 如果本地测试配置模块不存在，记录警告并继续使用默认配置
+            logger.warning("本地测试配置模块未找到，将使用默认配置")
 
     # 默认配置
     config = WeChatPayConfig()

@@ -5,7 +5,7 @@ import threading
 import time
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Any
 
 # 导入streamlit用于缓存（当前未使用，保留用于未来扩展）
 try:
@@ -279,9 +279,11 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 # 记录成功，重置告警计数
                 try:
                     from exchange_rate_alert import record_exchange_success
-                    record_exchange_success()
                 except ImportError:
-                    pass
+                    def record_exchange_success() -> None:
+                        """占位函数：记录汇率获取成功"""
+                        pass
+                record_exchange_success()
                 return rate
             except Exception as e:
                 logger.warning(f"{source['name']} 同步获取失败: {e}")
@@ -289,9 +291,11 @@ class MultiSourceRubProvider(ExchangeRateProvider):
                 # 记录单个数据源失败
                 try:
                     from exchange_rate_alert import record_exchange_failure
-                    record_exchange_failure(str(e), source['name'])
                 except ImportError:
-                    pass
+                    def record_exchange_failure(*_args: Any, **_kwargs: Any) -> None:
+                        """占位函数：记录汇率获取失败"""
+                        pass
+                record_exchange_failure(str(e), source['name'])
                 continue
 
         # 所有数据源都失败

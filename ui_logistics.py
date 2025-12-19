@@ -171,7 +171,7 @@ def logistics_page():
 
     uid = current_user_id()
     with get_db_connection() as (conn, c):
-        with st.spinner("正在加载物流数据..."):
+        with st.spinner("正在加载物流数据..."):  # type: ignore[assignment]
             # 缓存订阅状态，避免在每个按钮中重复查询
             subscription_status = check_user_subscription_status(uid)
 

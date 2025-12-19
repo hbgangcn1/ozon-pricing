@@ -94,7 +94,7 @@ def monitor_payment_status(
         return
 
     # 如果数据库中没有成功记录，查询微信支付API
-    with st.spinner("正在查询支付状态..."):
+    with st.spinner("正在查询支付状态..."):  # type: ignore[assignment]
         try:
             result = payment_handler.query_payment_status(order_id)
             if result["success"]:

@@ -14,9 +14,9 @@ def _get_db_exceptions():
     """获取数据库异常元组"""
     try:
         import psycopg2
-        return (sqlite3.Error, psycopg2.Error, OSError, ValueError)
+        return sqlite3.Error, psycopg2.Error, OSError, ValueError
     except ImportError:
-        return (sqlite3.Error, OSError, ValueError)
+        return sqlite3.Error, OSError, ValueError
 
 
 try:

@@ -296,7 +296,7 @@ def pricing_calculator_page():
             return
 
         # 显示进度提示
-        with st.spinner("正在计算定价，请稍候..."):
+        with st.spinner("正在计算定价，请稍候..."):  # type: ignore[assignment]
             # 为计算部分创建新的数据库连接
             # calc_cursor 未使用，但保留以满足测试要求
             with get_db_connection() as (calc_conn, calc_cursor):  # pyright: ignore[reportUnusedVariable]

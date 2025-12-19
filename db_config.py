@@ -5,7 +5,7 @@
 """
 
 import os
-from typing import Literal, cast
+from typing import Literal
 
 # 加载.env文件（必须在读取环境变量之前）
 try:
@@ -28,10 +28,7 @@ if _db_type_raw not in ('sqlite', 'postgresql'):
         f"必须是 'sqlite' 或 'postgresql'"
     )
 
-DB_TYPE: Literal['sqlite', 'postgresql'] = cast(
-    Literal['sqlite', 'postgresql'],
-    _db_type_raw
-)
+DB_TYPE: Literal['sqlite', 'postgresql'] = _db_type_raw
 
 # SQLite配置
 SQLITE_DB_PATH = os.getenv('SQLITE_DB_PATH', 'logistics.db')

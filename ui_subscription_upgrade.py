@@ -457,7 +457,7 @@ def show_single_upgrade_option(
 
 def handle_free_upgrade(user_id: int, option: dict):
     """处理免费升级（剩余价值已足够抵扣）"""
-    with st.spinner("正在处理升级..."):
+    with st.spinner("正在处理升级..."):  # type: ignore[assignment]
         result = SubscriptionUpgrade.execute_upgrade(
             user_id=user_id,
             target_plan=option['plan_key'],
@@ -507,7 +507,7 @@ def handle_paid_upgrade(user_id: int, option: dict):
             f"（折抵¥{option['remaining_value']:.2f}）"
         )
 
-    with st.spinner("正在创建支付订单..."):
+    with st.spinner("正在创建支付订单..."):  # type: ignore[assignment]
         result = PaymentHandler.create_payment_order(
             user_id=user_id,
             amount=amount_cents,
@@ -729,7 +729,7 @@ def monitor_upgrade_payment_status(order_id: str):
         return
 
     # 如果数据库中没有成功记录，查询微信支付API
-    with st.spinner("正在查询支付状态..."):
+    with st.spinner("正在查询支付状态..."):  # type: ignore[assignment]
         try:
             payment_handler = PaymentHandler()
             result = payment_handler.query_payment_status(order_id)

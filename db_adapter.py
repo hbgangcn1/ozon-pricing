@@ -7,7 +7,7 @@
 import re
 import sqlite3
 from contextlib import contextmanager
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, cast
 from db_config import DB_TYPE, SQLITE_DB_PATH, POSTGRES_CONFIG
 
 # 尝试导入psycopg2（PostgreSQL驱动）
@@ -107,7 +107,9 @@ def close_connection_pool():
     global _connection_pool
 
     if _connection_pool is not None:
-        _connection_pool.closeall()
+        # 类型检查：在 None 检查后，_connection_pool 不为 None
+        connection_pool = cast(Any, _connection_pool)
+        connection_pool.closeall()
         _connection_pool = None
 
 

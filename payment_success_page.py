@@ -124,7 +124,7 @@ def show_payment_processing_page(
     st.session_state.payment_check_count += 1
 
     # 模拟支付状态检查
-    with st.spinner("正在检查支付状态..."):
+    with st.spinner("正在检查支付状态..."):  # type: ignore[assignment]
         time.sleep(2)  # 模拟检查延迟
 
         # 这里应该调用实际的支付状态检查API
