@@ -382,8 +382,7 @@ def show_single_upgrade_option(
                 ],
                 'enterprise': [
                     '专业版所有功能',
-                    '多人协作子账号',
-                    'API接入',
+                    'API级活动监控',
                     '专属客服'
                 ],
                 'gratitude': ['专业版所有功能']

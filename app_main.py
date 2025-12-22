@@ -7171,7 +7171,7 @@ def subscription_management_page():
             'price': '¥999/月',
             'calculations': '无限次',
             'logistics_templates': -1,
-            'features': ['专业版所有功能', '多人协作子账号', 'API接入', '专属客服'],
+            'features': ['专业版所有功能', 'API级活动监控', '专属客服'],
             'development_status': '开发中……',
             'limitations': [],
             'color': '#9C27B0',
