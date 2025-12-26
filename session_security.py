@@ -1026,14 +1026,18 @@ class SessionSecurity:
                 username = username_result[0]
 
                 # 查询用户最近3次成功登录的IP地址
+                # 使用子查询先排序，再获取不同的IP地址
                 sql = _safe_adapt_sql("""
                     SELECT DISTINCT ip_address
-                    FROM login_attempts
-                    WHERE identifier = ?
-                    AND success = TRUE
-                    AND timestamp > ?
-                    ORDER BY timestamp DESC
-                    LIMIT 3
+                    FROM (
+                        SELECT ip_address
+                        FROM login_attempts
+                        WHERE identifier = ?
+                        AND success = TRUE
+                        AND timestamp > ?
+                        ORDER BY timestamp DESC
+                        LIMIT 3
+                    ) AS recent_logins
                 """, conn)
                 c.execute(sql, (username, time.time() - 86400 * 7))
                 recent_logins = c.fetchall()
