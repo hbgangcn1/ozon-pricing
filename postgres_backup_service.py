@@ -42,7 +42,7 @@ if os.name == 'nt':  # Windows
         if os.path.exists(pg_bin) and pg_bin not in current_path:
             os.environ["PATH"] = current_path + os.pathsep + pg_bin
             logger.info(
-                "✅ 已自动添加 PostgreSQL bin 到 PATH: %s", pg_bin
+                "✅ 已自动添加 PostgreSQL bin 到 PATH: {}", pg_bin
             )
             break
 
@@ -144,7 +144,7 @@ class PostgresBackupSystem:
         except Exception as e:  # noqa: B902
             # 数据库特定错误（OperationalError, DatabaseError 等）
             # 使用宽泛异常是因为 psycopg2 可能未导入，无法直接引用其异常类
-            logger.debug("数据库连接检查失败: %s", e)
+            logger.debug("数据库连接检查失败: {}", e)
 
         return status
 
@@ -182,7 +182,7 @@ class PostgresBackupSystem:
 
         cmd.append(POSTGRES_CONFIG.get("database", "postgres"))
 
-        logger.debug("执行 pg_dump: %s", " ".join(cmd))
+        logger.debug("执行 pg_dump: {}", " ".join(cmd))
         subprocess.run(
             cmd,
             check=True,
@@ -215,7 +215,7 @@ class PostgresBackupSystem:
         if options:
             cmd.extend(["-o", options])
 
-        logger.debug("执行 pg_restore: %s", " ".join(cmd))
+        logger.debug("执行 pg_restore: {}", " ".join(cmd))
         result = subprocess.run(
             cmd,
             check=True,
@@ -504,11 +504,14 @@ class PostgresBackupSystem:
         try:
             self._run_pg_dump(backup_path)
             if not self.verify_backup(backup_path):
-                logger.error("❌ 备份验证失败: %s", os.path.basename(backup_path))
+                logger.error(
+                    "❌ 备份验证失败: {}",
+                    os.path.basename(backup_path)
+                )
                 os.remove(backup_path)
                 return False
             self.cleanup_old_backups()
-            logger.info("✅ 备份完成: %s", os.path.basename(backup_path))
+            logger.info("✅ 备份完成: {}", os.path.basename(backup_path))
             return True
         except subprocess.CalledProcessError as dump_exc:
             error_msg = (
@@ -517,30 +520,30 @@ class PostgresBackupSystem:
                 else str(dump_exc.stderr or "")
             )
             logger.error(
-                "❌ pg_dump 执行失败 (返回码: %d): %s",
+                "❌ pg_dump 执行失败 (返回码: {}): {}",
                 dump_exc.returncode,
                 error_msg or "无错误信息"
             )
         except FileNotFoundError as fnf_exc:
             logger.error(
-                "❌ 找不到 pg_dump 命令: %s. "
+                "❌ 找不到 pg_dump 命令: {}. "
                 "请确保 PostgreSQL 已安装并在 PATH 中",
                 fnf_exc
             )
         except PermissionError as perm_exc:
             logger.error(
-                "❌ 备份文件写入权限错误: %s. "
+                "❌ 备份文件写入权限错误: {}. "
                 "请检查备份目录权限",
                 perm_exc
             )
         except Exception as backup_exc:  # noqa: B902
-            logger.exception("❌ 备份失败: %s", backup_exc)
+            logger.exception("❌ 备份失败: {}", backup_exc)
 
         try:
             if os.path.exists(backup_path):
                 os.remove(backup_path)
         except OSError:
-            logger.warning("无法删除失败的备份文件: %s", backup_path)
+            logger.warning("无法删除失败的备份文件: {}", backup_path)
         return False
 
     def create_backup(self) -> bool:
@@ -564,7 +567,7 @@ class PostgresBackupSystem:
             return True
         except subprocess.CalledProcessError as verify_exc:
             logger.error(
-                "备份验证失败 (%s): %s",
+                "备份验证失败 ({}): {}",
                 os.path.basename(backup_path),
                 verify_exc.stderr.decode("utf-8", "ignore"),
             )
@@ -580,11 +583,13 @@ class PostgresBackupSystem:
             for item in regular_backups[self.max_backups:]:
                 try:
                     os.remove(item["path"])
-                    logger.info("🗑️ 删除旧备份: %s", item["name"])
+                    logger.info("🗑️ 删除旧备份: {}", item["name"])
                 except OSError as del_exc:
-                    logger.warning("删除旧备份失败 %s: %s", item["name"], del_exc)
+                    logger.warning(
+                        "删除旧备份失败 {}: {}", item["name"], del_exc
+                    )
         except Exception as cleanup_exc:  # noqa: B902
-            logger.exception("清理旧备份失败: %s", cleanup_exc)
+            logger.exception("清理旧备份失败: {}", cleanup_exc)
 
     def get_backup_stats(self) -> Dict[str, object]:
         records = self._filter_backup_files()
@@ -609,14 +614,16 @@ class PostgresBackupSystem:
     def delete_backup(self, backup_filename: str) -> bool:
         backup_path = self.get_backup_file_path(backup_filename)
         if not os.path.exists(backup_path):
-            logger.warning("尝试删除不存在的备份文件: %s", backup_filename)
+            logger.warning("尝试删除不存在的备份文件: {}", backup_filename)
             return False
         try:
             os.remove(backup_path)
-            logger.info("🗑️ 已删除备份文件: %s", backup_filename)
+            logger.info("🗑️ 已删除备份文件: {}", backup_filename)
             return True
         except OSError as remove_exc:
-            logger.error("删除备份文件失败 %s: %s", backup_filename, remove_exc)
+            logger.error(
+                "删除备份文件失败 {}: {}", backup_filename, remove_exc
+            )
             return False
 
     def restore_from_backup(
@@ -627,11 +634,11 @@ class PostgresBackupSystem:
     ) -> bool:
         backup_path = self.get_backup_file_path(backup_filename)
         if not os.path.exists(backup_path):
-            logger.error("备份文件不存在: %s", backup_filename)
+            logger.error("备份文件不存在: {}", backup_filename)
             return False
 
         if not self.verify_backup(backup_path):
-            logger.error("备份文件验证失败: %s", backup_filename)
+            logger.error("备份文件验证失败: {}", backup_filename)
             return False
 
         if create_snapshot:
@@ -642,7 +649,7 @@ class PostgresBackupSystem:
         try:
             self._terminate_active_connections()
         except Exception as conn_exc:  # noqa: B902
-            logger.warning("终止连接时出现异常: %s", conn_exc)
+            logger.warning("终止连接时出现异常: {}", conn_exc)
 
         # 在恢复前等待一小段时间，确保连接真正关闭
         time.sleep(1)
@@ -674,7 +681,7 @@ class PostgresBackupSystem:
                     f"尝试恢复数据库 (第 {attempt}/{max_retries} 次)..."
                 )
                 self._run_pg_restore(backup_path)
-                logger.info("✅ 数据库恢复成功: %s", backup_filename)
+                logger.info("✅ 数据库恢复成功: {}", backup_filename)
 
                 # 恢复成功后，关闭并重新初始化连接池
                 logger.info("正在重新初始化连接池...")
@@ -823,7 +830,9 @@ class PostgresBackupSystem:
                     self.backup_interval_hours
                 ).hours.do(self.create_backup).tag("postgres_backup")
             except Exception as sched_exc:  # noqa: B902
-                logger.warning("绑定 schedule 失败，回退到简易调度: %s", sched_exc)
+                logger.warning(
+                    "绑定 schedule 失败，回退到简易调度: {}", sched_exc
+                )
                 run_without_schedule()
                 return
 
@@ -831,7 +840,7 @@ class PostgresBackupSystem:
                 try:
                     schedule_module.run_pending()  # type: ignore[attr-defined]
                 except Exception as run_exc:  # noqa: B902
-                    logger.exception("自动备份调度异常: %s", run_exc)
+                    logger.exception("自动备份调度异常: {}", run_exc)
                 time.sleep(60)
 
         def run_without_schedule() -> None:
@@ -843,7 +852,7 @@ class PostgresBackupSystem:
                     try:
                         self.create_backup()
                     except Exception as backup_exc:  # noqa: B902
-                        logger.exception("自动备份执行失败: %s", backup_exc)
+                        logger.exception("自动备份执行失败: {}", backup_exc)
                     next_run = now + interval
                 time.sleep(60)
 
