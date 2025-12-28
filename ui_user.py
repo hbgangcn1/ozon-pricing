@@ -1264,18 +1264,20 @@ def _show_register_form():
             )
 
         with col2:
+            # 获取当前已选择的问题2（从session_state中读取，确保在表单重新渲染时保持）
+            current_q2 = st.session_state.get('register_security_q2', '')
             # 过滤掉已选择的问题1
             available_q2 = [
                 q for q in security_questions if q != security_q1
             ]
-            # 获取当前已选择的问题2（如果session_state中有保存）
-            current_q2 = st.session_state.get('register_security_q2', '')
-            # 如果当前选择的问题2有效且不在列表中，添加到列表开头
-            # 这样可以保持用户的选择，即使security_q1改变了
+            # 如果当前选择的问题2有效且不等于问题1，确保它在列表中
+            # 这样可以保持用户的选择，即使表单重新渲染
             if current_q2 and current_q2 != security_q1 and \
-               current_q2 in security_questions and \
-               current_q2 not in available_q2:
-                available_q2.insert(0, current_q2)
+               current_q2 in security_questions:
+                # 如果当前选择不在列表中，添加到列表开头
+                # 这样即使security_q1改变了，之前选择的security_q2也会保留
+                if current_q2 not in available_q2:
+                    available_q2.insert(0, current_q2)
             security_q2 = st.selectbox(
                 "安全问题2",
                 options=[""] + available_q2,
@@ -1342,8 +1344,10 @@ def _show_register_form():
                     validate_security_answers
                 )
 
+            # 确保security_q2是字符串类型（selectbox不会返回None，但类型检查器可能误报）
+            security_q2_str = str(security_q2) if security_q2 else ""
             is_valid_q, error_msg_q = validate_security_questions(
-                security_q1, security_q2
+                security_q1, security_q2_str
             )
             if not is_valid_q:
                 st.error(f"❌ {error_msg_q}")
