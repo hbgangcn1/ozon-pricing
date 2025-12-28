@@ -1252,11 +1252,19 @@ def _show_register_form():
 
         col1, col2 = st.columns(2)
         with col1:
+            # 从session_state读取之前选择的问题1（必须在selectbox之前读取）
+            saved_q1 = st.session_state.get('register_security_q1', '')
+            # 计算初始索引：如果保存的值在选项中，找到它的索引
+            q1_index = None
+            if saved_q1 and saved_q1 in security_questions:
+                q1_index = security_questions.index(saved_q1)
             security_q1 = st.selectbox(
                 "安全问题1",
-                options=[""] + security_questions,
+                options=security_questions,
                 help="请选择一个安全问题",
-                key="register_security_q1"
+                key="register_security_q1",
+                index=q1_index,
+                placeholder="请选择一个问题"
             )
             security_a1 = st.text_input(
                 "答案1",
@@ -1264,25 +1272,31 @@ def _show_register_form():
             )
 
         with col2:
-            # 获取当前已选择的问题2（从session_state中读取，确保在表单重新渲染时保持）
-            current_q2 = st.session_state.get('register_security_q2', '')
+            # 获取当前选择的问题1
+            current_q1 = security_q1 if security_q1 else ""
             # 过滤掉已选择的问题1
             available_q2 = [
-                q for q in security_questions if q != security_q1
+                q for q in security_questions if q != current_q1
             ]
-            # 如果当前选择的问题2有效且不等于问题1，确保它在列表中
-            # 这样可以保持用户的选择，即使表单重新渲染
-            if current_q2 and current_q2 != security_q1 and \
-               current_q2 in security_questions:
-                # 如果当前选择不在列表中，添加到列表开头
-                # 这样即使security_q1改变了，之前选择的security_q2也会保留
-                if current_q2 not in available_q2:
-                    available_q2.insert(0, current_q2)
+            # 从session_state读取之前选择的问题2（必须在selectbox之前读取）
+            saved_q2 = st.session_state.get('register_security_q2', '')
+            # 如果保存的问题2有效且不等于当前的问题1，确保它在列表中
+            # 这样即使security_q1改变了，之前选择的security_q2也会保留
+            if saved_q2 and saved_q2 != current_q1 and \
+               saved_q2 in security_questions and \
+               saved_q2 not in available_q2:
+                available_q2.insert(0, saved_q2)
+            # 计算初始索引：如果保存的值在选项中，找到它的索引
+            q2_index = None
+            if saved_q2 and saved_q2 in available_q2:
+                q2_index = available_q2.index(saved_q2)
             security_q2 = st.selectbox(
                 "安全问题2",
-                options=[""] + available_q2,
+                options=available_q2,
                 help="请选择另一个安全问题（不能与问题1相同）",
-                key="register_security_q2"
+                key="register_security_q2",
+                index=q2_index,
+                placeholder="请选择一个问题"
             )
             security_a2 = st.text_input(
                 "答案2",
@@ -1345,9 +1359,10 @@ def _show_register_form():
                 )
 
             # 确保security_q2是字符串类型（selectbox不会返回None，但类型检查器可能误报）
+            security_q1_str = str(security_q1) if security_q1 else ""
             security_q2_str = str(security_q2) if security_q2 else ""
             is_valid_q, error_msg_q = validate_security_questions(
-                security_q1, security_q2_str
+                security_q1_str, security_q2_str
             )
             if not is_valid_q:
                 st.error(f"❌ {error_msg_q}")
