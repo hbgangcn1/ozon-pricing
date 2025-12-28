@@ -6,6 +6,7 @@
 import schedule
 import time
 import threading
+from datetime import datetime
 from logger_config import logger
 
 # 全局变量：确保调度器只启动一次
@@ -116,9 +117,22 @@ def run_scheduler():
     # 每5分钟执行一次：回收空闲数据库连接
     schedule.every(5).minutes.do(job_recycle_idle_connections)
 
-    # 启动时立即执行一次
-    logger.info("执行初始计算次数重置...")
-    job_reset_free_calculations()
+    # 启动时检查是否需要执行重置
+    # 如果当前时间已经过了今天的0点，说明今天的重置应该已经执行过了
+    # 或者定时任务会在下次0点执行，所以不需要在启动时重置
+    current_time = datetime.now()
+    today_midnight = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if current_time > today_midnight:
+        # 已经过了今天的0点，不需要重置（定时任务会在0点执行）
+        logger.info(
+            f"当前时间 {current_time.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"已过今日0点，跳过启动时重置（定时任务会在0点执行）"
+        )
+    else:
+        # 如果当前时间还没到今天的0点（理论上不应该发生），执行重置
+        logger.info("执行初始计算次数重置...")
+        job_reset_free_calculations()
 
     # 启动增强监控系统（启动时执行一次）
     logger.info("启动增强监控系统...")
