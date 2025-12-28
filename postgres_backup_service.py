@@ -868,7 +868,7 @@ class PostgresBackupSystem:
         )
         self.backup_thread.start()
         logger.info(
-            "🚀 PostgreSQL 自动备份已启动，每 %s 小时执行一次",
+            "🚀 PostgreSQL 自动备份已启动，每 {} 小时执行一次",
             self.backup_interval_hours
         )
 
