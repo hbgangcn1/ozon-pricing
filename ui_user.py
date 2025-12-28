@@ -1367,7 +1367,8 @@ def _show_register_form():
                         "SELECT id FROM users WHERE username = ?",
                         conn
                     )
-                    existing_user = c.execute(sql, (username,)).fetchone()
+                    c.execute(sql, (username,))
+                    existing_user = c.fetchone()
                     if existing_user:
                         st.error("❌ 用户名已存在")
                         return
