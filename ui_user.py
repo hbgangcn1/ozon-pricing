@@ -1260,7 +1260,6 @@ def _show_register_form():
             )
             security_a1 = st.text_input(
                 "答案1",
-                type="password",
                 help="请输入答案（不区分大小写）"
             )
 
@@ -1285,7 +1284,6 @@ def _show_register_form():
             )
             security_a2 = st.text_input(
                 "答案2",
-                type="password",
                 help="请输入答案（不区分大小写）"
             )
 
