@@ -1255,7 +1255,8 @@ def _show_register_form():
             security_q1 = st.selectbox(
                 "安全问题1",
                 options=[""] + security_questions,
-                help="请选择一个安全问题"
+                help="请选择一个安全问题",
+                key="register_security_q1"
             )
             security_a1 = st.text_input(
                 "答案1",
@@ -1268,10 +1269,19 @@ def _show_register_form():
             available_q2 = [
                 q for q in security_questions if q != security_q1
             ]
+            # 获取当前已选择的问题2（如果session_state中有保存）
+            current_q2 = st.session_state.get('register_security_q2', '')
+            # 如果当前选择的问题2有效且不在列表中，添加到列表开头
+            # 这样可以保持用户的选择，即使security_q1改变了
+            if current_q2 and current_q2 != security_q1 and \
+               current_q2 in security_questions and \
+               current_q2 not in available_q2:
+                available_q2.insert(0, current_q2)
             security_q2 = st.selectbox(
                 "安全问题2",
                 options=[""] + available_q2,
-                help="请选择另一个安全问题（不能与问题1相同）"
+                help="请选择另一个安全问题（不能与问题1相同）",
+                key="register_security_q2"
             )
             security_a2 = st.text_input(
                 "答案2",
