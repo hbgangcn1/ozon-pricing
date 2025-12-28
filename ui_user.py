@@ -1363,10 +1363,11 @@ def _show_register_form():
             with get_db_connection() as (conn, c):
                 try:
                     # 检查用户名是否已存在
-                    existing_user = c.execute(
+                    sql = _safe_adapt_sql(
                         "SELECT id FROM users WHERE username = ?",
-                        (username,)
-                    ).fetchone()
+                        conn
+                    )
+                    existing_user = c.execute(sql, (username,)).fetchone()
                     if existing_user:
                         st.error("❌ 用户名已存在")
                         return
@@ -1384,11 +1385,15 @@ def _show_register_form():
                     ).decode('utf-8')
 
                     # 创建新用户（包含安全问题）
-                    c.execute(
+                    sql = _safe_adapt_sql(
                         "INSERT INTO users (username, password, "
                         "role, user_type, remaining_calculations, "
                         "security_q1, security_a1, security_q2, security_a2) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        conn
+                    )
+                    c.execute(
+                        sql,
                         (
                             username, hashed_pwd, 'user', 'free', 10,
                             security_q1, hashed_a1, security_q2, hashed_a2
