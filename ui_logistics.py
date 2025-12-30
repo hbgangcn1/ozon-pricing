@@ -921,9 +921,10 @@ def logistics_page():
                             [1, 20], vertical_alignment="bottom"
                         )
                         with col_check:
+                            checkbox_key = f"check_air_{row['id']}"
                             if st.checkbox(
                                 "选择",
-                                key=f"check_air_{row['id']}",
+                                key=checkbox_key,
                                 label_visibility="collapsed"
                             ):
                                 selected_air_ids.append(row['id'])
@@ -954,7 +955,7 @@ def logistics_page():
                         # 添加分隔线
                         st.divider()
 
-                    # 批量删除按钮
+                    # 批量删除按钮（必须在for循环之后，但在air_container内部）
                     if selected_air_ids:
                         st.info(f"已选择 {len(selected_air_ids)} 个空运物流规则")
                         if st.button("批量删除", key="batch_delete_air"):
