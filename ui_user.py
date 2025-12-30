@@ -457,15 +457,26 @@ def user_management_page():
                     admin_count = 0
                     st.warning("找不到admin用户")
                 else:
-                    admin_id = admin_user[0]
-                    # 查询admin用户的物流规则数量
-                    sql = _safe_adapt_sql(
-                        "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
-                        conn
-                    )
-                    c.execute(sql, (admin_id,))
-                    result = c.fetchone()
-                    admin_count = result[0] if result else 0
+                    # 确保admin_id是int类型（兼容PostgreSQL的类型）
+                    try:
+                        admin_id = int(admin_user[0])
+                    except (TypeError, ValueError, IndexError):
+                        admin_count = 0
+                        st.warning("获取admin用户ID失败")
+                    else:
+                        # 查询admin用户的物流规则数量
+                        sql = _safe_adapt_sql(
+                            "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                            conn
+                        )
+                        c.execute(sql, (admin_id,))
+                        result = c.fetchone()
+                        # 确保返回值是int类型（兼容PostgreSQL的Decimal）
+                        count_raw = result[0] if result else 0
+                        try:
+                            admin_count = int(count_raw)
+                        except (TypeError, ValueError):
+                            admin_count = 0
 
                 st.info(f"Admin物流规则数量: {admin_count}")
                 if admin_count > 0:
