@@ -628,20 +628,51 @@ def user_management_page():
 
             # 单用户同步
             with st.expander("物流规则同步"):
-                query = (
-                    "SELECT COUNT(*) FROM logistics WHERE user_id = "
-                    "(SELECT id FROM users WHERE role='admin' LIMIT 1)"
+                # 获取admin用户ID（与批量同步使用相同的逻辑）
+                sql = _safe_adapt_sql(
+                    "SELECT id FROM users WHERE role='admin' LIMIT 1",
+                    conn
                 )
-                c.execute(query)
-                result = c.fetchone()
-                admin_cnt = result[0] if result else 0
+                c.execute(sql)
+                admin_user = c.fetchone()
+
+                if not admin_user:
+                    admin_cnt = 0
+                else:
+                    # 确保admin_id是int类型（兼容PostgreSQL的类型）
+                    try:
+                        admin_id = int(admin_user[0])
+                    except (TypeError, ValueError, IndexError):
+                        admin_cnt = 0
+                    else:
+                        # 查询admin用户的物流规则数量
+                        sql = _safe_adapt_sql(
+                            "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                            conn
+                        )
+                        c.execute(sql, (admin_id,))
+                        result = c.fetchone()
+                        # 确保返回值是int类型（兼容PostgreSQL的Decimal）
+                        count_raw = result[0] if result else 0
+                        try:
+                            admin_cnt = int(count_raw)
+                        except (TypeError, ValueError):
+                            admin_cnt = 0
+
+                # 查询当前用户的物流规则数量
                 sql = _safe_adapt_sql(
                     "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
                     conn
                 )
                 c.execute(sql, (uid,))
                 result = c.fetchone()
-                user_cnt = result[0] if result else 0
+                # 确保返回值是int类型（兼容PostgreSQL的Decimal）
+                count_raw = result[0] if result else 0
+                try:
+                    user_cnt = int(count_raw)
+                except (TypeError, ValueError):
+                    user_cnt = 0
+
                 st.info(f"Admin物流规则数量: {admin_cnt}")
                 st.info(f"{uname}当前物流规则数量: {user_cnt}")
                 sync_mode = st.radio(
