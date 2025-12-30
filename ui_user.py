@@ -445,13 +445,27 @@ def user_management_page():
             if non_admin_users.empty:
                 st.info("没有可同步的用户账号")
             else:
-                query = (
-                    "SELECT COUNT(*) FROM logistics WHERE user_id = "
-                    "(SELECT id FROM users WHERE role='admin' LIMIT 1)"
+                # 获取admin用户ID
+                sql = _safe_adapt_sql(
+                    "SELECT id FROM users WHERE role='admin' LIMIT 1",
+                    conn
                 )
-                c.execute(query)
-                result = c.fetchone()
-                admin_count = result[0] if result else 0
+                c.execute(sql)
+                admin_user = c.fetchone()
+
+                if admin_user:
+                    admin_id = admin_user[0]
+                    # 查询admin用户的物流规则数量
+                    sql = _safe_adapt_sql(
+                        "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                        conn
+                    )
+                    c.execute(sql, (admin_id,))
+                    result = c.fetchone()
+                    admin_count = result[0] if result else 0
+                else:
+                    admin_count = 0
+
                 st.info(f"Admin物流规则数量: {admin_count}")
                 if admin_count > 0:
 
