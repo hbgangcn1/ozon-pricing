@@ -445,38 +445,57 @@ def user_management_page():
             if non_admin_users.empty:
                 st.info("没有可同步的用户账号")
             else:
-                # 获取admin用户ID（与sync_logistics_rules函数使用相同的逻辑）
-                sql = _safe_adapt_sql(
-                    "SELECT id FROM users WHERE role='admin' LIMIT 1",
-                    conn
-                )
-                c.execute(sql)
-                admin_user = c.fetchone()
-
-                if not admin_user:
-                    admin_count = 0
-                    st.warning("找不到admin用户")
-                else:
-                    # 确保admin_id是int类型（兼容PostgreSQL的类型）
-                    try:
-                        admin_id = int(admin_user[0])
-                    except (TypeError, ValueError, IndexError):
-                        admin_count = 0
-                        st.warning("获取admin用户ID失败")
-                    else:
-                        # 查询admin用户的物流规则数量
+                # 获取admin用户ID：优先使用当前登录用户（如果是admin），否则查询username='admin'或role='admin'
+                admin_id = None
+                try:
+                    # 如果当前用户是admin，直接使用当前用户ID
+                    if is_admin():
+                        admin_id = current_user_id()
+                except (ValueError, AttributeError, TypeError):
+                    pass
+                
+                # 如果无法从当前用户获取，则查询数据库
+                if admin_id is None:
+                    # 先尝试用username='admin'查询
+                    sql = _safe_adapt_sql(
+                        "SELECT id FROM users WHERE username='admin' LIMIT 1",
+                        conn
+                    )
+                    c.execute(sql)
+                    admin_user = c.fetchone()
+                    
+                    if not admin_user:
+                        # 如果username查询失败，尝试role='admin'
                         sql = _safe_adapt_sql(
-                            "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                            "SELECT id FROM users WHERE role='admin' LIMIT 1",
                             conn
                         )
-                        c.execute(sql, (admin_id,))
-                        result = c.fetchone()
-                        # 确保返回值是int类型（兼容PostgreSQL的Decimal）
-                        count_raw = result[0] if result else 0
+                        c.execute(sql)
+                        admin_user = c.fetchone()
+                    
+                    if admin_user:
                         try:
-                            admin_count = int(count_raw)
-                        except (TypeError, ValueError):
-                            admin_count = 0
+                            admin_id = int(admin_user[0])
+                        except (TypeError, ValueError, IndexError):
+                            admin_id = None
+                
+                # 查询admin用户的物流规则数量
+                if admin_id is not None:
+                    sql = _safe_adapt_sql(
+                        "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                        conn
+                    )
+                    c.execute(sql, (admin_id,))
+                    result = c.fetchone()
+                    # 确保返回值是int类型（兼容PostgreSQL的Decimal）
+                    count_raw = result[0] if result else 0
+                    try:
+                        admin_count = int(count_raw)
+                    except (TypeError, ValueError):
+                        admin_count = 0
+                else:
+                    admin_count = 0
+                    st.warning("找不到admin用户")
 
                 st.info(f"Admin物流规则数量: {admin_count}")
                 if admin_count > 0:
@@ -628,36 +647,56 @@ def user_management_page():
 
             # 单用户同步
             with st.expander("物流规则同步"):
-                # 获取admin用户ID（与批量同步使用相同的逻辑）
-                sql = _safe_adapt_sql(
-                    "SELECT id FROM users WHERE role='admin' LIMIT 1",
-                    conn
-                )
-                c.execute(sql)
-                admin_user = c.fetchone()
-
-                if not admin_user:
-                    admin_cnt = 0
-                else:
-                    # 确保admin_id是int类型（兼容PostgreSQL的类型）
-                    try:
-                        admin_id = int(admin_user[0])
-                    except (TypeError, ValueError, IndexError):
-                        admin_cnt = 0
-                    else:
-                        # 查询admin用户的物流规则数量
+                # 获取admin用户ID：优先使用当前登录用户（如果是admin），否则查询username='admin'或role='admin'
+                admin_id = None
+                try:
+                    # 如果当前用户是admin，直接使用当前用户ID
+                    if is_admin():
+                        admin_id = current_user_id()
+                except (ValueError, AttributeError, TypeError):
+                    pass
+                
+                # 如果无法从当前用户获取，则查询数据库
+                if admin_id is None:
+                    # 先尝试用username='admin'查询
+                    sql = _safe_adapt_sql(
+                        "SELECT id FROM users WHERE username='admin' LIMIT 1",
+                        conn
+                    )
+                    c.execute(sql)
+                    admin_user = c.fetchone()
+                    
+                    if not admin_user:
+                        # 如果username查询失败，尝试role='admin'
                         sql = _safe_adapt_sql(
-                            "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                            "SELECT id FROM users WHERE role='admin' LIMIT 1",
                             conn
                         )
-                        c.execute(sql, (admin_id,))
-                        result = c.fetchone()
-                        # 确保返回值是int类型（兼容PostgreSQL的Decimal）
-                        count_raw = result[0] if result else 0
+                        c.execute(sql)
+                        admin_user = c.fetchone()
+                    
+                    if admin_user:
                         try:
-                            admin_cnt = int(count_raw)
-                        except (TypeError, ValueError):
-                            admin_cnt = 0
+                            admin_id = int(admin_user[0])
+                        except (TypeError, ValueError, IndexError):
+                            admin_id = None
+                
+                # 查询admin用户的物流规则数量
+                if admin_id is not None:
+                    sql = _safe_adapt_sql(
+                        "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
+                        conn
+                    )
+                    c.execute(sql, (admin_id,))
+                    result = c.fetchone()
+                    # 确保返回值是int类型（兼容PostgreSQL的Decimal）
+                    count_raw = result[0] if result else 0
+                    try:
+                        admin_cnt = int(count_raw)
+                    except (TypeError, ValueError):
+                        admin_cnt = 0
+                else:
+                    admin_cnt = 0
 
                 # 查询当前用户的物流规则数量
                 sql = _safe_adapt_sql(
