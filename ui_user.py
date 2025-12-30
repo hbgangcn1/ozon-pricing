@@ -76,19 +76,43 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
     """
     with get_db_connection() as (conn, c):
         try:
-            # 获取admin用户ID
-            sql = _safe_adapt_sql(
-                "SELECT id FROM users WHERE role='admin' LIMIT 1",
-                conn
-            )
-            c.execute(sql)
-            admin_user = c.fetchone()
-
-            if not admin_user:
+            # 获取admin用户ID：优先使用当前登录用户（如果是admin），否则查询username='admin'或role='admin'
+            admin_id = None
+            try:
+                # 如果当前用户是admin，直接使用当前用户ID
+                if is_admin():
+                    admin_id = current_user_id()
+            except (ValueError, AttributeError, TypeError):
+                pass
+            
+            # 如果无法从当前用户获取，则查询数据库
+            if admin_id is None:
+                # 先尝试用username='admin'查询
+                sql = _safe_adapt_sql(
+                    "SELECT id FROM users WHERE username='admin' LIMIT 1",
+                    conn
+                )
+                c.execute(sql)
+                admin_user = c.fetchone()
+                
+                if not admin_user:
+                    # 如果username查询失败，尝试role='admin'
+                    sql = _safe_adapt_sql(
+                        "SELECT id FROM users WHERE role='admin' LIMIT 1",
+                        conn
+                    )
+                    c.execute(sql)
+                    admin_user = c.fetchone()
+                
+                if admin_user:
+                    try:
+                        admin_id = int(admin_user[0])
+                    except (TypeError, ValueError, IndexError):
+                        admin_id = None
+            
+            if admin_id is None:
                 st.error("找不到admin用户")
                 return
-
-            admin_id = admin_user[0]
 
             # 如果是覆盖模式，先删除目标用户的现有物流规则
             if overwrite:
@@ -106,35 +130,27 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
             c.execute(sql, (admin_id,))
             admin_logistics = c.fetchall()
 
-            # 获取logistics表的所有列名（除了id和user_id）
-            # 检测数据库类型以适配不同的查询方式
+            # 使用cursor.description获取实际的列顺序（与SELECT *返回的顺序一致）
+            if not c.description:
+                st.error("无法获取表结构信息")
+                return
+            
+            # 获取列名列表（与SELECT *返回的顺序一致）
             try:
                 import psycopg2
                 is_pg = isinstance(conn, psycopg2.extensions.connection)
             except (ImportError, AttributeError):
                 is_pg = False
-
+            
             if is_pg:
-                # PostgreSQL: 使用information_schema查询列信息
-                sql = """
-                    SELECT column_name, data_type, ordinal_position
-                    FROM information_schema.columns
-                    WHERE table_name = 'logistics'
-                    ORDER BY ordinal_position
-                """
-                c.execute(sql)
-                columns_info = c.fetchall()
-                # 转换为与SQLite格式兼容的格式: (cid, name, type, ...)
-                columns_info = [
-                    (i, row[0], row[1], None, None, None)
-                    for i, row in enumerate(columns_info)
-                ]
+                # PostgreSQL: description是元组列表，第一个元素是列名
+                column_names = [desc[0] for desc in c.description]
             else:
-                # SQLite: 使用PRAGMA
-                c.execute("PRAGMA table_info(logistics)")
-                columns_info = c.fetchall()
-            columns = [col[1] for col in columns_info
-                       if col[1] not in ['id', 'user_id']]
+                # SQLite: description是元组列表，第一个元素是列名
+                column_names = [desc[0] for desc in c.description]
+            
+            # 排除id和user_id列
+            columns = [col for col in column_names if col not in ['id', 'user_id']]
 
             # 验证列名安全性（防止SQL注入）
             try:
@@ -150,6 +166,9 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
 
             # 验证并清理所有列名
             validated_columns = [sanitize_column_name(col) for col in columns]
+            
+            # 创建列名到索引的映射（基于SELECT *返回的顺序）
+            column_index_map = {col: idx for idx, col in enumerate(column_names)}
 
             # 复制每条物流规则到目标用户
             for logistics_rule in admin_logistics:
@@ -160,16 +179,14 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
                 # 准备数据（排除id和user_id列）
                 values = []
                 for col in validated_columns:
-                    # 根据列名获取对应的值
+                    # 根据列名从SELECT *的结果中获取对应的值
                     try:
-                        col_index = [
-                            info[1] for info in columns_info
-                        ].index(col)
-                        if col_index < len(logistics_rule):
+                        col_index = column_index_map.get(col)
+                        if col_index is not None and col_index < len(logistics_rule):
                             values.append(logistics_rule[col_index])
                         else:
                             values.append(None)  # 如果索引超出范围，使用None
-                    except (ValueError, IndexError):
+                    except (ValueError, IndexError, TypeError):
                         values.append(None)  # 如果找不到列或索引超出范围，使用None
 
                 # 插入新记录 - 使用参数化查询，列名已验证安全
@@ -181,11 +198,16 @@ def sync_logistics_rules(target_user_id: int, overwrite: bool = False):
                 c.execute(sql, [target_user_id] + values)
 
             conn.commit()
-            st.success("物流规则同步成功！")
+            if len(admin_logistics) > 0:
+                st.success(f"物流规则同步成功！已同步 {len(admin_logistics)} 条规则")
+            else:
+                st.warning("Admin账号没有物流规则可同步")
 
-        except sqlite3.Error as e:
+        except Exception as e:
             conn.rollback()
             st.error(f"同步失败: {str(e)}")
+            import traceback
+            st.error(f"错误详情: {traceback.format_exc()}")
             raise
 
 
@@ -453,7 +475,7 @@ def user_management_page():
                         admin_id = current_user_id()
                 except (ValueError, AttributeError, TypeError):
                     pass
-                
+
                 # 如果无法从当前用户获取，则查询数据库
                 if admin_id is None:
                     # 先尝试用username='admin'查询
@@ -463,7 +485,7 @@ def user_management_page():
                     )
                     c.execute(sql)
                     admin_user = c.fetchone()
-                    
+
                     if not admin_user:
                         # 如果username查询失败，尝试role='admin'
                         sql = _safe_adapt_sql(
@@ -472,13 +494,13 @@ def user_management_page():
                         )
                         c.execute(sql)
                         admin_user = c.fetchone()
-                    
+
                     if admin_user:
                         try:
                             admin_id = int(admin_user[0])
                         except (TypeError, ValueError, IndexError):
                             admin_id = None
-                
+
                 # 查询admin用户的物流规则数量
                 if admin_id is not None:
                     sql = _safe_adapt_sql(
@@ -655,7 +677,7 @@ def user_management_page():
                         admin_id = current_user_id()
                 except (ValueError, AttributeError, TypeError):
                     pass
-                
+
                 # 如果无法从当前用户获取，则查询数据库
                 if admin_id is None:
                     # 先尝试用username='admin'查询
@@ -665,7 +687,7 @@ def user_management_page():
                     )
                     c.execute(sql)
                     admin_user = c.fetchone()
-                    
+
                     if not admin_user:
                         # 如果username查询失败，尝试role='admin'
                         sql = _safe_adapt_sql(
@@ -674,13 +696,13 @@ def user_management_page():
                         )
                         c.execute(sql)
                         admin_user = c.fetchone()
-                    
+
                     if admin_user:
                         try:
                             admin_id = int(admin_user[0])
                         except (TypeError, ValueError, IndexError):
                             admin_id = None
-                
+
                 # 查询admin用户的物流规则数量
                 if admin_id is not None:
                     sql = _safe_adapt_sql(
