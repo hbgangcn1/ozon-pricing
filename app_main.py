@@ -560,6 +560,11 @@ def _render_backup_management_card():
 
             # 显示备份文件列表
             for idx, backup in enumerate(backups):
+                # 使用备份文件名确保key的唯一性
+                backup_filename_safe = (
+                    backup['filename'].replace('.', '_')
+                    .replace('/', '_').replace('\\', '_')
+                )
                 with st.expander(
                     f"{'🔵' if backup['type'] == '手动' else '🟢'} "
                     f"{backup['filename']} "
@@ -573,7 +578,7 @@ def _render_backup_management_card():
 
                     with col2:
                         # 验证备份
-                        verify_key = f"verify_{idx}"
+                        verify_key = f"backup_mgmt_verify_{backup_filename_safe}"
                         if st.button(
                             "🔍 验证备份",
                             key=verify_key,
@@ -594,7 +599,7 @@ def _render_backup_management_card():
                                     data=backup_data,
                                     file_name=backup['filename'],
                                     mime="application/octet-stream",
-                                    key=f"download_{idx}",
+                                    key=f"backup_mgmt_download_{backup_filename_safe}",
                                     use_container_width=True
                                 )
                         except Exception as e:
@@ -604,17 +609,23 @@ def _render_backup_management_card():
                     col3, col4, col5 = _safe_columns(3)
                     with col3:
                         # 恢复备份
-                        restore_key = f"restore_{idx}"
+                        restore_key = (
+                            f"backup_mgmt_restore_{backup_filename_safe}"
+                        )
                         if st.button(
                             "♻️ 恢复此备份",
                             key=restore_key,
                             use_container_width=True
                         ):
                             # 显示确认对话框
-                            st.session_state[f'confirm_restore_{idx}'] = True
+                            st.session_state[
+                                f'confirm_restore_{backup_filename_safe}'
+                            ] = True
 
                     # 确认恢复
-                    if st.session_state.get(f'confirm_restore_{idx}', False):
+                    if st.session_state.get(
+                        f'confirm_restore_{backup_filename_safe}', False
+                    ):
                         st.warning(
                             "⚠️ **警告：** 恢复备份将覆盖当前数据库！"
                             "此操作不可撤销！"
@@ -623,7 +634,7 @@ def _render_backup_management_card():
                         with col_yes:
                             if st.button(
                                 "✅ 确认恢复",
-                                key=f"confirm_yes_{idx}",
+                                key=f"backup_mgmt_restore_yes_{backup_filename_safe}",
                                 type="primary",
                                 use_container_width=True
                             ):
@@ -637,7 +648,8 @@ def _render_backup_management_card():
                                             "页面即将刷新..."
                                         )
                                         st.session_state.pop(
-                                            f'confirm_restore_{idx}', None
+                                            f'confirm_restore_{backup_filename_safe}',
+                                            None
                                         )
                                         st.rerun()
                                     else:
@@ -648,39 +660,45 @@ def _render_backup_management_card():
                         with col_no:
                             if st.button(
                                 "❌ 取消",
-                                key=f"confirm_no_{idx}",
+                                key=f"backup_mgmt_restore_no_{backup_filename_safe}",
                                 use_container_width=True
                             ):
                                 st.session_state.pop(
-                                    f'confirm_restore_{idx}', None
+                                    f'confirm_restore_{backup_filename_safe}',
+                                    None
                                 )
                                 st.rerun()
 
                     with col4:
                         # 删除备份
-                        delete_key = f"delete_{idx}"
+                        delete_key = f"backup_mgmt_delete_{backup_filename_safe}"
                         if st.button(
                             "🗑️ 删除备份",
                             key=delete_key,
                             use_container_width=True
                         ):
-                            st.session_state[f'confirm_delete_{idx}'] = True
+                            st.session_state[
+                                f'confirm_delete_{backup_filename_safe}'
+                            ] = True
 
                     # 确认删除
-                    if st.session_state.get(f'confirm_delete_{idx}', False):
+                    if st.session_state.get(
+                        f'confirm_delete_{backup_filename_safe}', False
+                    ):
                         st.warning("⚠️ 确认删除此备份文件？")
                         col_yes, col_no = _safe_columns(2)
                         with col_yes:
                             if st.button(
                                 "✅ 确认删除",
-                                key=f"delete_yes_{idx}",
+                                key=f"backup_mgmt_delete_yes_{backup_filename_safe}",
                                 type="primary",
                                 use_container_width=True
                             ):
                                 if delete_backup_file(backup['filename']):
                                     st.success("✅ 备份文件已删除")
                                     st.session_state.pop(
-                                        f'confirm_delete_{idx}', None
+                                        f'confirm_delete_{backup_filename_safe}',
+                                        None
                                     )
                                     st.rerun()
                                 else:
@@ -688,11 +706,12 @@ def _render_backup_management_card():
                         with col_no:
                             if st.button(
                                 "❌ 取消",
-                                key=f"delete_no_{idx}",
+                                key=f"backup_mgmt_delete_no_{backup_filename_safe}",
                                 use_container_width=True
                             ):
                                 st.session_state.pop(
-                                    f'confirm_delete_{idx}', None
+                                    f'confirm_delete_{backup_filename_safe}',
+                                    None
                                 )
                                 st.rerun()
 
