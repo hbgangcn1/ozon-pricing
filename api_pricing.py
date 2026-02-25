@@ -7,6 +7,8 @@
 import os
 from flask import Flask, request, jsonify
 
+from werkzeug.security import check_password_hash
+
 from logic import calculate_pricing
 from db_utils import add_product, get_product_by_id, update_product, delete_product, get_db_connection
 from exchange_service import get_fallback_exchange_rate, get_fallback_usd_rate
@@ -35,7 +37,7 @@ if _manual_cors:
     @app.after_request
     def add_cors_headers(response):
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-Key"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-Key, X-User-Id"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         return response
 
@@ -60,6 +62,50 @@ def _require_auth():
     if key != API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
     return None
+
+
+def _get_user_id():
+    """优先从 X-User-Id 请求头取用户 ID，否则使用默认 API_USER_ID。"""
+    header_val = request.headers.get("X-User-Id")
+    if header_val is not None:
+        try:
+            return int(header_val)
+        except (ValueError, TypeError):
+            pass
+    return API_USER_ID
+
+
+# ---------------------------------------------------------------------------
+# Login
+# ---------------------------------------------------------------------------
+@app.route("/api/login", methods=["POST"])
+def login():
+    """用户登录，返回 user_id 和 username。"""
+    data = request.get_json(silent=True)
+    if not data or "username" not in data or "password" not in data:
+        return jsonify({"error": "Missing username or password"}), 400
+    username = data["username"]
+    password = data["password"]
+    try:
+        ph = _ph()
+        with get_db_connection() as (_, cursor):
+            cursor.execute(
+                f"SELECT id, username, password_hash FROM users WHERE username = {ph}",
+                (username,),
+            )
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({"error": "Invalid credentials"}), 401
+        if hasattr(row, 'keys'):
+            user_id = row["id"]
+            stored_hash = row["password_hash"]
+        else:
+            user_id, _, stored_hash = row[0], row[1], row[2]
+        if not check_password_hash(stored_hash, password):
+            return jsonify({"error": "Invalid credentials"}), 401
+        return jsonify({"user_id": user_id, "username": username})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------------
 # Product fields
@@ -122,7 +168,7 @@ def list_products():
     try:
         ph = _ph()
         with get_db_connection() as (_, cursor):
-            cursor.execute(f"SELECT * FROM products WHERE user_id = {ph}", (API_USER_ID,))
+            cursor.execute(f"SELECT * FROM products WHERE user_id = {ph}", (_get_user_id(),))
             products = _rows_to_list(cursor)
         return jsonify({"products": products})
     except Exception as e:
@@ -135,7 +181,7 @@ def get_product(product_id):
     if auth_err:
         return auth_err
     try:
-        product = get_product_by_id(product_id, API_USER_ID)
+        product = get_product_by_id(product_id, _get_user_id())
         if not product:
             return jsonify({"error": "Product not found"}), 404
         return jsonify({"product": product})
@@ -153,7 +199,7 @@ def create_product():
         return jsonify({"error": "Invalid JSON body"}), 400
     try:
         product_data = {k: data[k] for k in PRODUCT_FIELDS if k in data}
-        product_data["user_id"] = API_USER_ID
+        product_data["user_id"] = _get_user_id()
         product_id = add_product(product_data)
         return jsonify({"product_id": product_id}), 201
     except Exception as e:
@@ -172,7 +218,7 @@ def update_product_route(product_id):
         updates = {k: data[k] for k in PRODUCT_FIELDS if k in data}
         if not updates:
             return jsonify({"error": "No valid fields to update"}), 400
-        result = update_product(product_id, API_USER_ID, updates)
+        result = update_product(product_id, _get_user_id(), updates)
         if not result:
             return jsonify({"error": "Product not found"}), 404
         return jsonify({"success": True})
@@ -186,7 +232,7 @@ def delete_product_route(product_id):
     if auth_err:
         return auth_err
     try:
-        result = delete_product(product_id, API_USER_ID)
+        result = delete_product(product_id, _get_user_id())
         if not result:
             return jsonify({"error": "Product not found"}), 404
         return jsonify({"success": True})
@@ -204,7 +250,7 @@ def list_logistics():
     try:
         ph = _ph()
         with get_db_connection() as (_, cursor):
-            cursor.execute(f"SELECT * FROM logistics WHERE user_id = {ph}", (API_USER_ID,))
+            cursor.execute(f"SELECT * FROM logistics WHERE user_id = {ph}", (_get_user_id(),))
             rules = _rows_to_list(cursor)
         return jsonify({"logistics": rules})
     except Exception as e:
@@ -221,7 +267,7 @@ def get_logistics(rule_id):
         with get_db_connection() as (_, cursor):
             cursor.execute(
                 f"SELECT * FROM logistics WHERE id = {ph} AND user_id = {ph}",
-                (rule_id, API_USER_ID),
+                (rule_id, _get_user_id()),
             )
             row = cursor.fetchone()
             if not row:
@@ -242,7 +288,7 @@ def create_logistics():
         return jsonify({"error": "Invalid JSON body"}), 400
     try:
         fields = {k: data[k] for k in LOGISTICS_FIELDS if k in data}
-        fields["user_id"] = API_USER_ID
+        fields["user_id"] = _get_user_id()
         ph = _ph()
         cols = ", ".join(fields.keys())
         placeholders = ", ".join([ph] * len(fields))
@@ -272,7 +318,7 @@ def update_logistics(rule_id):
             return jsonify({"error": "No valid fields to update"}), 400
         ph = _ph()
         set_clause = ", ".join(f"{k} = {ph}" for k in updates.keys())
-        values = list(updates.values()) + [rule_id, API_USER_ID]
+        values = list(updates.values()) + [rule_id, _get_user_id()]
         with get_db_connection() as (conn, cursor):
             cursor.execute(
                 f"UPDATE logistics SET {set_clause} WHERE id = {ph} AND user_id = {ph}",
@@ -297,7 +343,7 @@ def delete_logistics(rule_id):
         with get_db_connection() as (conn, cursor):
             cursor.execute(
                 f"DELETE FROM logistics WHERE id = {ph} AND user_id = {ph}",
-                (rule_id, API_USER_ID),
+                (rule_id, _get_user_id()),
             )
             conn.commit()
             affected = cursor.rowcount
@@ -419,10 +465,11 @@ def calculate_by_id(product_id):
     if auth_err:
         return auth_err
     try:
-        product = get_product_by_id(product_id, API_USER_ID)
+        uid = _get_user_id()
+        product = get_product_by_id(product_id, uid)
         if not product:
             return jsonify({"error": "Product not found"}), 404
-        result = do_calculate(product, API_USER_ID)
+        result = do_calculate(product, uid)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -439,8 +486,9 @@ def quick_calculate():
         return jsonify({"error": "Invalid JSON body"}), 400
     try:
         product_dict = {k: data[k] for k in PRODUCT_FIELDS if k in data}
-        product_dict.setdefault("user_id", API_USER_ID)
-        result = do_calculate(product_dict, API_USER_ID)
+        uid = int(data["user_id"]) if "user_id" in data else _get_user_id()
+        product_dict.setdefault("user_id", uid)
+        result = do_calculate(product_dict, uid)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
