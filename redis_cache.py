@@ -83,7 +83,8 @@ def init_redis_client(config: Optional[Dict[str, Any]] = None) -> bool:
         _redis_client = redis.Redis(connection_pool=pool)
 
         # 测试连接
-        _redis_client.ping()
+        if _redis_client is not None:
+            _redis_client.ping()
         # Redis连接成功，静默返回（避免在生产环境输出过多信息）
         return True
 

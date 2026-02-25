@@ -1114,6 +1114,8 @@ def logistics_page():
                         )
 
                     # 使用安全的IN子句构建工具
+                    in_clause = ""
+                    validated_ids = []
                     try:
                         in_clause, validated_ids = build_in_clause(
                             logistic_ids
@@ -1214,6 +1216,8 @@ def logistics_page():
                         )
 
                     # 使用安全的IN子句构建工具
+                    in_clause = ""
+                    validated_ids = []
                     try:
                         in_clause, validated_ids = build_in_clause(
                             logistic_ids
