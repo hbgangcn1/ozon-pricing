@@ -7,7 +7,7 @@
 import os
 from flask import Flask, request, jsonify
 
-from werkzeug.security import check_password_hash
+import bcrypt
 
 from logic import calculate_pricing
 from db_utils import add_product, get_product_by_id, update_product, delete_product, get_db_connection
@@ -90,7 +90,7 @@ def login():
         ph = _ph()
         with get_db_connection() as (_, cursor):
             cursor.execute(
-                f"SELECT id, username, password_hash FROM users WHERE username = {ph}",
+                f"SELECT id, username, password FROM users WHERE username = {ph}",
                 (username,),
             )
             row = cursor.fetchone()
@@ -98,10 +98,10 @@ def login():
             return jsonify({"error": "Invalid credentials"}), 401
         if hasattr(row, 'keys'):
             user_id = row["id"]
-            stored_hash = row["password_hash"]
+            stored_hash = row["password"]
         else:
             user_id, _, stored_hash = row[0], row[1], row[2]
-        if not check_password_hash(stored_hash, password):
+        if not bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
             return jsonify({"error": "Invalid credentials"}), 401
         return jsonify({"user_id": user_id, "username": username})
     except Exception as e:
