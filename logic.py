@@ -491,7 +491,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         rate_input,
                         max_iter=3):
                     """计算浮动代理费价格"""
-                    commission_fee = 15 * rate_input
+                    commission_fee = 10 * rate_input
                     price = 0
 
                     for _ in range(max_iter):
@@ -508,7 +508,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         price = calc_total_cost / price_denominator
 
                         price_rub = price / rate_input
-                        new_commission_rub = max(15, min(200,
+                        new_commission_rub = max(10, min(200,
                                                          price_rub * 0.02))
                         new_commission_fee = new_commission_rub * rate_input
 
@@ -542,7 +542,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 )
 
                 # 根据代理费范围决定定价公式
-                if actual_commission <= 15 or actual_commission >= 200:
+                if actual_commission <= 10 or actual_commission >= 200:
                     # 情况1：代理费在分子
                     filter_total_cost = (
                         base_cost_calc + actual_commission * rate
@@ -734,7 +734,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     rate_input,
                     max_iter=5):
                 """计算最终价格的浮动代理费"""
-                commission_fee = 15 * rate_input
+                commission_fee = 10 * rate_input
                 price = 0
 
                 for _ in range(max_iter):
@@ -752,7 +752,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     price = iter_total_cost / final_price_denominator
 
                     price_rub = price / rate_input
-                    new_commission_rub = max(15, min(200, price_rub * 0.02))
+                    new_commission_rub = max(10, min(200, price_rub * 0.02))
                     new_commission_fee = new_commission_rub * rate_input
 
                     if abs(new_commission_fee - commission_fee) < 0.01:
@@ -802,7 +802,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 )
 
             if (
-                actual_commission_rounded <= 15 or
+                actual_commission_rounded <= 10 or
                 actual_commission_rounded >= 200
             ):
                 # 情况1：代理费在分子中
@@ -839,7 +839,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
 
             # 基于最终售价重新计算代理费（这是正确的浮动代理费）
             final_price_rub = final_price / rate
-            final_commission_rub = max(15, min(200, final_price_rub * 0.02))
+            final_commission_rub = max(10, min(200, final_price_rub * 0.02))
             final_actual_commission = final_commission_rub
 
             if debug_list is not None:
@@ -889,7 +889,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 )
                 debug_list.append(f"  退货率: -{final_return_rate * 100:.2f}%")
                 debug_list.append(f"  增值税率: -{final_vat_rate * 100:.2f}%")
-                if 15 < final_actual_commission < 200:
+                if 10 < final_actual_commission < 200:
                     debug_list.append("  代理费率: -2.00%")
                 debug_list.append(f"  定价分母: {denominator:.4f}")
                 debug_list.append(f"  计算售价: {final_price:.2f}")
