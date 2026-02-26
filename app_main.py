@@ -3438,6 +3438,21 @@ def display_fast_pricing_results(results: List[Dict[str, Any]]):
                 st.write(f"{result['profit_margin']:.1f}%")
 
 
+def _get_payment_fee_cny(
+    pricing_result: Dict[str, Any],
+    transport: str,
+    rub_rate: float,
+) -> Optional[float]:
+    """从定价结果获取收单费(CNY)，仅在固定下限时返回值"""
+    key_fixed = f"{transport}_payment_fixed"
+    key_info = f"{transport}_payment_info"
+    if pricing_result.get(key_fixed):
+        payment_rub = pricing_result.get(key_info, 0)
+        if payment_rub and rub_rate:
+            return payment_rub * rub_rate
+    return None
+
+
 def _create_cost_breakdown_chart(
     product: Dict[str, Any],
     logistics_cost: float,
@@ -3446,6 +3461,7 @@ def _create_cost_breakdown_chart(
     pricing_mode: str = None,
     commission_fee_cny: float = None,
     rub_rate_snapshot: float = None,
+    payment_fee_cny: float = None,
 ) -> Any:
     """创建成本分解饼状图
 
@@ -3454,9 +3470,10 @@ def _create_cost_breakdown_chart(
         logistics_cost: 物流成本
         final_price: 最终售价
         expected_profit: 预期利润（如果提供，直接使用；否则重新计算）
-        pricing_mode: 定价模式（"代理费在分子中"或"代理费在分母中"，如果提供则直接使用）
-        commission_fee_cny: 代理费（人民币，如果提供则直接使用，否则重新计算）
-        rub_rate_snapshot: 卢布汇率快照（用于计算代理费）
+        pricing_mode: 定价模式
+        commission_fee_cny: 代理费（人民币）
+        rub_rate_snapshot: 卢布汇率快照
+        payment_fee_cny: 收单费（人民币，固定下限时传入）
     """
     import plotly.graph_objects as go
     from exchange_service import (
@@ -3528,7 +3545,18 @@ def _create_cost_breakdown_chart(
     promotion_cost = final_price * promotion_rate
     commission_cost = final_price * commission_rate
     withdrawal_cost = final_price * withdrawal_rate
-    payment_cost = final_price * payment_rate
+    payment_cost_by_rate = final_price * payment_rate
+    # 收单费下限10卢布：如果按比例计算低于10 RUB，则使用固定10 RUB
+    if payment_rate > 0 and rub_rate_snapshot and rub_rate_snapshot > 0:
+        payment_cost_rub = payment_cost_by_rate / rub_rate_snapshot
+        if payment_cost_rub < 10:
+            payment_cost = 10 * rub_rate_snapshot
+        else:
+            payment_cost = payment_cost_by_rate
+    elif payment_fee_cny is not None:
+        payment_cost = payment_fee_cny
+    else:
+        payment_cost = payment_cost_by_rate
     return_cost = final_price * return_rate
     vat_cost = final_price * vat_rate
 
@@ -4638,8 +4666,6 @@ def display_fast_pricing_results_precise_style(
         """,
         unsafe_allow_html=True,
     )
-
-
 
 
 def get_user_products(user_id: int) -> List[Dict[str, Any]]:
@@ -7000,6 +7026,7 @@ def display_precise_pricing_results(
                 )
         else:
             st.info("暂无可用物流")
+
 
 def payment_center_page():
     """支付中心页面"""
