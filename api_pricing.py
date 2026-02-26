@@ -499,7 +499,7 @@ def quick_calculate():
         for field in RATE_FIELDS:
             if field in product_dict:
                 val = float(product_dict[field])
-                if val > 1:
+                if val >= 1:
                     product_dict[field] = val / 100
                     auto_converted.append(
                         f"{field}: {val} -> {product_dict[field]}")
