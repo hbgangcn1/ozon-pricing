@@ -167,7 +167,7 @@ def pricing_calculator_page():
         products: pd.DataFrame = pd.read_sql(  # type: ignore[assignment]
             "SELECT id, name, category FROM products WHERE user_id = ?",
             conn,
-            params=(uid,),
+            params=(uid,),  # type: ignore[arg-type]
         )
 
         if products.empty:
@@ -197,7 +197,7 @@ def pricing_calculator_page():
         product_df: pd.DataFrame = pd.read_sql(  # type: ignore[assignment]
             "SELECT * FROM products WHERE name = ? AND user_id = ?",
             conn,
-            params=(selected_product_name, uid),
+            params=(selected_product_name, uid),  # type: ignore[arg-type]
         )
 
         if product_df.empty:
@@ -305,7 +305,7 @@ def pricing_calculator_page():
                 logistics_df: pd.DataFrame = pd.read_sql(  # type: ignore[assignment]
                     logistics_query,
                     calc_conn,
-                    params=(uid,),
+                    params=(uid,),  # type: ignore[arg-type]
                 )
 
                 if logistics_df.empty:

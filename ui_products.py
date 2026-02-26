@@ -181,7 +181,7 @@ def products_page():
                 "FROM products "
                 "WHERE user_id = ?",
                 conn,
-                params=(uid,),
+                params=(uid,),  # type: ignore[arg-type]
             )
 
         # 添加/编辑产品
@@ -518,7 +518,7 @@ def products_page():
                         "WHERE user_id = ?"
                     )
                     st.session_state.products_data = pd.read_sql(
-                        query, conn, params=(uid,)
+                        query, conn, params=(uid,)  # type: ignore[arg-type]
                     )
                     st.rerun()
 
@@ -641,7 +641,7 @@ def products_page():
                             "WHERE user_id = ?"
                         )
                         st.session_state.products_data = pd.read_sql(
-                            query, conn, params=(uid,)
+                            query, conn, params=(uid,)  # type: ignore[arg-type]
                         )
                         del st.session_state.delete_confirm_product_id
                         st.rerun()

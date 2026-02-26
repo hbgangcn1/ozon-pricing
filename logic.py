@@ -633,20 +633,41 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         debug_info.append("超价格上限，跳过")
                         continue
 
+                # 价格下限调试信息
+                rough_rub_dbg = rough / rate
+                debug_info.append(
+                    f"价格下限检查: currency={log_min_currency}, "
+                    f"min_value={log_min_value}, "
+                    f"rough={rough:.2f} CNY, "
+                    f"rough_rub={rough_rub_dbg:.2f} RUB"
+                )
+
                 if log_min_currency == "USD" and log_min_value > 0:
                     # 美元下限：将估算售价转换为美元进行比较
                     rough_usd = rough / usd_rate
-                    debug_info.append(f"下限 {log_min_value:.2f} USD")
+                    debug_info.append(
+                        f"下限 {log_min_value:.2f} USD, "
+                        f"估算 {rough_usd:.2f} USD"
+                    )
                     if rough_usd < log_min_value:
                         debug_info.append("低于价格下限，跳过")
                         continue
+                    debug_info.append("通过价格下限检查")
                 elif log_min_currency == "RUB" and log_min_value > 0:
                     # 卢布下限：将估算售价转换为卢布进行比较
                     rough_rub = rough / rate
-                    debug_info.append(f"下限 {log_min_value:.2f} RUB")
+                    debug_info.append(
+                        f"下限 {log_min_value:.2f} RUB, "
+                        f"估算 {rough_rub:.2f} RUB"
+                    )
                     if rough_rub < log_min_value:
                         debug_info.append("低于价格下限，跳过")
                         continue
+                    debug_info.append("通过价格下限检查")
+                else:
+                    debug_info.append(
+                        f"无价格下限 (min_value={log_min_value})"
+                    )
 
                 # 如果通过了所有价格检查，添加到候选列表
                 res.append((current_log_dict, cost))

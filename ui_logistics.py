@@ -736,8 +736,8 @@ def logistics_page():
                     warnings.filterwarnings(
                         "ignore", message="pandas only supports SQLAlchemy"
                     )
-                    land_df = pd.read_sql(land_query, conn, params=(uid,))
-                    air_df = pd.read_sql(air_query, conn, params=(uid,))
+                    land_df = pd.read_sql(land_query, conn, params=(uid,))  # type: ignore[arg-type]
+                    air_df = pd.read_sql(air_query, conn, params=(uid,))  # type: ignore[arg-type]
 
                 # 缓存查询结果
                 cache_data = {
