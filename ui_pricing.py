@@ -353,6 +353,10 @@ def pricing_calculator_page():
     # 数据库连接由上下文管理器自动关闭
 
     # 如果需要显示计算结果，在页面最后显示
+    st.warning(
+        f"🔧 调试: should_display={should_display_results}, "
+        f"completed={getattr(st.session_state, 'calculation_completed', 'N/A')}"
+    )
     if should_display_results:
         # 显示成功消息
         st.success("✅ 计算完成！")
@@ -421,6 +425,7 @@ def _display_calculation_results():
     )
 
     # 定价结果 - 低价优先显示
+    st.warning("🔧 调试标记A: _display_calculation_results 已进入")
     st.markdown(
         (
             '<h3 style="color: #2c3e50; margin-bottom: 20px; '
