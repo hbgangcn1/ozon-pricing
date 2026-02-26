@@ -488,7 +488,28 @@ def quick_calculate():
         product_dict = {k: data[k] for k in PRODUCT_FIELDS if k in data}
         uid = int(data["user_id"]) if "user_id" in data else _get_user_id()
         product_dict.setdefault("user_id", uid)
+
+        # 自动修正比率参数：>1 视为百分比格式，自动转为小数
+        RATE_FIELDS = [
+            "commission_rate", "target_profit_margin",
+            "promotion_cost_rate", "withdrawal_fee_rate",
+            "payment_processing_fee", "return_rate", "vat_rate",
+        ]
+        auto_converted = []
+        for field in RATE_FIELDS:
+            if field in product_dict:
+                val = float(product_dict[field])
+                if val > 1:
+                    product_dict[field] = val / 100
+                    auto_converted.append(
+                        f"{field}: {val} -> {product_dict[field]}")
+
         result = do_calculate(product_dict, uid)
+        if auto_converted:
+            result["warnings"] = [
+                "以下比率参数已自动从百分比转为小数: "
+                + "; ".join(auto_converted)
+            ]
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
