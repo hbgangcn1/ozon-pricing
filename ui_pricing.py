@@ -1219,8 +1219,13 @@ def _display_calculation_results():
             st.info("暂无送货上门空运方案（速度优先）")
 
     # 已在各卡片中展示统计要点，此处移除外层统计块
+    st.warning("🔧 调试标记: 已到达调试信息区域")
 
     # 物流淘汰原因
+    st.info(
+        f"调试: all_costs_debug 共 "
+        f"{len(pricing_result.get('all_costs_debug', []))} 条"
+    )
     if pricing_result["all_costs_debug"]:
         st.markdown(
             (
