@@ -6995,6 +6995,72 @@ def display_precise_pricing_results(
         else:
             st.info("暂无可用物流")
 
+    # 物流淘汰原因与调试信息
+    all_debug = pricing_result_low.get("all_costs_debug", [])
+    if all_debug:
+        st.markdown(
+            '<h3 style="color: #667eea; margin-bottom: 15px;">'
+            "🔍 物流淘汰原因</h3>",
+            unsafe_allow_html=True,
+        )
+        elimination_reasons: dict = {}
+        total_logistics = len(all_debug)
+        eliminated_count = 0
+        for dbg in all_debug:
+            cost_val = dbg.get("cost")
+            if cost_val is None:
+                eliminated_count += 1
+                reason = None
+                for line in dbg.get("debug", []):
+                    if "跳过" in line or "返回 None" in line:
+                        reason = line.strip()
+                        break
+                if not reason and dbg.get("debug"):
+                    reason = dbg["debug"][-1].strip()
+                if reason:
+                    elimination_reasons.setdefault(reason, []).append(
+                        dbg["logistic"]["name"]
+                    )
+        st.write(f"**总计物流规则：{total_logistics} 个**")
+        st.write(f"**被淘汰物流：{eliminated_count} 个**")
+        st.write(
+            f"**可用物流：{total_logistics - eliminated_count} 个**"
+        )
+        if elimination_reasons:
+            st.markdown("**淘汰原因统计：**")
+            for reason, names in elimination_reasons.items():
+                st.markdown(
+                    f"<div style='margin:10px 0;padding:10px;"
+                    f"background:rgba(255,193,7,0.1);"
+                    f"border-left:4px solid #ffc107;"
+                    f"border-radius:4px;'>"
+                    f"<strong>原因：</strong>{reason}<br>"
+                    f"<strong>影响物流：</strong>{len(names)} 个<br>"
+                    f"<strong>物流名称：</strong>"
+                    f"{', '.join(names)}</div>",
+                    unsafe_allow_html=True,
+                )
+        with st.expander("📋 查看详细调试信息"):
+            for dbg in all_debug:
+                log_name = dbg["logistic"]["name"]
+                cost_val = dbg.get("cost")
+                debug_list = dbg.get("debug", [])
+                status = (
+                    "✅ 可用" if cost_val is not None
+                    else "❌ 被淘汰"
+                )
+                cost_display = (
+                    f"¥{cost_val:.2f}" if cost_val is not None
+                    else "无法计算"
+                )
+                st.markdown(
+                    f"**{log_name}** - {status} - "
+                    f"运费：{cost_display}"
+                )
+                for line in debug_list:
+                    st.text(f"  {line}")
+                st.markdown("---")
+
 
 def payment_center_page():
     """支付中心页面"""
