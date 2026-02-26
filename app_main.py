@@ -3097,7 +3097,9 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
                         min_days, max_days, max_sum_of_sides,
                         max_longest_side, volume_mode, longest_side_threshold,
                         volume_coefficient, allow_battery, allow_flammable,
-                        delivery_method, priority_group
+                        delivery_method, priority_group,
+                        price_min_rub, price_limit_rub,
+                        price_min_currency, price_limit_currency
                     FROM logistics
                     WHERE user_id = ?
                     ORDER BY name ASC
@@ -3114,7 +3116,9 @@ def get_precise_logistics_rules() -> List[Dict[str, Any]]:
                         max_days, max_sum_of_sides, max_longest_side,
                         volume_mode, longest_side_threshold,
                         volume_coefficient, allow_battery, allow_flammable,
-                        delivery_method, priority_group
+                        delivery_method, priority_group,
+                        price_min_rub, price_limit_rub,
+                        price_min_currency, price_limit_currency
                     FROM logistics
                     WHERE user_id = ?
                     ORDER BY name ASC
