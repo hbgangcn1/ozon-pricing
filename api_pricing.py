@@ -10,8 +10,21 @@ from flask import Flask, request, jsonify
 import bcrypt
 
 from logic import calculate_pricing
-from db_utils import add_product, get_product_by_id, update_product, delete_product, get_db_connection
-from exchange_service import get_fallback_exchange_rate, get_fallback_usd_rate
+from db_utils import (
+    add_product,
+    get_product_by_id,
+    update_product,
+    delete_product,
+    get_db_connection,
+)
+
+try:
+    from exchange_service import get_fallback_exchange_rate, get_fallback_usd_rate
+except ImportError:
+    from enhanced_exchange_service import (
+        get_fallback_exchange_rate,
+        get_fallback_usd_rate,
+    )
 
 import pandas as pd
 
@@ -28,18 +41,25 @@ API_USER_ID = int(os.environ.get("API_USER_ID", "1"))
 # ---------------------------------------------------------------------------
 try:
     from flask_cors import CORS
+
     CORS(app)
     _manual_cors = False
 except ImportError:
     _manual_cors = True
 
 if _manual_cors:
+
     @app.after_request
     def add_cors_headers(response):
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-Key, X-User-Id"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Content-Type, X-API-Key, X-User-Id"
+        )
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PUT, DELETE, OPTIONS"
+        )
         return response
+
 
 # ---------------------------------------------------------------------------
 # Parameter placeholder – handle SQLite (?) vs PostgreSQL (%s)
@@ -48,11 +68,13 @@ def _ph():
     """Return the correct SQL parameter placeholder for the current DB backend."""
     try:
         from db_config import DB_TYPE
+
         if DB_TYPE == "postgresql":
             return "%s"
     except Exception:
         pass
     return "?"
+
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -96,44 +118,94 @@ def login():
             row = cursor.fetchone()
         if not row:
             return jsonify({"error": "Invalid credentials"}), 401
-        if hasattr(row, 'keys'):
+        if hasattr(row, "keys"):
             user_id = row["id"]
             stored_hash = row["password"]
         else:
             user_id, _, stored_hash = row[0], row[1], row[2]
-        if not bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
+        if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
             return jsonify({"error": "Invalid credentials"}), 401
         return jsonify({"user_id": user_id, "username": username})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 # ---------------------------------------------------------------------------
 # Product fields
 # ---------------------------------------------------------------------------
 PRODUCT_FIELDS = [
-    "name", "unit_price", "weight_g", "length_cm", "width_cm", "height_cm",
-    "commission_rate", "target_profit_margin", "promotion_cost_rate",
-    "withdrawal_fee_rate", "payment_processing_fee", "return_rate", "vat_rate",
-    "labeling_fee", "shipping_fee", "is_cylinder", "cylinder_diameter",
-    "cylinder_length", "has_battery", "battery_capacity_wh", "battery_capacity_mah",
-    "battery_voltage", "has_flammable", "has_msds", "russian_name", "category",
-    "model", "promotion_discount",
+    "name",
+    "unit_price",
+    "weight_g",
+    "length_cm",
+    "width_cm",
+    "height_cm",
+    "commission_rate",
+    "target_profit_margin",
+    "promotion_cost_rate",
+    "withdrawal_fee_rate",
+    "payment_processing_fee",
+    "return_rate",
+    "vat_rate",
+    "labeling_fee",
+    "shipping_fee",
+    "is_cylinder",
+    "cylinder_diameter",
+    "cylinder_length",
+    "has_battery",
+    "battery_capacity_wh",
+    "battery_capacity_mah",
+    "battery_voltage",
+    "has_flammable",
+    "has_msds",
+    "russian_name",
+    "category",
+    "model",
+    "promotion_discount",
 ]
 
 # ---------------------------------------------------------------------------
 # Logistics fields
 # ---------------------------------------------------------------------------
 LOGISTICS_FIELDS = [
-    "name", "type", "min_days", "max_days", "price_limit", "price_limit_rub",
-    "price_limit_currency", "price_min", "price_min_rub", "price_min_currency",
-    "base_fee", "min_weight", "max_weight", "max_sum_of_sides", "max_longest_side",
-    "max_second_side", "min_second_side", "min_length", "max_cylinder_sum",
-    "min_cylinder_sum", "max_cylinder_length", "min_cylinder_length", "volume_mode",
-    "longest_side_threshold", "allow_battery", "allow_flammable",
-    "battery_capacity_limit_wh", "require_msds", "fee_mode", "first_fee",
-    "first_weight_g", "continue_fee", "continue_unit", "volume_coefficient",
-    "delivery_method", "priority_group",
+    "name",
+    "type",
+    "min_days",
+    "max_days",
+    "price_limit",
+    "price_limit_rub",
+    "price_limit_currency",
+    "price_min",
+    "price_min_rub",
+    "price_min_currency",
+    "base_fee",
+    "min_weight",
+    "max_weight",
+    "max_sum_of_sides",
+    "max_longest_side",
+    "max_second_side",
+    "min_second_side",
+    "min_length",
+    "max_cylinder_sum",
+    "min_cylinder_sum",
+    "max_cylinder_length",
+    "min_cylinder_length",
+    "volume_mode",
+    "longest_side_threshold",
+    "allow_battery",
+    "allow_flammable",
+    "battery_capacity_limit_wh",
+    "require_msds",
+    "fee_mode",
+    "first_fee",
+    "first_weight_g",
+    "continue_fee",
+    "continue_unit",
+    "volume_coefficient",
+    "delivery_method",
+    "priority_group",
 ]
+
 
 # ---------------------------------------------------------------------------
 # Helper – rows → list of dicts
@@ -143,11 +215,12 @@ def _rows_to_list(cursor):
     if not rows:
         return []
     # sqlite3.Row supports dict() directly
-    if hasattr(rows[0], 'keys'):
+    if hasattr(rows[0], "keys"):
         return [dict(row) for row in rows]
     # Fallback for plain tuples
     columns = [d[0] for d in cursor.description]
     return [dict(zip(columns, row)) for row in rows]
+
 
 # ---------------------------------------------------------------------------
 # Health
@@ -156,6 +229,7 @@ def _rows_to_list(cursor):
 def health():
     """健康检查接口"""
     return jsonify({"status": "ok"})
+
 
 # ---------------------------------------------------------------------------
 # Products
@@ -168,7 +242,9 @@ def list_products():
     try:
         ph = _ph()
         with get_db_connection() as (_, cursor):
-            cursor.execute(f"SELECT * FROM products WHERE user_id = {ph}", (_get_user_id(),))
+            cursor.execute(
+                f"SELECT * FROM products WHERE user_id = {ph}", (_get_user_id(),)
+            )
             products = _rows_to_list(cursor)
         return jsonify({"products": products})
     except Exception as e:
@@ -239,6 +315,7 @@ def delete_product_route(product_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 # ---------------------------------------------------------------------------
 # Logistics rules
 # ---------------------------------------------------------------------------
@@ -250,7 +327,9 @@ def list_logistics():
     try:
         ph = _ph()
         with get_db_connection() as (_, cursor):
-            cursor.execute(f"SELECT * FROM logistics WHERE user_id = {ph}", (_get_user_id(),))
+            cursor.execute(
+                f"SELECT * FROM logistics WHERE user_id = {ph}", (_get_user_id(),)
+            )
             rules = _rows_to_list(cursor)
         return jsonify({"logistics": rules})
     except Exception as e:
@@ -272,7 +351,11 @@ def get_logistics(rule_id):
             row = cursor.fetchone()
             if not row:
                 return jsonify({"error": "Logistics rule not found"}), 404
-            result = dict(row) if hasattr(row, 'keys') else dict(zip([d[0] for d in cursor.description], row))
+            result = (
+                dict(row)
+                if hasattr(row, "keys")
+                else dict(zip([d[0] for d in cursor.description], row))
+            )
         return jsonify({"logistics": result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -353,9 +436,11 @@ def delete_logistics(rule_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 # ---------------------------------------------------------------------------
 # Pricing helpers
 # ---------------------------------------------------------------------------
+
 
 def build_breakdown(product, logistics_cost, final_price, commission_rub, rate):
     """构建成本分解明细列表"""
@@ -375,7 +460,11 @@ def build_breakdown(product, logistics_cost, final_price, commission_rub, rate):
     total_costs = sum(v for _, v, _ in items)
     profit = final_price - total_costs
     items.append(("运营利润", profit, "#52BE80"))
-    return [{"label": l, "value": round(v, 2), "color": c} for l, v, c in items if abs(v) > 0.01]
+    return [
+        {"label": l, "value": round(v, 2), "color": c}
+        for l, v, c in items
+        if abs(v) > 0.01
+    ]
 
 
 def format_result(res, product_dict, rate, is_land=True):
@@ -404,15 +493,21 @@ def format_result(res, product_dict, rate, is_land=True):
     return {
         "price_cny": round(price, 2),
         "price_rub": round(price / rate, 2) if rate else 0,
-        "logistics_name": best_log.get("name", "") if isinstance(best_log, dict) else "",
+        "logistics_name": best_log.get("name", "")
+        if isinstance(best_log, dict)
+        else "",
         "logistics_cost": round(cost_val, 4),
         "days_min": best_log.get("min_days", 0) if isinstance(best_log, dict) else 0,
         "days_max": best_log.get("max_days", 0) if isinstance(best_log, dict) else 0,
         "profit_cny": round(expected_profit, 2),
-        "profit_margin_pct": round(expected_profit / price * 100, 2) if price > 0 else 0,
+        "profit_margin_pct": round(expected_profit / price * 100, 2)
+        if price > 0
+        else 0,
         "commission_rub": round(commission_rub, 2),
         "pricing_mode": pricing_mode,
-        "breakdown": build_breakdown(product_dict, cost_val, price, commission_rub, rate),
+        "breakdown": build_breakdown(
+            product_dict, cost_val, price, commission_rub, rate
+        ),
     }
 
 
@@ -426,10 +521,18 @@ def do_calculate(product_dict, user_id):
     land_rules = [r for r in rules if r.get("type") == "land"]
     air_rules = [r for r in rules if r.get("type") == "air"]
 
-    land_pickup = pd.DataFrame([r for r in land_rules if r.get("delivery_method") == "pickup_point"])
-    land_home = pd.DataFrame([r for r in land_rules if r.get("delivery_method") == "home_delivery"])
-    air_pickup = pd.DataFrame([r for r in air_rules if r.get("delivery_method") == "pickup_point"])
-    air_home = pd.DataFrame([r for r in air_rules if r.get("delivery_method") == "home_delivery"])
+    land_pickup = pd.DataFrame(
+        [r for r in land_rules if r.get("delivery_method") == "pickup_point"]
+    )
+    land_home = pd.DataFrame(
+        [r for r in land_rules if r.get("delivery_method") == "home_delivery"]
+    )
+    air_pickup = pd.DataFrame(
+        [r for r in air_rules if r.get("delivery_method") == "pickup_point"]
+    )
+    air_home = pd.DataFrame(
+        [r for r in air_rules if r.get("delivery_method") == "home_delivery"]
+    )
 
     rate = get_fallback_exchange_rate()
     usd_rate = get_fallback_usd_rate()
@@ -446,7 +549,9 @@ def do_calculate(product_dict, user_id):
         priority_results = {}
         for combo_key, (land_df, air_df, is_land) in combos.items():
             res = calculate_pricing(product_dict, land_df, air_df, priority)
-            priority_results[combo_key] = format_result(res, product_dict, rate, is_land=is_land)
+            priority_results[combo_key] = format_result(
+                res, product_dict, rate, is_land=is_land
+            )
         all_results[key] = priority_results
 
     return {
@@ -454,6 +559,7 @@ def do_calculate(product_dict, user_id):
         "exchange_rates": {"rub_cny": rate, "usd_cny": usd_rate},
         "product": product_dict,
     }
+
 
 # ---------------------------------------------------------------------------
 # Pricing endpoints
@@ -491,9 +597,13 @@ def quick_calculate():
 
         # 自动修正比率参数：>1 视为百分比格式，自动转为小数
         RATE_FIELDS = [
-            "commission_rate", "target_profit_margin",
-            "promotion_cost_rate", "withdrawal_fee_rate",
-            "payment_processing_fee", "return_rate", "vat_rate",
+            "commission_rate",
+            "target_profit_margin",
+            "promotion_cost_rate",
+            "withdrawal_fee_rate",
+            "payment_processing_fee",
+            "return_rate",
+            "vat_rate",
         ]
         auto_converted = []
         for field in RATE_FIELDS:
@@ -501,18 +611,17 @@ def quick_calculate():
                 val = float(product_dict[field])
                 if val >= 1:
                     product_dict[field] = val / 100
-                    auto_converted.append(
-                        f"{field}: {val} -> {product_dict[field]}")
+                    auto_converted.append(f"{field}: {val} -> {product_dict[field]}")
 
         result = do_calculate(product_dict, uid)
         if auto_converted:
             result["warnings"] = [
-                "以下比率参数已自动从百分比转为小数: "
-                + "; ".join(auto_converted)
+                "以下比率参数已自动从百分比转为小数: " + "; ".join(auto_converted)
             ]
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # ---------------------------------------------------------------------------
 # Entry point

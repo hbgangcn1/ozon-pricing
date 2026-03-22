@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import streamlit as st
 import hashlib
 import bcrypt
 import threading
@@ -11,6 +10,36 @@ import time
 import signal
 import sys
 from datetime import datetime, date
+
+
+class _FakeSessionState:
+    """非Streamlit环境下的session_state替代品"""
+
+    _instance = None
+    _user = None
+
+    def __init__(self):
+        self._data = {}
+
+    def __contains__(self, key):
+        return key in self._data or key == "user"
+
+    def __getitem__(self, key):
+        if key == "user":
+            return self._user
+        return self._data.get(key)
+
+    def __getattr__(self, key):
+        if key == "user":
+            return self._user
+        raise AttributeError(key)
+
+    @classmethod
+    def set_user(cls, user):
+        cls._user = user
+
+
+_st = _FakeSessionState()
 
 # 确保模块别名一致（logistics.db_utils 与 db_utils 引用同一对象）
 if __name__ == "db_utils":
@@ -780,25 +809,21 @@ def get_enhanced_connection_stats():
 
 def current_user_id():
     """获取当前用户ID"""
-    # 支持字典和属性两种访问方式，确保测试环境兼容性
     user = None
     try:
-        # 先尝试字典方式访问
-        if hasattr(st.session_state, "__contains__"):
+        if hasattr(_st.session_state, "__contains__"):
             try:
-                if "user" in st.session_state:
-                    user = st.session_state["user"]
+                if "user" in _st.session_state:
+                    user = _st.session_state["user"]
             except (TypeError, AttributeError):
-                # FakeState等对象可能不支持字典访问
                 pass
     except (TypeError, AttributeError):
         pass
 
-    # 如果字典方式失败，尝试属性方式
     if user is None:
         try:
-            if hasattr(st.session_state, "user"):
-                user = st.session_state.user
+            if hasattr(_st.session_state, "user"):
+                user = _st.session_state.user
         except (AttributeError, TypeError):
             pass
 
@@ -813,32 +838,27 @@ def current_user_id():
 
 def is_admin():
     """检查当前用户是否为管理员"""
-    # 支持字典和属性两种访问方式，确保测试环境兼容性
     user = None
     try:
-        # 先尝试字典方式访问
-        if hasattr(st.session_state, "__contains__"):
+        if hasattr(_st.session_state, "__contains__"):
             try:
-                if "user" in st.session_state:
-                    user = st.session_state["user"]
+                if "user" in _st.session_state:
+                    user = _st.session_state["user"]
             except (TypeError, AttributeError):
-                # FakeState等对象可能不支持字典访问
                 pass
     except (TypeError, AttributeError):
         pass
 
-    # 如果字典方式失败，尝试属性方式
     if user is None:
         try:
-            if hasattr(st.session_state, "user"):
-                user = st.session_state.user
+            if hasattr(_st.session_state, "user"):
+                user = _st.session_state.user
         except (AttributeError, TypeError):
             pass
 
     if user is None:
         return False
 
-    # 支持字典和对象两种访问方式
     if isinstance(user, dict):
         role = user.get("role")
     else:
@@ -4911,7 +4931,6 @@ def authenticate_admin(username, password):
         return None
 
 
-@st.cache_data(ttl=60)  # 缓存1分钟，用户列表变化不频繁
 def get_all_users(
     page=1,
     per_page=20,
@@ -6022,7 +6041,6 @@ def get_dashboard_stats() -> Dict[str, Any]:
 # ============================================================================
 
 
-@st.cache_data(ttl=300)  # 缓存5分钟，套餐数据变化不频繁
 def get_plans(active_only=False, include_free=True):
     """
     获取所有套餐列表

@@ -17,6 +17,7 @@ except ImportError:
 
 try:
     from .redis_cache import get_redis_client
+
     _redis_available = True
 except ImportError:
     _redis_available = False
@@ -26,15 +27,14 @@ except ImportError:
         """占位函数，当Redis不可用时返回None"""
         return None
 
+
 REDIS_AVAILABLE = _redis_available
 
 
 class DistributedLock:
     """分布式锁实现（支持Redis和数据库锁）"""
 
-    def __init__(
-        self, key: str, timeout: int = 10, redis_available: bool = False
-    ):
+    def __init__(self, key: str, timeout: int = 10, redis_available: bool = False):
         """
         初始化分布式锁
 
@@ -65,7 +65,7 @@ class DistributedLock:
                 lock_key,
                 str(time.time()),
                 nx=True,  # 只在键不存在时设置
-                ex=self.timeout  # 设置过期时间
+                ex=self.timeout,  # 设置过期时间
             )
             return result is True
         except (AttributeError, ConnectionError, OSError, TimeoutError):
@@ -99,6 +99,7 @@ class DistributedLock:
                 # PostgreSQL使用BEGIN TRANSACTION
                 try:
                     import psycopg2
+
                     is_pg = isinstance(conn, psycopg2.extensions.connection)
                 except (ImportError, AttributeError):
                     is_pg = False
@@ -155,8 +156,8 @@ class DistributedLock:
                     # 检测数据库类型
                     try:
                         import psycopg2
-                        is_pg = isinstance(
-                            conn, psycopg2.extensions.connection)
+
+                        is_pg = isinstance(conn, psycopg2.extensions.connection)
                     except (ImportError, AttributeError):
                         is_pg = False
 
@@ -171,10 +172,7 @@ class DistributedLock:
                     finally:
                         conn.commit()
                         self.lock_acquired = False
-                except (
-                    OSError, RuntimeError, ValueError, TypeError,
-                    AttributeError
-                ):
+                except (OSError, RuntimeError, ValueError, TypeError, AttributeError):
                     # 数据库操作错误或其他运行时错误
                     conn.rollback()
                     self.lock_acquired = False
@@ -186,10 +184,7 @@ class SessionSecurityEnhanced:
 
     @staticmethod
     def check_and_create_session_atomic(
-        user_id: int,
-        session_id: str,
-        ip_address: str,
-        user_agent: str
+        user_id: int, session_id: str, ip_address: str, user_agent: str
     ) -> Tuple[bool, str]:
         """
         原子性地检查并发会话并创建新会话
@@ -204,18 +199,21 @@ class SessionSecurityEnhanced:
         Returns:
             (success, message): 是否成功，提示消息
         """
-        from session_security import SessionSecurity
+        try:
+            from session_security import SessionSecurity
 
-        # 使用分布式锁确保原子性
+            max_sessions = SessionSecurity.MAX_CONCURRENT_SESSIONS
+        except ImportError:
+            max_sessions = 5
+
         lock_key = f"session_create_{user_id}"
         lock = DistributedLock(lock_key, timeout=5, redis_available=True)
 
         try:
             with lock.acquire():  # type: ignore[misc]
-                # 在锁保护下执行检查和创建操作
-                # 1. 检查当前活跃会话数
                 with get_db_connection() as (conn, c):
                     from db_adapter import adapt_sql
+
                     sql = adapt_sql("""
                         SELECT COUNT(*) FROM active_sessions
                         WHERE user_id = ? AND is_active = 1
@@ -223,8 +221,7 @@ class SessionSecurityEnhanced:
                     c.execute(sql, (user_id,))
                     active_count = c.fetchone()[0]
 
-                    # 2. 如果超过限制，下线最旧的会话
-                    if active_count >= SessionSecurity.MAX_CONCURRENT_SESSIONS:
+                    if active_count >= max_sessions:
                         sql = adapt_sql("""
                             SELECT session_id FROM active_sessions
                             WHERE user_id = ? AND is_active = 1
@@ -235,12 +232,20 @@ class SessionSecurityEnhanced:
                         oldest_session = c.fetchone()
 
                         if oldest_session:
-                            SessionSecurity.force_logout_session(
-                                oldest_session[0],
-                                "超过最大并发会话数限制"
-                            )
+                            try:
+                                from session_security import SessionSecurity
 
-                    # 3. 创建新会话（在事务中）
+                                SessionSecurity.force_logout_session(
+                                    oldest_session[0], "超过最大并发会话数限制"
+                                )
+                            except ImportError:
+                                sql = adapt_sql("""
+                                    UPDATE active_sessions SET is_active = 0
+                                    WHERE session_id = ?
+                                """)
+                                c.execute(sql, (oldest_session[0],))
+                                conn.commit()
+
                     current_time = time.time()
                     sql = adapt_sql("""
                         INSERT INTO active_sessions
@@ -249,14 +254,20 @@ class SessionSecurityEnhanced:
                         VALUES (?, ?, ?, ?, ?, ?, 1)
                     """)
                     c.execute(
-                        sql, (session_id, user_id, current_time,
-                              current_time, ip_address, user_agent))
+                        sql,
+                        (
+                            session_id,
+                            user_id,
+                            current_time,
+                            current_time,
+                            ip_address,
+                            user_agent,
+                        ),
+                    )
                     conn.commit()
 
                     return True, "会话创建成功"
-        except (
-            OSError, RuntimeError, ValueError, TypeError, AttributeError
-        ) as e:
+        except (OSError, RuntimeError, ValueError, TypeError, AttributeError) as e:
             # 数据库操作错误或其他运行时错误
             return False, f"会话创建失败: {str(e)}"
 
@@ -278,6 +289,7 @@ class SessionSecurityEnhanced:
             with lock.acquire():  # type: ignore[misc]
                 with get_db_connection() as (conn, c):
                     from db_adapter import adapt_sql
+
                     current_time = time.time()
                     sql = adapt_sql("""
                         UPDATE active_sessions
@@ -287,8 +299,6 @@ class SessionSecurityEnhanced:
                     c.execute(sql, (current_time, session_id))
                     conn.commit()
                     return True
-        except (
-            OSError, RuntimeError, ValueError, TypeError, AttributeError
-        ):
+        except (OSError, RuntimeError, ValueError, TypeError, AttributeError):
             # 数据库操作错误或其他运行时错误
             return False
