@@ -20,12 +20,12 @@ def job_reset_free_calculations():
     logger.info("定时任务开始：重置免费用户计算次数")
     try:
         from db_utils import reset_free_users_daily_calculations
+
         affected_rows = reset_free_users_daily_calculations()
         msg = f"定时任务完成：重置了 {affected_rows} 个免费用户的计算次数"
         logger.info(msg)
     except ImportError:
-        logger.error(
-            "定时任务失败：无法导入 reset_free_users_daily_calculations")
+        logger.error("定时任务失败：无法导入 reset_free_users_daily_calculations")
     except (OSError, IOError) as e:
         logger.error(f"定时任务失败：数据库访问错误 - {e}")
     except (ValueError, TypeError, AttributeError) as e:
@@ -36,23 +36,15 @@ def job_reset_free_calculations():
 
 
 def job_recycle_idle_connections():
-    """定时任务：回收空闲数据库连接"""
-    logger.debug("定时任务开始：回收空闲数据库连接")
-    try:
-        from db_utils import monitor_connections
-        status = monitor_connections()
-        logger.debug(f"连接监控完成：状态={status}")
-    except ImportError:
-        logger.error("定时任务失败：无法导入 monitor_connections")
-    except Exception as e:  # noinspection PyBroadException
-        # 定时任务需要捕获所有异常以确保调度器继续运行
-        logger.exception(f"定时任务异常：回收空闲连接 - {e}")
+    """定时任务：回收空闲数据库连接（已禁用，SQLite连接池已移除）"""
+    logger.debug("定时任务：回收空闲连接 - 已禁用（SQLite连接池已移除）")
 
 
 def _start_connection_monitor():
     """启动连接监控"""
     try:
         from connection_monitor_enhanced import get_connection_monitor
+
         monitor = get_connection_monitor()
         if not monitor.monitoring:
             monitor.start_monitoring()
@@ -64,9 +56,8 @@ def _start_connection_monitor():
 def _start_exchange_rate_monitor():
     """启动汇率监控"""
     try:
-        from exchange_rate_monitor_enhanced import (
-            get_exchange_rate_monitor
-        )
+        from exchange_rate_monitor_enhanced import get_exchange_rate_monitor
+
         monitor = get_exchange_rate_monitor()
         if not monitor.monitoring:
             monitor.start_monitoring()
@@ -78,9 +69,8 @@ def _start_exchange_rate_monitor():
 def _start_payment_callback_monitor():
     """启动支付回调监控"""
     try:
-        from payment_callback_enhanced import (
-            get_payment_callback_monitor
-        )
+        from payment_callback_enhanced import get_payment_callback_monitor
+
         monitor = get_payment_callback_monitor()
         if not monitor.monitoring:
             monitor.start_monitoring()
@@ -114,8 +104,7 @@ def run_scheduler():
     # 每天凌晨0点执行：重置免费用户计算次数
     schedule.every().day.at("00:00").do(job_reset_free_calculations)
 
-    # 每5分钟执行一次：回收空闲数据库连接
-    schedule.every(5).minutes.do(job_recycle_idle_connections)
+    # 注意：回收空闲数据库连接的任务已禁用（SQLite连接池已移除）
 
     # 启动时检查是否需要执行重置
     # 如果当前时间已经过了今天的0点，说明今天的重置应该已经执行过了
@@ -172,9 +161,7 @@ def start_scheduler_thread():
         # 启动新线程
         try:
             _scheduler_thread = threading.Thread(
-                target=run_scheduler,
-                daemon=True,
-                name="Scheduler"
+                target=run_scheduler, daemon=True, name="Scheduler"
             )
             _scheduler_thread.start()
             _scheduler_started = True

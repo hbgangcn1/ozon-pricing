@@ -11,11 +11,12 @@ import time
 import signal
 import sys
 from datetime import datetime, date
+
 # 确保模块别名一致（logistics.db_utils 与 db_utils 引用同一对象）
-if __name__ == 'db_utils':
-    sys.modules.setdefault('logistics.db_utils', sys.modules[__name__])
-elif __name__ == 'logistics.db_utils':
-    sys.modules.setdefault('db_utils', sys.modules[__name__])
+if __name__ == "db_utils":
+    sys.modules.setdefault("logistics.db_utils", sys.modules[__name__])
+elif __name__ == "logistics.db_utils":
+    sys.modules.setdefault("db_utils", sys.modules[__name__])
 from typing import Optional, Tuple, Dict, Any, Sequence, Mapping, cast
 
 # 导入数据库适配函数（用于SQL语法适配）
@@ -26,33 +27,22 @@ except ImportError:
     def adapt_sql(sql: str) -> str:
         return sql
 
-    def adapt_placeholders(sql: str, param_count: int) -> str:
-        # noinspection PyUnusedLocal
-        _ = param_count  # 占位函数，参数未使用但需保持签名一致
-        return sql
-
     def get_placeholder() -> str:
-        return '?'
+        return "%s"
 
-# 导入错误处理模块（如果将来需要使用）
-# try:
-#     from .enhanced_error_handler import handle_database_error
-# except ImportError:
-#     from enhanced_error_handler import handle_database_error
+
 try:
     from .password_utils import validate_password_strength
 except ImportError:  # pragma: no cover - fallback for non-package execution
     from password_utils import validate_password_strength
 
 
-# 定义数据库异常类型（兼容SQLite和PostgreSQL）
+# 定义数据库异常类型（仅PostgreSQL）
 def _get_db_exceptions():
     """获取数据库异常元组"""
-    try:
-        import psycopg2
-        return sqlite3.Error, psycopg2.Error, OSError, ValueError
-    except ImportError:
-        return sqlite3.Error, OSError, ValueError
+    import psycopg2
+
+    return psycopg2.Error, OSError, ValueError
 
 
 try:
@@ -66,15 +56,14 @@ DB_EXCEPTIONS = _get_db_exceptions()
 def _is_postgresql_connection(conn):
     """
     检测连接对象是否为PostgreSQL连接
-    优先使用类型检测，不依赖全局配置
     """
-    # 首先检查是否为SQLite连接（优先级最高）
-    if isinstance(conn, sqlite3.Connection):
+    if conn is None:
         return False
 
     # 优先通过类型检测
     try:
         import psycopg2
+
         if isinstance(conn, psycopg2.extensions.connection):
             return True
     except (ImportError, AttributeError):
@@ -82,24 +71,16 @@ def _is_postgresql_connection(conn):
 
     # 检查连接对象的模块名
     conn_module = type(conn).__module__
-    if 'psycopg2' in conn_module or 'postgresql' in conn_module.lower():
+    if "psycopg2" in conn_module or "postgresql" in conn_module.lower():
         return True
 
     # 检查连接对象的类名
     conn_class_name = type(conn).__name__.lower()
-    if 'postgres' in conn_class_name or 'psycopg' in conn_class_name:
+    if "postgres" in conn_class_name or "psycopg" in conn_class_name:
         return True
 
-    # 如果连接模块是sqlite3，明确返回False
-    if 'sqlite3' in conn_module:
-        return False
-
-    # 最后回退到检查全局配置（仅当无法通过类型检测时）
-    try:
-        from db_config import DB_TYPE
-        return DB_TYPE == 'postgresql'
-    except (ImportError, AttributeError):
-        return False
+    # 对于其他情况，假设是PostgreSQL
+    return True
 
 
 def _subscription_expires_to_datetime(
@@ -111,7 +92,7 @@ def _subscription_expires_to_datetime(
     支持整型/浮点型（Unix 时间戳）、仅包含数字的字符串、
     以及已经是 ISO 格式的字符串。转换失败时返回 None。
     """
-    if raw_value in (None, '', 0):
+    if raw_value in (None, "", 0):
         return None
 
     try:
@@ -119,7 +100,7 @@ def _subscription_expires_to_datetime(
             return datetime.fromtimestamp(int(raw_value))
 
         cleaned = str(raw_value).strip()
-        if cleaned == '':
+        if cleaned == "":
             return None
         if cleaned.isdigit():
             return datetime.fromtimestamp(int(cleaned))
@@ -135,7 +116,7 @@ def _serialize_subscription_expires(value: Optional[Any]) -> Optional[int]:
     支持 datetime、ISO 字符串、整型/浮点型或数字字符串。
     转换失败时返回 None。
     """
-    if value in (None, '', 0):
+    if value in (None, "", 0):
         return None
 
     if isinstance(value, (int, float)):
@@ -145,7 +126,7 @@ def _serialize_subscription_expires(value: Optional[Any]) -> Optional[int]:
         return int(value.timestamp())
 
     cleaned = str(value).strip()
-    if cleaned == '':
+    if cleaned == "":
         return None
     try:
         return int(datetime.fromisoformat(cleaned).timestamp())
@@ -156,10 +137,10 @@ def _serialize_subscription_expires(value: Optional[Any]) -> Optional[int]:
             return None
 
 
-_TIMESTAMP_NUMERIC_PATTERN = r'^\d+(\.\d+)?$'
-_TIMESTAMP_DATE_PATTERN = r'^\d{4}-\d{2}-\d{2}$'
-_TIMESTAMP_FULL_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$'
-_TIMESTAMP_SHORT_PATTERN = r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$'
+_TIMESTAMP_NUMERIC_PATTERN = r"^\d+(\.\d+)?$"
+_TIMESTAMP_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+_TIMESTAMP_FULL_PATTERN = r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$"
+_TIMESTAMP_SHORT_PATTERN = r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$"
 
 
 def _build_safe_timestamp_expr(column: str) -> str:
@@ -205,12 +186,14 @@ def _safe_execute_fetchone(cursor, sql, params=None, conn=None) -> Any:
     # （仅在开发/测试环境启用，生产环境可选）
     try:
         import os
-        if (os.getenv('ENABLE_SQL_INJECTION_DETECTION', 'false').lower()
-                == 'true'):
+
+        if os.getenv("ENABLE_SQL_INJECTION_DETECTION", "false").lower() == "true":
             from sql_injection_protection import detect_sql_injection
+
             is_safe, warning = detect_sql_injection(sql, params)
             if not is_safe:
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.warning(f"SQL注入检测警告: {warning}")
                 logger.warning(f"SQL语句: {sql[:200]}...")
@@ -235,17 +218,17 @@ def _safe_execute_fetchone(cursor, sql, params=None, conn=None) -> Any:
             if isinstance(cursor, sqlite3.Cursor):
                 # SQLite cursor，保持?占位符
                 pass  # sql保持不变
-            elif ('psycopg2' in cursor_module
-                  or 'postgres' in cursor_class_name):
+            elif "psycopg2" in cursor_module or "postgres" in cursor_class_name:
                 # PostgreSQL cursor，需要转换占位符
-                if '?' in sql:
-                    sql = sql.replace('?', '%s')
+                if "?" in sql:
+                    sql = sql.replace("?", "%s")
             else:
                 # 未知类型，尝试通过全局配置（但这不是最佳实践）
                 try:
                     from db_config import DB_TYPE
-                    if DB_TYPE == 'postgresql' and '?' in sql:
-                        sql = sql.replace('?', '%s')
+
+                    if DB_TYPE == "postgresql" and "?" in sql:
+                        sql = sql.replace("?", "%s")
                 except (ImportError, AttributeError):
                     pass  # 保持原样
 
@@ -278,23 +261,23 @@ def _safe_adapt_sql(sql: str, conn) -> str:
             char = sql[i]
 
             # 跟踪引号状态（考虑转义）
-            if char == "'" and (i == 0 or sql[i - 1] != '\\'):
+            if char == "'" and (i == 0 or sql[i - 1] != "\\"):
                 in_single_quote = not in_single_quote
                 result.append(char)
-            elif char == '"' and (i == 0 or sql[i - 1] != '\\'):
+            elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
                 in_double_quote = not in_double_quote
                 result.append(char)
-            elif char == '%':
+            elif char == "%":
                 # 处理%符号
-                if i + 1 < len(sql) and sql[i + 1] == 's':
+                if i + 1 < len(sql) and sql[i + 1] == "s":
                     # 找到%s，检查是否在字符串中
                     if not in_single_quote and not in_double_quote:
                         # 不在字符串中，替换为?
-                        result.append('?')
+                        result.append("?")
                         i += 1  # 跳过's'
                     else:
                         # 在字符串中，保留原样
-                        result.append('%s')
+                        result.append("%s")
                         i += 1
                 elif not in_single_quote and not in_double_quote:
                     # 单独的%符号（不是%s）
@@ -302,26 +285,25 @@ def _safe_adapt_sql(sql: str, conn) -> str:
                     if i + 1 < len(sql) and sql[i + 1].isalnum():
                         # 可能是格式化说明符（如%d, %f等），保留它
                         result.append(char)
-                    elif i + 1 < len(sql) and sql[i + 1] == '%':
+                    elif i + 1 < len(sql) and sql[i + 1] == "%":
                         # 双重%符号（%%），在Python中表示字面量%，保留它
-                        result.append('%')
-                        result.append('%')
+                        result.append("%")
+                        result.append("%")
                         i += 1  # 跳过第二个%
                     else:
                         # 单独的%符号，在SQLite中需要转义为%%
                         # 转换为字面量%，避免SQL语法错误
                         # 但需要检查是否在LIKE操作符中，如果是则保留%
                         # 简化处理：下一个字符是空白或特殊字符，转义为%%
-                        next_char = sql[i + 1] if i + 1 < len(sql) else ''
-                        if next_char in (' ', '\t', '\n', '\r', ')', ',',
-                                         ';', ''):
+                        next_char = sql[i + 1] if i + 1 < len(sql) else ""
+                        if next_char in (" ", "\t", "\n", "\r", ")", ",", ";", ""):
                             # 单独的%后面跟着空白或结束，转义为%%
-                            result.append('%')
-                            result.append('%')
+                            result.append("%")
+                            result.append("%")
                         else:
                             # 可能是其他情况，保留原样但转义为%%
-                            result.append('%')
-                            result.append('%')
+                            result.append("%")
+                            result.append("%")
                 else:
                     # 在字符串中的%，保留
                     result.append(char)
@@ -329,36 +311,30 @@ def _safe_adapt_sql(sql: str, conn) -> str:
                 result.append(char)
             i += 1
 
-        sql = ''.join(result)
+        sql = "".join(result)
 
         # 转换PostgreSQL的TRUE/FALSE为SQLite的1/0
         # 使用正则表达式，只替换不在字符串中的TRUE/FALSE
         # 处理 is_active = TRUE -> is_active = 1
         sql = re.sub(
-            r'\bis_active\s*=\s*TRUE\b',
-            'is_active = 1',
-            sql,
-            flags=re.IGNORECASE
+            r"\bis_active\s*=\s*TRUE\b", "is_active = 1", sql, flags=re.IGNORECASE
         )
         # 处理 is_active = FALSE -> is_active = 0
         sql = re.sub(
-            r'\bis_active\s*=\s*FALSE\b',
-            'is_active = 0',
-            sql,
-            flags=re.IGNORECASE
+            r"\bis_active\s*=\s*FALSE\b", "is_active = 0", sql, flags=re.IGNORECASE
         )
         # 处理其他布尔字段的类似比较
         sql = re.sub(
-            r'\b(success|is_test_user|is_active|is_test_data)\s*=\s*TRUE\b',
-            r'\1 = 1',
+            r"\b(success|is_test_user|is_active|is_test_data)\s*=\s*TRUE\b",
+            r"\1 = 1",
             sql,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
         sql = re.sub(
-            r'\b(success|is_test_user|is_active|is_test_data)\s*=\s*FALSE\b',
-            r'\1 = 0',
+            r"\b(success|is_test_user|is_active|is_test_data)\s*=\s*FALSE\b",
+            r"\1 = 0",
             sql,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
         # 处理 VALUES (?, ?, TRUE) 或 SET is_active = TRUE 中的 TRUE/FALSE
         # 直接替换所有不在引号中的TRUE/FALSE
@@ -372,27 +348,29 @@ def _safe_adapt_sql(sql: str, conn) -> str:
             char = sql[i]
 
             # 跟踪引号状态
-            if char == "'" and (i == 0 or sql[i - 1] != '\\'):
+            if char == "'" and (i == 0 or sql[i - 1] != "\\"):
                 in_single_quote = not in_single_quote
                 result.append(char)
-            elif char == '"' and (i == 0 or sql[i - 1] != '\\'):
+            elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
                 in_double_quote = not in_double_quote
                 result.append(char)
             elif not in_single_quote and not in_double_quote:
                 # 不在引号中，检查是否为TRUE或FALSE
-                if i + 3 < len(sql) and sql[i:i + 4].upper() == 'TRUE':
+                if i + 3 < len(sql) and sql[i : i + 4].upper() == "TRUE":
                     # 确保是完整的单词（使用单词边界检查）
-                    if (i == 0 or not sql[i - 1].isalnum()) and \
-                       (i + 4 >= len(sql) or not sql[i + 4].isalnum()):
-                        result.append('1')
+                    if (i == 0 or not sql[i - 1].isalnum()) and (
+                        i + 4 >= len(sql) or not sql[i + 4].isalnum()
+                    ):
+                        result.append("1")
                         i += 3  # 跳过'RUE'
                     else:
                         result.append(char)
-                elif i + 4 < len(sql) and sql[i:i + 5].upper() == 'FALSE':
+                elif i + 4 < len(sql) and sql[i : i + 5].upper() == "FALSE":
                     # 确保是完整的单词
-                    if (i == 0 or not sql[i - 1].isalnum()) and \
-                       (i + 5 >= len(sql) or not sql[i + 5].isalnum()):
-                        result.append('0')
+                    if (i == 0 or not sql[i - 1].isalnum()) and (
+                        i + 5 >= len(sql) or not sql[i + 5].isalnum()
+                    ):
+                        result.append("0")
                         i += 4  # 跳过'ALSE'
                     else:
                         result.append(char)
@@ -402,7 +380,7 @@ def _safe_adapt_sql(sql: str, conn) -> str:
                 result.append(char)
             i += 1
 
-        sql = ''.join(result)
+        sql = "".join(result)
 
         return sql
 
@@ -412,9 +390,11 @@ def _safe_adapt_sql(sql: str, conn) -> str:
         # 因为adapt_sql会转换占位符，我们需要在占位符转换之前处理字面量1/0
         # 使用更宽松的匹配，因为SQL可能包含换行符
         sql_upper = sql.upper()
-        if ('ACTIVE_SESSIONS' in sql_upper
-                and 'VALUES' in sql_upper
-                and 'INSERT' in sql_upper):
+        if (
+            "ACTIVE_SESSIONS" in sql_upper
+            and "VALUES" in sql_upper
+            and "INSERT" in sql_upper
+        ):
             # 匹配 VALUES (...) 中最后一个单独的 1（可能是is_active）
             # 需要匹配多种情况：
             # 1. VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
@@ -424,17 +404,17 @@ def _safe_adapt_sql(sql: str, conn) -> str:
             # 使用DOTALL标志以匹配可能包含换行符的SQL
             # \s* 匹配零个或多个空白字符，可以同时处理有空格和没空格的情况
             sql = re.sub(
-                r',\s*1\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))',
-                ', TRUE)',
+                r",\s*1\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))",
+                ", TRUE)",
                 sql,
-                flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+                flags=re.IGNORECASE | re.MULTILINE | re.DOTALL,
             )
             # 同样处理0
             sql = re.sub(
-                r',\s*0\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))',
-                ', FALSE)',
+                r",\s*0\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))",
+                ", FALSE)",
                 sql,
-                flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+                flags=re.IGNORECASE | re.MULTILINE | re.DOTALL,
             )
 
         sql = adapt_sql(sql)
@@ -448,35 +428,35 @@ def _safe_adapt_sql(sql: str, conn) -> str:
         while i < len(sql):
             char = sql[i]
 
-            if char == "'" and (i == 0 or sql[i - 1] != '\\'):
+            if char == "'" and (i == 0 or sql[i - 1] != "\\"):
                 in_single_quote = not in_single_quote
                 result.append(char)
-            elif char == '"' and (i == 0 or sql[i - 1] != '\\'):
+            elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
                 in_double_quote = not in_double_quote
                 result.append(char)
-            elif char == '?':
+            elif char == "?":
                 if not in_single_quote and not in_double_quote:
-                    result.append('%s')
+                    result.append("%s")
                 else:
-                    result.append('?')
+                    result.append("?")
             else:
                 result.append(char)
             i += 1
 
-        sql = ''.join(result)
+        sql = "".join(result)
         # 额外的安全检查：确保datetime函数被转换（备用方案）
         # 只匹配?或%s占位符，不匹配单独的%符号
         sql = re.sub(
             r"datetime\s*\(\s*(\?|%s)\s*,\s*['\"]unixepoch['\"]\s*\)",
             r"to_timestamp(\1)",
             sql,
-            flags=re.IGNORECASE | re.DOTALL
+            flags=re.IGNORECASE | re.DOTALL,
         )
         sql = re.sub(
             r"datetime\s*\(\s*(\?|%s)\s*,\s*unixepoch\s*\)",
             r"to_timestamp(\1)",
             sql,
-            flags=re.IGNORECASE | re.DOTALL
+            flags=re.IGNORECASE | re.DOTALL,
         )
         return sql
 
@@ -490,24 +470,24 @@ def _safe_adapt_sql(sql: str, conn) -> str:
     while i < len(sql):
         char = sql[i]
 
-        if char == "'" and (i == 0 or sql[i - 1] != '\\'):
+        if char == "'" and (i == 0 or sql[i - 1] != "\\"):
             in_single_quote = not in_single_quote
             result.append(char)
-        elif char == '"' and (i == 0 or sql[i - 1] != '\\'):
+        elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
             in_double_quote = not in_double_quote
             result.append(char)
-        elif char == '%' and i + 1 < len(sql) and sql[i + 1] == 's':
+        elif char == "%" and i + 1 < len(sql) and sql[i + 1] == "s":
             if not in_single_quote and not in_double_quote:
-                result.append('?')
+                result.append("?")
                 i += 1
             else:
-                result.append('%s')
+                result.append("%s")
                 i += 1
         else:
             result.append(char)
         i += 1
 
-    return ''.join(result)
+    return "".join(result)
 
 
 # 数据库连接监控
@@ -515,15 +495,6 @@ _connection_counter = 0
 _connection_lock = threading.Lock()
 _MAX_CONNECTIONS = 50  # 最大并发连接数阈值
 _postgres_pool_closed_logged = False
-
-# 连接池配置
-_POOL_SIZE = 10
-_CONNECTION_POOL = queue.Queue(maxsize=_POOL_SIZE)
-_POOL_LOCK = threading.Lock()
-
-# 连接跟踪：记录连接放入池中的时间
-_CONNECTION_TIMESTAMPS = {}  # {conn_id: timestamp}
-_CONNECTION_IDLE_TIMEOUT = 300  # 5分钟（秒）
 
 # 连接监控配置
 _CONNECTION_WARNINGS = set()  # 记录已发送的警告
@@ -540,15 +511,19 @@ def _increment_connection_counter():
 
         # 连接数监控和告警
         if current_count > _CRITICAL_THRESHOLD:
-            if 'critical' not in _CONNECTION_WARNINGS:
-                print(f"🚨 严重警告: 当前活跃连接数 {current_count} "
-                      f"超过严重阈值 {_CRITICAL_THRESHOLD}")
-                _CONNECTION_WARNINGS.add('critical')
+            if "critical" not in _CONNECTION_WARNINGS:
+                print(
+                    f"🚨 严重警告: 当前活跃连接数 {current_count} "
+                    f"超过严重阈值 {_CRITICAL_THRESHOLD}"
+                )
+                _CONNECTION_WARNINGS.add("critical")
         elif current_count > _WARNING_THRESHOLD:
-            if 'warning' not in _CONNECTION_WARNINGS:
-                print(f"⚠️  警告: 当前活跃连接数 {current_count} "
-                      f"超过警告阈值 {_WARNING_THRESHOLD}")
-                _CONNECTION_WARNINGS.add('warning')
+            if "warning" not in _CONNECTION_WARNINGS:
+                print(
+                    f"⚠️  警告: 当前活跃连接数 {current_count} "
+                    f"超过警告阈值 {_WARNING_THRESHOLD}"
+                )
+                _CONNECTION_WARNINGS.add("warning")
         else:
             # 连接数恢复正常，清除警告记录
             _CONNECTION_WARNINGS.clear()
@@ -587,25 +562,12 @@ def reset_connection_counter():
 def get_connection_stats():
     """获取连接统计信息"""
     with _connection_lock:
-        pool_size = _CONNECTION_POOL.qsize()
-
-        # 统计空闲连接数量
-        current_time = time.time()
-        idle_count = 0
-        with _POOL_LOCK:
-            for timestamp in _CONNECTION_TIMESTAMPS.values():
-                if current_time - timestamp > _CONNECTION_IDLE_TIMEOUT:
-                    idle_count += 1
-
         return {
-            'active_connections': _connection_counter,
-            'pool_size': pool_size,
-            'idle_connections': idle_count,
-            'max_connections': _MAX_CONNECTIONS,
-            'warning_threshold': _WARNING_THRESHOLD,
-            'critical_threshold': _CRITICAL_THRESHOLD,
-            'warnings_active': len(_CONNECTION_WARNINGS) > 0,
-            'idle_timeout': _CONNECTION_IDLE_TIMEOUT
+            "active_connections": _connection_counter,
+            "max_connections": _MAX_CONNECTIONS,
+            "warning_threshold": _WARNING_THRESHOLD,
+            "critical_threshold": _CRITICAL_THRESHOLD,
+            "warnings_active": len(_CONNECTION_WARNINGS) > 0,
         }
 
 
@@ -653,7 +615,6 @@ def _check_connections_at_exit():
     try:
         count = get_connection_count()
     except (AttributeError, RuntimeError, TypeError):
-        # 如果获取连接数失败（锁错误、属性错误等），直接继续清理
         count = 0
     skip_cleanup = os.getenv("DBUTILS_SKIP_EXIT_CLEANUP") == "1"
 
@@ -662,45 +623,10 @@ def _check_connections_at_exit():
         print("🔧 正在强制关闭所有连接...")
 
     if not skip_cleanup:
-        # 1. 清理SQLite连接池
-        closed_count = 0
-        max_iterations = 1000  # 防止无限循环
-        iteration = 0
-        try:
-            while not _CONNECTION_POOL.empty() and iteration < max_iterations:
-                try:
-                    conn = _CONNECTION_POOL.get_nowait()
-                    try:
-                        conn.close()
-                        closed_count += 1
-                    except (
-                        sqlite3.Error,
-                        AttributeError,
-                        OSError,
-                        RuntimeError,
-                    ):
-                        # 连接可能已关闭或无效，忽略错误
-                        pass
-                    iteration += 1
-                except queue.Empty:
-                    break
-                except (AttributeError, RuntimeError, OSError):
-                    # 其他错误（如连接池对象无效），继续尝试
-                    iteration += 1
-                    if iteration >= max_iterations:
-                        break
-        except (AttributeError, RuntimeError, OSError):
-            # 清理过程中的任何错误都忽略（连接池可能未初始化）
-            pass
-
-        if closed_count > 0:
-            print(f"✅ 已关闭 {closed_count} 个SQLite连接")
-
-        # 2. 关闭PostgreSQL连接池（如果使用）
         try:
             from db_adapter import close_connection_pool
         except ImportError:
-            # 如果db_adapter不存在，定义占位函数
+
             def close_connection_pool():
                 pass
 
@@ -711,37 +637,16 @@ def _check_connections_at_exit():
                 print("✅ PostgreSQL连接池已关闭")
                 _postgres_pool_closed_logged = True
         except (AttributeError, RuntimeError, OSError, ConnectionError):
-            # 忽略关闭PostgreSQL连接池时的错误（连接池可能未初始化或已关闭）
             pass
 
-    # 3. 清理连接时间戳记录
-    try:
-        with _POOL_LOCK:
-            _CONNECTION_TIMESTAMPS.clear()
-    except (AttributeError, RuntimeError):
-        # 锁可能未初始化或已失效，忽略错误
-        pass
-
-    # 4. 重置计数器（无论是否有未关闭的连接）
     global _connection_counter
     try:
         with _connection_lock:
             remaining_count = _connection_counter
             if remaining_count > 0:
                 print(f"⚠️  仍有 {remaining_count} 个连接未通过正常流程关闭")
-                # 尝试通过清理时间戳记录来推断可能泄漏的连接
-                try:
-                    with _POOL_LOCK:
-                        leaked_timestamps = len(_CONNECTION_TIMESTAMPS)
-                        if leaked_timestamps > 0:
-                            print(f"   发现 {leaked_timestamps} 个连接时间戳记录未清理")
-                            _CONNECTION_TIMESTAMPS.clear()
-                except (AttributeError, RuntimeError):
-                    # 锁可能未初始化或已失效，忽略错误
-                    pass
             _connection_counter = 0
     except (AttributeError, RuntimeError):
-        # 如果获取锁失败（锁未初始化或已失效），直接重置（在退出时这是安全的）
         _connection_counter = 0
 
 
@@ -767,218 +672,11 @@ def signal_handler(signum, frame):
 
 # 注册信号处理（优雅关闭）
 try:
-    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
     signal.signal(signal.SIGTERM, signal_handler)  # kill命令
 except (ValueError, OSError):
     # Windows上某些信号不支持，忽略
     pass
-
-
-def _recycle_idle_connections():
-    """
-    回收空闲连接（超过5分钟未使用的连接）
-    返回回收的连接数量
-    """
-    current_time = time.time()
-    recycled_count = 0
-
-    with _POOL_LOCK:
-        # 收集需要回收的连接ID
-        connections_to_recycle = []
-        for conn_id, timestamp in list(_CONNECTION_TIMESTAMPS.items()):
-            if current_time - timestamp > _CONNECTION_IDLE_TIMEOUT:
-                connections_to_recycle.append(conn_id)
-
-        # 从池中移除并关闭过期连接
-        temp_connections = []
-        while not _CONNECTION_POOL.empty():
-            try:
-                conn = _CONNECTION_POOL.get_nowait()
-                conn_id = id(conn)
-
-                if conn_id in connections_to_recycle:
-                    # 关闭过期连接
-                    try:
-                        conn.close()
-                        recycled_count += 1
-                    except (sqlite3.Error, AttributeError, OSError):
-                        # 连接可能已关闭或无效，忽略错误继续处理
-                        pass
-                    _CONNECTION_TIMESTAMPS.pop(conn_id, None)
-                else:
-                    # 保留未过期的连接
-                    temp_connections.append(conn)
-            except queue.Empty:
-                break
-
-        # 将未过期的连接放回池中
-        for conn in temp_connections:
-            try:
-                _CONNECTION_POOL.put_nowait(conn)
-            except queue.Full:
-                # 池已满，关闭连接
-                try:
-                    conn.close()
-                except (sqlite3.Error, AttributeError, OSError):
-                    # 连接可能已关闭或无效，忽略错误继续处理
-                    pass
-
-    if recycled_count > 0:
-        msg = (
-            f"♻️  已回收 {recycled_count} 个空闲连接"
-            f"（超过{_CONNECTION_IDLE_TIMEOUT}秒未使用）"
-        )
-        print(msg)
-
-    return recycled_count
-
-
-def monitor_connections():
-    """连接监控函数，可在定时任务中调用"""
-    # 先回收空闲连接
-    recycled = _recycle_idle_connections()
-
-    stats = get_connection_stats()
-
-    if stats['active_connections'] > _CRITICAL_THRESHOLD:
-        print(f"🚨 连接数严重超限: {stats['active_connections']}/"
-              f"{_CRITICAL_THRESHOLD}")
-        # 这里可以添加告警通知逻辑，如发送邮件、短信等
-        return 'critical'
-    elif stats['active_connections'] > _WARNING_THRESHOLD:
-        print(f"⚠️  连接数超限: {stats['active_connections']}/"
-              f"{_WARNING_THRESHOLD}")
-        return 'warning'
-    else:
-        if recycled > 0:
-            msg = (
-                f"✅ 连接数正常: {stats['active_connections']} "
-                f"(已回收{recycled}个空闲连接)"
-            )
-            print(msg)
-        return 'normal'
-
-
-def _create_db_connection():
-    """创建新的数据库连接"""
-    db_path = os.path.join(os.path.dirname(__file__), "pricing_system.db")
-    conn = sqlite3.connect(
-        db_path,
-        check_same_thread=False,
-        timeout=5.0,
-    )
-    # 并发与锁优化：启用 WAL、设置超时与同步级别
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-    except sqlite3.Error:
-        pass
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _get_connection_from_pool():
-    """从连接池获取连接"""
-    try:
-        # 非阻塞方式获取连接
-        conn = _CONNECTION_POOL.get_nowait()
-        # 从时间戳记录中移除
-        conn_id = id(conn)
-        with _POOL_LOCK:
-            _CONNECTION_TIMESTAMPS.pop(conn_id, None)
-
-        # 验证连接是否仍然有效
-        try:
-            conn.execute("SELECT 1")
-            return conn
-        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
-            # 连接已失效，创建新连接
-            try:
-                conn.close()
-            except (sqlite3.Error, AttributeError, OSError):
-                # 连接可能已关闭或无效，忽略错误继续处理
-                pass
-            return _create_db_connection()
-    except queue.Empty:
-        # 池中没有可用连接，创建新连接
-        return _create_db_connection()
-
-
-def _get_connection_with_retry(max_retries=3):
-    """
-    从连接池获取连接（带重试机制）
-
-    Args:
-        max_retries: 最大重试次数
-
-    Returns:
-        数据库连接对象
-
-    Raises:
-        sqlite3.OperationalError: 重试后仍然失败
-    """
-    last_error = None
-    for attempt in range(max_retries):
-        try:
-            conn = _get_connection_from_pool()
-            # 测试连接是否可用
-            conn.execute("SELECT 1")
-            return conn
-        except sqlite3.OperationalError as e:
-            last_error = e
-            if 'locked' in str(e).lower() and attempt < max_retries - 1:
-                # 指数退避：0.1s, 0.2s, 0.4s
-                wait_time = 0.1 * (2 ** attempt)
-                print(f"数据库锁定，{wait_time}秒后重试 "
-                      f"(尝试 {attempt + 1}/{max_retries})")
-                time.sleep(wait_time)
-                continue
-            raise
-        except Exception as e:
-            # 其他异常直接抛出
-            print(f"获取数据库连接失败: {e}")
-            raise
-
-    # 所有重试都失败
-    raise last_error if last_error else sqlite3.OperationalError(
-        "无法获取数据库连接"
-    )
-
-
-def _return_connection_to_pool(conn):
-    """将连接返回池中"""
-    try:
-        # 记录连接放入池中的时间
-        conn_id = id(conn)
-        with _POOL_LOCK:
-            _CONNECTION_TIMESTAMPS[conn_id] = time.time()
-
-        # 非阻塞方式返回连接
-        _CONNECTION_POOL.put_nowait(conn)
-    except queue.Full:
-        # 池已满，关闭连接
-        conn_id = id(conn)
-        with _POOL_LOCK:
-            _CONNECTION_TIMESTAMPS.pop(conn_id, None)
-        conn.close()
-
-
-def _initialize_connection_pool():
-    """初始化连接池"""
-    with _POOL_LOCK:
-        if _CONNECTION_POOL.empty():
-            for _ in range(_POOL_SIZE):
-                try:
-                    conn = _create_db_connection()
-                    _CONNECTION_POOL.put_nowait(conn)
-                except (Exception,) as e:
-                    print(f"初始化连接池失败: {e}")
-
-
-# 延迟初始化连接池
-_initialize_connection_pool()
 
 
 def hash_password(password: str) -> str:
@@ -994,8 +692,8 @@ def hash_password(password: str) -> str:
     # 生成随机盐值
     salt = bcrypt.gensalt(rounds=12)  # 12轮加密，安全性高
     # 对密码进行哈希
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
@@ -1010,10 +708,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
         bool: 密码是否正确
     """
     try:
-        return bcrypt.checkpw(
-            password.encode('utf-8'),
-            hashed_password.encode('utf-8')
-        )
+        return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
     except (ValueError, TypeError):
         # 兼容旧的SHA256格式
         return verify_legacy_password(password, hashed_password)
@@ -1044,197 +739,17 @@ def is_bcrypt_hash(hashed_password: str) -> bool:
     Returns:
         bool: 是否为bcrypt格式
     """
-    return (hashed_password.startswith('$2b$')
-            or hashed_password.startswith('$2a$'))
-
-
-def get_db():
-    """获取数据库连接和游标"""
-    db_path = os.path.join(os.path.dirname(__file__), "pricing_system.db")
-    conn = sqlite3.connect(
-        db_path,
-        check_same_thread=False,
-        timeout=5.0,
-    )
-    # 并发与锁优化：启用 WAL、设置超时与同步级别
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-    except sqlite3.Error:
-        pass
-    conn.row_factory = sqlite3.Row
-
-    return conn, conn.cursor()
-
-
-class DBConnection:
-    """显式上下文管理器，提供 (conn, cursor) 二元组（带重试机制）"""
-
-    def __init__(self, db_path: str, max_retries=3):
-        self._db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
-        self._cursor: Optional[sqlite3.Cursor] = None
-        self._max_retries = max_retries
-
-    def __enter__(self) -> Tuple[sqlite3.Connection, sqlite3.Cursor]:
-        last_error = None
-        conn = None  # 初始化conn，避免未绑定变量错误
-        counter_incremented = False  # 跟踪计数器是否已增加
-
-        for attempt in range(self._max_retries):
-            try:
-                conn = sqlite3.connect(
-                    self._db_path,
-                    check_same_thread=False,
-                    timeout=5.0,
-                )
-                # 并发与锁优化：启用 WAL、设置超时与同步级别
-                try:
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    conn.execute("PRAGMA synchronous=NORMAL")
-                    conn.execute("PRAGMA busy_timeout=5000")
-                    conn.execute("PRAGMA foreign_keys=ON")
-                except sqlite3.Error:
-                    pass
-                conn.row_factory = sqlite3.Row
-
-                # 测试连接是否可用
-                conn.execute("SELECT 1")
-
-                cursor = conn.cursor()
-                self._conn = conn
-                self._cursor = cursor
-
-                # 增加连接计数（只有在成功创建连接后才增加）
-                _increment_connection_counter()
-                counter_incremented = True
-
-                return conn, cursor
-
-            except sqlite3.OperationalError as e:
-                last_error = e
-                locked = 'locked' in str(e).lower()
-                if locked and attempt < self._max_retries - 1:
-                    # 指数退避：0.1s, 0.2s, 0.4s
-                    wait_time = 0.1 * (2 ** attempt)
-                    print(f"数据库锁定，{wait_time}秒后重试 "
-                          f"(尝试 {attempt + 1}/{self._max_retries})")
-                    time.sleep(wait_time)
-                    if conn is not None:
-                        conn.close()
-                    continue
-                if conn is not None:
-                    conn.close()
-                # 如果计数器已增加，需要减少（但这种情况不应该发生，因为只有在成功后才增加）
-                if counter_incremented:
-                    _decrement_connection_counter()
-                raise
-            except DB_EXCEPTIONS:
-                # 其他数据库或系统异常直接抛出
-                if conn is not None:
-                    conn.close()
-                # 如果计数器已增加，需要减少
-                if counter_incremented:
-                    _decrement_connection_counter()
-                raise
-
-        # 所有重试都失败
-        # 如果计数器已增加，需要减少（但这种情况不应该发生）
-        if counter_incremented:
-            _decrement_connection_counter()
-        raise last_error if last_error else sqlite3.OperationalError(
-            "无法获取数据库连接"
-        )
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            # 减少连接计数
-            _decrement_connection_counter()
-
-
-class PooledDBConnection:
-    """连接池上下文管理器（带重试机制）"""
-
-    def __init__(self, max_retries=3):
-        self._conn: Optional[sqlite3.Connection] = None
-        self._cursor: Optional[sqlite3.Cursor] = None
-        self._max_retries = max_retries
-
-    def __enter__(self) -> Tuple[sqlite3.Connection, sqlite3.Cursor]:
-        # 从池中获取连接（带重试）
-        self._conn = _get_connection_with_retry(self._max_retries)
-        self._cursor = self._conn.cursor()
-
-        # 增加连接计数
-        _increment_connection_counter()
-
-        assert self._conn is not None
-        assert self._cursor is not None
-        return self._conn, self._cursor
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        if self._conn is not None:
-            # 减少连接计数
-            _decrement_connection_counter()
-
-            # 将连接返回池中
-            _return_connection_to_pool(self._conn)
-
-            self._conn = None
-            self._cursor = None
+    return hashed_password.startswith("$2b$") or hashed_password.startswith("$2a$")
 
 
 def get_db_connection():
     """
     返回一个可用于 with 语句的数据库连接管理器
-    自动适配SQLite和PostgreSQL
+    使用PostgreSQL
     """
-    # 优先使用db_adapter的统一接口
-    # 预先定义变量，避免静态检查警告（初始值不会使用，会在try块中重新赋值）
-    adapter_get_db_connection = None  # noqa: F841
-    db_type = None  # noqa: F841
-    _adapter_func = None  # noqa: F841
+    from db_adapter import get_db_connection as _adapter_func
 
-    try:
-        from db_adapter import get_db_connection as _adapter_func
-        import db_config  # 使用模块导入避免局部变量命名问题
-
-        adapter_get_db_connection = _adapter_func
-        db_type = db_config.DB_TYPE  # 通过模块访问常量
-
-        # 如果配置为PostgreSQL，直接返回适配器的上下文管理器
-        if db_type == 'postgresql':
-            return adapter_get_db_connection()
-        # SQLite也尝试使用适配器（统一接口）
-        else:
-            try:
-                return adapter_get_db_connection()
-            except (RuntimeError, ConnectionError, OSError, AttributeError):
-                # 适配器可能抛出：
-                # - RuntimeError: 驱动未安装、连接池未初始化
-                # - ConnectionError: 连接错误
-                # - OSError: 系统级错误
-                # - AttributeError: 模块加载问题
-                # 如果适配器失败，回退到SQLite
-                pass
-    except ImportError:
-        # 导入失败，使用回退方案
-        # 变量已在函数开始处定义，但为了满足静态检查，在except块中也显式定义
-        _adapter_func = None
-        db_config = None  # noqa: F841  # 模块对象，需要定义以满足检查
-        pass
-
-    # 回退到SQLite（兼容旧代码）
-    db_path = os.path.join(os.path.dirname(__file__), "pricing_system.db")
-    return DBConnection(db_path)
-
-
-def get_pooled_db_connection() -> PooledDBConnection:
-    """返回一个使用连接池的数据库连接管理器"""
-    return PooledDBConnection()
+    return _adapter_func()
 
 
 def get_enhanced_db_connection():
@@ -1244,19 +759,18 @@ def get_enhanced_db_connection():
     """
     try:
         from .enhanced_connection_manager import get_enhanced_db_connection
+
         return get_enhanced_db_connection()
     except ImportError:
-        # 如果增强连接管理器不可用，回退到标准连接
         print("警告: 增强连接管理器不可用，使用标准连接")
-        return get_pooled_db_connection()
+        return get_db_connection()
 
 
 def get_enhanced_connection_stats():
     """获取增强连接池统计信息"""
     try:
-        from .enhanced_connection_manager import (
-            get_connection_stats as enhanced_stats
-        )
+        from .enhanced_connection_manager import get_connection_stats as enhanced_stats
+
         return enhanced_stats()
     except ImportError:
         # 如果增强连接管理器不可用，回退到标准连接统计
@@ -1270,7 +784,7 @@ def current_user_id():
     user = None
     try:
         # 先尝试字典方式访问
-        if hasattr(st.session_state, '__contains__'):
+        if hasattr(st.session_state, "__contains__"):
             try:
                 if "user" in st.session_state:
                     user = st.session_state["user"]
@@ -1283,7 +797,7 @@ def current_user_id():
     # 如果字典方式失败，尝试属性方式
     if user is None:
         try:
-            if hasattr(st.session_state, 'user'):
+            if hasattr(st.session_state, "user"):
                 user = st.session_state.user
         except (AttributeError, TypeError):
             pass
@@ -1303,7 +817,7 @@ def is_admin():
     user = None
     try:
         # 先尝试字典方式访问
-        if hasattr(st.session_state, '__contains__'):
+        if hasattr(st.session_state, "__contains__"):
             try:
                 if "user" in st.session_state:
                     user = st.session_state["user"]
@@ -1316,7 +830,7 @@ def is_admin():
     # 如果字典方式失败，尝试属性方式
     if user is None:
         try:
-            if hasattr(st.session_state, 'user'):
+            if hasattr(st.session_state, "user"):
                 user = st.session_state.user
         except (AttributeError, TypeError):
             pass
@@ -1326,10 +840,10 @@ def is_admin():
 
     # 支持字典和对象两种访问方式
     if isinstance(user, dict):
-        role = user.get('role')
+        role = user.get("role")
     else:
-        role = getattr(user, 'role', None)
-    return role == 'admin'
+        role = getattr(user, "role", None)
+    return role == "admin"
 
 
 def require_admin():
@@ -1339,7 +853,7 @@ def require_admin():
 
 
 def get_system_config(
-        config_key: str, default_value: Optional[str] = None
+    config_key: str, default_value: Optional[str] = None
 ) -> Optional[str]:
     """获取系统配置值"""
     with get_db_connection() as (_, c):
@@ -1347,16 +861,15 @@ def get_system_config(
             return default_value
         # 确保使用正确的adapt_sql函数
         from db_adapter import adapt_sql as _adapt_sql
-        sql = _adapt_sql(
-            "SELECT config_value FROM system_config WHERE config_key = ?"
-        )
+
+        sql = _adapt_sql("SELECT config_value FROM system_config WHERE config_key = ?")
         c.execute(sql, (config_key,))
         result = c.fetchone()
         return result[0] if result else default_value
 
 
 def set_system_config(
-        config_key: str, config_value: str, description: Optional[str] = None
+    config_key: str, config_value: str, description: Optional[str] = None
 ) -> bool:
     """设置系统配置值"""
     with get_db_connection() as (conn, c):
@@ -1379,7 +892,7 @@ def set_system_config(
                     (config_key, config_value, description, updated_at)
                     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 """
-            c.execute(sql, (config_key, config_value, description or ''))
+            c.execute(sql, (config_key, config_value, description or ""))
             conn.commit()
             return True
         except Exception as e:
@@ -1389,8 +902,9 @@ def set_system_config(
 
 def is_registration_open() -> bool:
     """检查是否开放注册"""
-    config_value = get_system_config('open_registration', 'false')
-    return config_value is not None and config_value.lower() == 'true'
+    config_value = get_system_config("open_registration", "false")
+    return config_value is not None and config_value.lower() == "true"
+
 
 # 数据库升级相关函数
 
@@ -1404,17 +918,15 @@ def _upgrade_logistics_volume_coefficient():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('logistics',))
+        c.execute(check_sql, ("logistics",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'logistics')
+        cols = _get_table_columns(c, "logistics")
         if "volume_coefficient" not in cols:
             c.execute(
-                "ALTER TABLE logistics ADD COLUMN "
-                "volume_coefficient REAL DEFAULT 5000"
+                "ALTER TABLE logistics ADD COLUMN volume_coefficient REAL DEFAULT 5000"
             )
         conn.commit()
 
@@ -1428,8 +940,7 @@ def _upgrade_max_size_to_sides(table: str):
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
         c.execute(check_sql, (table,))
         if not c.fetchone():
@@ -1498,11 +1009,10 @@ def _upgrade_max_size_to_sides(table: str):
 def _upgrade_table_user_id(table: str):
     """给旧表加 user_id 字段（如存在）"""
     # 白名单验证：只允许这些表名，防止SQL注入
-    allowed_tables = {'products', 'logistics'}
+    allowed_tables = {"products", "logistics"}
     if table not in allowed_tables:
         raise ValueError(
-            f"非法的表名: {table}. "
-            f"只允许使用以下表名: {sorted(allowed_tables)}"
+            f"非法的表名: {table}. 只允许使用以下表名: {sorted(allowed_tables)}"
         )
 
     with get_db_connection() as (conn, c):
@@ -1532,8 +1042,7 @@ def _upgrade_table_user_id(table: str):
         else:
             # SQLite: 检查表是否存在
             check_sql = _safe_adapt_sql(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                conn
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
             )
             c.execute(check_sql, (table,))
             if not c.fetchone():
@@ -1647,7 +1156,7 @@ def _upgrade_old_volume_battery():
     """升级旧表体积和电池因子字段"""
     _upgrade_logistics_volume_coefficient()
     with get_db_connection() as (conn, c):
-        cols = _get_table_columns(c, 'logistics')
+        cols = _get_table_columns(c, "logistics")
         # 如果旧表里还有 volume_factor / battery_factor 就 DROP COLUMN
         # SQLite ≥ 3.35 支持 DROP COLUMN；PostgreSQL也支持
         # 检测实际连接类型
@@ -1661,8 +1170,8 @@ def _upgrade_old_volume_battery():
 
 
 def _safe_alter_table_add_column(
-        cursor, table_name: str, column_name: str,
-        column_def: str, allowed_columns: set) -> None:
+    cursor, table_name: str, column_name: str, column_def: str, allowed_columns: set
+) -> None:
     """
     安全地执行ALTER TABLE ADD COLUMN操作，防止SQL注入
     高优先级安全改进：增强列名验证（正则表达式 + SQL关键字检查）
@@ -1681,24 +1190,34 @@ def _safe_alter_table_add_column(
 
     # 预定义的安全表名白名单（扩展以包含所有可能的表）
     safe_table_names = {
-        'users', 'products', 'logistics', 'payment_orders',
-        'active_sessions', 'login_attempts', 'user_lockouts',
-        'subscription_upgrade_history', 'user_login_log',
-        'user_behavior_log', 'admin_action_log', 'alert_records',
-        'statistics_cache', 'alert_config', 'plans', 'system_config',
-        'payment_nonce_log'
+        "users",
+        "products",
+        "logistics",
+        "payment_orders",
+        "active_sessions",
+        "login_attempts",
+        "user_lockouts",
+        "subscription_upgrade_history",
+        "user_login_log",
+        "user_behavior_log",
+        "admin_action_log",
+        "alert_records",
+        "statistics_cache",
+        "alert_config",
+        "plans",
+        "system_config",
+        "payment_nonce_log",
     }
 
     # 验证表名
     if table_name not in safe_table_names:
         raise ValueError(
-            f"非法的表名: {table_name}. "
-            f"只允许使用以下表名: {sorted(safe_table_names)}"
+            f"非法的表名: {table_name}. 只允许使用以下表名: {sorted(safe_table_names)}"
         )
 
     # 高优先级安全改进：更严格的列名验证
     # 1. 正则表达式验证：只允许字母、数字、下划线，且必须以字母开头
-    column_pattern = r'^[a-zA-Z][a-zA-Z0-9_]{0,62}$'
+    column_pattern = r"^[a-zA-Z][a-zA-Z0-9_]{0,62}$"
     if not re.match(column_pattern, column_name):
         raise ValueError(
             f"非法的列名格式: {column_name}. "
@@ -1708,58 +1227,114 @@ def _safe_alter_table_add_column(
 
     # 2. SQL关键字检查（防止使用SQL关键字作为列名）
     sql_keywords = {
-        'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE',
-        'ALTER', 'TABLE', 'INDEX', 'VIEW', 'TRIGGER', 'DATABASE',
-        'SCHEMA', 'FROM', 'WHERE', 'JOIN', 'ON', 'AS', 'AND', 'OR',
-        'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL', 'TRUE', 'FALSE',
-        'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'UNION',
-        'ALL', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN',
-        'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'IF',
-        'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'CONSTRAINT',
-        'UNIQUE', 'CHECK', 'DEFAULT', 'AUTOINCREMENT', 'INTEGER',
-        'REAL', 'TEXT', 'BLOB', 'VARCHAR', 'CHAR', 'DATE', 'TIME',
-        'DATETIME', 'TIMESTAMP', 'BOOLEAN', 'INT', 'FLOAT', 'DOUBLE'
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "TABLE",
+        "INDEX",
+        "VIEW",
+        "TRIGGER",
+        "DATABASE",
+        "SCHEMA",
+        "FROM",
+        "WHERE",
+        "JOIN",
+        "ON",
+        "AS",
+        "AND",
+        "OR",
+        "NOT",
+        "IN",
+        "LIKE",
+        "BETWEEN",
+        "IS",
+        "NULL",
+        "TRUE",
+        "FALSE",
+        "ORDER",
+        "BY",
+        "GROUP",
+        "HAVING",
+        "LIMIT",
+        "OFFSET",
+        "UNION",
+        "ALL",
+        "DISTINCT",
+        "COUNT",
+        "SUM",
+        "AVG",
+        "MAX",
+        "MIN",
+        "EXISTS",
+        "CASE",
+        "WHEN",
+        "THEN",
+        "ELSE",
+        "END",
+        "IF",
+        "PRIMARY",
+        "KEY",
+        "FOREIGN",
+        "REFERENCES",
+        "CONSTRAINT",
+        "UNIQUE",
+        "CHECK",
+        "DEFAULT",
+        "AUTOINCREMENT",
+        "INTEGER",
+        "REAL",
+        "TEXT",
+        "BLOB",
+        "VARCHAR",
+        "CHAR",
+        "DATE",
+        "TIME",
+        "DATETIME",
+        "TIMESTAMP",
+        "BOOLEAN",
+        "INT",
+        "FLOAT",
+        "DOUBLE",
     }
     if column_name.upper() in sql_keywords:
-        raise ValueError(
-            f"列名不能使用SQL关键字: {column_name}. "
-            f"请使用其他名称"
-        )
+        raise ValueError(f"列名不能使用SQL关键字: {column_name}. 请使用其他名称")
 
     # 3. 白名单验证（双重保险）
     if column_name not in allowed_columns:
         raise ValueError(
-            f"非法的列名: {column_name}. "
-            f"只允许使用以下列名: {sorted(allowed_columns)}"
+            f"非法的列名: {column_name}. 只允许使用以下列名: {sorted(allowed_columns)}"
         )
 
     # 验证列定义格式（只允许特定类型和DEFAULT值）
 
-    allowed_types = {'INTEGER', 'REAL', 'TEXT', 'BOOLEAN'}
+    allowed_types = {"INTEGER", "REAL", "TEXT", "BOOLEAN"}
     # 定义允许的列定义格式模式
     # 注意：SQLite支持单引号和双引号，都需要匹配
     allowed_patterns = [
-        r'^INTEGER\s*$',  # INTEGER (无DEFAULT)
-        r'^INTEGER\s+DEFAULT\s+-?\d+$',  # INTEGER DEFAULT 数字（支持负数）
-        r'^REAL\s*$',  # REAL (无DEFAULT)
-        r'^REAL\s+DEFAULT\s+-?[\d.]+$',  # REAL DEFAULT 数字或小数（支持负数）
-        r'^TEXT\s*$',  # TEXT (无DEFAULT)
-        r'^TEXT\s+DEFAULT\s+\'[^\']*\'\s*$',  # TEXT DEFAULT '字符串'
+        r"^INTEGER\s*$",  # INTEGER (无DEFAULT)
+        r"^INTEGER\s+DEFAULT\s+-?\d+$",  # INTEGER DEFAULT 数字（支持负数）
+        r"^REAL\s*$",  # REAL (无DEFAULT)
+        r"^REAL\s+DEFAULT\s+-?[\d.]+$",  # REAL DEFAULT 数字或小数（支持负数）
+        r"^TEXT\s*$",  # TEXT (无DEFAULT)
+        r"^TEXT\s+DEFAULT\s+\'[^\']*\'\s*$",  # TEXT DEFAULT '字符串'
         r'^TEXT\s+DEFAULT\s+"[^"]*"\s*$',  # TEXT DEFAULT "字符串"
-        r'^TEXT\s+DEFAULT\s+\'\'\s*$',  # TEXT DEFAULT '' (空字符串)
+        r"^TEXT\s+DEFAULT\s+\'\'\s*$",  # TEXT DEFAULT '' (空字符串)
         r'^TEXT\s+DEFAULT\s+""\s*$',  # TEXT DEFAULT "" (空字符串)
     ]
 
     column_def_upper = column_def.upper().strip()
 
     # 首先检查列类型
-    type_match = re.match(r'^(\w+)', column_def_upper)
+    type_match = re.match(r"^(\w+)", column_def_upper)
     if type_match:
         col_type = type_match.group(1)
         if col_type not in allowed_types:
             raise ValueError(
-                f"非法的列类型: {col_type}. "
-                f"只允许使用以下类型: {sorted(allowed_types)}"
+                f"非法的列类型: {col_type}. 只允许使用以下类型: {sorted(allowed_types)}"
             )
     else:
         raise ValueError(f"无效的列定义格式: {column_def}")
@@ -1783,20 +1358,13 @@ def _safe_alter_table_add_column(
     # 执行安全的ALTER TABLE语句（使用参数化查询的列名部分）
     # 注意：SQLite的ALTER TABLE不支持参数化列名，所以必须使用白名单验证
     # 所有输入都经过严格验证和白名单检查
-    sql = (
-        f"ALTER TABLE {table_name} ADD COLUMN "
-        f"{column_name} {column_def}"
-    )
+    sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"
     # 最终验证：确保SQL语句不包含危险关键字
-    dangerous_keywords = [
-        'DROP', 'DELETE', 'TRUNCATE', 'UPDATE', 'INSERT'
-    ]
+    dangerous_keywords = ["DROP", "DELETE", "TRUNCATE", "UPDATE", "INSERT"]
     sql_upper = sql.upper()
     for keyword in dangerous_keywords:
-        if keyword in sql_upper and 'ADD COLUMN' not in sql_upper:
-            raise ValueError(
-                f"检测到危险的SQL关键字: {keyword}，操作已阻止"
-            )
+        if keyword in sql_upper and "ADD COLUMN" not in sql_upper:
+            raise ValueError(f"检测到危险的SQL关键字: {keyword}，操作已阻止")
     cursor.execute(sql)
 
 
@@ -1804,14 +1372,29 @@ def _upgrade_logistics_new_fields():
     """升级：新增重量计费字段、电池容量限制字段"""
     # 白名单：只允许这些列名，防止SQL注入
     allowed_logistics_columns = {
-        "battery_capacity_limit_wh", "require_msds", "fee_mode",
-        "first_fee", "first_weight_g", "continue_fee", "continue_unit",
-        "volume_coefficient", "price_limit_rub", "price_min_rub",
-        "max_second_side", "min_second_side", "min_length",
-        "max_cylinder_sum", "min_cylinder_sum", "max_cylinder_length",
-        "min_cylinder_length", "allow_battery", "allow_flammable",
-        "delivery_method", "priority_group", "price_limit_currency",
-        "price_min_currency"
+        "battery_capacity_limit_wh",
+        "require_msds",
+        "fee_mode",
+        "first_fee",
+        "first_weight_g",
+        "continue_fee",
+        "continue_unit",
+        "volume_coefficient",
+        "price_limit_rub",
+        "price_min_rub",
+        "max_second_side",
+        "min_second_side",
+        "min_length",
+        "max_cylinder_sum",
+        "min_cylinder_sum",
+        "max_cylinder_length",
+        "min_cylinder_length",
+        "allow_battery",
+        "allow_flammable",
+        "delivery_method",
+        "priority_group",
+        "price_limit_currency",
+        "price_min_currency",
     }
 
     with get_db_connection() as (conn, c):
@@ -1821,13 +1404,12 @@ def _upgrade_logistics_new_fields():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('logistics',))
+        c.execute(check_sql, ("logistics",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'logistics')
+        cols = _get_table_columns(c, "logistics")
         new_cols = {
             "battery_capacity_limit_wh": "REAL DEFAULT 0",
             "require_msds": "INTEGER DEFAULT 0",
@@ -1857,8 +1439,7 @@ def _upgrade_logistics_new_fields():
             # 使用安全的ALTER TABLE函数
             if col not in cols:
                 _safe_alter_table_add_column(
-                    c, 'logistics', col, def_sql,
-                    allowed_logistics_columns
+                    c, "logistics", col, def_sql, allowed_logistics_columns
                 )
         conn.commit()
 
@@ -1872,18 +1453,14 @@ def _upgrade_products_cylinder_length():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('products',))
+        c.execute(check_sql, ("products",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'products')
+        cols = _get_table_columns(c, "products")
         if "cylinder_length" not in cols:
-            c.execute(
-                "ALTER TABLE products ADD COLUMN cylinder_length "
-                "REAL DEFAULT 0"
-            )
+            c.execute("ALTER TABLE products ADD COLUMN cylinder_length REAL DEFAULT 0")
         conn.commit()
 
 
@@ -1891,8 +1468,12 @@ def _upgrade_products_new_fields():
     """升级：新增产品定价相关字段"""
     # 白名单：只允许这些列名，防止SQL注入
     allowed_products_columns = {
-        "promotion_discount", "promotion_cost_rate", "target_profit_margin",
-        "commission_rate", "withdrawal_fee_rate", "payment_processing_fee"
+        "promotion_discount",
+        "promotion_cost_rate",
+        "target_profit_margin",
+        "commission_rate",
+        "withdrawal_fee_rate",
+        "payment_processing_fee",
     }
 
     with get_db_connection() as (conn, c):
@@ -1902,27 +1483,25 @@ def _upgrade_products_new_fields():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('products',))
+        c.execute(check_sql, ("products",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'products')
+        cols = _get_table_columns(c, "products")
         new_cols = {
             "promotion_discount": "REAL DEFAULT 0.05",
             "promotion_cost_rate": "REAL DEFAULT 0.115",
             "target_profit_margin": "REAL DEFAULT 0.5",
             "commission_rate": "REAL DEFAULT 0.17",
             "withdrawal_fee_rate": "REAL DEFAULT 0.01",
-            "payment_processing_fee": "REAL DEFAULT 0.01"
+            "payment_processing_fee": "REAL DEFAULT 0.01",
         }
         for col, def_sql in new_cols.items():
             # 使用安全的ALTER TABLE函数
             if col not in cols:
                 _safe_alter_table_add_column(
-                    c, 'products', col, def_sql,
-                    allowed_products_columns
+                    c, "products", col, def_sql, allowed_products_columns
                 )
         conn.commit()
 
@@ -1931,10 +1510,16 @@ def _upgrade_users_subscription_fields():
     """升级：新增用户订阅相关字段"""
     # 白名单：只允许这些列名，防止SQL注入
     allowed_users_columns = {
-        "user_type", "expiry_date", "remaining_calculations",
-        "first_login_date", "test_days_remaining", "subscription_type",
-        "subscription_expires", "efficiency_promo_used", "created_at",
-        "last_login"
+        "user_type",
+        "expiry_date",
+        "remaining_calculations",
+        "first_login_date",
+        "test_days_remaining",
+        "subscription_type",
+        "subscription_expires",
+        "efficiency_promo_used",
+        "created_at",
+        "last_login",
     }
 
     with get_db_connection() as (conn, c):
@@ -1944,13 +1529,12 @@ def _upgrade_users_subscription_fields():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('users',))
+        c.execute(check_sql, ("users",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'users')
+        cols = _get_table_columns(c, "users")
         new_cols = {
             "user_type": "TEXT DEFAULT 'permanent'",
             "expiry_date": "TEXT",
@@ -1961,14 +1545,13 @@ def _upgrade_users_subscription_fields():
             "subscription_expires": "INTEGER",
             "efficiency_promo_used": "INTEGER DEFAULT 0",  # 记录是否使用过效率版首月1元优惠
             "created_at": "TEXT DEFAULT ''",  # 注册时间
-            "last_login": "TEXT"  # 最后登录时间
+            "last_login": "TEXT",  # 最后登录时间
         }
         for col, def_sql in new_cols.items():
             # 使用安全的ALTER TABLE函数
             if col not in cols:
                 _safe_alter_table_add_column(
-                    c, 'users', col, def_sql,
-                    allowed_users_columns
+                    c, "users", col, def_sql, allowed_users_columns
                 )
         conn.commit()
 
@@ -1982,18 +1565,14 @@ def _upgrade_users_test_flag():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('users',))
+        c.execute(check_sql, ("users",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'users')
+        cols = _get_table_columns(c, "users")
         if "is_test_user" not in cols:
-            c.execute(
-                "ALTER TABLE users ADD COLUMN is_test_user "
-                "INTEGER DEFAULT 0"
-            )
+            c.execute("ALTER TABLE users ADD COLUMN is_test_user INTEGER DEFAULT 0")
         conn.commit()
 
 
@@ -2019,20 +1598,19 @@ def _upgrade_performance_indexes():
         # 检查表是否存在（仅SQLite需要）
         if not _is_postgresql_connection(conn):
             check_sql = _safe_adapt_sql(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                conn
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
             )
             # 检查 payment_orders 表是否存在
-            c.execute(check_sql, ('payment_orders',))
+            c.execute(check_sql, ("payment_orders",))
             payment_orders_exists = c.fetchone() is not None
             # 检查 user_login_log 表是否存在
-            c.execute(check_sql, ('user_login_log',))
+            c.execute(check_sql, ("user_login_log",))
             user_login_log_exists = c.fetchone() is not None
             # 检查 user_behavior_log 表是否存在
-            c.execute(check_sql, ('user_behavior_log',))
+            c.execute(check_sql, ("user_behavior_log",))
             user_behavior_log_exists = c.fetchone() is not None
             # 检查 products 表是否存在
-            c.execute(check_sql, ('products',))
+            c.execute(check_sql, ("products",))
             products_exists = c.fetchone() is not None
         else:
             # PostgreSQL: 假设表都存在（表结构应该已经正确）
@@ -2042,39 +1620,76 @@ def _upgrade_performance_indexes():
             products_exists = True
 
         # 1. payment_orders表 - 用户+状态复合索引（支付历史查询）
-        if payment_orders_exists and "idx_payment_orders_user_status" not in existing_index_names:
-            c.execute(_safe_adapt_sql("""
+        if (
+            payment_orders_exists
+            and "idx_payment_orders_user_status" not in existing_index_names
+        ):
+            c.execute(
+                _safe_adapt_sql(
+                    """
                 CREATE INDEX IF NOT EXISTS idx_payment_orders_user_status
                 ON payment_orders(user_id, status)
-            """, conn))
+            """,
+                    conn,
+                )
+            )
 
         # 2. user_login_log表 - 用户+时间复合索引（活跃度统计）
-        if user_login_log_exists and "idx_user_login_log_user_time" not in existing_index_names:
-            c.execute(_safe_adapt_sql("""
+        if (
+            user_login_log_exists
+            and "idx_user_login_log_user_time" not in existing_index_names
+        ):
+            c.execute(
+                _safe_adapt_sql(
+                    """
                 CREATE INDEX IF NOT EXISTS idx_user_login_log_user_time
                 ON user_login_log(user_id, login_time DESC)
-            """, conn))
+            """,
+                    conn,
+                )
+            )
 
         # 3. user_behavior_log表 - 用户+类型复合索引（行为分析）
-        if user_behavior_log_exists and "idx_user_behavior_log_user_type" not in existing_index_names:
-            c.execute(_safe_adapt_sql("""
+        if (
+            user_behavior_log_exists
+            and "idx_user_behavior_log_user_type" not in existing_index_names
+        ):
+            c.execute(
+                _safe_adapt_sql(
+                    """
                 CREATE INDEX IF NOT EXISTS idx_user_behavior_log_user_type
                 ON user_behavior_log(user_id, behavior_type)
-            """, conn))
+            """,
+                    conn,
+                )
+            )
 
         # 4. payment_orders表 - 创建时间+状态索引（收入统计）
-        if payment_orders_exists and "idx_payment_orders_time_status" not in existing_index_names:
-            c.execute(_safe_adapt_sql("""
+        if (
+            payment_orders_exists
+            and "idx_payment_orders_time_status" not in existing_index_names
+        ):
+            c.execute(
+                _safe_adapt_sql(
+                    """
                 CREATE INDEX IF NOT EXISTS idx_payment_orders_time_status
                 ON payment_orders(created_at DESC, status)
-            """, conn))
+            """,
+                    conn,
+                )
+            )
 
         # 5. products表 - 用户+名称索引（产品搜索）
         if products_exists and "idx_products_user_name" not in existing_index_names:
-            c.execute(_safe_adapt_sql("""
+            c.execute(
+                _safe_adapt_sql(
+                    """
                 CREATE INDEX IF NOT EXISTS idx_products_user_name
                 ON products(user_id, name)
-            """, conn))
+            """,
+                    conn,
+                )
+            )
 
         conn.commit()
 
@@ -2088,17 +1703,14 @@ def _upgrade_logistics_price_min():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('logistics',))
+        c.execute(check_sql, ("logistics",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'logistics')
+        cols = _get_table_columns(c, "logistics")
         if "price_min" not in cols:
-            c.execute(
-                "ALTER TABLE logistics ADD COLUMN price_min REAL DEFAULT 0"
-            )
+            c.execute("ALTER TABLE logistics ADD COLUMN price_min REAL DEFAULT 0")
         conn.commit()
 
 
@@ -2110,18 +1722,14 @@ def _upgrade_products_return_rate():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('products',))
+        c.execute(check_sql, ("products",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = [col[1] for col in c.execute(
-            "PRAGMA table_info(products)").fetchall()]
+        cols = [col[1] for col in c.execute("PRAGMA table_info(products)").fetchall()]
         if "return_rate" not in cols:
-            c.execute(
-                "ALTER TABLE products ADD COLUMN return_rate REAL DEFAULT 0"
-            )
+            c.execute("ALTER TABLE products ADD COLUMN return_rate REAL DEFAULT 0")
         conn.commit()
 
 
@@ -2131,28 +1739,21 @@ def _upgrade_products_is_test_data():
         # 首先检查表是否存在
         if not _is_postgresql_connection(conn):
             check_sql = _safe_adapt_sql(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                conn
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
             )
-            c.execute(check_sql, ('products',))
+            c.execute(check_sql, ("products",))
             if not c.fetchone():
                 return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'products')
+        cols = _get_table_columns(c, "products")
         if "is_test_data" not in cols:
             # 检测实际连接类型
             if _is_postgresql_connection(conn):
                 c.execute(
-                    (
-                        "ALTER TABLE products "
-                        "ADD COLUMN is_test_data INTEGER DEFAULT 0"
-                    )
+                    ("ALTER TABLE products ADD COLUMN is_test_data INTEGER DEFAULT 0")
                 )
             else:
                 c.execute(
-                    (
-                        "ALTER TABLE products "
-                        "ADD COLUMN is_test_data INTEGER DEFAULT 0"
-                    )
+                    ("ALTER TABLE products ADD COLUMN is_test_data INTEGER DEFAULT 0")
                 )
         conn.commit()
 
@@ -2165,17 +1766,14 @@ def _upgrade_products_vat_rate():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('products',))
+        c.execute(check_sql, ("products",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'products')
+        cols = _get_table_columns(c, "products")
         if "vat_rate" not in cols:
-            c.execute(
-                "ALTER TABLE products ADD COLUMN vat_rate REAL DEFAULT 0"
-            )
+            c.execute("ALTER TABLE products ADD COLUMN vat_rate REAL DEFAULT 0")
         conn.commit()
 
 
@@ -2187,17 +1785,14 @@ def _upgrade_payment_orders_duration():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('payment_orders',))
+        c.execute(check_sql, ("payment_orders",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'payment_orders')
+        cols = _get_table_columns(c, "payment_orders")
         if "duration" not in cols:
-            c.execute(
-                "ALTER TABLE payment_orders ADD COLUMN duration TEXT"
-            )
+            c.execute("ALTER TABLE payment_orders ADD COLUMN duration TEXT")
         conn.commit()
 
 
@@ -2211,23 +1806,24 @@ def _upgrade_subscription_upgrade_system():
         # 1. 添加 users 表的升级相关字段
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('users',))
+        c.execute(check_sql, ("users",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'users')
+        cols = _get_table_columns(c, "users")
 
         new_fields = {
-            'billing_cycle': "TEXT DEFAULT 'month'",
-            'last_paid_amount': 'REAL DEFAULT 0',
-            'subscription_start': 'INTEGER',
+            "billing_cycle": "TEXT DEFAULT 'month'",
+            "last_paid_amount": "REAL DEFAULT 0",
+            "subscription_start": "INTEGER",
         }
 
         # 白名单：只允许这些列名，防止SQL注入
         allowed_users_upgrade_columns = {
-            'billing_cycle', 'last_paid_amount', 'subscription_start'
+            "billing_cycle",
+            "last_paid_amount",
+            "subscription_start",
         }
 
         for field_name, field_def in new_fields.items():
@@ -2235,8 +1831,7 @@ def _upgrade_subscription_upgrade_system():
                 # 使用安全的ALTER TABLE函数
                 if field_name in allowed_users_upgrade_columns:
                     _safe_alter_table_add_column(
-                        c, 'users', field_name, field_def,
-                        allowed_users_upgrade_columns
+                        c, "users", field_name, field_def, allowed_users_upgrade_columns
                     )
                 else:
                     raise ValueError(
@@ -2247,23 +1842,25 @@ def _upgrade_subscription_upgrade_system():
 
         # 2. 添加 payment_orders 表的升级相关字段
         # 首先检查表是否存在
-        c.execute(check_sql, ('payment_orders',))
+        c.execute(check_sql, ("payment_orders",))
         if not c.fetchone():
             conn.commit()
             return  # 表不存在，无需升级
-        payment_cols = _get_table_columns(c, 'payment_orders')
+        payment_cols = _get_table_columns(c, "payment_orders")
 
         payment_new_fields = {
-            'is_upgrade': 'INTEGER DEFAULT 0',
-            'upgrade_from_plan': 'TEXT',
-            'upgrade_to_plan': 'TEXT',
-            'remaining_value': 'REAL DEFAULT 0',
+            "is_upgrade": "INTEGER DEFAULT 0",
+            "upgrade_from_plan": "TEXT",
+            "upgrade_to_plan": "TEXT",
+            "remaining_value": "REAL DEFAULT 0",
         }
 
         # 白名单：只允许这些列名，防止SQL注入
         allowed_payment_orders_upgrade_columns = {
-            'is_upgrade', 'upgrade_from_plan', 'upgrade_to_plan',
-            'remaining_value'
+            "is_upgrade",
+            "upgrade_from_plan",
+            "upgrade_to_plan",
+            "remaining_value",
         }
 
         for field_name, field_def in payment_new_fields.items():
@@ -2271,8 +1868,11 @@ def _upgrade_subscription_upgrade_system():
                 # 使用安全的ALTER TABLE函数
                 if field_name in allowed_payment_orders_upgrade_columns:
                     _safe_alter_table_add_column(
-                        c, 'payment_orders', field_name, field_def,
-                        allowed_payment_orders_upgrade_columns
+                        c,
+                        "payment_orders",
+                        field_name,
+                        field_def,
+                        allowed_payment_orders_upgrade_columns,
                     )
                 else:
                     raise ValueError(
@@ -2308,8 +1908,13 @@ def _upgrade_users_security_questions():
     """升级：新增用户安全问题相关字段"""
     # 白名单：只允许这些列名，防止SQL注入
     allowed_users_columns = {
-        "security_q1", "security_a1", "security_q2", "security_a2",
-        "reset_locked_until", "reset_attempt_count", "reset_last_attempt"
+        "security_q1",
+        "security_a1",
+        "security_q2",
+        "security_a2",
+        "reset_locked_until",
+        "reset_attempt_count",
+        "reset_last_attempt",
     }
 
     with get_db_connection() as (conn, c):
@@ -2319,13 +1924,12 @@ def _upgrade_users_security_questions():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('users',))
+        c.execute(check_sql, ("users",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'users')
+        cols = _get_table_columns(c, "users")
         new_cols = {
             "security_q1": "TEXT",
             "security_a1": "TEXT",
@@ -2333,14 +1937,13 @@ def _upgrade_users_security_questions():
             "security_a2": "TEXT",
             "reset_locked_until": "REAL",
             "reset_attempt_count": "INTEGER DEFAULT 0",
-            "reset_last_attempt": "REAL"
+            "reset_last_attempt": "REAL",
         }
         for col, def_sql in new_cols.items():
             # 使用安全的ALTER TABLE函数
             if col not in cols:
                 _safe_alter_table_add_column(
-                    c, 'users', col, def_sql,
-                    allowed_users_columns
+                    c, "users", col, def_sql, allowed_users_columns
                 )
         conn.commit()
 
@@ -2348,9 +1951,7 @@ def _upgrade_users_security_questions():
 def _upgrade_users_logistics_templates_limit():
     """升级：新增用户物流模板限制字段"""
     # 白名单：只允许这些列名，防止SQL注入
-    allowed_users_columns = {
-        "logistics_templates_limit"
-    }
+    allowed_users_columns = {"logistics_templates_limit"}
 
     with get_db_connection() as (conn, c):
         # 检测实际连接类型
@@ -2359,22 +1960,18 @@ def _upgrade_users_logistics_templates_limit():
             return
         # 首先检查表是否存在
         check_sql = _safe_adapt_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            conn
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
         )
-        c.execute(check_sql, ('users',))
+        c.execute(check_sql, ("users",))
         if not c.fetchone():
             return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'users')
-        new_cols = {
-            "logistics_templates_limit": "INTEGER DEFAULT -1"
-        }
+        cols = _get_table_columns(c, "users")
+        new_cols = {"logistics_templates_limit": "INTEGER DEFAULT -1"}
         for col, def_sql in new_cols.items():
             # 使用安全的ALTER TABLE函数
             if col not in cols:
                 _safe_alter_table_add_column(
-                    c, 'users', col, def_sql,
-                    allowed_users_columns
+                    c, "users", col, def_sql, allowed_users_columns
                 )
         conn.commit()
 
@@ -2382,6 +1979,7 @@ def _upgrade_users_logistics_templates_limit():
 def _safe_execute_create_table(cursor, sql: str):
     """安全执行CREATE TABLE语句，自动处理AUTOINCREMENT"""
     import re
+
     # 从cursor获取connection对象以检测类型
     try:
         conn = cursor.connection
@@ -2395,19 +1993,21 @@ def _safe_execute_create_table(cursor, sql: str):
     if is_pg:
         adapted_sql = adapt_sql(sql)
         # 确保AUTOINCREMENT被移除（双重保险）
-        if 'AUTOINCREMENT' in adapted_sql.upper():
+        if "AUTOINCREMENT" in adapted_sql.upper():
             adapted_sql = re.sub(
-                r'INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT',
-                'SERIAL PRIMARY KEY',
+                r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT",
+                "SERIAL PRIMARY KEY",
                 adapted_sql,
-                flags=re.IGNORECASE | re.MULTILINE
+                flags=re.IGNORECASE | re.MULTILINE,
             )
             adapted_sql = re.sub(
-                r'\s+AUTOINCREMENT\b', '', adapted_sql,
-                flags=re.IGNORECASE | re.MULTILINE
+                r"\s+AUTOINCREMENT\b",
+                "",
+                adapted_sql,
+                flags=re.IGNORECASE | re.MULTILINE,
             )
         # 最终检查（仅对PostgreSQL）
-        if 'AUTOINCREMENT' in adapted_sql.upper():
+        if "AUTOINCREMENT" in adapted_sql.upper():
             raise ValueError(f"SQL适配失败，仍包含AUTOINCREMENT: {adapted_sql[:300]}")
         cursor.execute(adapted_sql)
     else:
@@ -2419,10 +2019,10 @@ def _safe_fetchone(cursor, execute_result=None) -> Any:
     """安全执行fetchone，兼容execute返回值"""
     fetcher = None
     if execute_result is not None:
-        fetcher = getattr(execute_result, 'fetchone', None)
-    elif hasattr(getattr(cursor, 'execute', None), 'return_value'):
-        fallback_result = getattr(cursor.execute, 'return_value')
-        fetcher = getattr(fallback_result, 'fetchone', None)
+        fetcher = getattr(execute_result, "fetchone", None)
+    elif hasattr(getattr(cursor, "execute", None), "return_value"):
+        fallback_result = getattr(cursor.execute, "return_value")
+        fetcher = getattr(fallback_result, "fetchone", None)
     fetch_callable = fetcher if callable(fetcher) else None
     if fetch_callable is not None:
         try:
@@ -2443,7 +2043,7 @@ def _ensure_serial_primary_key(conn, cursor, table_name: str):
         return
 
     safe_table = table_name.lower()
-    if not safe_table.replace('_', '').isalnum():
+    if not safe_table.replace("_", "").isalnum():
         return
 
     try:
@@ -2453,7 +2053,7 @@ def _ensure_serial_primary_key(conn, cursor, table_name: str):
             FROM information_schema.columns
             WHERE table_name = %s AND column_name = 'id'
             """,
-            (safe_table,)
+            (safe_table,),
         )
         try:
             result = cursor.fetchone()
@@ -2472,7 +2072,7 @@ def _ensure_serial_primary_key(conn, cursor, table_name: str):
             SELECT 1 FROM information_schema.sequences
             WHERE sequence_name = %s
             """,
-            (sequence_name,)
+            (sequence_name,),
         )
         if not cursor.fetchone():
             cursor.execute(f"CREATE SEQUENCE {sequence_name}")
@@ -2483,17 +2083,12 @@ def _ensure_serial_primary_key(conn, cursor, table_name: str):
             ALTER COLUMN id SET DEFAULT nextval('{sequence_name}')
             """
         )
-        cursor.execute(
-            f"ALTER SEQUENCE {sequence_name} OWNED BY {safe_table}.id"
-        )
+        cursor.execute(f"ALTER SEQUENCE {sequence_name} OWNED BY {safe_table}.id")
         cursor.execute(f"SELECT COALESCE(MAX(id), 0) FROM {safe_table}")
         max_id = cursor.fetchone()
-        max_id_value = (max_id[0] if max_id and max_id[0] else 0)
+        max_id_value = max_id[0] if max_id and max_id[0] else 0
         next_value = max(1, max_id_value + 1)
-        cursor.execute(
-            f"SELECT setval('{sequence_name}', %s, false)",
-            (next_value,)
-        )
+        cursor.execute(f"SELECT setval('{sequence_name}', %s, false)", (next_value,))
         conn.commit()
     except DB_EXCEPTIONS as exc:
         try:
@@ -2502,21 +2097,23 @@ def _ensure_serial_primary_key(conn, cursor, table_name: str):
             pass
         # 如果序列修复失败，不阻塞主流程（记录后忽略）
         import os
-        if not os.getenv('PYTEST_CURRENT_TEST'):
+
+        if not os.getenv("PYTEST_CURRENT_TEST"):
             import traceback
+
             print(f"[WARN] 序列修复失败: {exc}")
             traceback.print_exc()
 
 
-def _ensure_unique_constraint(conn, cursor, table_name: str,
-                              columns: Tuple[str, ...],
-                              constraint_name: str):
+def _ensure_unique_constraint(
+    conn, cursor, table_name: str, columns: Tuple[str, ...], constraint_name: str
+):
     """确保PostgreSQL表上存在指定列的唯一约束"""
     if not _is_postgresql_connection(conn):
         return
 
     safe_table = table_name.lower()
-    if not safe_table.replace('_', '').isalnum():
+    if not safe_table.replace("_", "").isalnum():
         return
 
     try:
@@ -2527,7 +2124,7 @@ def _ensure_unique_constraint(conn, cursor, table_name: str,
             WHERE table_name = %s
               AND constraint_name = %s
             """,
-            (safe_table, constraint_name)
+            (safe_table, constraint_name),
         )
         try:
             if cursor.fetchone():
@@ -2549,14 +2146,14 @@ def _ensure_unique_constraint(conn, cursor, table_name: str,
               AND tc.constraint_type IN ('UNIQUE', 'PRIMARY KEY')
             GROUP BY tc.constraint_name
             """,
-            (safe_table,)
+            (safe_table,),
         )
         rows = cursor.fetchall() or []
         for _, cols in rows:
             if tuple(sorted(cols)) == normalized_target:
                 return
 
-        columns_sql = ', '.join(columns)
+        columns_sql = ", ".join(columns)
         cursor.execute(
             f"""
             ALTER TABLE {safe_table}
@@ -2576,21 +2173,29 @@ def _ensure_unique_constraint(conn, cursor, table_name: str,
         except DB_EXCEPTIONS:
             pass
         import os
-        if not os.getenv('PYTEST_CURRENT_TEST'):
+
+        if not os.getenv("PYTEST_CURRENT_TEST"):
             import traceback
+
             print(f"[WARN] 创建唯一约束失败: {exc}")
             traceback.print_exc()
 
 
-def _ensure_foreign_key(conn, cursor, table_name: str,
-                        constraint_name: str, column: str,
-                        ref_table: str, ref_column: str = 'id'):
+def _ensure_foreign_key(
+    conn,
+    cursor,
+    table_name: str,
+    constraint_name: str,
+    column: str,
+    ref_table: str,
+    ref_column: str = "id",
+):
     """确保PostgreSQL表上存在指定的外键约束"""
     if not _is_postgresql_connection(conn):
         return
 
     safe_table = table_name.lower()
-    if not safe_table.replace('_', '').isalnum():
+    if not safe_table.replace("_", "").isalnum():
         return
 
     cursor.execute(
@@ -2599,7 +2204,7 @@ def _ensure_foreign_key(conn, cursor, table_name: str,
         FROM information_schema.tables
         WHERE table_name = %s
         """,
-        (safe_table,)
+        (safe_table,),
     )
     if cursor.fetchone() is None:
         return
@@ -2612,7 +2217,7 @@ def _ensure_foreign_key(conn, cursor, table_name: str,
           AND constraint_type = 'FOREIGN KEY'
           AND constraint_name = %s
         """,
-        (safe_table, constraint_name)
+        (safe_table, constraint_name),
     )
     if cursor.fetchone():
         return
@@ -2659,8 +2264,10 @@ def _ensure_foreign_key(conn, cursor, table_name: str,
         except DB_EXCEPTIONS:
             pass
         import os
-        if not os.getenv('PYTEST_CURRENT_TEST'):
+
+        if not os.getenv("PYTEST_CURRENT_TEST"):
             import traceback
+
             print(f"[WARN] 创建外键约束失败: {exc}")
             traceback.print_exc()
 
@@ -2670,7 +2277,7 @@ def _cleanup_duplicate_ids(conn, cursor, table_name: str):
     if not _is_postgresql_connection(conn):
         return
     safe_table = table_name.lower()
-    if not safe_table.replace('_', '').isalnum():
+    if not safe_table.replace("_", "").isalnum():
         return
     try:
         cursor.execute(
@@ -2695,19 +2302,16 @@ def _cleanup_duplicate_ids(conn, cursor, table_name: str):
             pass
 
 
-def _cleanup_duplicate_rows(conn, cursor, table_name: str,
-                            columns: Tuple[str, ...]):
+def _cleanup_duplicate_rows(conn, cursor, table_name: str, columns: Tuple[str, ...]):
     """按指定列组合去重，保留最早记录"""
     if not _is_postgresql_connection(conn):
         return
     safe_table = table_name.lower()
-    if not safe_table.replace('_', '').isalnum():
+    if not safe_table.replace("_", "").isalnum():
         return
     if not columns:
         return
-    join_conditions = ' AND '.join(
-        [f"a.{col} = b.{col}" for col in columns]
-    )
+    join_conditions = " AND ".join([f"a.{col} = b.{col}" for col in columns])
     try:
         cursor.execute(
             f"""
@@ -2731,75 +2335,61 @@ def _ensure_postgresql_schema(conn, cursor):
         return
 
     critical_tables = [
-        'users',
-        'products',
-        'logistics',
-        'payment_orders',
-        'login_attempts',
-        'admin_action_log',
-        'password_recovery_log',
-        'alert_records',
-        'user_behavior_log',
-        'statistics_cache',
-        'plans',
-        'user_login_log',
-        'subscription_upgrade_history',
-        'trusted_devices',
-        'audit_logs'
+        "users",
+        "products",
+        "logistics",
+        "payment_orders",
+        "login_attempts",
+        "admin_action_log",
+        "password_recovery_log",
+        "alert_records",
+        "user_behavior_log",
+        "statistics_cache",
+        "plans",
+        "user_login_log",
+        "subscription_upgrade_history",
+        "trusted_devices",
+        "audit_logs",
     ]
     for table in critical_tables:
         _ensure_serial_primary_key(conn, cursor, table)
 
     _ensure_unique_constraint(
-        conn, cursor, 'users',
-        ('username',),
-        'users_username_key'
+        conn, cursor, "users", ("username",), "users_username_key"
+    )
+    _ensure_unique_constraint(conn, cursor, "users", ("email",), "users_email_key")
+    _ensure_unique_constraint(conn, cursor, "users", ("id",), "users_id_key")
+    _cleanup_duplicate_rows(conn, cursor, "system_config", ("config_key",))
+    _ensure_unique_constraint(
+        conn, cursor, "system_config", ("config_key",), "system_config_config_key_key"
+    )
+    _cleanup_duplicate_rows(conn, cursor, "statistics_cache", ("cache_key",))
+    _ensure_unique_constraint(
+        conn,
+        cursor,
+        "statistics_cache",
+        ("cache_key",),
+        "statistics_cache_cache_key_key",
     )
     _ensure_unique_constraint(
-        conn, cursor, 'users',
-        ('email',),
-        'users_email_key'
+        conn,
+        cursor,
+        "trusted_devices",
+        ("user_id", "device_fingerprint"),
+        "trusted_devices_user_device_key",
     )
     _ensure_unique_constraint(
-        conn, cursor, 'users',
-        ('id',),
-        'users_id_key'
+        conn, cursor, "user_lockouts", ("identifier",), "user_lockouts_identifier_key"
     )
-    _cleanup_duplicate_rows(conn, cursor, 'system_config', ('config_key',))
+    _cleanup_duplicate_ids(conn, cursor, "user_login_log")
     _ensure_unique_constraint(
-        conn, cursor, 'system_config',
-        ('config_key',),
-        'system_config_config_key_key'
-    )
-    _cleanup_duplicate_rows(conn, cursor, 'statistics_cache', ('cache_key',))
-    _ensure_unique_constraint(
-        conn, cursor, 'statistics_cache',
-        ('cache_key',),
-        'statistics_cache_cache_key_key'
-    )
-    _ensure_unique_constraint(
-        conn, cursor, 'trusted_devices',
-        ('user_id', 'device_fingerprint'),
-        'trusted_devices_user_device_key'
-    )
-    _ensure_unique_constraint(
-        conn, cursor, 'user_lockouts',
-        ('identifier',),
-        'user_lockouts_identifier_key'
-    )
-    _cleanup_duplicate_ids(conn, cursor, 'user_login_log')
-    _ensure_unique_constraint(
-        conn, cursor, 'user_login_log',
-        ('id',),
-        'user_login_log_id_key'
+        conn, cursor, "user_login_log", ("id",), "user_login_log_id_key"
     )
     _ensure_foreign_key(
-        conn, cursor, 'products',
-        'products_user_id_fkey', 'user_id', 'users'
+        conn, cursor, "products", "products_user_id_fkey", "user_id", "users"
     )
     _ensure_foreign_key(
-        conn, cursor, 'logistics',
-        'logistics_user_id_fkey', 'user_id', 'users'
+        conn, cursor, "logistics", "logistics_user_id_fkey", "user_id", "users"
     )
     try:
         conn.commit()
@@ -2861,14 +2451,24 @@ def _upgrade_statistics_tables():
         admin_action_log_sql = _safe_adapt_sql(admin_action_log_sql_raw, conn)
         _safe_execute_create_table(c, admin_action_log_sql)
 
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_admin_action_log_admin_id
             ON admin_action_log(admin_id)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_admin_action_log_created_at
             ON admin_action_log(created_at)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         # 3. 创建密码找回日志表
         password_recovery_log_sql_raw = """
@@ -2883,18 +2483,27 @@ def _upgrade_statistics_tables():
                 created_at INTEGER DEFAULT (strftime('%s', 'now'))
             )
         """
-        password_recovery_log_sql = _safe_adapt_sql(
-            password_recovery_log_sql_raw, conn)
+        password_recovery_log_sql = _safe_adapt_sql(password_recovery_log_sql_raw, conn)
         _safe_execute_create_table(c, password_recovery_log_sql)
 
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_password_recovery_log_username
             ON password_recovery_log(username)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_password_recovery_log_created_at
             ON password_recovery_log(created_at)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         # 4. 创建异常告警记录表
         alert_records_sql_raw = """
@@ -2916,14 +2525,24 @@ def _upgrade_statistics_tables():
         alert_records_sql = _safe_adapt_sql(alert_records_sql_raw, conn)
         _safe_execute_create_table(c, alert_records_sql)
 
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_alert_records_created_at
             ON alert_records(created_at)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_alert_records_status
             ON alert_records(status)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         # 5. 创建统计数据缓存表
         statistics_cache_sql_raw = """
@@ -2939,14 +2558,24 @@ def _upgrade_statistics_tables():
         statistics_cache_sql = _safe_adapt_sql(statistics_cache_sql_raw, conn)
         _safe_execute_create_table(c, statistics_cache_sql)
 
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_statistics_cache_key
             ON statistics_cache(cache_key)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_statistics_cache_expires_at
             ON statistics_cache(expires_at)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         # 6. 创建用户行为记录表（新增）
         user_behavior_log_sql_raw = """
@@ -2960,22 +2589,36 @@ def _upgrade_statistics_tables():
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """
-        user_behavior_log_sql = _safe_adapt_sql(
-            user_behavior_log_sql_raw, conn)
+        user_behavior_log_sql = _safe_adapt_sql(user_behavior_log_sql_raw, conn)
         _safe_execute_create_table(c, user_behavior_log_sql)
 
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_user_behavior_user_id
             ON user_behavior_log(user_id)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_user_behavior_type
             ON user_behavior_log(behavior_type)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_user_behavior_created_at
             ON user_behavior_log(created_at)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         # 7. 创建预警配置表（新增）
         alert_config_sql_raw = """
@@ -2993,28 +2636,37 @@ def _upgrade_statistics_tables():
         alert_config_sql = _safe_adapt_sql(alert_config_sql_raw, conn)
         _safe_execute_create_table(c, alert_config_sql)
 
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_alert_config_metric_name
             ON alert_config(metric_name)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_alert_config_is_enabled
             ON alert_config(is_enabled)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         # 8. 为payment_orders表添加order_type字段（如果不存在）
         # 首先检查表是否存在
         if not _is_postgresql_connection(conn):
             check_sql = _safe_adapt_sql(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                conn
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", conn
             )
-            c.execute(check_sql, ('payment_orders',))
+            c.execute(check_sql, ("payment_orders",))
             if not c.fetchone():
                 conn.commit()
                 return  # 表不存在，无需升级
-        cols = _get_table_columns(c, 'payment_orders')
-        if 'order_type' not in cols:
+        cols = _get_table_columns(c, "payment_orders")
+        if "order_type" not in cols:
             # ALTER TABLE语句在PostgreSQL和SQLite中语法相同，但需要适配占位符
             sql_raw = """
                 ALTER TABLE payment_orders
@@ -3023,10 +2675,15 @@ def _upgrade_statistics_tables():
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql)
             # 创建索引
-            c.execute(_safe_adapt_sql("""
+            c.execute(
+                _safe_adapt_sql(
+                    """
                 CREATE INDEX IF NOT EXISTS idx_payment_orders_order_type
                 ON payment_orders(order_type)
-            """, conn))
+            """,
+                    conn,
+                )
+            )
 
         # 8. 创建套餐配置表（新增）
         plans_sql_raw = """
@@ -3054,18 +2711,33 @@ def _upgrade_statistics_tables():
         _safe_execute_create_table(c, plans_sql)
 
         # 为plans表创建索引
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_plans_code
             ON plans(plan_code)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_plans_active
             ON plans(is_active)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_plans_sort_order
             ON plans(sort_order)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         # 9. 初始化默认套餐数据（如果表为空）
         sql = _safe_adapt_sql("SELECT COUNT(*) FROM plans", conn)
@@ -3074,7 +2746,8 @@ def _upgrade_statistics_tables():
         count = result[0] if result else 0
         if count == 0:
             # 免费版
-            sql = _safe_adapt_sql("""
+            sql = _safe_adapt_sql(
+                """
                 INSERT INTO plans (
                     plan_code, plan_name,
                     display_price_month, display_price_year,
@@ -3090,53 +2763,87 @@ def _upgrade_statistics_tables():
                     ?, ?,
                     ?, ?, ?
                 )
-            """, conn)
-            c.execute(sql, (
-                'free', '免费版',
-                0, 0,
-                0, 0,
-                0, 0,
-                10, 1,
-                '适合初次体验的用户',
-                '每日10次计算|1个物流模板|基础功能',
-                1
-            ))
+            """,
+                conn,
+            )
+            c.execute(
+                sql,
+                (
+                    "free",
+                    "免费版",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    10,
+                    1,
+                    "适合初次体验的用户",
+                    "每日10次计算|1个物流模板|基础功能",
+                    1,
+                ),
+            )
 
             # 效率版
-            c.execute(sql, (
-                'efficiency', '效率版',
-                9.9, 99,
-                9.9, 99,
-                1.1, 1.2,
-                500, 3,
-                '适合中小规模卖家',
-                '每月500次计算|3个物流模板|优先客服',
-                2
-            ))
+            c.execute(
+                sql,
+                (
+                    "efficiency",
+                    "效率版",
+                    9.9,
+                    99,
+                    9.9,
+                    99,
+                    1.1,
+                    1.2,
+                    500,
+                    3,
+                    "适合中小规模卖家",
+                    "每月500次计算|3个物流模板|优先客服",
+                    2,
+                ),
+            )
 
             # 专业版
-            c.execute(sql, (
-                'professional', '专业版',
-                149, 1499,
-                149, 1499,
-                1.3, 1.4,
-                -1, 10,
-                '适合大规模专业卖家',
-                '无限次计算|10个物流模板|专属客服|数据导出',
-                3
-            ))
+            c.execute(
+                sql,
+                (
+                    "professional",
+                    "专业版",
+                    149,
+                    1499,
+                    149,
+                    1499,
+                    1.3,
+                    1.4,
+                    -1,
+                    10,
+                    "适合大规模专业卖家",
+                    "无限次计算|10个物流模板|专属客服|数据导出",
+                    3,
+                ),
+            )
 
             # 企业版
-            c.execute(sql, (
-                'enterprise', '企业版',
-                299, 2988,
-                299, 2988,
-                1.5, 1.6,
-                -1, -1,
-                '适合企业团队使用',
-                '无限次计算|无限物流模板|API接口|定制开发|7x24服务',
-                4
-            ))
+            c.execute(
+                sql,
+                (
+                    "enterprise",
+                    "企业版",
+                    299,
+                    2988,
+                    299,
+                    2988,
+                    1.5,
+                    1.6,
+                    -1,
+                    -1,
+                    "适合企业团队使用",
+                    "无限次计算|无限物流模板|API接口|定制开发|7x24服务",
+                    4,
+                ),
+            )
 
         # 10. 创建审计日志表（audit_logs）
         audit_logs_sql_raw = """
@@ -3154,24 +2861,40 @@ def _upgrade_statistics_tables():
         audit_logs_sql = _safe_adapt_sql(audit_logs_sql_raw, conn)
         _safe_execute_create_table(c, audit_logs_sql)
 
-        c.execute(_safe_adapt_sql("""
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_audit_logs_admin_id
             ON audit_logs(admin_id)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id
             ON audit_logs(user_id)
-        """, conn))
-        c.execute(_safe_adapt_sql("""
+        """,
+                conn,
+            )
+        )
+        c.execute(
+            _safe_adapt_sql(
+                """
             CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp
             ON audit_logs(timestamp)
-        """, conn))
+        """,
+                conn,
+            )
+        )
 
         conn.commit()
 
 
-def create_user(username, password, role="user", email=None,
-                user_type="free", is_test_user=False):
+def create_user(
+    username, password, role="user", email=None, user_type="free", is_test_user=False
+):
     """创建用户，返回user_id或None
 
     Args:
@@ -3191,11 +2914,10 @@ def create_user(username, password, role="user", email=None,
 
     # 验证密码强度
     password_validation = validate_password_strength(password)
-    if not password_validation['is_valid']:
+    if not password_validation["is_valid"]:
         return None
 
     with get_db_connection() as (conn, c):
-
         # 检查用户名是否已存在（不区分大小写）
         sql_raw = "SELECT username FROM users WHERE LOWER(username) = LOWER(?)"
         sql = _safe_adapt_sql(sql_raw, conn)
@@ -3221,7 +2943,11 @@ def create_user(username, password, role="user", email=None,
         if user_type == "free":
             remaining_calculations = 10
         elif user_type in [
-            "test", "gratitude", "efficiency", "professional", "enterprise"
+            "test",
+            "gratitude",
+            "efficiency",
+            "professional",
+            "enterprise",
         ]:
             remaining_calculations = -1  # 无限次
         else:
@@ -3230,7 +2956,8 @@ def create_user(username, password, role="user", email=None,
         try:
             # 设置注册时间为当前时间
             from datetime import datetime
-            created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             # 转换is_test_user为整数
             is_test = 1 if is_test_user else 0
@@ -3250,15 +2977,21 @@ def create_user(username, password, role="user", email=None,
                     sql = _safe_adapt_sql(sql_raw, conn)
                     # created_at需要转换为时间戳
                     created_at_ts = int(
-                        datetime.strptime(
-                            created_at, '%Y-%m-%d %H:%M:%S'
-                        ).timestamp()
+                        datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").timestamp()
                     )
                     c.execute(
                         sql,
-                        (username, hashed_password, role, email, user_type,
-                         user_type, remaining_calculations,
-                         created_at_ts, is_test),
+                        (
+                            username,
+                            hashed_password,
+                            role,
+                            email,
+                            user_type,
+                            user_type,
+                            remaining_calculations,
+                            created_at_ts,
+                            is_test,
+                        ),
                     )
                     user_id = c.fetchone()[0]
                 else:
@@ -3272,9 +3005,17 @@ def create_user(username, password, role="user", email=None,
                     sql = _safe_adapt_sql(sql_raw, conn)
                     c.execute(
                         sql,
-                        (username, hashed_password, role, email, user_type,
-                         user_type, remaining_calculations,
-                         created_at, is_test),
+                        (
+                            username,
+                            hashed_password,
+                            role,
+                            email,
+                            user_type,
+                            user_type,
+                            remaining_calculations,
+                            created_at,
+                            is_test,
+                        ),
                     )
                     # SQLite使用lastrowid
                     user_id = c.lastrowid
@@ -3293,13 +3034,20 @@ def create_user(username, password, role="user", email=None,
                     sql = _safe_adapt_sql(sql_raw, conn)
                     # created_at需要转换为时间戳
                     created_at_ts = int(
-                        datetime.strptime(
-                            created_at, '%Y-%m-%d %H:%M:%S'
-                        ).timestamp())
+                        datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").timestamp()
+                    )
                     c.execute(
                         sql,
-                        (username, hashed_password, role, user_type, user_type,
-                         remaining_calculations, created_at_ts, is_test),
+                        (
+                            username,
+                            hashed_password,
+                            role,
+                            user_type,
+                            user_type,
+                            remaining_calculations,
+                            created_at_ts,
+                            is_test,
+                        ),
                     )
                     user_id = c.fetchone()[0]
                 else:
@@ -3313,8 +3061,16 @@ def create_user(username, password, role="user", email=None,
                     sql = _safe_adapt_sql(sql_raw, conn)
                     c.execute(
                         sql,
-                        (username, hashed_password, role, user_type, user_type,
-                         remaining_calculations, created_at, is_test),
+                        (
+                            username,
+                            hashed_password,
+                            role,
+                            user_type,
+                            user_type,
+                            remaining_calculations,
+                            created_at,
+                            is_test,
+                        ),
                     )
                     # SQLite使用lastrowid
                     user_id = c.lastrowid
@@ -3326,7 +3082,7 @@ def create_user(username, password, role="user", email=None,
 
 
 # 全局标志，用于缓存数据库初始化状态（避免重复检查）
-_db_initialized_cache = {'initialized': False, 'lock': threading.Lock()}
+_db_initialized_cache = {"initialized": False, "lock": threading.Lock()}
 
 
 def verify_user(identifier, password):
@@ -3334,8 +3090,8 @@ def verify_user(identifier, password):
     # 优化：使用缓存避免重复检查表是否存在
     # 在完整测试套件中，数据库通常已经初始化，可以跳过检查
     # 快速检查缓存
-    with _db_initialized_cache['lock']:
-        if _db_initialized_cache['initialized']:
+    with _db_initialized_cache["lock"]:
+        if _db_initialized_cache["initialized"]:
             # 数据库已初始化，跳过检查
             pass
         else:
@@ -3360,26 +3116,28 @@ def verify_user(identifier, password):
                     table_exists = c.fetchone()
                     if table_exists and (
                         (isinstance(table_exists, bool) and table_exists)
-                        or (isinstance(table_exists, tuple)
-                            and table_exists[0])
+                        or (isinstance(table_exists, tuple) and table_exists[0])
                     ):
                         # 表存在，标记为已初始化
-                        _db_initialized_cache['initialized'] = True
+                        _db_initialized_cache["initialized"] = True
                     else:
                         # 表不存在，需要初始化
                         init_db()
-                        _db_initialized_cache['initialized'] = True
-            except (
-                sqlite3.Error, OSError, AttributeError, TypeError, ValueError
-            ):
+                        _db_initialized_cache["initialized"] = True
+            except (sqlite3.Error, OSError, AttributeError, TypeError, ValueError):
                 # 如果检查失败（数据库错误、属性错误、类型错误或值错误），
                 # 尝试初始化
                 try:
                     init_db()
-                    _db_initialized_cache['initialized'] = True
+                    _db_initialized_cache["initialized"] = True
                 except (
-                    sqlite3.Error, OSError, AttributeError, TypeError,
-                    ValueError, RuntimeError, KeyError
+                    sqlite3.Error,
+                    OSError,
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    RuntimeError,
+                    KeyError,
                 ):
                     # 初始化失败，继续执行（可能在测试环境中）
                     pass
@@ -3387,18 +3145,29 @@ def verify_user(identifier, password):
                 # 捕获PostgreSQL错误（如果psycopg2可用）
                 try:
                     import psycopg2
-                    if isinstance(e, (
-                        psycopg2.Error, psycopg2.OperationalError,
-                        psycopg2.ProgrammingError
-                    )):
+
+                    if isinstance(
+                        e,
+                        (
+                            psycopg2.Error,
+                            psycopg2.OperationalError,
+                            psycopg2.ProgrammingError,
+                        ),
+                    ):
                         try:
                             init_db()
-                            _db_initialized_cache['initialized'] = True
+                            _db_initialized_cache["initialized"] = True
                         except (
-                            sqlite3.Error, OSError, AttributeError, TypeError,
-                            ValueError, RuntimeError, KeyError,
-                            psycopg2.Error, psycopg2.OperationalError,
-                            psycopg2.ProgrammingError
+                            sqlite3.Error,
+                            OSError,
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            RuntimeError,
+                            KeyError,
+                            psycopg2.Error,
+                            psycopg2.OperationalError,
+                            psycopg2.ProgrammingError,
                         ):
                             # 初始化失败，继续执行
                             pass
@@ -3410,7 +3179,6 @@ def verify_user(identifier, password):
                     pass
 
     with get_db_connection() as (conn, c):
-
         # 首先根据用户名或邮箱查找用户（用户名不区分大小写）
         # 优化：使用更高效的查询方式，避免LOWER函数（如果可能）
         # 注意：在完整测试套件中，users表可能有很多数据，需要确保有索引
@@ -3431,11 +3199,11 @@ def verify_user(identifier, password):
                     upgrade_user_password_to_bcrypt(user[0], password)
 
                 return {
-                    'id': user[0],
-                    'username': user[1],
-                    'password': user[2],
-                    'role': user[3],
-                    'email': user[4]
+                    "id": user[0],
+                    "username": user[1],
+                    "password": user[2],
+                    "role": user[3],
+                    "email": user[4],
                 }
 
         return None
@@ -3582,6 +3350,7 @@ def init_db():
         # 强制适配SQL，确保AUTOINCREMENT被移除
         import re
         from db_adapter import adapt_sql
+
         _safe_execute_create_table(c, system_config_sql)
 
         # PostgreSQL需要显式创建唯一约束（如果不存在）
@@ -3599,9 +3368,7 @@ def init_db():
                 id_col_info = c.fetchone()
 
                 # 如果表存在但id列不是SERIAL类型，需要修复
-                if (id_col_info
-                        and id_col_info[0] == 'integer'
-                        and not id_col_info[1]):
+                if id_col_info and id_col_info[0] == "integer" and not id_col_info[1]:
                     # id列是INTEGER但没有默认值（不是SERIAL）
                     # 需要创建序列并设置默认值
                     try:
@@ -3654,10 +3421,14 @@ def init_db():
                 # 如果是PostgreSQL的约束已存在错误，这是预期的
                 try:
                     import psycopg2
-                    if isinstance(e, (
-                        psycopg2.errors.DuplicateObject,
-                        psycopg2.errors.ProgrammingError
-                    )):
+
+                    if isinstance(
+                        e,
+                        (
+                            psycopg2.errors.DuplicateObject,
+                            psycopg2.errors.ProgrammingError,
+                        ),
+                    ):
                         # 约束已存在，这是预期的，忽略
                         pass
                 except (ImportError, AttributeError):
@@ -3685,17 +3456,16 @@ def init_db():
         """
         adapted_sql = adapt_sql(payment_orders_sql)
         # 确保AUTOINCREMENT被移除（检测实际连接类型）
-        if (_is_postgresql_connection(conn)
-                and 'AUTOINCREMENT' in adapted_sql.upper()):
+        if _is_postgresql_connection(conn) and "AUTOINCREMENT" in adapted_sql.upper():
             adapted_sql = re.sub(
-                r'INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT',
-                'SERIAL PRIMARY KEY',
+                r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT",
+                "SERIAL PRIMARY KEY",
                 adapted_sql,
-                flags=re.IGNORECASE
+                flags=re.IGNORECASE,
             )
             adapted_sql = re.sub(
-                r'\s+AUTOINCREMENT', '', adapted_sql,
-                flags=re.IGNORECASE)
+                r"\s+AUTOINCREMENT", "", adapted_sql, flags=re.IGNORECASE
+            )
         c.execute(adapted_sql)
 
         # 初始化系统配置（适配INSERT OR IGNORE）
@@ -3716,9 +3486,7 @@ def init_db():
                 VALUES (?, ?, ?)
             """
             insert_config_sql = _safe_adapt_sql(insert_config_sql_raw, conn)
-        c.execute(
-            insert_config_sql,
-            ('open_registration', 'false', '是否开放用户注册'))
+        c.execute(insert_config_sql, ("open_registration", "false", "是否开放用户注册"))
         conn.commit()
         # 2. 升级旧表（只跑一次）
         _upgrade_table_user_id("products")
@@ -3746,8 +3514,8 @@ def init_db():
         sql_raw = "SELECT * FROM users WHERE username = ?"
         sql = _safe_adapt_sql(sql_raw, conn)
         # 确保占位符被转换（如果adapt_sql没有转换，手动转换）
-        if is_pg and '?' in sql:
-            sql = sql.replace('?', '%s')
+        if is_pg and "?" in sql:
+            sql = sql.replace("?", "%s")
         c.execute(sql, ("admin",))
         admin_user = c.fetchone()
         if not admin_user:
@@ -3755,8 +3523,8 @@ def init_db():
             hashed_password = hash_password("admin123")
 
             # 检查 user_type 列是否存在
-            cols = _get_table_columns(c, 'users')
-            has_user_type = 'user_type' in cols
+            cols = _get_table_columns(c, "users")
+            has_user_type = "user_type" in cols
 
             if has_user_type:
                 # 如果 user_type 列存在，包含在 INSERT 中
@@ -3766,15 +3534,18 @@ def init_db():
                 )
                 sql = _safe_adapt_sql(sql_raw, conn)
                 # 确保占位符被转换（如果adapt_sql没有转换，手动转换）
-                if is_pg and '?' in sql:
-                    sql = sql.replace('?', '%s')
-                c.execute(sql, (
-                    "admin",
-                    hashed_password,
-                    "admin",
-                    "admin@example.com",
-                    "permanent",
-                ))
+                if is_pg and "?" in sql:
+                    sql = sql.replace("?", "%s")
+                c.execute(
+                    sql,
+                    (
+                        "admin",
+                        hashed_password,
+                        "admin",
+                        "admin@example.com",
+                        "permanent",
+                    ),
+                )
             else:
                 # 如果 user_type 列不存在，不包含在 INSERT 中（使用默认值）
                 sql_raw = (
@@ -3783,14 +3554,17 @@ def init_db():
                 )
                 sql = _safe_adapt_sql(sql_raw, conn)
                 # 确保占位符被转换（如果adapt_sql没有转换，手动转换）
-                if is_pg and '?' in sql:
-                    sql = sql.replace('?', '%s')
-                c.execute(sql, (
-                    "admin",
-                    hashed_password,
-                    "admin",
-                    "admin@example.com",
-                ))
+                if is_pg and "?" in sql:
+                    sql = sql.replace("?", "%s")
+                c.execute(
+                    sql,
+                    (
+                        "admin",
+                        hashed_password,
+                        "admin",
+                        "admin@example.com",
+                    ),
+                )
             conn.commit()
 
         # 4. 数据保护策略调整：允许管理员手动删除其产品
@@ -3805,9 +3579,7 @@ def init_db():
                 """
                 c.execute(sql)
             else:
-                c.execute(
-                    "DROP TRIGGER IF EXISTS trg_prevent_delete_admin_products"
-                )
+                c.execute("DROP TRIGGER IF EXISTS trg_prevent_delete_admin_products")
             conn.commit()
         except DB_EXCEPTIONS:
             # 如果触发器不存在或其他错误，忽略
@@ -3827,18 +3599,16 @@ def add_product(product_data):
     """
     with get_db_connection() as (conn, c):
         # 确保is_test_data列存在（向后兼容）
-        cols = _get_table_columns(c, 'products')
+        cols = _get_table_columns(c, "products")
         if "is_test_data" not in cols:
             try:
                 if _is_postgresql_connection(conn):
                     c.execute(
-                        "ALTER TABLE products "
-                        "ADD COLUMN is_test_data INTEGER DEFAULT 0"
+                        "ALTER TABLE products ADD COLUMN is_test_data INTEGER DEFAULT 0"
                     )
                 else:
                     c.execute(
-                        "ALTER TABLE products "
-                        "ADD COLUMN is_test_data INTEGER DEFAULT 0"
+                        "ALTER TABLE products ADD COLUMN is_test_data INTEGER DEFAULT 0"
                     )
                 conn.commit()
             except DB_EXCEPTIONS:
@@ -3847,31 +3617,46 @@ def add_product(product_data):
 
         # 提取产品数据
         fields = [
-            'user_id', 'name', 'russian_name', 'category', 'model',
-            'unit_price', 'weight_g', 'length_cm', 'width_cm', 'height_cm',
-            'is_cylinder', 'cylinder_diameter', 'cylinder_length',
-            'has_battery',
-            'battery_capacity_wh', 'battery_capacity_mah', 'battery_voltage',
-            'has_msds', 'has_flammable', 'shipping_fee', 'labeling_fee',
-            'promotion_cost_rate',
-            'target_profit_margin',
-            'commission_rate', 'withdrawal_fee_rate',
-            'payment_processing_fee', 'return_rate', 'is_test_data'
+            "user_id",
+            "name",
+            "russian_name",
+            "category",
+            "model",
+            "unit_price",
+            "weight_g",
+            "length_cm",
+            "width_cm",
+            "height_cm",
+            "is_cylinder",
+            "cylinder_diameter",
+            "cylinder_length",
+            "has_battery",
+            "battery_capacity_wh",
+            "battery_capacity_mah",
+            "battery_voltage",
+            "has_msds",
+            "has_flammable",
+            "shipping_fee",
+            "labeling_fee",
+            "promotion_cost_rate",
+            "target_profit_margin",
+            "commission_rate",
+            "withdrawal_fee_rate",
+            "payment_processing_fee",
+            "return_rate",
+            "is_test_data",
         ]
 
         # 构建SQL语句（如果is_test_data未提供，使用默认值0）
-        base_fields = [f for f in fields if f != 'is_test_data']
-        field_names = ','.join(base_fields) + ',is_test_data'
+        base_fields = [f for f in fields if f != "is_test_data"]
+        field_names = ",".join(base_fields) + ",is_test_data"
         placeholder = get_placeholder()
-        placeholders = (
-            ','.join([placeholder for _ in base_fields])
-            + f',{placeholder}'
-        )
+        placeholders = ",".join([placeholder for _ in base_fields]) + f",{placeholder}"
 
         # 获取值
         values = [product_data.get(field, 0) for field in base_fields]
         # is_test_data默认0（手动创建）
-        values.append(product_data.get('is_test_data', 0))
+        values.append(product_data.get("is_test_data", 0))
 
         # 高优先级安全改进：使用sql_security模块进行字段名验证（防止SQL注入）
         try:
@@ -3882,17 +3667,38 @@ def add_product(product_data):
         # 安全的字段名白名单验证（防止SQL注入）
         # 注意：user_id是必需的字段，包含在白名单中
         allowed_product_fields = {
-            'user_id', 'name', 'russian_name', 'category', 'model',
-            'unit_price', 'weight_g', 'length_cm', 'width_cm', 'height_cm',
-            'is_cylinder', 'cylinder_diameter', 'cylinder_length',
-            'has_battery', 'battery_capacity_wh', 'battery_capacity_mah',
-            'battery_voltage', 'has_msds', 'has_flammable', 'labeling_fee',
-            'shipping_fee', 'promotion_cost_rate', 'target_profit_margin',
-            'commission_rate', 'withdrawal_fee_rate',
-            'payment_processing_fee', 'return_rate', 'vat_rate', 'is_test_data'
+            "user_id",
+            "name",
+            "russian_name",
+            "category",
+            "model",
+            "unit_price",
+            "weight_g",
+            "length_cm",
+            "width_cm",
+            "height_cm",
+            "is_cylinder",
+            "cylinder_diameter",
+            "cylinder_length",
+            "has_battery",
+            "battery_capacity_wh",
+            "battery_capacity_mah",
+            "battery_voltage",
+            "has_msds",
+            "has_flammable",
+            "labeling_fee",
+            "shipping_fee",
+            "promotion_cost_rate",
+            "target_profit_margin",
+            "commission_rate",
+            "withdrawal_fee_rate",
+            "payment_processing_fee",
+            "return_rate",
+            "vat_rate",
+            "is_test_data",
         }
         # 使用sql_security模块验证所有字段名
-        field_list = [f.strip() for f in field_names.split(',')]
+        field_list = [f.strip() for f in field_names.split(",")]
         try:
             validate_field_names(field_list, allowed_product_fields)
         except SQLSecurityError as e:
@@ -3912,10 +3718,7 @@ def add_product(product_data):
             return result[0] if result else None
         else:
             # SQLite使用lastrowid
-            sql_raw = (
-                f"INSERT INTO products ({field_names}) "
-                f"VALUES ({placeholders})"
-            )
+            sql_raw = f"INSERT INTO products ({field_names}) VALUES ({placeholders})"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, values)
             conn.commit()
@@ -3955,9 +3758,7 @@ def ensure_admin_product_deletion_allowed() -> None:
                 """
                 c.execute(sql)
             else:
-                c.execute(
-                    "DROP TRIGGER IF EXISTS trg_prevent_delete_admin_products"
-                )
+                c.execute("DROP TRIGGER IF EXISTS trg_prevent_delete_admin_products")
             conn.commit()
         except DB_EXCEPTIONS:
             # 如果触发器不存在或其他错误，忽略
@@ -3989,18 +3790,14 @@ def delete_product(product_id, user_id):
     """
     with get_db_connection() as (conn, c):
         # 检查产品是否存在且属于该用户
-        sql = (
-            "SELECT is_test_data FROM products "
-            "WHERE id = ? AND user_id = ?"
-        )
+        sql = "SELECT is_test_data FROM products WHERE id = ? AND user_id = ?"
         product = _safe_execute_fetchone(c, sql, (product_id, user_id), conn)
 
         if not product:
             return False
 
         # 允许删除（无论是手动还是测试数据都可以删除）
-        sql = _safe_adapt_sql(
-            "DELETE FROM products WHERE id = ? AND user_id = ?", conn)
+        sql = _safe_adapt_sql("DELETE FROM products WHERE id = ? AND user_id = ?", conn)
         c.execute(sql, (product_id, user_id))
         conn.commit()
         return c.rowcount > 0
@@ -4050,18 +3847,15 @@ def cleanup_test_products(user_id=None):
     try:
         with get_db_connection() as (conn, c):
             # 检查is_test_data字段是否存在
-            cols = _get_table_columns(c, 'products')
-            if 'is_test_data' not in cols:
+            cols = _get_table_columns(c, "products")
+            if "is_test_data" not in cols:
                 # 如果字段不存在，返回0（不删除任何数据）
                 return 0
 
             # 统一使用整数比较（兼容SQLite和PostgreSQL）
             # 注意：PostgreSQL中is_test_data是INTEGER类型，不能与TRUE比较
             if user_id:
-                sql_raw = (
-                    "DELETE FROM products "
-                    "WHERE is_test_data = 1 AND user_id = ?"
-                )
+                sql_raw = "DELETE FROM products WHERE is_test_data = 1 AND user_id = ?"
             else:
                 sql_raw = "DELETE FROM products WHERE is_test_data = 1"
 
@@ -4085,28 +3879,41 @@ def update_product(product_id, user_id, updates):
 
     # 导入SQL安全工具
     try:
-        from .sql_security import (
-            build_update_set_clause,
-            SQLSecurityError
-        )
+        from .sql_security import build_update_set_clause, SQLSecurityError
     except ImportError:
-        from sql_security import (
-            build_update_set_clause,
-            SQLSecurityError
-        )
+        from sql_security import build_update_set_clause, SQLSecurityError
 
     with get_db_connection() as (conn, c):
-
         # 安全的字段名白名单验证（防止SQL注入）
         allowed_product_fields = {
-            'name', 'russian_name', 'category', 'model', 'unit_price',
-            'weight_g', 'length_cm', 'width_cm', 'height_cm', 'is_cylinder',
-            'cylinder_diameter', 'cylinder_length', 'has_battery',
-            'battery_capacity_wh', 'battery_capacity_mah', 'battery_voltage',
-            'has_msds', 'has_flammable', 'labeling_fee', 'shipping_fee',
-            'promotion_cost_rate', 'target_profit_margin', 'commission_rate',
-            'withdrawal_fee_rate', 'payment_processing_fee', 'return_rate',
-            'vat_rate', 'is_test_data'
+            "name",
+            "russian_name",
+            "category",
+            "model",
+            "unit_price",
+            "weight_g",
+            "length_cm",
+            "width_cm",
+            "height_cm",
+            "is_cylinder",
+            "cylinder_diameter",
+            "cylinder_length",
+            "has_battery",
+            "battery_capacity_wh",
+            "battery_capacity_mah",
+            "battery_voltage",
+            "has_msds",
+            "has_flammable",
+            "labeling_fee",
+            "shipping_fee",
+            "promotion_cost_rate",
+            "target_profit_margin",
+            "commission_rate",
+            "withdrawal_fee_rate",
+            "payment_processing_fee",
+            "return_rate",
+            "vat_rate",
+            "is_test_data",
         }
 
         # 使用安全的SQL构建工具
@@ -4120,10 +3927,7 @@ def update_product(product_id, user_id, updates):
         values.extend([product_id, user_id])
 
         # 使用参数化查询，确保安全
-        sql_raw = (
-            f"UPDATE products SET {set_clause} "
-            f"WHERE id = ? AND user_id = ?"
-        )
+        sql_raw = f"UPDATE products SET {set_clause} WHERE id = ? AND user_id = ?"
         sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, values)
         conn.commit()
@@ -4140,23 +3944,29 @@ def batch_update_pricing_params(product_ids, user_id, pricing_updates):
         from .sql_security import (
             build_update_set_clause,
             build_in_clause,
-            SQLSecurityError
+            SQLSecurityError,
         )
     except ImportError:
         from sql_security import (
             build_update_set_clause,
             build_in_clause,
-            SQLSecurityError
+            SQLSecurityError,
         )
 
     with get_db_connection() as (conn, c):
-
         # 安全的字段名白名单验证（防止SQL注入）
         # 注意：允许更新unit_price等基础字段，不仅仅是定价参数
         allowed_pricing_fields = {
-            'promotion_cost_rate', 'target_profit_margin', 'commission_rate',
-            'withdrawal_fee_rate', 'payment_processing_fee', 'return_rate',
-            'vat_rate', 'unit_price', 'labeling_fee', 'shipping_fee'
+            "promotion_cost_rate",
+            "target_profit_margin",
+            "commission_rate",
+            "withdrawal_fee_rate",
+            "payment_processing_fee",
+            "return_rate",
+            "vat_rate",
+            "unit_price",
+            "labeling_fee",
+            "shipping_fee",
         }
 
         # 使用安全的SQL构建工具
@@ -4172,10 +3982,7 @@ def batch_update_pricing_params(product_ids, user_id, pricing_updates):
         values.append(user_id)
 
         # 使用参数化查询，确保安全
-        sql = (
-            f"UPDATE products SET {set_clause} "
-            f"WHERE id {in_clause} AND user_id = ?"
-        )
+        sql = f"UPDATE products SET {set_clause} WHERE id {in_clause} AND user_id = ?"
         sql = _safe_adapt_sql(sql, conn)
         c.execute(sql, values)
         conn.commit()
@@ -4186,25 +3993,19 @@ def calculate_and_update_priority_groups(user_id):
     """计算并更新物流优先级分组 - 支持用户隔离"""
     with get_db_connection() as (conn, c):
         # 获取指定用户的物流数据
-        sql_raw = (
-            "SELECT id, type, min_days, max_days FROM logistics "
-            "WHERE user_id = ?"
-        )
+        sql_raw = "SELECT id, type, min_days, max_days FROM logistics WHERE user_id = ?"
         sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, (user_id,))
         logistics_raw = c.fetchall()
         # 将元组转换为字典
         logistics = [
-            {
-                'id': row[0], 'type': row[1],
-                'min_days': row[2], 'max_days': row[3]
-            }
+            {"id": row[0], "type": row[1], "min_days": row[2], "max_days": row[3]}
             for row in logistics_raw
         ]
 
         # 按类型分组
-        land_logistics = [log for log in logistics if log['type'] == 'land']
-        air_logistics = [log for log in logistics if log['type'] == 'air']
+        land_logistics = [log for log in logistics if log["type"] == "land"]
+        air_logistics = [log for log in logistics if log["type"] == "air"]
 
         def calculate_group_averages(logistics_list):
             """计算物流组的平均值"""
@@ -4213,25 +4014,26 @@ def calculate_and_update_priority_groups(user_id):
 
             # 过滤出时效不为0的物流（参与平均值计算）
             valid_logistics = [
-                log for log in logistics_list
-                if log['min_days'] > 0 and log['max_days'] > 0
+                log
+                for log in logistics_list
+                if log["min_days"] > 0 and log["max_days"] > 0
             ]
 
             if not valid_logistics:
                 return 0, 0, 0
 
             # 计算平均最快时效(A)
-            min_days_sum = sum(log['min_days'] for log in valid_logistics)
+            min_days_sum = sum(log["min_days"] for log in valid_logistics)
             avg_fastest = min_days_sum / len(valid_logistics)
 
             # 计算平均最慢时效(B)
-            max_days_sum = sum(log['max_days'] for log in valid_logistics)
+            max_days_sum = sum(log["max_days"] for log in valid_logistics)
             avg_slowest = max_days_sum / len(valid_logistics)
 
             # 计算每个物流的平均时效(C)的平均值(D)
             avg_times = []
             for log in valid_logistics:
-                avg_time = (log['min_days'] + log['max_days']) / 2
+                avg_time = (log["min_days"] + log["max_days"]) / 2
                 avg_times.append(avg_time)
             avg_overall = sum(avg_times) / len(avg_times)
 
@@ -4239,12 +4041,12 @@ def calculate_and_update_priority_groups(user_id):
 
         def assign_priority_group(log, avg_fastest, avg_slowest, avg_overall):
             """为单个物流分配优先级组"""
-            min_days = log['min_days']
-            max_days = log['max_days']
+            min_days = log["min_days"]
+            max_days = log["max_days"]
 
             # 如果时效为0，分配为E组（优先级最低）
             if min_days == 0 and max_days == 0:
-                return 'E'
+                return "E"
 
             avg_time = (min_days + max_days) / 2
 
@@ -4259,42 +4061,39 @@ def calculate_and_update_priority_groups(user_id):
 
             # 根据数量分配组别
             if count_below_avg == 3:
-                return 'A'
+                return "A"
             elif count_below_avg == 2:
-                return 'B'
+                return "B"
             elif count_below_avg == 1:
-                return 'C'
+                return "C"
             else:
-                return 'D'
+                return "D"
 
         # 计算陆运组平均值
-        land_avg_fastest, land_avg_slowest, land_avg_overall = (
-            calculate_group_averages(land_logistics)
+        land_avg_fastest, land_avg_slowest, land_avg_overall = calculate_group_averages(
+            land_logistics
         )
 
         # 计算空运组平均值
-        air_avg_fastest, air_avg_slowest, air_avg_overall = (
-            calculate_group_averages(air_logistics)
+        air_avg_fastest, air_avg_slowest, air_avg_overall = calculate_group_averages(
+            air_logistics
         )
 
         # 更新陆运物流的优先级组
-        update_sql_raw = (
-            "UPDATE logistics SET priority_group = ? "
-            "WHERE id = ?"
-        )
+        update_sql_raw = "UPDATE logistics SET priority_group = ? WHERE id = ?"
         update_sql = _safe_adapt_sql(update_sql_raw, conn)
         for log in land_logistics:
             group = assign_priority_group(
                 log, land_avg_fastest, land_avg_slowest, land_avg_overall
             )
-            c.execute(update_sql, (group, log['id']))
+            c.execute(update_sql, (group, log["id"]))
 
         # 更新空运物流的优先级组
         for log in air_logistics:
             group = assign_priority_group(
                 log, air_avg_fastest, air_avg_slowest, air_avg_overall
             )
-            c.execute(update_sql, (group, log['id']))
+            c.execute(update_sql, (group, log["id"]))
 
         conn.commit()
 
@@ -4322,15 +4121,21 @@ def get_user_subscription_info(user_id):
             return None
 
         fields = [
-            'id', 'username', 'user_type', 'expiry_date',
-            'remaining_calculations', 'first_login_date',
-            'test_days_remaining', 'role',
-            'subscription_type', 'subscription_expires'
+            "id",
+            "username",
+            "user_type",
+            "expiry_date",
+            "remaining_calculations",
+            "first_login_date",
+            "test_days_remaining",
+            "role",
+            "subscription_type",
+            "subscription_expires",
         ]
 
         if isinstance(user, dict):
             return user
-        if hasattr(user, 'keys'):
+        if hasattr(user, "keys"):
             mapped = dict(cast(Mapping[str, Any], user))
             for field in fields:
                 mapped.setdefault(field, None)
@@ -4355,10 +4160,7 @@ def update_user_subscription(user_id, updates):
         values.append(user_id)
 
         # 构建SQL并适配（使用占位符，然后根据实际连接类型适配）
-        sql_raw = (
-            f"UPDATE users SET {', '.join(set_clauses)} "
-            f"WHERE id = {placeholder}"
-        )
+        sql_raw = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = {placeholder}"
         sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, values)
         conn.commit()
@@ -4370,34 +4172,35 @@ def check_user_subscription_status(user_id):
     """检查用户订阅状态"""
     user_info = get_user_subscription_info(user_id)
     if not user_info:
-        return {'valid': False, 'message': '用户不存在'}
+        return {"valid": False, "message": "用户不存在"}
 
     # 检查用户角色，如果是admin用户，直接返回管理员状态
-    user_role = user_info.get('role', 'user')
-    if user_role == 'admin':
+    user_role = user_info.get("role", "user")
+    if user_role == "admin":
         return {
-            'valid': True,
-            'message': '管理员用户',
-            'user_type': 'admin',
-            'role': 'admin',
+            "valid": True,
+            "message": "管理员用户",
+            "user_type": "admin",
+            "role": "admin",
         }
 
     # 优先使用subscription_type字段，如果没有则使用user_type
-    user_type = (user_info.get('subscription_type')
-                 or user_info.get('user_type', 'permanent'))
+    user_type = user_info.get("subscription_type") or user_info.get(
+        "user_type", "permanent"
+    )
 
     # 永久用户
-    if user_type == 'permanent':
-        return {'valid': True, 'message': '永久用户', 'user_type': user_type}
+    if user_type == "permanent":
+        return {"valid": True, "message": "永久用户", "user_type": user_type}
 
     # 测试用户
-    if user_type == 'test':
-        first_login = user_info.get('first_login_date')
+    if user_type == "test":
+        first_login = user_info.get("first_login_date")
         if not first_login:
             return {
-                'valid': True,
-                'message': '测试用户未开始计时',
-                'user_type': user_type,
+                "valid": True,
+                "message": "测试用户未开始计时",
+                "user_type": user_type,
             }
 
         try:
@@ -4407,33 +4210,31 @@ def check_user_subscription_status(user_id):
 
             if remaining_days <= 0:
                 return {
-                    'valid': False,
-                    'message': '测试期已过期',
-                    'user_type': user_type,
+                    "valid": False,
+                    "message": "测试期已过期",
+                    "user_type": user_type,
                 }
             else:
                 return {
-                    'valid': True,
-                    'message': (
-                        f'测试用户，剩余{remaining_days}天'
-                    ),
-                    'remaining_days': remaining_days,
-                    'user_type': user_type
+                    "valid": True,
+                    "message": (f"测试用户，剩余{remaining_days}天"),
+                    "remaining_days": remaining_days,
+                    "user_type": user_type,
                 }
         except (ValueError, TypeError):
             return {
-                'valid': True,
-                'message': '测试用户',
-                'user_type': user_type,
+                "valid": True,
+                "message": "测试用户",
+                "user_type": user_type,
             }
 
     # 按月付费用户
-    if user_type == 'monthly':
-        expiry_date = user_info.get('expiry_date')
-        remaining_calculations = user_info.get('remaining_calculations', 0)
+    if user_type == "monthly":
+        expiry_date = user_info.get("expiry_date")
+        remaining_calculations = user_info.get("remaining_calculations", 0)
 
         if not expiry_date:
-            return {'valid': False, 'message': '订阅信息不完整'}
+            return {"valid": False, "message": "订阅信息不完整"}
 
         try:
             # 处理不同的日期格式
@@ -4443,29 +4244,27 @@ def check_user_subscription_status(user_id):
                 expiry = datetime.combine(expiry_date, datetime.min.time())
             elif isinstance(expiry_date, str):
                 # 尝试解析ISO格式
-                if 'T' in expiry_date:
-                    expiry = datetime.fromisoformat(
-                        expiry_date.replace('Z', '+00:00'))
+                if "T" in expiry_date:
+                    expiry = datetime.fromisoformat(expiry_date.replace("Z", "+00:00"))
                 else:
                     # 纯日期格式，尝试解析
                     try:
-                        expiry = datetime.strptime(expiry_date, '%Y-%m-%d')
+                        expiry = datetime.strptime(expiry_date, "%Y-%m-%d")
                     except ValueError:
                         expiry = datetime.fromisoformat(expiry_date)
             else:
-                raise ValueError(
-                    f"不支持的日期类型: {type(expiry_date)}")
+                raise ValueError(f"不支持的日期类型: {type(expiry_date)}")
 
             today = date.today()
             days_remaining = (expiry.date() - today).days
             # 剩余天数为0视为已到期（按日期差）
             if days_remaining <= 0:
                 return {
-                    'valid': False,
-                    'message': '订阅已过期',
-                    'remaining_days': 0,
-                    'remaining_calculations': remaining_calculations,
-                    'user_type': user_type
+                    "valid": False,
+                    "message": "订阅已过期",
+                    "remaining_days": 0,
+                    "remaining_calculations": remaining_calculations,
+                    "user_type": user_type,
                 }
 
             # 格式化计算次数显示
@@ -4475,31 +4274,31 @@ def check_user_subscription_status(user_id):
                 calculations_display = f"{remaining_calculations}次"
 
             return {
-                'valid': True,
-                'message': (
-                    f'按月付费用户，剩余{days_remaining}天，'
-                    f'剩余{calculations_display}计算'
+                "valid": True,
+                "message": (
+                    f"按月付费用户，剩余{days_remaining}天，"
+                    f"剩余{calculations_display}计算"
                 ),
-                'remaining_days': days_remaining,
-                'remaining_calculations': remaining_calculations,
-                'user_type': user_type,
+                "remaining_days": days_remaining,
+                "remaining_calculations": remaining_calculations,
+                "user_type": user_type,
             }
         except (ValueError, TypeError):
             return {
-                'valid': False,
-                'message': '订阅信息错误',
-                'user_type': user_type,
+                "valid": False,
+                "message": "订阅信息错误",
+                "user_type": user_type,
             }
 
     # 企业用户
-    if user_type == 'enterprise':
-        expiry_date = user_info.get('expiry_date')
+    if user_type == "enterprise":
+        expiry_date = user_info.get("expiry_date")
 
         if not expiry_date:
             return {
-                'valid': False,
-                'message': '订阅信息不完整',
-                'user_type': user_type,
+                "valid": False,
+                "message": "订阅信息不完整",
+                "user_type": user_type,
             }
 
         try:
@@ -4510,56 +4309,57 @@ def check_user_subscription_status(user_id):
                 expiry = datetime.combine(expiry_date, datetime.min.time())
             elif isinstance(expiry_date, str):
                 # 尝试解析ISO格式
-                if 'T' in expiry_date:
-                    expiry = datetime.fromisoformat(
-                        expiry_date.replace('Z', '+00:00'))
+                if "T" in expiry_date:
+                    expiry = datetime.fromisoformat(expiry_date.replace("Z", "+00:00"))
                 else:
                     # 纯日期格式，尝试解析
                     try:
-                        expiry = datetime.strptime(expiry_date, '%Y-%m-%d')
+                        expiry = datetime.strptime(expiry_date, "%Y-%m-%d")
                     except ValueError:
                         expiry = datetime.fromisoformat(expiry_date)
             else:
-                raise ValueError(
-                    f"不支持的日期类型: {type(expiry_date)}")
+                raise ValueError(f"不支持的日期类型: {type(expiry_date)}")
 
             today = date.today()
             days_remaining = (expiry.date() - today).days
             if days_remaining <= 0:
                 return {
-                    'valid': False,
-                    'message': '订阅已过期',
-                    'remaining_days': 0,
-                    'user_type': user_type
+                    "valid": False,
+                    "message": "订阅已过期",
+                    "remaining_days": 0,
+                    "user_type": user_type,
                 }
             return {
-                'valid': True,
-                'message': f'企业版用户，剩余{days_remaining}天',
-                'remaining_days': days_remaining,
-                'user_type': user_type
+                "valid": True,
+                "message": f"企业版用户，剩余{days_remaining}天",
+                "remaining_days": days_remaining,
+                "user_type": user_type,
             }
         except (ValueError, TypeError):
             return {
-                'valid': False,
-                'message': '订阅信息错误',
-                'user_type': user_type,
+                "valid": False,
+                "message": "订阅信息错误",
+                "user_type": user_type,
             }
 
     # 处理新的用户类型系统
     if user_type in [
-        'free', 'efficiency', 'professional', 'enterprise', 'gratitude',
+        "free",
+        "efficiency",
+        "professional",
+        "enterprise",
+        "gratitude",
     ]:
-        remaining_calculations = user_info.get('remaining_calculations', 0)
+        remaining_calculations = user_info.get("remaining_calculations", 0)
 
         # 免费版用户：不检查到期时间，仅依据每日计算次数
-        if user_type == 'free':
+        if user_type == "free":
             # 兼容历史数据：免费版不应为-1，若为-1则按10次处理并尝试纠正
             if remaining_calculations == -1:
                 try:
                     with get_db_connection() as (fix_conn, fix_cur):
                         sql_raw = (
-                            "UPDATE users SET remaining_calculations = 10 "
-                            "WHERE id = ?"
+                            "UPDATE users SET remaining_calculations = 10 WHERE id = ?"
                         )
                         sql = _safe_adapt_sql(sql_raw, fix_conn)
                         fix_cur.execute(sql, (user_id,))
@@ -4570,37 +4370,37 @@ def check_user_subscription_status(user_id):
 
             calculations_display = f"{remaining_calculations}次"
             return {
-                'valid': True,
-                'message': (
-                    f'免费版用户，剩余{calculations_display}计算'
-                ),
-                'remaining_calculations': remaining_calculations,
-                'user_type': user_type,
+                "valid": True,
+                "message": (f"免费版用户，剩余{calculations_display}计算"),
+                "remaining_calculations": remaining_calculations,
+                "user_type": user_type,
             }
 
         # 感谢版用户：不检查到期时间，视为永久有效
-        if user_type == 'gratitude':
+        if user_type == "gratitude":
             return {
-                'valid': True,
-                'message': '感谢版用户，永久有效',
-                'remaining_days': -1,  # -1表示永久有效
-                'remaining_calculations': -1,  # -1表示无限次
-                'user_type': user_type,
+                "valid": True,
+                "message": "感谢版用户，永久有效",
+                "remaining_days": -1,  # -1表示永久有效
+                "remaining_calculations": -1,  # -1表示无限次
+                "user_type": user_type,
             }
 
         # 非免费版和感谢版用户：检查订阅过期时间
         # 优先使用subscription_expires字段，如果没有则使用expiry_date
-        subscription_expires = user_info.get('subscription_expires')
-        expiry_date = user_info.get('expiry_date')
+        subscription_expires = user_info.get("subscription_expires")
+        expiry_date = user_info.get("expiry_date")
 
         if subscription_expires:
             # 使用subscription_expires（Unix时间戳）
             import time
+
             current_time = int(time.time())
             # 确保subscription_expires是整数类型
             subscription_expires = int(subscription_expires)
             # 使用向上取整，确保用户看到完整的剩余天数
             import math
+
             days_remaining = math.ceil(
                 (subscription_expires - current_time) / (24 * 3600)
             )
@@ -4612,66 +4412,66 @@ def check_user_subscription_status(user_id):
                 days_remaining = (expiry.date() - today).days
             except (ValueError, TypeError):
                 return {
-                    'valid': False,
-                    'message': '订阅信息错误',
-                    'user_type': user_type,
+                    "valid": False,
+                    "message": "订阅信息错误",
+                    "user_type": user_type,
                 }
         else:
             return {
-                'valid': False,
-                'message': '订阅信息不完整',
-                'user_type': user_type,
+                "valid": False,
+                "message": "订阅信息不完整",
+                "user_type": user_type,
             }
 
         try:
             if days_remaining <= 0:
                 return {
-                    'valid': False,
-                    'message': '订阅到期，请续订',
-                    'remaining_days': 0,
-                    'remaining_calculations': remaining_calculations,
-                    'user_type': user_type
+                    "valid": False,
+                    "message": "订阅到期，请续订",
+                    "remaining_days": 0,
+                    "remaining_calculations": remaining_calculations,
+                    "user_type": user_type,
                 }
             # 使用友好的用户类型名称
             user_type_display_names = {
-                'free': '免费版用户',
-                'efficiency': '效率版用户',
-                'professional': '专业版用户',
-                'enterprise': '企业版用户',
-                'gratitude': '感谢版用户',
+                "free": "免费版用户",
+                "efficiency": "效率版用户",
+                "professional": "专业版用户",
+                "enterprise": "企业版用户",
+                "gratitude": "感谢版用户",
             }
             display_name = user_type_display_names.get(
                 user_type,
-                f'{user_type}用户',
+                f"{user_type}用户",
             )
             # 只有免费版用户才显示计算次数，付费用户都是无限次
-            if user_type == 'free':
+            if user_type == "free":
                 # 格式化计算次数显示
                 if remaining_calculations == -1:
                     calculations_display = "无限次"
                 else:
                     calculations_display = f"{remaining_calculations}次"
                 message = (
-                    f'{display_name}，剩余{days_remaining}天，'
-                    f'剩余{calculations_display}计算'
+                    f"{display_name}，剩余{days_remaining}天，"
+                    f"剩余{calculations_display}计算"
                 )
             else:
                 # 付费用户不显示计算次数（都是无限次）
-                message = f'{display_name}，剩余{days_remaining}天'
+                message = f"{display_name}，剩余{days_remaining}天"
             return {
-                'valid': True,
-                'message': message,
-                'remaining_days': days_remaining,
-                'remaining_calculations': remaining_calculations,
-                'user_type': user_type,
+                "valid": True,
+                "message": message,
+                "remaining_days": days_remaining,
+                "remaining_calculations": remaining_calculations,
+                "user_type": user_type,
             }
         except (ValueError, TypeError):
             return {
-                'valid': False,
-                'message': '订阅信息错误',
-                'user_type': user_type,
+                "valid": False,
+                "message": "订阅信息错误",
+                "user_type": user_type,
             }
-    return {'valid': False, 'message': '未知用户类型', 'user_type': user_type}
+    return {"valid": False, "message": "未知用户类型", "user_type": user_type}
 
 
 def decrement_user_calculations(user_id):
@@ -4693,20 +4493,25 @@ def decrement_user_calculations(user_id):
         remaining = user[2] if len(user) > 2 else -1
 
         # 以 subscription_type 优先，其次回退到 user_type
-        user_type = (db_subscription_type or db_user_type or '').strip()
+        user_type = (db_subscription_type or db_user_type or "").strip()
 
         # admin用户、永久用户、企业用户、感谢版用户、效率版用户、专业版用户不限制次数
         if user_type in [
-                'admin', 'permanent', 'enterprise', 'gratitude',
-                'efficiency', 'professional']:
+            "admin",
+            "permanent",
+            "enterprise",
+            "gratitude",
+            "efficiency",
+            "professional",
+        ]:
             return True
 
         # 测试用户不限制次数
-        if user_type == 'test':
+        if user_type == "test":
             return True
 
         # 免费版用户：按每日次数扣减
-        if user_type == 'free':
+        if user_type == "free":
             if remaining <= 0:
                 return False
             sql_raw = (
@@ -4720,7 +4525,7 @@ def decrement_user_calculations(user_id):
             return c.rowcount > 0
 
         # 按月付费用户需要检查次数
-        if user_type == 'monthly':
+        if user_type == "monthly":
             if remaining <= 0:
                 return False
 
@@ -4754,11 +4559,15 @@ def reset_free_users_daily_calculations():
 
             # 记录日志
             from logger_config import logger
-            logger.info(f"每日计算次数重置完成：重置了 {affected_rows} 个免费用户的计算次数")
+
+            logger.info(
+                f"每日计算次数重置完成：重置了 {affected_rows} 个免费用户的计算次数"
+            )
 
             return affected_rows
         except Exception as e:
             from logger_config import logger
+
             logger.error(f"重置免费用户计算次数失败: {e}")
             return 0
 
@@ -4769,45 +4578,41 @@ def update_user_password(user_id, current_password, new_password):
 
     with get_db_connection() as (conn, c):
         # 获取当前用户信息
-        sql = (
-            "SELECT password FROM users WHERE id = ?"
-        )
+        sql = "SELECT password FROM users WHERE id = ?"
         user = _safe_execute_fetchone(c, sql, (user_id,), conn)
 
         if not user:
             return False
 
         # 验证当前密码
-        current_password_bytes = current_password.encode('utf-8')
-        stored_password = (
-            user['password'] if isinstance(user, dict) else user[0])
+        current_password_bytes = current_password.encode("utf-8")
+        stored_password = user["password"] if isinstance(user, dict) else user[0]
 
         if isinstance(stored_password, bytes):
-            stored_password = stored_password.decode('utf-8')
+            stored_password = stored_password.decode("utf-8")
         elif not isinstance(stored_password, str):
-            stored_password = str(stored_password or '')
+            stored_password = str(stored_password or "")
 
         # 支持旧的SHA256和新的bcrypt密码
-        if stored_password.startswith('$2b$'):
+        if stored_password.startswith("$2b$"):
             # bcrypt密码
-            if not bcrypt.checkpw(current_password_bytes,
-                                  stored_password.encode('utf-8')):
+            if not bcrypt.checkpw(
+                current_password_bytes, stored_password.encode("utf-8")
+            ):
                 return False
         else:
             # 旧的SHA256密码
             import hashlib
-            if (hashlib.sha256(current_password_bytes).hexdigest()
-                    != stored_password):
+
+            if hashlib.sha256(current_password_bytes).hexdigest() != stored_password:
                 return False
 
         # 使用bcrypt加密新密码
-        new_password_bytes = new_password.encode('utf-8')
+        new_password_bytes = new_password.encode("utf-8")
         salt = bcrypt.gensalt()
-        hashed_password = bcrypt.hashpw(new_password_bytes,
-                                        salt).decode('utf-8')
+        hashed_password = bcrypt.hashpw(new_password_bytes, salt).decode("utf-8")
         # 更新密码
-        sql = _safe_adapt_sql(
-            "UPDATE users SET password = ? WHERE id = ?", conn)
+        sql = _safe_adapt_sql("UPDATE users SET password = ? WHERE id = ?", conn)
         c.execute(sql, (hashed_password, user_id))
         conn.commit()
         return True
@@ -4819,22 +4624,17 @@ def delete_user(user_id):
     with get_db_connection() as (conn, c):
         try:
             # 检查用户是否存在
-            sql = (
-                "SELECT id, username, role FROM users WHERE id = ?"
-            )
+            sql = "SELECT id, username, role FROM users WHERE id = ?"
             user = _safe_execute_fetchone(c, sql, (user_id,), conn)
 
             if not user:
                 print(f"删除失败: 用户 ID={user_id} 不存在")
                 return False  # 用户不存在
 
-            print(
-                f"准备删除用户: ID={user[0]}, "
-                f"用户名={user[1]}, 角色={user[2]}"
-            )
+            print(f"准备删除用户: ID={user[0]}, 用户名={user[1]}, 角色={user[2]}")
 
             # 不允许删除admin用户
-            if user[2] == 'admin':
+            if user[2] == "admin":
                 print(f"删除失败: 用户 {user[1]} 是管理员，不允许删除")
                 return False
 
@@ -4843,96 +4643,74 @@ def delete_user(user_id):
 
             # 删除用户相关的数据（按外键依赖顺序）
             # 1. 删除用户的产品
-            sql_raw = (
-                f"DELETE FROM products WHERE user_id = {placeholder}"
-            )
+            sql_raw = f"DELETE FROM products WHERE user_id = {placeholder}"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user_id,))
             rowcount = (
-                c.rowcount if hasattr(c, 'rowcount')
-                and c.rowcount is not None else 0
+                c.rowcount if hasattr(c, "rowcount") and c.rowcount is not None else 0
             )
             print(f"删除产品: {rowcount} 条")
 
             # 2. 删除用户的会话记录
-            sql_raw = (
-                f"DELETE FROM active_sessions "
-                f"WHERE user_id = {placeholder}"
-            )
+            sql_raw = f"DELETE FROM active_sessions WHERE user_id = {placeholder}"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user_id,))
             rowcount = (
-                c.rowcount if hasattr(c, 'rowcount')
-                and c.rowcount is not None else 0
+                c.rowcount if hasattr(c, "rowcount") and c.rowcount is not None else 0
             )
             print(f"删除会话记录: {rowcount} 条")
 
             # 3. 删除用户的登录尝试记录
-            sql_raw = (
-                f"DELETE FROM login_attempts "
-                f"WHERE identifier = {placeholder}"
-            )
+            sql_raw = f"DELETE FROM login_attempts WHERE identifier = {placeholder}"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user[1],))
             rowcount = (
-                c.rowcount if hasattr(c, 'rowcount')
-                and c.rowcount is not None else 0
+                c.rowcount if hasattr(c, "rowcount") and c.rowcount is not None else 0
             )
             print(f"删除登录尝试记录: {rowcount} 条")
 
             # 4. 删除用户的锁定记录
-            sql_raw = (
-                f"DELETE FROM user_lockouts "
-                f"WHERE identifier = {placeholder}"
-            )
+            sql_raw = f"DELETE FROM user_lockouts WHERE identifier = {placeholder}"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user[1],))
             rowcount = (
-                c.rowcount if hasattr(c, 'rowcount')
-                and c.rowcount is not None else 0
+                c.rowcount if hasattr(c, "rowcount") and c.rowcount is not None else 0
             )
             print(f"删除锁定记录: {rowcount} 条")
 
             # 5. 删除用户的登录/行为日志（统计表中的外键）
             try:
-                sql_raw = (
-                    f"DELETE FROM user_login_log "
-                    f"WHERE user_id = {placeholder}"
-                )
+                sql_raw = f"DELETE FROM user_login_log WHERE user_id = {placeholder}"
                 sql = _safe_adapt_sql(sql_raw, conn)
                 c.execute(sql, (user_id,))
                 rowcount = (
-                    c.rowcount if hasattr(c, 'rowcount')
-                    and c.rowcount is not None else 0
+                    c.rowcount
+                    if hasattr(c, "rowcount") and c.rowcount is not None
+                    else 0
                 )
                 print(f"删除登录日志: {rowcount} 条")
             except (sqlite3.OperationalError, Exception):
                 print("登录日志表不存在，跳过")
 
             try:
-                sql_raw = (
-                    f"DELETE FROM user_behavior_log "
-                    f"WHERE user_id = {placeholder}"
-                )
+                sql_raw = f"DELETE FROM user_behavior_log WHERE user_id = {placeholder}"
                 sql = _safe_adapt_sql(sql_raw, conn)
                 c.execute(sql, (user_id,))
                 rowcount = (
-                    c.rowcount if hasattr(c, 'rowcount')
-                    and c.rowcount is not None else 0
+                    c.rowcount
+                    if hasattr(c, "rowcount") and c.rowcount is not None
+                    else 0
                 )
                 print(f"删除行为日志: {rowcount} 条")
             except (sqlite3.OperationalError, Exception):
                 print("行为日志表不存在，跳过")
 
             # 6. 删除用户的物流规则
-            sql_raw = (
-                f"DELETE FROM logistics WHERE user_id = {placeholder}"
-            )
+            sql_raw = f"DELETE FROM logistics WHERE user_id = {placeholder}"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user_id,))
             rowcount = (
-                c.rowcount if hasattr(c, 'rowcount')
-                and c.rowcount is not None else 0
+                c.rowcount if hasattr(c, "rowcount") and c.rowcount is not None else 0
             )
             print(f"删除物流规则: {rowcount} 条")
 
@@ -4945,23 +4723,20 @@ def delete_user(user_id):
                 sql = _safe_adapt_sql(sql_raw, conn)
                 c.execute(sql, (user_id,))
                 rowcount = (
-                    c.rowcount if hasattr(c, 'rowcount')
-                    and c.rowcount is not None else 0
+                    c.rowcount
+                    if hasattr(c, "rowcount") and c.rowcount is not None
+                    else 0
                 )
                 print(f"删除升级历史: {rowcount} 条")
             except (sqlite3.OperationalError, Exception):
                 print("升级历史表不存在，跳过")
 
             # 8. 删除用户的支付订单
-            sql_raw = (
-                f"DELETE FROM payment_orders "
-                f"WHERE user_id = {placeholder}"
-            )
+            sql_raw = f"DELETE FROM payment_orders WHERE user_id = {placeholder}"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user_id,))
             rowcount = (
-                c.rowcount if hasattr(c, 'rowcount')
-                and c.rowcount is not None else 0
+                c.rowcount if hasattr(c, "rowcount") and c.rowcount is not None else 0
             )
             print(f"删除支付订单: {rowcount} 条")
 
@@ -4975,8 +4750,9 @@ def delete_user(user_id):
                 sql = _safe_adapt_sql(sql_raw, conn)
                 c.execute(sql, (user_id, user_id))
                 rowcount = (
-                    c.rowcount if hasattr(c, 'rowcount')
-                    and c.rowcount is not None else 0
+                    c.rowcount
+                    if hasattr(c, "rowcount") and c.rowcount is not None
+                    else 0
                 )
                 print(f"删除管理员操作日志: {rowcount} 条")
             except (sqlite3.OperationalError, Exception):
@@ -4990,22 +4766,20 @@ def delete_user(user_id):
                 sql = _safe_adapt_sql(sql_raw, conn)
                 c.execute(sql, (user_id,))
                 rowcount = (
-                    c.rowcount if hasattr(c, 'rowcount')
-                    and c.rowcount is not None else 0
+                    c.rowcount
+                    if hasattr(c, "rowcount") and c.rowcount is not None
+                    else 0
                 )
                 print(f"置空告警处理人: {rowcount} 条")
             except (sqlite3.OperationalError, Exception):
                 print("告警记录表不存在，跳过")
 
             # 10. 删除用户本身
-            sql_raw = (
-                f"DELETE FROM users WHERE id = {placeholder}"
-            )
+            sql_raw = f"DELETE FROM users WHERE id = {placeholder}"
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user_id,))
             rowcount = (
-                c.rowcount if hasattr(c, 'rowcount')
-                and c.rowcount is not None else 0
+                c.rowcount if hasattr(c, "rowcount") and c.rowcount is not None else 0
             )
             print(f"删除用户: {rowcount} 条")
 
@@ -5016,12 +4790,14 @@ def delete_user(user_id):
         except sqlite3.Error as e:
             print(f"❌ 数据库错误: {e}")
             import traceback
+
             traceback.print_exc()
             conn.rollback()
             return False
         except (Exception,) as e:
             print(f"❌ 删除用户失败: {e}")
             import traceback
+
             traceback.print_exc()
             conn.rollback()
             return False
@@ -5032,9 +4808,7 @@ def get_user_preferred_mode(user_id):
     with get_db_connection() as (conn, c):
         if c is None:
             return None
-        sql_raw = (
-            "SELECT preferred_mode FROM users WHERE id = ?"
-        )
+        sql_raw = "SELECT preferred_mode FROM users WHERE id = ?"
         # 确保SQL适配正确（强制适配）
         sql = _safe_adapt_sql(sql_raw, conn)
         execute_result = c.execute(sql, (user_id,))
@@ -5046,18 +4820,17 @@ def get_user_preferred_mode(user_id):
         if isinstance(result, (list, tuple)):
             return result[0]
         if isinstance(result, dict):
-            return result.get('preferred_mode')
-        if hasattr(result, 'keys'):
+            return result.get("preferred_mode")
+        if hasattr(result, "keys"):
             row_dict = dict(cast(Mapping[str, Any], result))
-            return row_dict.get('preferred_mode')
+            return row_dict.get("preferred_mode")
         return cast(Optional[str], result)
 
 
 def update_user_preferred_mode(user_id, mode):
     """更新用户的模式偏好"""
     with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql(
-            "UPDATE users SET preferred_mode = ? WHERE id = ?", conn)
+        sql = _safe_adapt_sql("UPDATE users SET preferred_mode = ? WHERE id = ?", conn)
         c.execute(sql, (mode, user_id))
         conn.commit()
 
@@ -5067,23 +4840,18 @@ def migrate_user_preferences():
     with get_db_connection() as (conn, c):
         try:
             # 检查preferred_mode列是否存在
-            columns = _get_table_columns(c, 'users')
+            columns = _get_table_columns(c, "users")
 
-            if 'preferred_mode' not in columns:
+            if "preferred_mode" not in columns:
                 # 添加preferred_mode列
                 c.execute(
-                    (
-                        "ALTER TABLE users ADD COLUMN preferred_mode TEXT "
-                        "DEFAULT 'fast'"
-                    )
+                    ("ALTER TABLE users ADD COLUMN preferred_mode TEXT DEFAULT 'fast'")
                 )
                 conn.commit()
                 print("已为users表添加preferred_mode列")
 
             # 检查是否还有用户没有设置偏好模式
-            c.execute(
-                "SELECT COUNT(*) FROM users WHERE preferred_mode IS NULL"
-            )
+            c.execute("SELECT COUNT(*) FROM users WHERE preferred_mode IS NULL")
             null_count = c.fetchone()[0]
 
             if null_count > 0:
@@ -5100,6 +4868,7 @@ def migrate_user_preferences():
             print(f"迁移用户偏好失败: {e}")
             conn.rollback()
 
+
 # 管理员后台相关函数
 
 
@@ -5110,7 +4879,7 @@ def authenticate_admin(username, password):
             "SELECT id, username, password, role, email "
             "FROM users "
             "WHERE username = ? AND role = 'admin'",
-            conn
+            conn,
         )
         c.execute(sql, (username,))
         result = c.fetchone()
@@ -5118,40 +4887,37 @@ def authenticate_admin(username, password):
         if result:
             admin_id, username, password_hash, role, email = result
             import bcrypt
-            if bcrypt.checkpw(
-                password.encode('utf-8'), password_hash.encode('utf-8')
-            ):
+
+            if bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8")):
                 # 更新最后登录时间
                 if _is_postgresql_connection(conn):
                     update_sql = _safe_adapt_sql(
-                        "UPDATE users SET last_login = CURRENT_TIMESTAMP "
-                        "WHERE id = ?",
-                        conn
+                        "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                        conn,
                     )
                 else:
                     update_sql = _safe_adapt_sql(
-                        "UPDATE users SET last_login = datetime('now') "
-                        "WHERE id = ?",
-                        conn
+                        "UPDATE users SET last_login = datetime('now') WHERE id = ?",
+                        conn,
                     )
                 c.execute(update_sql, (admin_id,))
                 conn.commit()
                 return {
-                    'id': admin_id,
-                    'username': username,
-                    'role': role,
-                    'email': email,
+                    "id": admin_id,
+                    "username": username,
+                    "role": role,
+                    "email": email,
                 }
         return None
 
 
 @st.cache_data(ttl=60)  # 缓存1分钟，用户列表变化不频繁
 def get_all_users(
-        page=1,
-        per_page=20,
-        search=None,
-        user_type_filter=None,
-        status_filter=None,
+    page=1,
+    per_page=20,
+    search=None,
+    user_type_filter=None,
+    status_filter=None,
 ):
     """获取所有用户列表（分页）"""
     with get_db_connection() as (conn, c):
@@ -5161,30 +4927,28 @@ def get_all_users(
 
         if search:
             where_conditions.append("(username LIKE ? OR email LIKE ?)")
-            params.extend([f'%{search}%', f'%{search}%'])
+            params.extend([f"%{search}%", f"%{search}%"])
 
-        if user_type_filter and user_type_filter != 'all':
+        if user_type_filter and user_type_filter != "all":
             where_conditions.append("user_type = ?")
             params.append(user_type_filter)
 
         if status_filter:
             current_ts = int(time.time())
-            if status_filter == 'expired':
+            if status_filter == "expired":
                 where_conditions.append(
-                    "(subscription_expires IS NOT NULL "
-                    "AND subscription_expires < ?)"
+                    "(subscription_expires IS NOT NULL AND subscription_expires < ?)"
                 )
                 params.append(current_ts)
-            elif status_filter == 'expiring_soon':
+            elif status_filter == "expiring_soon":
                 where_conditions.append(
                     "(subscription_expires IS NOT NULL "
                     "AND subscription_expires BETWEEN ? AND ?)"
                 )
                 params.extend([current_ts, current_ts + 7 * 24 * 3600])
-            elif status_filter == 'active':
+            elif status_filter == "active":
                 where_conditions.append(
-                    "(subscription_expires IS NULL "
-                    "OR subscription_expires >= ?)"
+                    "(subscription_expires IS NULL OR subscription_expires >= ?)"
                 )
                 params.append(current_ts)
 
@@ -5195,9 +4959,7 @@ def get_all_users(
             from sql_security import build_where_clause
 
         # 使用安全的WHERE子句构建工具
-        where_clause, safe_params = build_where_clause(
-            where_conditions, params
-        )
+        where_clause, safe_params = build_where_clause(where_conditions, params)
 
         # 获取总数
         count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
@@ -5208,8 +4970,8 @@ def get_all_users(
         # 获取分页数据
         offset = (page - 1) * per_page
         # 检查logistics_templates_limit列是否存在
-        cols = _get_table_columns(c, 'users')
-        has_logistics_limit = 'logistics_templates_limit' in cols
+        cols = _get_table_columns(c, "users")
+        has_logistics_limit = "logistics_templates_limit" in cols
 
         if has_logistics_limit:
             query = f"""
@@ -5242,8 +5004,7 @@ def get_all_users(
         for user in users:
             user_id = user[0]
             sql = _safe_adapt_sql(
-                "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
-                conn
+                "SELECT COUNT(*) FROM logistics WHERE user_id = ?", conn
             )
             c.execute(sql, (user_id,))
             logistics_count = c.fetchone()[0]
@@ -5252,47 +5013,56 @@ def get_all_users(
         # 格式化用户数据
         formatted_users = []
         for user in users:
-            (user_id, username, email, role, user_type, subscription_start,
-             subscription_expires_raw, remaining_calculations,
-             logistics_templates_limit, is_auto_renew, created_at,
-             last_login, is_frozen) = user
+            (
+                user_id,
+                username,
+                email,
+                role,
+                user_type,
+                subscription_start,
+                subscription_expires_raw,
+                remaining_calculations,
+                logistics_templates_limit,
+                is_auto_renew,
+                created_at,
+                last_login,
+                is_frozen,
+            ) = user
 
             # 计算剩余天数
             remaining_days = None
             subscription_end_iso = None
-            expiry_dt = _subscription_expires_to_datetime(
-                subscription_expires_raw
-            )
+            expiry_dt = _subscription_expires_to_datetime(subscription_expires_raw)
             if expiry_dt is not None:
                 subscription_end_iso = expiry_dt.isoformat()
                 today = date.today()
                 remaining_days = (expiry_dt.date() - today).days
 
-            formatted_users.append({
-                'id': user_id,
-                'username': username,
-                'email': email,
-                'role': role,
-                'user_type': user_type,
-                'subscription_start': subscription_start,
-                'subscription_end': subscription_end_iso,
-                'remaining_days': remaining_days,
-                'remaining_calculations': remaining_calculations,
-                'logistics_templates_limit': logistics_templates_limit,
-                'current_logistics_count': user_logistics_counts.get(
-                    user_id, 0
-                ),
-                'is_auto_renew': is_auto_renew,
-                'created_at': created_at,
-                'last_login': last_login,
-                'is_frozen': is_frozen
-            })
+            formatted_users.append(
+                {
+                    "id": user_id,
+                    "username": username,
+                    "email": email,
+                    "role": role,
+                    "user_type": user_type,
+                    "subscription_start": subscription_start,
+                    "subscription_end": subscription_end_iso,
+                    "remaining_days": remaining_days,
+                    "remaining_calculations": remaining_calculations,
+                    "logistics_templates_limit": logistics_templates_limit,
+                    "current_logistics_count": user_logistics_counts.get(user_id, 0),
+                    "is_auto_renew": is_auto_renew,
+                    "created_at": created_at,
+                    "last_login": last_login,
+                    "is_frozen": is_frozen,
+                }
+            )
 
         return {
-            'users': formatted_users,
-            'total_count': total_count,
-            'total_pages': (total_count + per_page - 1) // per_page,
-            'current_page': page
+            "users": formatted_users,
+            "total_count": total_count,
+            "total_pages": (total_count + per_page - 1) // per_page,
+            "current_page": page,
         }
 
 
@@ -5305,7 +5075,7 @@ def get_user_detail(user_id):
             "remaining_calculations, logistics_templates_limit, "
             "is_auto_renew, created_at, last_login, "
             "is_frozen FROM users WHERE id = ?",
-            conn
+            conn,
         )
         c.execute(sql, (user_id,))
         user = c.fetchone()
@@ -5314,25 +5084,28 @@ def get_user_detail(user_id):
             return None
 
         (
-            user_id, username, email, role, user_type, subscription_start,
-            subscription_expires_raw, remaining_calculations,
-            logistics_templates_limit, is_auto_renew, created_at,
-            last_login, is_frozen,
+            user_id,
+            username,
+            email,
+            role,
+            user_type,
+            subscription_start,
+            subscription_expires_raw,
+            remaining_calculations,
+            logistics_templates_limit,
+            is_auto_renew,
+            created_at,
+            last_login,
+            is_frozen,
         ) = user
 
         # 获取物流模板数量
-        sql = _safe_adapt_sql(
-            "SELECT COUNT(*) FROM logistics WHERE user_id = ?",
-            conn
-        )
+        sql = _safe_adapt_sql("SELECT COUNT(*) FROM logistics WHERE user_id = ?", conn)
         c.execute(sql, (user_id,))
         logistics_count = c.fetchone()[0]
 
         # 获取产品数量
-        sql = _safe_adapt_sql(
-            "SELECT COUNT(*) FROM products WHERE user_id = ?",
-            conn
-        )
+        sql = _safe_adapt_sql("SELECT COUNT(*) FROM products WHERE user_id = ?", conn)
         c.execute(sql, (user_id,))
         products_count = c.fetchone()[0]
 
@@ -5346,22 +5119,22 @@ def get_user_detail(user_id):
             remaining_days = (expiry_dt.date() - today).days
 
         return {
-            'id': user_id,
-            'username': username,
-            'email': email,
-            'role': role,
-            'user_type': user_type,
-            'subscription_start': subscription_start,
-            'subscription_end': subscription_end_iso,
-            'remaining_days': remaining_days,
-            'remaining_calculations': remaining_calculations,
-            'logistics_templates_limit': logistics_templates_limit,
-            'current_logistics_count': logistics_count,
-            'products_count': products_count,
-            'is_auto_renew': is_auto_renew,
-            'created_at': created_at,
-            'last_login': last_login,
-            'is_frozen': is_frozen
+            "id": user_id,
+            "username": username,
+            "email": email,
+            "role": role,
+            "user_type": user_type,
+            "subscription_start": subscription_start,
+            "subscription_end": subscription_end_iso,
+            "remaining_days": remaining_days,
+            "remaining_calculations": remaining_calculations,
+            "logistics_templates_limit": logistics_templates_limit,
+            "current_logistics_count": logistics_count,
+            "products_count": products_count,
+            "is_auto_renew": is_auto_renew,
+            "created_at": created_at,
+            "last_login": last_login,
+            "is_frozen": is_frozen,
         }
 
 
@@ -5373,17 +5146,19 @@ def update_user_subscription_admin(user_id, updates, admin_id):
         values = []
 
         for field, value in updates.items():
-            if field == 'subscription_end':
+            if field == "subscription_end":
                 serialized = _serialize_subscription_expires(value)
                 set_clauses.append("subscription_expires = ?")
                 values.append(serialized)
                 continue
 
             if field in [
-                'user_type', 'subscription_start',
-                'remaining_calculations',
-                'logistics_templates_limit',
-                'is_auto_renew', 'is_frozen',
+                "user_type",
+                "subscription_start",
+                "remaining_calculations",
+                "logistics_templates_limit",
+                "is_auto_renew",
+                "is_frozen",
             ]:
                 set_clauses.append(f"{field} = ?")
                 values.append(value)
@@ -5395,29 +5170,24 @@ def update_user_subscription_admin(user_id, updates, admin_id):
 
         # 执行更新
         placeholder = get_placeholder()
-        query = (
-            f"UPDATE users SET {', '.join(set_clauses)} "
-            f"WHERE id = {placeholder}"
-        )
+        query = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = {placeholder}"
         query = adapt_sql(query)
         c.execute(query, values)
 
         if c.rowcount > 0:
             # 记录审计日志（保留兼容性）
             details_pairs = [f"{k}={v}" for k, v in updates.items()]
-            action_details = (
-                "管理员更新用户订阅: " + ", ".join(details_pairs)
-            )
+            action_details = "管理员更新用户订阅: " + ", ".join(details_pairs)
             sql = _safe_adapt_sql(
                 """
                 INSERT INTO audit_logs (admin_id, user_id, action, details)
                 VALUES (?, ?, ?, ?)
                 """,
-                conn
+                conn,
             )
             c.execute(
                 sql,
-                (admin_id, user_id, 'update_subscription', action_details),
+                (admin_id, user_id, "update_subscription", action_details),
             )
 
             conn.commit()
@@ -5426,14 +5196,13 @@ def update_user_subscription_admin(user_id, updates, admin_id):
             try:
                 log_admin_action(
                     admin_id=admin_id,
-                    action_type='更新订阅',
+                    action_type="更新订阅",
                     action_detail=action_details,
                     target_user_id=user_id,
-                    target_type='subscription'
+                    target_type="subscription",
                 )
             except Exception as e:
-                print(
-                    f"记录管理员操作日志失败: {e}")
+                print(f"记录管理员操作日志失败: {e}")
 
             return True
 
@@ -5446,25 +5215,29 @@ def freeze_user(user_id, admin_id):
         # 检测数据库类型，PostgreSQL使用TRUE，SQLite使用1
         try:
             import psycopg2
+
             is_pg = isinstance(conn, psycopg2.extensions.connection)
         except (ImportError, AttributeError):
             is_pg = False
 
         if is_pg:
             sql = _safe_adapt_sql(
-                "UPDATE users SET is_frozen = TRUE WHERE id = ?", conn)
+                "UPDATE users SET is_frozen = TRUE WHERE id = ?", conn
+            )
         else:
-            sql = _safe_adapt_sql(
-                "UPDATE users SET is_frozen = 1 WHERE id = ?", conn)
+            sql = _safe_adapt_sql("UPDATE users SET is_frozen = 1 WHERE id = ?", conn)
         c.execute(sql, (user_id,))
 
         if c.rowcount > 0:
             # 记录审计日志（保留兼容性）
-            sql = _safe_adapt_sql("""
+            sql = _safe_adapt_sql(
+                """
             INSERT INTO audit_logs (admin_id, user_id, action, details)
             VALUES (?, ?, ?, ?)
-            """, conn)
-            c.execute(sql, (admin_id, user_id, 'freeze_user', '管理员冻结用户'))
+            """,
+                conn,
+            )
+            c.execute(sql, (admin_id, user_id, "freeze_user", "管理员冻结用户"))
 
             conn.commit()
 
@@ -5472,14 +5245,13 @@ def freeze_user(user_id, admin_id):
             try:
                 log_admin_action(
                     admin_id=admin_id,
-                    action_type='冻结用户',
-                    action_detail=f'管理员冻结了用户ID: {user_id}',
+                    action_type="冻结用户",
+                    action_detail=f"管理员冻结了用户ID: {user_id}",
                     target_user_id=user_id,
-                    target_type='user'
+                    target_type="user",
                 )
             except Exception as e:
-                print(
-                    f"记录管理员操作日志失败: {e}")
+                print(f"记录管理员操作日志失败: {e}")
 
             return True
 
@@ -5492,25 +5264,29 @@ def unfreeze_user(user_id, admin_id):
         # 检测数据库类型，PostgreSQL使用FALSE，SQLite使用0
         try:
             import psycopg2
+
             is_pg = isinstance(conn, psycopg2.extensions.connection)
         except (ImportError, AttributeError):
             is_pg = False
 
         if is_pg:
             sql = _safe_adapt_sql(
-                "UPDATE users SET is_frozen = FALSE WHERE id = ?", conn)
+                "UPDATE users SET is_frozen = FALSE WHERE id = ?", conn
+            )
         else:
-            sql = _safe_adapt_sql(
-                "UPDATE users SET is_frozen = 0 WHERE id = ?", conn)
+            sql = _safe_adapt_sql("UPDATE users SET is_frozen = 0 WHERE id = ?", conn)
         c.execute(sql, (user_id,))
 
         if c.rowcount > 0:
             # 记录审计日志（注意：原代码有bug，参数数量不对）
-            sql = _safe_adapt_sql("""
+            sql = _safe_adapt_sql(
+                """
             INSERT INTO audit_logs (admin_id, user_id, action, details)
             VALUES (?, ?, ?, ?)
-            """, conn)
-            c.execute(sql, (admin_id, user_id, 'unfreeze_user', '管理员解冻用户'))
+            """,
+                conn,
+            )
+            c.execute(sql, (admin_id, user_id, "unfreeze_user", "管理员解冻用户"))
 
             conn.commit()
 
@@ -5518,15 +5294,13 @@ def unfreeze_user(user_id, admin_id):
             try:
                 log_admin_action(
                     admin_id=admin_id,
-                    action_type='解冻用户',
-                    action_detail=(
-                        f'管理员解冻了用户ID: {user_id}'),
+                    action_type="解冻用户",
+                    action_detail=(f"管理员解冻了用户ID: {user_id}"),
                     target_user_id=user_id,
-                    target_type='user'
+                    target_type="user",
                 )
             except Exception as e:
-                print(
-                    f"记录管理员操作日志失败: {e}")
+                print(f"记录管理员操作日志失败: {e}")
 
             return True
 
@@ -5538,15 +5312,15 @@ def delete_user_admin(user_id, admin_id):
     with get_db_connection() as (conn, c):
         # 保护管理员账号：禁止删除 admin 及其数据
         user_role_sql = _safe_adapt_sql(
-            "SELECT role, username FROM users WHERE id = ?", conn)
+            "SELECT role, username FROM users WHERE id = ?", conn
+        )
         user_role_row = _safe_execute_fetchone(c, user_role_sql, (user_id,))
-        if user_role_row and user_role_row[0] == 'admin':
+        if user_role_row and user_role_row[0] == "admin":
             print("删除失败: 不允许删除管理员账号及其数据")
             return False
 
         # 获取用户信息用于日志
-        user_sql = _safe_adapt_sql(
-            "SELECT username FROM users WHERE id = ?", conn)
+        user_sql = _safe_adapt_sql("SELECT username FROM users WHERE id = ?", conn)
         user = _safe_execute_fetchone(c, user_sql, (user_id,))
         username = user[0] if user else f"ID:{user_id}"
 
@@ -5579,16 +5353,13 @@ def delete_user_admin(user_id, admin_id):
             try:
                 log_admin_action(
                     admin_id=admin_id,
-                    action_type='删除用户',
-                    action_detail=(
-                        f'管理员删除了用户: {username} (ID: {user_id})'
-                    ),
+                    action_type="删除用户",
+                    action_detail=(f"管理员删除了用户: {username} (ID: {user_id})"),
                     target_user_id=None,  # 用户已删除，设为None
-                    target_type='user'
+                    target_type="user",
                 )
             except Exception as e:
-                print(
-                    f"记录管理员操作日志失败: {e}")
+                print(f"记录管理员操作日志失败: {e}")
 
             return True
 
@@ -5606,17 +5377,19 @@ def batch_update_users(user_ids, updates, admin_id):
             values = []
 
             for field, value in updates.items():
-                if field == 'subscription_end':
+                if field == "subscription_end":
                     serialized = _serialize_subscription_expires(value)
                     set_clauses.append("subscription_expires = ?")
                     values.append(serialized)
                     continue
 
                 if field in [
-                    'user_type', 'subscription_start',
-                    'remaining_calculations',
-                    'logistics_templates_limit',
-                    'is_auto_renew', 'is_frozen',
+                    "user_type",
+                    "subscription_start",
+                    "remaining_calculations",
+                    "logistics_templates_limit",
+                    "is_auto_renew",
+                    "is_frozen",
                 ]:
                     set_clauses.append(f"{field} = ?")
                     values.append(value)
@@ -5641,20 +5414,18 @@ def batch_update_users(user_ids, updates, admin_id):
                     VALUES (?, ?, ?, ?)
                     """
                     sql = _safe_adapt_sql(sql_raw, conn)
-                    c.execute(
-                        sql, (admin_id, user_id, 'batch_update',
-                              action_details))
+                    c.execute(sql, (admin_id, user_id, "batch_update", action_details))
 
         conn.commit()
         return success_count
 
 
 def get_audit_logs(
-        page=1,
-        per_page=50,
-        admin_id=None,
-        user_id=None,
-        action=None,
+    page=1,
+    per_page=50,
+    admin_id=None,
+    user_id=None,
+    action=None,
 ):
     """获取审计日志"""
     with get_db_connection() as (_, c):
@@ -5681,9 +5452,7 @@ def get_audit_logs(
             from sql_security import build_where_clause
 
         # 使用安全的WHERE子句构建工具
-        where_clause, safe_params = build_where_clause(
-            where_conditions, params
-        )
+        where_clause, safe_params = build_where_clause(where_conditions, params)
 
         # 获取总数
         count_query = f"SELECT COUNT(*) FROM audit_logs WHERE {where_clause}"
@@ -5710,24 +5479,34 @@ def get_audit_logs(
 
         formatted_logs = []
         for log in logs:
-            (log_id, admin_id, user_id, action, details, timestamp,
-             admin_username, user_username) = log
-            formatted_logs.append({
-                'id': log_id,
-                'admin_id': admin_id,
-                'user_id': user_id,
-                'action': action,
-                'details': details,
-                'timestamp': timestamp,
-                'admin_username': admin_username,
-                'user_username': user_username
-            })
+            (
+                log_id,
+                admin_id,
+                user_id,
+                action,
+                details,
+                timestamp,
+                admin_username,
+                user_username,
+            ) = log
+            formatted_logs.append(
+                {
+                    "id": log_id,
+                    "admin_id": admin_id,
+                    "user_id": user_id,
+                    "action": action,
+                    "details": details,
+                    "timestamp": timestamp,
+                    "admin_username": admin_username,
+                    "user_username": user_username,
+                }
+            )
 
         return {
-            'logs': formatted_logs,
-            'total_count': total_count,
-            'total_pages': (total_count + per_page - 1) // per_page,
-            'current_page': page
+            "logs": formatted_logs,
+            "total_count": total_count,
+            "total_pages": (total_count + per_page - 1) // per_page,
+            "current_page": page,
         }
 
 
@@ -5738,24 +5517,22 @@ def reset_user_password(user_id, admin_id):
 
     # 生成随机密码
     alphabet = string.ascii_letters + string.digits
-    new_password = ''.join(
-        secrets.choice(alphabet) for _ in range(12))
+    new_password = "".join(secrets.choice(alphabet) for _ in range(12))
 
     # 加密密码
     import bcrypt
-    password_hash = bcrypt.hashpw(
-        new_password.encode('utf-8'), bcrypt.gensalt()
-    )
+
+    password_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt())
 
     with get_db_connection() as (conn, c):
         c.execute(
             "UPDATE users SET password = ? WHERE id = ?",
-            (password_hash.decode('utf-8'), user_id),
+            (password_hash.decode("utf-8"), user_id),
         )
 
         if c.rowcount > 0:
             # 记录审计日志（保留兼容性）
-            details_text = f'管理员重置密码: {new_password}'
+            details_text = f"管理员重置密码: {new_password}"
             c.execute(
                 """
                 INSERT INTO audit_logs (admin_id, user_id, action, details)
@@ -5764,7 +5541,7 @@ def reset_user_password(user_id, admin_id):
                 (
                     admin_id,
                     user_id,
-                    'reset_password',
+                    "reset_password",
                     details_text,
                 ),
             )
@@ -5775,14 +5552,13 @@ def reset_user_password(user_id, admin_id):
             try:
                 log_admin_action(
                     admin_id=admin_id,
-                    action_type='重置密码',
-                    action_detail=f'管理员重置了用户ID: {user_id} 的密码',
+                    action_type="重置密码",
+                    action_detail=f"管理员重置了用户ID: {user_id} 的密码",
                     target_user_id=user_id,
-                    target_type='user'
+                    target_type="user",
                 )
             except Exception as e:
-                print(
-                    f"记录管理员操作日志失败: {e}")
+                print(f"记录管理员操作日志失败: {e}")
 
             return new_password
 
@@ -5792,8 +5568,9 @@ def reset_user_password(user_id, admin_id):
 # ============= 统计与运营看板相关函数 =============
 
 
-def log_user_login(user_id: int, ip_address: Optional[str] = None,
-                   user_agent: Optional[str] = None) -> bool:
+def log_user_login(
+    user_id: int, ip_address: Optional[str] = None, user_agent: Optional[str] = None
+) -> bool:
     """记录用户登录日志"""
     with get_db_connection() as (conn, c):
         # 确保外键约束已启用（仅SQLite）
@@ -5805,17 +5582,15 @@ def log_user_login(user_id: int, ip_address: Optional[str] = None,
                 pass
         try:
             # 简单的设备类型判断
-            device_type = 'unknown'
+            device_type = "unknown"
             if user_agent:
                 user_agent_lower = user_agent.lower()
-                if ('mobile' in user_agent_lower
-                        or 'android' in user_agent_lower):
-                    device_type = 'mobile'
-                elif ('tablet' in user_agent_lower
-                        or 'ipad' in user_agent_lower):
-                    device_type = 'tablet'
+                if "mobile" in user_agent_lower or "android" in user_agent_lower:
+                    device_type = "mobile"
+                elif "tablet" in user_agent_lower or "ipad" in user_agent_lower:
+                    device_type = "tablet"
                 else:
-                    device_type = 'desktop'
+                    device_type = "desktop"
 
             login_time = int(time.time())
             sql_raw = """
@@ -5824,9 +5599,7 @@ def log_user_login(user_id: int, ip_address: Optional[str] = None,
                 VALUES (?, ?, ?, ?, ?)
             """
             sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(
-                sql, (user_id, login_time, ip_address,
-                      user_agent, device_type))
+            c.execute(sql, (user_id, login_time, ip_address, user_agent, device_type))
 
             # 更新用户的最后登录时间
             sql_raw = """
@@ -5842,7 +5615,7 @@ def log_user_login(user_id: int, ip_address: Optional[str] = None,
         except Exception as e:
             # 如果主键冲突处理失败，尝试捕获并忽略
             error_str = str(e).lower()
-            if 'duplicate' in error_str or 'unique' in error_str:
+            if "duplicate" in error_str or "unique" in error_str:
                 # 主键冲突，忽略错误但继续更新最后登录时间
                 try:
                     sql_raw = """
@@ -5860,9 +5633,12 @@ def log_user_login(user_id: int, ip_address: Optional[str] = None,
             return False
 
 
-def log_user_behavior(user_id: int, behavior_type: str,
-                      behavior_detail: Optional[str] = None,
-                      calculation_mode: Optional[str] = None) -> bool:
+def log_user_behavior(
+    user_id: int,
+    behavior_type: str,
+    behavior_detail: Optional[str] = None,
+    calculation_mode: Optional[str] = None,
+) -> bool:
     """
     记录用户行为日志
 
@@ -5883,9 +5659,7 @@ def log_user_behavior(user_id: int, behavior_type: str,
                 VALUES (?, ?, ?, ?)
             """
             sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(
-                sql, (user_id, behavior_type, behavior_detail,
-                      calculation_mode))
+            c.execute(sql, (user_id, behavior_type, behavior_detail, calculation_mode))
             conn.commit()
             return True
         except Exception as e:
@@ -5893,10 +5667,14 @@ def log_user_behavior(user_id: int, behavior_type: str,
             return False
 
 
-def log_admin_action(admin_id: int, action_type: str, action_detail: str,
-                     target_user_id: Optional[int] = None,
-                     target_type: Optional[str] = None,
-                     ip_address: Optional[str] = None) -> bool:
+def log_admin_action(
+    admin_id: int,
+    action_type: str,
+    action_detail: str,
+    target_user_id: Optional[int] = None,
+    target_type: Optional[str] = None,
+    ip_address: Optional[str] = None,
+) -> bool:
     """记录管理员操作日志"""
     with get_db_connection() as (conn, c):
         try:
@@ -5909,8 +5687,15 @@ def log_admin_action(admin_id: int, action_type: str, action_detail: str,
             sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(
                 sql,
-                (admin_id, action_type, action_detail, target_user_id,
-                 target_type, ip_address))
+                (
+                    admin_id,
+                    action_type,
+                    action_detail,
+                    target_user_id,
+                    target_type,
+                    ip_address,
+                ),
+            )
             conn.commit()
             return True
         except Exception as e:
@@ -5918,19 +5703,25 @@ def log_admin_action(admin_id: int, action_type: str, action_detail: str,
             return False
 
 
-def create_alert(alert_type: str, alert_level: str, description: str,
-                 threshold_value: Optional[float] = None,
-                 actual_value: Optional[float] = None) -> bool:
+def create_alert(
+    alert_type: str,
+    alert_level: str,
+    description: str,
+    threshold_value: Optional[float] = None,
+    actual_value: Optional[float] = None,
+) -> bool:
     """创建异常告警记录"""
     with get_db_connection() as (conn, c):
         try:
-            c.execute("""
+            c.execute(
+                """
                 INSERT INTO alert_records
                 (alert_type, alert_level, description,
                  threshold_value, actual_value)
                 VALUES (?, ?, ?, ?, ?)
-            """, (alert_type, alert_level, description,
-                  threshold_value, actual_value))
+            """,
+                (alert_type, alert_level, description, threshold_value, actual_value),
+            )
             conn.commit()
             return True
         except Exception as e:
@@ -5948,8 +5739,7 @@ def get_statistics_cache(cache_key: str) -> Optional[Dict[str, Any]]:
                 WHERE cache_key = ? AND expires_at > ?
             """
             sql = _safe_adapt_sql(sql_raw, conn)
-            result = _safe_execute_fetchone(
-                c, sql, (cache_key, current_time), conn)
+            result = _safe_execute_fetchone(c, sql, (cache_key, current_time), conn)
 
             if result:
                 return json.loads(result[0])
@@ -5962,6 +5752,7 @@ def get_statistics_cache(cache_key: str) -> Optional[Dict[str, Any]]:
 def _convert_decimal_to_float(obj):
     """递归转换Decimal为float，用于JSON序列化"""
     from decimal import Decimal
+
     if isinstance(obj, Decimal):
         return float(obj)
     elif isinstance(obj, dict):
@@ -5973,8 +5764,9 @@ def _convert_decimal_to_float(obj):
     return obj
 
 
-def set_statistics_cache(cache_key: str, cache_data: Dict[str, Any],
-                         ttl: int = 300) -> bool:
+def set_statistics_cache(
+    cache_key: str, cache_data: Dict[str, Any], ttl: int = 300
+) -> bool:
     """设置统计缓存数据
 
     Args:
@@ -5987,10 +5779,8 @@ def set_statistics_cache(cache_key: str, cache_data: Dict[str, Any],
             current_time = int(time.time())
             expires_at = current_time + ttl
             # 转换Decimal为float以支持JSON序列化
-            cache_data_serializable = (
-                _convert_decimal_to_float(cache_data))
-            cache_json = json.dumps(
-                cache_data_serializable, ensure_ascii=False)
+            cache_data_serializable = _convert_decimal_to_float(cache_data)
+            cache_json = json.dumps(cache_data_serializable, ensure_ascii=False)
 
             if _is_postgresql_connection(conn):
                 sql = """
@@ -6021,9 +5811,12 @@ def clear_expired_cache() -> int:
     with get_db_connection() as (conn, c):
         try:
             current_time = int(time.time())
-            c.execute("""
+            c.execute(
+                """
                 DELETE FROM statistics_cache WHERE expires_at < ?
-            """, (current_time,))
+            """,
+                (current_time,),
+            )
             conn.commit()
             return c.rowcount
         except Exception as e:
@@ -6073,7 +5866,7 @@ def get_dashboard_stats() -> Dict[str, Any]:
 
             # 今日新增用户数
             if _is_postgresql_connection(conn):
-                safe_user_expr = _build_safe_timestamp_expr('created_at')
+                safe_user_expr = _build_safe_timestamp_expr("created_at")
                 sql = f"""
                     WITH normalized_users AS (
                         SELECT
@@ -6087,10 +5880,8 @@ def get_dashboard_stats() -> Dict[str, Any]:
                 """
                 c.execute(sql, (today_start,))
             else:
-                today_start_str = (
-                    datetime.fromtimestamp(today_start).strftime(
-                        '%Y-%m-%d 00:00:00'
-                    )
+                today_start_str = datetime.fromtimestamp(today_start).strftime(
+                    "%Y-%m-%d 00:00:00"
                 )
                 sql = """
                     SELECT COUNT(*) FROM users
@@ -6120,7 +5911,7 @@ def get_dashboard_stats() -> Dict[str, Any]:
             # 今日收入
             orders_cte = ""
             if _is_postgresql_connection(conn):
-                safe_order_expr = _build_safe_timestamp_expr('created_at')
+                safe_order_expr = _build_safe_timestamp_expr("created_at")
                 orders_cte = f"""
                     WITH normalized_orders AS (
                         SELECT
@@ -6130,12 +5921,15 @@ def get_dashboard_stats() -> Dict[str, Any]:
                         FROM payment_orders
                     )
                 """
-                sql = orders_cte + """
+                sql = (
+                    orders_cte
+                    + """
                     SELECT COALESCE(SUM(amount), 0) / 100.0
                     FROM normalized_orders
                     WHERE status = 'SUCCESS'
                     AND created_ts >= to_timestamp(%s)
                 """
+                )
                 c.execute(sql, (today_start,))
             else:
                 sql_raw = """
@@ -6149,13 +5943,16 @@ def get_dashboard_stats() -> Dict[str, Any]:
 
             # 昨日收入
             if _is_postgresql_connection(conn):
-                sql = orders_cte + """
+                sql = (
+                    orders_cte
+                    + """
                     SELECT COALESCE(SUM(amount), 0) / 100.0
                     FROM normalized_orders
                     WHERE status = 'SUCCESS'
                     AND created_ts >= to_timestamp(%s)
                     AND created_ts < to_timestamp(%s)
                 """
+                )
                 c.execute(sql, (yesterday_start, today_start))
             else:
                 sql_raw = """
@@ -6170,12 +5967,15 @@ def get_dashboard_stats() -> Dict[str, Any]:
 
             # 本月收入
             if _is_postgresql_connection(conn):
-                sql = orders_cte + """
+                sql = (
+                    orders_cte
+                    + """
                     SELECT COALESCE(SUM(amount), 0) / 100.0
                     FROM normalized_orders
                     WHERE status = 'SUCCESS'
                     AND created_ts >= to_timestamp(%s)
                 """
+                )
                 c.execute(sql, (month_start,))
             else:
                 sql_raw = """
@@ -6198,15 +5998,15 @@ def get_dashboard_stats() -> Dict[str, Any]:
             online_users = c.fetchone()[0]
 
             result = {
-                'active_users_today': active_users_today,
-                'new_users_today': new_users_today,
-                'total_users': total_users,
-                'total_revenue': round(total_revenue, 2),
-                'revenue_today': round(revenue_today, 2),
-                'revenue_yesterday': round(revenue_yesterday, 2),
-                'revenue_month': round(revenue_month, 2),
-                'online_users': online_users,
-                'timestamp': current_time
+                "active_users_today": active_users_today,
+                "new_users_today": new_users_today,
+                "total_users": total_users,
+                "total_revenue": round(total_revenue, 2),
+                "revenue_today": round(revenue_today, 2),
+                "revenue_yesterday": round(revenue_yesterday, 2),
+                "revenue_month": round(revenue_month, 2),
+                "online_users": online_users,
+                "timestamp": current_time,
             }
 
             # 缓存5分钟
@@ -6220,6 +6020,7 @@ def get_dashboard_stats() -> Dict[str, Any]:
 # ============================================================================
 # 套餐管理CRUD函数
 # ============================================================================
+
 
 @st.cache_data(ttl=300)  # 缓存5分钟，套餐数据变化不频繁
 def get_plans(active_only=False, include_free=True):
@@ -6328,7 +6129,7 @@ def create_plan(
     description: str = "",
     features: str = "",
     is_active: int = 1,
-    sort_order: int = 0
+    sort_order: int = 0,
 ):
     """
     创建新套餐
@@ -6340,15 +6141,15 @@ def create_plan(
         try:
             # 检查代码是否已存在
             existing = c.execute(
-                "SELECT id FROM plans WHERE plan_code = ?",
-                (plan_code,)
+                "SELECT id FROM plans WHERE plan_code = ?", (plan_code,)
             ).fetchone()
 
             if existing:
                 print(f"套餐代码 {plan_code} 已存在")
                 return False
 
-            c.execute("""
+            c.execute(
+                """
                 INSERT INTO plans (
                     plan_code, plan_name,
                     display_price_month, display_price_year,
@@ -6358,15 +6159,24 @@ def create_plan(
                     description, features,
                     is_active, sort_order
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                plan_code, plan_name,
-                display_price_month, display_price_year,
-                actual_price_month, actual_price_year,
-                test_price_month, test_price_year,
-                calc_limit, logistics_limit,
-                description, features,
-                is_active, sort_order
-            ))
+            """,
+                (
+                    plan_code,
+                    plan_name,
+                    display_price_month,
+                    display_price_year,
+                    actual_price_month,
+                    actual_price_year,
+                    test_price_month,
+                    test_price_year,
+                    calc_limit,
+                    logistics_limit,
+                    description,
+                    features,
+                    is_active,
+                    sort_order,
+                ),
+            )
 
             conn.commit()
             return True
@@ -6375,10 +6185,7 @@ def create_plan(
             return False
 
 
-def update_plan(
-    plan_id: int,
-    **kwargs
-):
+def update_plan(plan_id: int, **kwargs):
     """
     更新套餐信息
 
@@ -6393,12 +6200,19 @@ def update_plan(
         try:
             # 允许更新的字段
             allowed_fields = [
-                'plan_name', 'display_price_month', 'display_price_year',
-                'actual_price_month', 'actual_price_year',
-                'test_price_month', 'test_price_year',
-                'calc_limit', 'logistics_limit',
-                'description', 'features',
-                'is_active', 'sort_order'
+                "plan_name",
+                "display_price_month",
+                "display_price_year",
+                "actual_price_month",
+                "actual_price_year",
+                "test_price_month",
+                "test_price_year",
+                "calc_limit",
+                "logistics_limit",
+                "description",
+                "features",
+                "is_active",
+                "sort_order",
             ]
 
             # 过滤并构建SET子句
@@ -6420,10 +6234,7 @@ def update_plan(
                 updates.append("updated_at = strftime('%s', 'now')")
 
             placeholder = get_placeholder()
-            query = (
-                f"UPDATE plans SET {', '.join(updates)} "
-                f"WHERE id = {placeholder}"
-            )
+            query = f"UPDATE plans SET {', '.join(updates)} WHERE id = {placeholder}"
             query = adapt_sql(query)
             values.append(plan_id)
             c.execute(query, values)
@@ -6449,11 +6260,10 @@ def delete_plan(plan_id: int):
         try:
             # 检查是否为免费版（不允许删除）
             plan = c.execute(
-                "SELECT plan_code FROM plans WHERE id = ?",
-                (plan_id,)
+                "SELECT plan_code FROM plans WHERE id = ?", (plan_id,)
             ).fetchone()
 
-            if plan and plan[0] == 'free':
+            if plan and plan[0] == "free":
                 print("不允许删除免费版套餐")
                 return False
 
@@ -6480,12 +6290,15 @@ def toggle_plan_active(plan_id: int):
     """
     with get_db_connection() as (conn, c):
         try:
-            c.execute("""
+            c.execute(
+                """
                 UPDATE plans
                 SET is_active = 1 - is_active,
                     updated_at = strftime('%s', 'now')
                 WHERE id = ?
-            """, (plan_id,))
+            """,
+                (plan_id,),
+            )
             conn.commit()
 
             return c.rowcount > 0
@@ -6494,8 +6307,7 @@ def toggle_plan_active(plan_id: int):
             return False
 
 
-def get_plan_price(plan_code: str, duration: str,
-                   use_test_price: bool = False):
+def get_plan_price(plan_code: str, duration: str, use_test_price: bool = False):
     """
     获取套餐价格（根据用户角色）
 
@@ -6513,11 +6325,11 @@ def get_plan_price(plan_code: str, duration: str,
 
     if use_test_price:
         # 管理员使用测试价
-        if duration == 'year':
-            return plan['test_price_year']
-        return plan['test_price_month']
+        if duration == "year":
+            return plan["test_price_year"]
+        return plan["test_price_month"]
     else:
         # 普通用户使用实际价
-        if duration == 'year':
-            return plan['actual_price_year']
-        return plan['actual_price_month']
+        if duration == "year":
+            return plan["actual_price_year"]
+        return plan["actual_price_month"]
