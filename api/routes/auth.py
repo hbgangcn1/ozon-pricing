@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 import bcrypt
 
-from db_utils import verify_user, get_db_connection
+from db_utils import verify_user, get_db_connection, _safe_adapt_sql
 from api.models.schemas import UserLogin, UserResponse, TokenResponse, MessageResponse
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
@@ -39,7 +39,8 @@ async def logout():
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(user_id: int = Depends(lambda: 1)):
     with get_db_connection() as (conn, c):
-        sql = "SELECT id, username, role, user_type, remaining_calculations FROM users WHERE id = ?"
+        sql_raw = "SELECT id, username, role, user_type, remaining_calculations FROM users WHERE id = %s"
+        sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, (user_id,))
         row = c.fetchone()
         if not row:

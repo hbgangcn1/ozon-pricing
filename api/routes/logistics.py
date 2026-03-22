@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from typing import List
 
-from db_utils import get_db_connection
+from db_utils import get_db_connection, _safe_adapt_sql
 from api.models.schemas import (
     LogisticsCreate,
     LogisticsUpdate,
@@ -21,7 +21,8 @@ def get_current_user_id(api_key: str = Depends(security)) -> int:
 @router.get("", response_model=List[LogisticsResponse])
 async def get_logistics(user_id: int = Depends(get_current_user_id)):
     with get_db_connection() as (conn, c):
-        sql = "SELECT * FROM logistics WHERE user_id = ?"
+        sql_raw = "SELECT * FROM logistics WHERE user_id = %s"
+        sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, (user_id,))
         columns = [desc[0] for desc in c.description]
         logistics_list = [dict(zip(columns, row)) for row in c.fetchall()]
@@ -33,7 +34,8 @@ async def get_logistics_by_id(
     logistics_id: int, user_id: int = Depends(get_current_user_id)
 ):
     with get_db_connection() as (conn, c):
-        sql = "SELECT * FROM logistics WHERE id = ? AND user_id = ?"
+        sql_raw = "SELECT * FROM logistics WHERE id = %s AND user_id = %s"
+        sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, (logistics_id, user_id))
         row = c.fetchone()
         if not row:
@@ -47,13 +49,14 @@ async def create_logistics(
     logistics: LogisticsCreate, user_id: int = Depends(get_current_user_id)
 ):
     with get_db_connection() as (conn, c):
-        sql = """
+        sql_raw = """
             INSERT INTO logistics (
                 user_id, name, type, min_days, max_days, price_limit,
                 base_fee, weight_factor, min_weight, max_weight,
                 max_sum_of_sides, max_longest_side, volume_mode
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
+        sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(
             sql,
             (
@@ -73,10 +76,8 @@ async def create_logistics(
             ),
         )
         conn.commit()
-        logistics_id = c.lastrowid if hasattr(c, "lastrowid") else None
-        if not logistics_id:
-            c.execute("SELECT lastval()")
-            logistics_id = c.fetchone()[0]
+        c.execute("SELECT lastval()")
+        logistics_id = c.fetchone()[0]
         return get_logistics_by_id(logistics_id, user_id)
 
 
@@ -94,11 +95,12 @@ async def update_logistics_endpoint(
     if not update_data:
         return existing
 
-    set_clause = ", ".join([f"{k} = ?" for k in update_data.keys()])
-    sql = f"UPDATE logistics SET {set_clause} WHERE id = ? AND user_id = ?"
+    set_clause = ", ".join([f"{k} = %s" for k in update_data.keys()])
+    sql_raw = f"UPDATE logistics SET {set_clause} WHERE id = %s AND user_id = %s"
     params = list(update_data.values()) + [logistics_id, user_id]
 
     with get_db_connection() as (conn, c):
+        sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, params)
         conn.commit()
 
@@ -110,7 +112,8 @@ async def delete_logistics_endpoint(
     logistics_id: int, user_id: int = Depends(get_current_user_id)
 ):
     with get_db_connection() as (conn, c):
-        sql = "DELETE FROM logistics WHERE id = ? AND user_id = ?"
+        sql_raw = "DELETE FROM logistics WHERE id = %s AND user_id = %s"
+        sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, (logistics_id, user_id))
         conn.commit()
         if c.rowcount == 0:

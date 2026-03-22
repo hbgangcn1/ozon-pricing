@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
 from logic import calculate_pricing
-from db_utils import get_product_by_id, get_db_connection
+from db_utils import get_product_by_id, get_db_connection, _safe_adapt_sql
 from api.models.schemas import PricingRequest, PricingResponse
 
 router = APIRouter(prefix="/api/pricing", tags=["定价"])
@@ -16,10 +16,12 @@ def get_current_user_id(api_key: str = Depends(security)) -> int:
 def get_user_logistics(user_id, logistics_type=None):
     with get_db_connection() as (conn, c):
         if logistics_type:
-            sql = "SELECT * FROM logistics WHERE user_id = ? AND type = ?"
+            sql_raw = "SELECT * FROM logistics WHERE user_id = %s AND type = %s"
+            sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user_id, logistics_type))
         else:
-            sql = "SELECT * FROM logistics WHERE user_id = ?"
+            sql_raw = "SELECT * FROM logistics WHERE user_id = %s"
+            sql = _safe_adapt_sql(sql_raw, conn)
             c.execute(sql, (user_id,))
         columns = [desc[0] for desc in c.description]
         return [dict(zip(columns, row)) for row in c.fetchall()]
@@ -34,7 +36,8 @@ async def calculate(product_id: int, logistics_id: int, mode: str = "fast"):
         raise HTTPException(status_code=404, detail="产品不存在")
 
     with get_db_connection() as (conn, c):
-        sql = "SELECT id FROM logistics WHERE id = ? AND user_id = ?"
+        sql_raw = "SELECT id FROM logistics WHERE id = %s AND user_id = %s"
+        sql = _safe_adapt_sql(sql_raw, conn)
         c.execute(sql, (logistics_id, user_id))
         if not c.fetchone():
             raise HTTPException(status_code=404, detail="物流规则不存在")
