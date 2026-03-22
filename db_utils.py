@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import hashlib
 import bcrypt
 import threading
@@ -230,36 +229,8 @@ def _safe_execute_fetchone(cursor, sql, params=None, conn=None) -> Any:
         # 如果检测模块不可用或出错，继续执行（不阻断正常流程）
         pass
 
-    # 如果提供了连接对象，先适配SQL
     if conn is not None:
         sql = _safe_adapt_sql(sql, conn)
-    else:
-        # 尝试从cursor获取connection（某些数据库驱动支持）
-        try:
-            conn = cursor.connection
-            sql = _safe_adapt_sql(sql, conn)
-        except AttributeError:
-            # 如果无法获取连接，尝试通过cursor类型检测
-            # 检查cursor类型来判断数据库类型
-            cursor_module = type(cursor).__module__
-            cursor_class_name = type(cursor).__name__.lower()
-            # 检查是否为SQLite cursor（明确检测）
-            if isinstance(cursor, sqlite3.Cursor):
-                # SQLite cursor，保持?占位符
-                pass  # sql保持不变
-            elif "psycopg2" in cursor_module or "postgres" in cursor_class_name:
-                # PostgreSQL cursor，需要转换占位符
-                if "?" in sql:
-                    sql = sql.replace("?", "%s")
-            else:
-                # 未知类型，尝试通过全局配置（但这不是最佳实践）
-                try:
-                    from db_config import DB_TYPE
-
-                    if DB_TYPE == "postgresql" and "?" in sql:
-                        sql = sql.replace("?", "%s")
-                except (ImportError, AttributeError):
-                    pass  # 保持原样
 
     if params:
         execute_result = cursor.execute(sql, params)
@@ -270,253 +241,8 @@ def _safe_execute_fetchone(cursor, sql, params=None, conn=None) -> Any:
 
 
 def _safe_adapt_sql(sql: str, conn) -> str:
-    """
-    根据实际连接类型安全地适配SQL
-    只有PostgreSQL连接才需要适配，SQLite连接使用原始SQL
-    """
-    import re
-
-    # 首先明确检查是否为SQLite连接
-    if isinstance(conn, sqlite3.Connection):
-        # SQLite连接，确保使用?占位符，并将TRUE/FALSE转换为1/0
-        # 需要将%s转换为?，但要避免替换字符串字面量中的%s
-        # 使用更安全的方法：逐字符分析，跟踪是否在字符串中
-        result = []
-        in_single_quote = False
-        in_double_quote = False
-        i = 0
-
-        while i < len(sql):
-            char = sql[i]
-
-            # 跟踪引号状态（考虑转义）
-            if char == "'" and (i == 0 or sql[i - 1] != "\\"):
-                in_single_quote = not in_single_quote
-                result.append(char)
-            elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
-                in_double_quote = not in_double_quote
-                result.append(char)
-            elif char == "%":
-                # 处理%符号
-                if i + 1 < len(sql) and sql[i + 1] == "s":
-                    # 找到%s，检查是否在字符串中
-                    if not in_single_quote and not in_double_quote:
-                        # 不在字符串中，替换为?
-                        result.append("?")
-                        i += 1  # 跳过's'
-                    else:
-                        # 在字符串中，保留原样
-                        result.append("%s")
-                        i += 1
-                elif not in_single_quote and not in_double_quote:
-                    # 单独的%符号（不是%s）
-                    # 检查下一个字符是否是字母或数字，如果是格式化说明符的一部分
-                    if i + 1 < len(sql) and sql[i + 1].isalnum():
-                        # 可能是格式化说明符（如%d, %f等），保留它
-                        result.append(char)
-                    elif i + 1 < len(sql) and sql[i + 1] == "%":
-                        # 双重%符号（%%），在Python中表示字面量%，保留它
-                        result.append("%")
-                        result.append("%")
-                        i += 1  # 跳过第二个%
-                    else:
-                        # 单独的%符号，在SQLite中需要转义为%%
-                        # 转换为字面量%，避免SQL语法错误
-                        # 但需要检查是否在LIKE操作符中，如果是则保留%
-                        # 简化处理：下一个字符是空白或特殊字符，转义为%%
-                        next_char = sql[i + 1] if i + 1 < len(sql) else ""
-                        if next_char in (" ", "\t", "\n", "\r", ")", ",", ";", ""):
-                            # 单独的%后面跟着空白或结束，转义为%%
-                            result.append("%")
-                            result.append("%")
-                        else:
-                            # 可能是其他情况，保留原样但转义为%%
-                            result.append("%")
-                            result.append("%")
-                else:
-                    # 在字符串中的%，保留
-                    result.append(char)
-            else:
-                result.append(char)
-            i += 1
-
-        sql = "".join(result)
-
-        # 转换PostgreSQL的TRUE/FALSE为SQLite的1/0
-        # 使用正则表达式，只替换不在字符串中的TRUE/FALSE
-        # 处理 is_active = TRUE -> is_active = 1
-        sql = re.sub(
-            r"\bis_active\s*=\s*TRUE\b", "is_active = 1", sql, flags=re.IGNORECASE
-        )
-        # 处理 is_active = FALSE -> is_active = 0
-        sql = re.sub(
-            r"\bis_active\s*=\s*FALSE\b", "is_active = 0", sql, flags=re.IGNORECASE
-        )
-        # 处理其他布尔字段的类似比较
-        sql = re.sub(
-            r"\b(success|is_test_user|is_active|is_test_data)\s*=\s*TRUE\b",
-            r"\1 = 1",
-            sql,
-            flags=re.IGNORECASE,
-        )
-        sql = re.sub(
-            r"\b(success|is_test_user|is_active|is_test_data)\s*=\s*FALSE\b",
-            r"\1 = 0",
-            sql,
-            flags=re.IGNORECASE,
-        )
-        # 处理 VALUES (?, ?, TRUE) 或 SET is_active = TRUE 中的 TRUE/FALSE
-        # 直接替换所有不在引号中的TRUE/FALSE
-        # 使用简单的逐字符分析，确保不在字符串中
-        result = []
-        in_single_quote = False
-        in_double_quote = False
-        i = 0
-
-        while i < len(sql):
-            char = sql[i]
-
-            # 跟踪引号状态
-            if char == "'" and (i == 0 or sql[i - 1] != "\\"):
-                in_single_quote = not in_single_quote
-                result.append(char)
-            elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
-                in_double_quote = not in_double_quote
-                result.append(char)
-            elif not in_single_quote and not in_double_quote:
-                # 不在引号中，检查是否为TRUE或FALSE
-                if i + 3 < len(sql) and sql[i : i + 4].upper() == "TRUE":
-                    # 确保是完整的单词（使用单词边界检查）
-                    if (i == 0 or not sql[i - 1].isalnum()) and (
-                        i + 4 >= len(sql) or not sql[i + 4].isalnum()
-                    ):
-                        result.append("1")
-                        i += 3  # 跳过'RUE'
-                    else:
-                        result.append(char)
-                elif i + 4 < len(sql) and sql[i : i + 5].upper() == "FALSE":
-                    # 确保是完整的单词
-                    if (i == 0 or not sql[i - 1].isalnum()) and (
-                        i + 5 >= len(sql) or not sql[i + 5].isalnum()
-                    ):
-                        result.append("0")
-                        i += 4  # 跳过'ALSE'
-                    else:
-                        result.append(char)
-                else:
-                    result.append(char)
-            else:
-                result.append(char)
-            i += 1
-
-        sql = "".join(result)
-
-        return sql
-
-    # 检查是否为PostgreSQL连接
-    if _is_postgresql_connection(conn):
-        # 先处理INSERT VALUES中的布尔值（在占位符转换和adapt_sql之前）
-        # 因为adapt_sql会转换占位符，我们需要在占位符转换之前处理字面量1/0
-        # 使用更宽松的匹配，因为SQL可能包含换行符
-        sql_upper = sql.upper()
-        if (
-            "ACTIVE_SESSIONS" in sql_upper
-            and "VALUES" in sql_upper
-            and "INSERT" in sql_upper
-        ):
-            # 匹配 VALUES (...) 中最后一个单独的 1（可能是is_active）
-            # 需要匹配多种情况：
-            # 1. VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-            # 2. VALUES (..., 1)
-            # 使用更精确的模式：匹配 VALUES 子句中最后的 , 1) 或 , 0)
-            # 但要确保不是其他数字的一部分
-            # 使用DOTALL标志以匹配可能包含换行符的SQL
-            # \s* 匹配零个或多个空白字符，可以同时处理有空格和没空格的情况
-            sql = re.sub(
-                r",\s*1\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))",
-                ", TRUE)",
-                sql,
-                flags=re.IGNORECASE | re.MULTILINE | re.DOTALL,
-            )
-            # 同样处理0
-            sql = re.sub(
-                r",\s*0\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))",
-                ", FALSE)",
-                sql,
-                flags=re.IGNORECASE | re.MULTILINE | re.DOTALL,
-            )
-
-        sql = adapt_sql(sql)
-        # 确保占位符被转换（如果adapt_sql没有转换，手动转换）
-        # 只替换不在字符串中的?占位符
-        result = []
-        in_single_quote = False
-        in_double_quote = False
-        i = 0
-
-        while i < len(sql):
-            char = sql[i]
-
-            if char == "'" and (i == 0 or sql[i - 1] != "\\"):
-                in_single_quote = not in_single_quote
-                result.append(char)
-            elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
-                in_double_quote = not in_double_quote
-                result.append(char)
-            elif char == "?":
-                if not in_single_quote and not in_double_quote:
-                    result.append("%s")
-                else:
-                    result.append("?")
-            else:
-                result.append(char)
-            i += 1
-
-        sql = "".join(result)
-        # 额外的安全检查：确保datetime函数被转换（备用方案）
-        # 只匹配?或%s占位符，不匹配单独的%符号
-        sql = re.sub(
-            r"datetime\s*\(\s*(\?|%s)\s*,\s*['\"]unixepoch['\"]\s*\)",
-            r"to_timestamp(\1)",
-            sql,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        sql = re.sub(
-            r"datetime\s*\(\s*(\?|%s)\s*,\s*unixepoch\s*\)",
-            r"to_timestamp(\1)",
-            sql,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        return sql
-
-    # 默认情况：如果无法确定，假设是SQLite，转换%s为?
-    # 使用同样的安全替换方法
-    result = []
-    in_single_quote = False
-    in_double_quote = False
-    i = 0
-
-    while i < len(sql):
-        char = sql[i]
-
-        if char == "'" and (i == 0 or sql[i - 1] != "\\"):
-            in_single_quote = not in_single_quote
-            result.append(char)
-        elif char == '"' and (i == 0 or sql[i - 1] != "\\"):
-            in_double_quote = not in_double_quote
-            result.append(char)
-        elif char == "%" and i + 1 < len(sql) and sql[i + 1] == "s":
-            if not in_single_quote and not in_double_quote:
-                result.append("?")
-                i += 1
-            else:
-                result.append("%s")
-                i += 1
-        else:
-            result.append(char)
-        i += 1
-
-    return "".join(result)
+    """适配SQL语句 - PostgreSQL版本"""
+    return adapt_sql(sql)
 
 
 # 数据库连接监控
@@ -601,42 +327,16 @@ def get_connection_stats():
 
 
 def _get_table_columns(cursor, table_name: str) -> list:
+    """获取表的所有列名（PostgreSQL版本）"""
+    sql = """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = %s
+        ORDER BY ordinal_position
     """
-    获取表的所有列名（兼容SQLite和PostgreSQL）
-
-    Args:
-        cursor: 数据库游标
-        table_name: 表名
-
-    Returns:
-        列名列表
-    """
-    # 从cursor获取connection对象以检测类型
-    try:
-        conn = cursor.connection
-    except AttributeError:
-        # 如果没有connection属性，尝试从cursor的模块判断
-        # 这是后备方案，通常不会用到
-        conn = None
-
-    # 检测实际连接类型
-    if conn and _is_postgresql_connection(conn):
-        # PostgreSQL使用information_schema
-        sql_raw = """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND table_name = ?
-            ORDER BY ordinal_position
-        """
-        sql = _safe_adapt_sql(sql_raw, conn)
-        cursor.execute(sql, (table_name,))
-        return [row[0] for row in cursor.fetchall()]
-    else:
-        # SQLite使用PRAGMA（直接执行，不需要占位符）
-        # 注意：table_name已经通过白名单验证或来自内部代码，安全
-        cursor.execute(f"PRAGMA table_info({table_name})")
-        return [col[1] for col in cursor.fetchall()]
+    cursor.execute(sql, (table_name,))
+    return [row[0] for row in cursor.fetchall()]
 
 
 def _check_connections_at_exit():
@@ -894,25 +594,17 @@ def set_system_config(
     """设置系统配置值"""
     with get_db_connection() as (conn, c):
         try:
-            if _is_postgresql_connection(conn):
-                sql_raw = """
-                    INSERT INTO system_config
-                    (config_key, config_value, description, updated_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT (config_key) DO UPDATE SET
-                    config_value = EXCLUDED.config_value,
-                    description = EXCLUDED.description,
-                    updated_at = CURRENT_TIMESTAMP
-                """
-                sql = _safe_adapt_sql(sql_raw, conn)
-                c.execute(sql, (config_key, config_value, description))
-            else:
-                sql = """
-                    INSERT OR REPLACE INTO system_config
-                    (config_key, config_value, description, updated_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                """
-            c.execute(sql, (config_key, config_value, description or ""))
+            sql_raw = """
+                INSERT INTO system_config
+                (config_key, config_value, description, updated_at)
+                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (config_key) DO UPDATE SET
+                config_value = EXCLUDED.config_value,
+                description = EXCLUDED.description,
+                updated_at = CURRENT_TIMESTAMP
+            """
+            sql = _safe_adapt_sql(sql_raw, conn)
+            c.execute(sql, (config_key, config_value, description))
             conn.commit()
             return True
         except Exception as e:
@@ -3014,31 +2706,6 @@ def create_user(
                         ),
                     )
                     user_id = c.fetchone()[0]
-                else:
-                    sql_raw = (
-                        "INSERT INTO users (username, password, role, email, "
-                        "user_type, subscription_type, "
-                        "remaining_calculations, "
-                        "created_at, is_test_user) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                    )
-                    sql = _safe_adapt_sql(sql_raw, conn)
-                    c.execute(
-                        sql,
-                        (
-                            username,
-                            hashed_password,
-                            role,
-                            email,
-                            user_type,
-                            user_type,
-                            remaining_calculations,
-                            created_at,
-                            is_test,
-                        ),
-                    )
-                    # SQLite使用lastrowid
-                    user_id = c.lastrowid
             else:
                 # 检测实际连接类型
                 if _is_postgresql_connection(conn):
@@ -3070,34 +2737,10 @@ def create_user(
                         ),
                     )
                     user_id = c.fetchone()[0]
-                else:
-                    sql_raw = (
-                        "INSERT INTO users (username, password, role, "
-                        "user_type, subscription_type, "
-                        "remaining_calculations, "
-                        "created_at, is_test_user) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-                    )
-                    sql = _safe_adapt_sql(sql_raw, conn)
-                    c.execute(
-                        sql,
-                        (
-                            username,
-                            hashed_password,
-                            role,
-                            user_type,
-                            user_type,
-                            remaining_calculations,
-                            created_at,
-                            is_test,
-                        ),
-                    )
-                    # SQLite使用lastrowid
-                    user_id = c.lastrowid
             conn.commit()
-            # 返回新创建用户的ID
             return user_id
-        except sqlite3.IntegrityError:
+        except Exception as e:
+            print(f"创建用户失败: {e}")
             return None
 
 
@@ -3111,100 +2754,37 @@ def verify_user(identifier, password):
     # 在完整测试套件中，数据库通常已经初始化，可以跳过检查
     # 快速检查缓存
     with _db_initialized_cache["lock"]:
-        if _db_initialized_cache["initialized"]:
-            # 数据库已初始化，跳过检查
-            pass
-        else:
-            # 需要检查表是否存在
+        if not _db_initialized_cache["initialized"]:
             try:
                 with get_db_connection() as (conn, c):
-                    # 快速检查表是否存在（使用更简单的查询）
-                    if _is_postgresql_connection(conn):
-                        check_sql = """
-                            SELECT EXISTS (
-                                SELECT 1 FROM information_schema.tables
-                                WHERE table_name = 'users'
-                                LIMIT 1
-                            )
-                        """
-                    else:
-                        check_sql = (
-                            "SELECT 1 FROM sqlite_master "
-                            "WHERE type='table' AND name='users' LIMIT 1"
+                    check_sql = """
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.tables
+                            WHERE table_name = 'users'
+                            LIMIT 1
                         )
+                    """
                     c.execute(check_sql)
                     table_exists = c.fetchone()
                     if table_exists and (
                         (isinstance(table_exists, bool) and table_exists)
                         or (isinstance(table_exists, tuple) and table_exists[0])
                     ):
-                        # 表存在，标记为已初始化
                         _db_initialized_cache["initialized"] = True
                     else:
-                        # 表不存在，需要初始化
                         init_db()
                         _db_initialized_cache["initialized"] = True
-            except (sqlite3.Error, OSError, AttributeError, TypeError, ValueError):
-                # 如果检查失败（数据库错误、属性错误、类型错误或值错误），
-                # 尝试初始化
+            except Exception:
                 try:
                     init_db()
                     _db_initialized_cache["initialized"] = True
-                except (
-                    sqlite3.Error,
-                    OSError,
-                    AttributeError,
-                    TypeError,
-                    ValueError,
-                    RuntimeError,
-                    KeyError,
-                ):
-                    # 初始化失败，继续执行（可能在测试环境中）
-                    pass
-            except Exception as e:
-                # 捕获PostgreSQL错误（如果psycopg2可用）
-                try:
-                    import psycopg2
-
-                    if isinstance(
-                        e,
-                        (
-                            psycopg2.Error,
-                            psycopg2.OperationalError,
-                            psycopg2.ProgrammingError,
-                        ),
-                    ):
-                        try:
-                            init_db()
-                            _db_initialized_cache["initialized"] = True
-                        except (
-                            sqlite3.Error,
-                            OSError,
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            RuntimeError,
-                            KeyError,
-                            psycopg2.Error,
-                            psycopg2.OperationalError,
-                            psycopg2.ProgrammingError,
-                        ):
-                            # 初始化失败，继续执行
-                            pass
-                    else:
-                        # 其他未预期的异常，继续执行（可能在测试环境中）
-                        pass
-                except ImportError:
-                    # psycopg2不可用，继续执行
+                except Exception:
                     pass
 
     with get_db_connection() as (conn, c):
-        # 首先根据用户名或邮箱查找用户（用户名不区分大小写）
-        # 优化：使用更高效的查询方式，避免LOWER函数（如果可能）
-        # 注意：在完整测试套件中，users表可能有很多数据，需要确保有索引
         sql_raw = (
-            "SELECT * FROM users WHERE LOWER(username) = LOWER(?) "
-            "OR LOWER(email) = LOWER(?) LIMIT 1"
+            "SELECT * FROM users WHERE LOWER(username) = LOWER(%s) "
+            "OR LOWER(email) = LOWER(%s) LIMIT 1"
         )
         sql = _safe_adapt_sql(sql_raw, conn)
         user = _safe_execute_fetchone(c, sql, (identifier, identifier), conn)
@@ -3724,25 +3304,15 @@ def add_product(product_data):
         except SQLSecurityError as e:
             raise ValueError(f"SQL安全错误: {e}") from e
 
-        # 检测实际连接类型，适配PostgreSQL和SQLite
-        if _is_postgresql_connection(conn):
-            # PostgreSQL使用RETURNING子句获取新插入的ID
-            sql_raw = (
-                f"INSERT INTO products ({field_names}) "
-                f"VALUES ({placeholders}) RETURNING id"
-            )
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, values)
-            result = c.fetchone()
-            conn.commit()
-            return result[0] if result else None
-        else:
-            # SQLite使用lastrowid
-            sql_raw = f"INSERT INTO products ({field_names}) VALUES ({placeholders})"
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, values)
-            conn.commit()
-            return c.lastrowid
+        # PostgreSQL使用RETURNING子句获取新插入的ID
+        sql_raw = (
+            f"INSERT INTO products ({field_names}) VALUES ({placeholders}) RETURNING id"
+        )
+        sql = _safe_adapt_sql(sql_raw, conn)
+        c.execute(sql, values)
+        result = c.fetchone()
+        conn.commit()
+        return result[0] if result else None
 
 
 # @st.cache_resource(ttl=600)  # 缓存10分钟 - 临时禁用
@@ -4807,19 +4377,13 @@ def delete_user(user_id):
             print(f"✅ 成功删除用户 {user[1]} (ID={user_id})")
             return True
 
-        except sqlite3.Error as e:
-            print(f"❌ 数据库错误: {e}")
-            import traceback
-
-            traceback.print_exc()
-            conn.rollback()
-            return False
-        except (Exception,) as e:
+        except Exception as e:
             print(f"❌ 删除用户失败: {e}")
             import traceback
 
             traceback.print_exc()
             conn.rollback()
+            return False
             return False
 
 
@@ -5592,15 +5156,7 @@ def log_user_login(
 ) -> bool:
     """记录用户登录日志"""
     with get_db_connection() as (conn, c):
-        # 确保外键约束已启用（仅SQLite）
-        if not _is_postgresql_connection(conn):
-            try:
-                # 只有SQLite连接才需要PRAGMA
-                conn.execute("PRAGMA foreign_keys=ON")
-            except (sqlite3.Error, AttributeError):
-                pass
         try:
-            # 简单的设备类型判断
             device_type = "unknown"
             if user_agent:
                 user_agent_lower = user_agent.lower()
