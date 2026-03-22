@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 
-export const useAuthStore = create((set) => ({
+const adminPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/settings', '/users', '/plans', '/statistics', '/about']
+const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/about']
+
+export const useAuthStore = create((set, get) => ({
   user: null,
   token: localStorage.getItem('api_token'),
   isAuthenticated: !!localStorage.getItem('api_token'),
@@ -16,4 +19,16 @@ export const useAuthStore = create((set) => ({
   },
 
   setUser: (user) => set({ user }),
+
+  hasPermission: (page) => {
+    const { user } = get()
+    if (!user) return false
+    if (user.role === 'admin') return true
+    return userPages.includes(page)
+  },
+
+  isAdmin: () => {
+    const { user } = get()
+    return user?.role === 'admin'
+  },
 }))
