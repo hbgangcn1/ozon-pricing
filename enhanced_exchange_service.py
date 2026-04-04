@@ -270,8 +270,7 @@ class CurrencyLayerProvider(ExchangeRateProvider):
                 error_info = data.get("error", {}).get("info", "Unknown error")
                 raise ValueError(f"CurrencyLayer API错误: {error_info}")
 
-            # CurrencyLayer返回的是RUBCNY，需要取倒数
-            rate = 1.0 / float(data["quotes"]["RUBCNY"])
+            rate = float(data["quotes"]["RUBCNY"])
             self.record_success()
 
             return ExchangeRateData(
