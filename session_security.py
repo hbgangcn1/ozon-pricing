@@ -4,84 +4,17 @@
 内联实现 SessionSecurityEnhanced 的功能
 """
 
-import sys
 import time
 import logging
-import threading
 from typing import Tuple, Optional
-from unittest.mock import MagicMock
-from contextlib import contextmanager
+
+from session_security_helpers import (
+    _get_db_connection,
+    DistributedLock,
+    get_client_info,
+)
 
 logger = logging.getLogger(__name__)
-
-# 直接从 db_utils 导入
-try:
-    from db_utils import get_db_connection
-except ImportError:
-
-    def get_db_connection():
-        return MagicMock()
-
-
-def _get_db_connection():
-    """延迟绑定的数据库连接获取函数，支持测试 monkeypatch"""
-    from db_utils import get_db_connection as _get_conn
-
-    return _get_conn()
-
-
-# Redis 相关
-try:
-    from redis_cache import get_redis_client
-
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-
-    def get_redis_client():
-        return None
-
-
-class DistributedLock:
-    """分布式锁实现"""
-
-    def __init__(self, key: str, timeout: int = 10, redis_available: bool = False):
-        self.key = key
-        self.timeout = timeout
-        self.redis_available = redis_available and REDIS_AVAILABLE
-        self.lock_acquired = False
-        self.local_lock = threading.Lock()
-
-    def acquire(self):
-        if self.redis_available:
-            client = get_redis_client()
-            if client:
-                self.lock_acquired = client.set(self.key, "1", ex=self.timeout, nx=True)
-                return self.lock_acquired
-        self.local_lock.acquire(timeout=self.timeout)
-        self.lock_acquired = True
-        return True
-
-    def release(self):
-        if self.lock_acquired:
-            if self.redis_available:
-                client = get_redis_client()
-                if client:
-                    client.delete(self.key)
-            else:
-                try:
-                    self.local_lock.release()
-                except RuntimeError:
-                    pass
-            self.lock_acquired = False
-
-    def __enter__(self):
-        self.acquire()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.release()
-        return False
 
 
 class SessionSecurityEnhanced:
@@ -93,57 +26,11 @@ class SessionSecurityEnhanced:
     DEFAULT_SESSION_TIMEOUT = 3600  # 1 hour (alias for compatibility)
     MAX_LOGIN_ATTEMPTS = 5
     LOCKOUT_DURATION = 900  # 15 minutes
-    SessionSecurity = None  # 向后兼容别名，会在下面设置
+    SessionSecurity = None
 
     @staticmethod
     def get_client_info() -> dict:
-        """获取客户端信息（IP、User-Agent等）"""
-        ip_address = "unknown"
-        user_agent = "unknown"
-
-        try:
-            from security import utils as security_utils
-
-            if hasattr(security_utils, "_streamlit"):
-                st = security_utils._streamlit
-                if hasattr(st, "context") and hasattr(st.context, "headers"):
-                    headers = st.context.headers
-                    if headers:
-                        x_forwarded_for = headers.get("X-Forwarded-For")
-                        if x_forwarded_for and not isinstance(
-                            x_forwarded_for, type(None)
-                        ):
-                            if isinstance(
-                                x_forwarded_for, str
-                            ) and "MagicMock" not in str(x_forwarded_for):
-                                ip_address = x_forwarded_for.split(",")[0].strip()
-                            else:
-                                ip_address = "unknown"
-                        else:
-                            x_real_ip = headers.get("X-Real-IP")
-                            if x_real_ip and not isinstance(x_real_ip, type(None)):
-                                if isinstance(
-                                    x_real_ip, str
-                                ) and "MagicMock" not in str(x_real_ip):
-                                    ip_address = x_real_ip
-                                else:
-                                    ip_address = "unknown"
-                            else:
-                                # Host 头不可靠，只在确实有 X-Real-IP 时使用
-                                # 如果没有 X-Forwarded-For 和 X-Real-IP，返回 unknown
-                                pass
-                        ua = headers.get("User-Agent")
-                        if (
-                            ua
-                            and not isinstance(ua, type(None))
-                            and isinstance(ua, str)
-                            and "MagicMock" not in str(ua)
-                        ):
-                            user_agent = ua
-        except (ImportError, AttributeError, TypeError):
-            pass
-
-        return {"ip_address": ip_address, "user_agent": user_agent}
+        return get_client_info()
 
     @staticmethod
     def check_and_create_session_atomic(
@@ -254,16 +141,19 @@ class SessionSecurityEnhanced:
 
                 try:
                     c.execute(
-                        "ALTER TABLE active_sessions ALTER COLUMN is_active DROP DEFAULT"
+                        "ALTER TABLE active_sessions "
+                        "ALTER COLUMN is_active DROP DEFAULT"
                     )
                     c.execute(
-                        "ALTER TABLE active_sessions ALTER COLUMN is_active TYPE BOOLEAN USING is_active::boolean"
+                        "ALTER TABLE active_sessions "
+                        "ALTER COLUMN is_active TYPE BOOLEAN "
+                        "USING is_active::boolean"
                     )
                     c.execute(
-                        "ALTER TABLE active_sessions ALTER COLUMN is_active SET DEFAULT TRUE"
+                        "ALTER TABLE active_sessions "
+                        "ALTER COLUMN is_active SET DEFAULT TRUE"
                     )
                 except Exception:
-                    # 预期异常：SQLite 不支持 ALTER COLUMN，或列已存在；忽略即可
                     pass
 
                 sql = adapt_sql("""
@@ -353,8 +243,8 @@ class SessionSecurityEnhanced:
 
                 sql = adapt_sql("""
                     INSERT INTO active_sessions
-                    (session_id, user_id, created_at, last_activity, last_rotation,
-                     ip_address, user_agent, is_active)
+                    (session_id, user_id, created_at, last_activity,
+                     last_rotation, ip_address, user_agent, is_active)
                     VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
                 """)
                 c.execute(
@@ -383,9 +273,9 @@ class SessionSecurityEnhanced:
         try:
             with _get_db_connection() as (conn, c):
                 sql = adapt_sql("""
-                    SELECT s.session_id, s.user_id, s.created_at, s.last_activity,
-                           s.ip_address, s.user_agent, s.is_active,
-                           u.username, u.email, u.role
+                    SELECT s.session_id, s.user_id, s.created_at,
+                           s.last_activity, s.ip_address, s.user_agent,
+                           s.is_active, u.username, u.email, u.role
                     FROM active_sessions s
                     LEFT JOIN users u ON s.user_id = u.id
                     WHERE s.session_id = ? AND s.is_active = TRUE
@@ -424,7 +314,9 @@ class SessionSecurityEnhanced:
             return None
 
     @staticmethod
-    def check_concurrent_sessions(user_id: int) -> Tuple[bool, str]:
+    def check_concurrent_sessions(
+        user_id: int,
+    ) -> Tuple[bool, str]:
         """检查用户并发会话数"""
         from db_adapter import adapt_sql
 
@@ -437,7 +329,7 @@ class SessionSecurityEnhanced:
                 c.execute(sql, (user_id,))
                 count = c.fetchone()[0]
 
-                if count >= SessionSecurityEnhanced.MAX_CONCURRENT_SESSIONS:
+                if count >= (SessionSecurityEnhanced.MAX_CONCURRENT_SESSIONS):
                     sql = adapt_sql("""
                         SELECT session_id FROM active_sessions
                         WHERE user_id = ? AND is_active = TRUE
@@ -450,7 +342,10 @@ class SessionSecurityEnhanced:
                         SessionSecurityEnhanced.force_logout_session(
                             oldest[0], "超过最大并发会话数限制"
                         )
-                    return True, "超过最大并发会话数，已自动下线最旧会话"
+                    return (
+                        True,
+                        "超过最大并发会话数，已自动下线最旧会话",
+                    )
                 return True, ""
         except Exception as e:
             logger.error("检查并发会话失败: %s", e)
@@ -480,7 +375,9 @@ class SessionSecurityEnhanced:
         return False
 
     @staticmethod
-    def verify_session_id(session_id: str) -> Tuple[bool, dict]:
+    def verify_session_id(
+        session_id: str,
+    ) -> Tuple[bool, dict]:
         """验证会话ID并返回会话信息"""
         try:
             info = SessionSecurityEnhanced.get_session_info(session_id)
@@ -531,7 +428,6 @@ class SessionSecurityEnhanced:
         """获取HMAC密钥（内部方法）"""
         import os
 
-        # 检查缓存
         if hasattr(SessionSecurityEnhanced, "_hmac_secret_cache"):
             return SessionSecurityEnhanced._hmac_secret_cache
 
@@ -541,12 +437,14 @@ class SessionSecurityEnhanced:
             secret_key = os.environ.get("SESSION_HMAC_SECRET")
             if not secret_key:
                 raise ValueError(
-                    "SESSION_HMAC_SECRET environment variable must be set in production mode"
+                    "SESSION_HMAC_SECRET environment variable "
+                    "must be set in production mode"
                 )
             SessionSecurityEnhanced._hmac_secret_cache = secret_key
         else:
             secret_key = os.environ.get(
-                "SESSION_HMAC_SECRET", "dev-only-hmac-secret-do-not-use-in-production"
+                "SESSION_HMAC_SECRET",
+                "dev-only-hmac-secret-do-not-use-in-production",
             )
             SessionSecurityEnhanced._hmac_secret_cache = secret_key
 
@@ -569,7 +467,6 @@ class SessionSecurityEnhanced:
             return False
 
 
-# 模块级函数（用于测试 mock）
 def verify_user(identifier, password):
     """验证用户凭据"""
     from db_utils import verify_user as real_verify_user
@@ -577,8 +474,11 @@ def verify_user(identifier, password):
     return real_verify_user(identifier, password)
 
 
-# 别名
 SessionSecurity = SessionSecurityEnhanced
 SessionSecurityEnhanced.SessionSecurity = SessionSecurityEnhanced
 
-__all__ = ["SessionSecurity", "SessionSecurityEnhanced", "DistributedLock"]
+__all__ = [
+    "SessionSecurity",
+    "SessionSecurityEnhanced",
+    "DistributedLock",
+]
