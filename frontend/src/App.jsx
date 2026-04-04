@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuthStore } from './stores/authStore'
 import { Skeleton } from './components/ui/skeleton'
+import ErrorBoundary from './components/ErrorBoundary'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import PricingPage from './pages/PricingPage'
@@ -53,7 +54,8 @@ function App() {
   return (
     <>
       <Toaster position="top-center" richColors />
-      <Routes>
+      <ErrorBoundary>
+        <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route
@@ -105,6 +107,7 @@ function App() {
         <Route path="about" element={<AboutPage />} />
       </Route>
     </Routes>
+      </ErrorBoundary>
     </>
   )
 }

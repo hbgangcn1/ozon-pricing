@@ -534,7 +534,7 @@ function SettingsPage() {
                         <span className="text-text-secondary">备份存储位置</span>
                       </div>
                       <p className="text-text-primary font-mono text-sm">
-                        OneDrive\Robert\learn\logistics\backups\postgres\
+                        {backupSettings.backup_path || '服务器本地备份目录'}
                       </p>
                     </div>
 

@@ -40,7 +40,7 @@ function UserManagementPage() {
       setCurrentPage(data.page || page)
       setTotalPages(Math.ceil((data.total || 0) / pageSize))
     } catch (error) {
-      toast.error(error.response?.data?.detail || '获取用户列表失败')
+      toast.error(error.userMessage || error.response?.data?.detail || '获取用户列表失败')
     } finally {
       setLoading(false)
     }
@@ -71,7 +71,7 @@ function UserManagementPage() {
       setFormData({ username: '', password: '', role: 'user', user_type: 'free' })
       fetchUsers() // 刷新列表
     } catch (error) {
-      toast.error(error.response?.data?.detail || '创建用户失败')
+      toast.error(error.userMessage || error.response?.data?.detail || '创建用户失败')
     }
   }
 

@@ -90,6 +90,12 @@ function TooltipIcon({ content }) {
     setShow(false)
   }
 
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
+  }, [])
+
   return (
     <span className="relative inline-flex ml-1">
       <HelpCircle
@@ -131,7 +137,7 @@ function RadioLabel({ label, value, itemClassName }) {
 
 export default function LogisticsPage() {
   const { logistics, setLogistics, addLogistics, updateLogistics, removeLogistics } = useLogisticsStore()
-  const [, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [form, setForm] = useState(DEFAULT_FORM)
@@ -760,6 +766,13 @@ export default function LogisticsPage() {
           添加物流规则
         </Button>
       </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-8 text-zinc-400">
+          <span className="animate-spin mr-2">⏳</span>
+          加载中...
+        </div>
+      )}
 
       <Tabs defaultValue="land">
         <TabsList className="mb-4">

@@ -4,6 +4,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -24,6 +25,13 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('api_token')
       localStorage.removeItem('api_user')
       window.location.href = '/login'
+    }
+    if (error.code === 'ECONNABORTED') {
+      error.userMessage = '请求超时，请检查网络连接'
+    } else if (!error.response) {
+      error.userMessage = '网络连接失败，请稍后重试'
+    } else if (error.response.status >= 500) {
+      error.userMessage = '服务器繁忙，请稍后重试'
     }
     return Promise.reject(error)
   }

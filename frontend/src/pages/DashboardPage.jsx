@@ -11,23 +11,29 @@ function DashboardPage() {
   });
 
   useEffect(() => {
+    const controller = new AbortController()
     const fetchData = async () => {
       try {
         const [productsRes, logisticsRes] = await Promise.all([
           productsAPI.getAll(),
           logisticsAPI.getAll(),
         ]);
-        setStats({
-          products: Array.isArray(productsRes) ? productsRes.length : 0,
-          logistics: Array.isArray(logisticsRes) ? logisticsRes.length : 0,
-          loading: false,
-        });
+        if (!controller.signal.aborted) {
+          setStats({
+            products: Array.isArray(productsRes) ? productsRes.length : 0,
+            logistics: Array.isArray(logisticsRes) ? logisticsRes.length : 0,
+            loading: false,
+          });
+        }
       } catch (error) {
-        console.error('获取数据失败:', error);
-        setStats((prev) => ({ ...prev, loading: false }));
+        if (!controller.signal.aborted) {
+          console.error('获取数据失败:', error);
+          setStats((prev) => ({ ...prev, loading: false }));
+        }
       }
     };
     fetchData();
+    return () => { controller.abort() }
   }, []);
 
   const statisticCards = [
@@ -68,8 +74,8 @@ function DashboardPage() {
       </h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {statisticCards.map((card, index) => (
-          <div key={index} className="bg-surface-container border border-surface-high rounded-lg p-6">
+        {statisticCards.map((card) => (
+          <div key={card.title} className="bg-surface-container border border-surface-high rounded-lg p-6">
             {card.loading ? (
               <div className="space-y-3">
                 <Skeleton className="w-8 h-8" />

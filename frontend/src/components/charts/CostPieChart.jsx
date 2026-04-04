@@ -18,7 +18,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
   const cx = size / 2
   const cy = size / 2
   const total = data.reduce((s, d) => s + d.value, 0)
-  if (total === 0) return null
+  if (total === 0) return <div style={{ textAlign: 'center', color: '#8b949e', fontSize: 13, lineHeight: '200px' }}>暂无数据</div>
 
   // 按金额从大到小排序
   const sortedData = [...data].sort((a, b) => b.value - a.value)
@@ -53,7 +53,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
     ].join(' ')
 
     paths.push(
-      <path key={i} d={d} fill={item.color} stroke="#ffffff" strokeWidth={1.5}>
+      <path key={item.name} d={d} fill={item.color} stroke="#ffffff" strokeWidth={1.5}>
         <title>{item.name}: ¥{item.value.toFixed(2)} ({item.percentage}%)</title>
       </path>
     )
@@ -68,7 +68,13 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
 }
 
 function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingComparison, timeComparison }) {
-  if (!breakdown || breakdown.length === 0) return null
+  if (!breakdown || breakdown.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', color: '#8b949e', padding: '16px 0', fontSize: 13 }}>
+        暂无数据
+      </div>
+    )
+  }
 
   const totalCost = breakdown.reduce((sum, item) => sum + (item.value || 0), 0)
   const pieData = breakdown.map(item => ({
@@ -88,8 +94,8 @@ function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingC
 
         {/* 右侧图例 */}
         <div style={{ flex: 1 }}>
-          {pieData.map((item, index) => (
-            <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '15px', lineHeight: '2.0' }}>
+          {pieData.map((item) => (
+            <div key={item.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '15px', lineHeight: '2.0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
                 <span style={{ 
                   width: 15, 

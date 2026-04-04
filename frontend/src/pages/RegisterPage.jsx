@@ -9,6 +9,7 @@ import { useAuthStore } from '../stores/authStore';
 import { authAPI } from '../services/api';
 import eulaContent from '../最终用户协议.md?raw';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { Checkbox } from 'antd';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
@@ -284,7 +285,7 @@ function RegisterPage() {
           <style>{`.eula-content p { margin-bottom: 16px; } .eula-content h1 { margin: 20px 0 12px; font-size: 1.1em; font-weight: 700; } .eula-content h2 { margin: 20px 0 10px; font-size: 1em; font-weight: 700; } .eula-content h3 { margin: 16px 0 8px; font-size: 0.95em; font-weight: 600; } .eula-content ul, .eula-content ol { margin: 12px 0; padding-left: 24px; } .eula-content li { margin-bottom: 6px; }`}</style>
           <div
             className="eula-content text-text-secondary text-sm leading-relaxed mt-4 max-w-none"
-            dangerouslySetInnerHTML={{ __html: marked.parse(eulaContent) }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(eulaContent)) }}
           />
         </DialogContent>
       </Dialog>

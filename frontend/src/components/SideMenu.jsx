@@ -42,9 +42,13 @@ function ExchangeRateWidget({ collapsed }) {
   }
 
   useEffect(() => {
+    const controller = new AbortController()
     fetchRates()
     const interval = setInterval(fetchRates, 5 * 60 * 1000) // 5分钟
-    return () => clearInterval(interval)
+    return () => {
+      controller.abort()
+      clearInterval(interval)
+    }
   }, [])
 
   if (collapsed) {

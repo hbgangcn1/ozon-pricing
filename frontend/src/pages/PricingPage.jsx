@@ -248,7 +248,7 @@ export default function PricingPage() {
   }, [])
 
   const refreshProducts = () => {
-    productsAPI.getAll().then(data => setProducts(Array.isArray(data) ? data : [])).catch(() => {})
+    productsAPI.getAll().then(data => setProducts(Array.isArray(data) ? data : [])).catch(err => { console.error(err) })
   }
 
   useEffect(() => {
@@ -708,10 +708,10 @@ export default function PricingPage() {
                   <h4 className="text-sm font-medium mb-2 text-gray-500">{type === 'land' ? '🚛 陆运' : '✈️ 空运'}</h4>
                   {(result.filtered_logistics[type] || []).length > 0 ? (
                     <div className="space-y-2">
-                      {result.filtered_logistics[type].map((item, i) => {
+                      {result.filtered_logistics[type].map((item) => {
                         const isUnselected = item.reason.includes('未被选中');
                         return (
-                          <div key={i} className={`rounded px-3 py-2 text-sm border ${
+                          <div key={`${type}-${item.name}`} className={`rounded px-3 py-2 text-sm border ${
                             isUnselected
                               ? 'bg-blue-500/10 border-blue-500/20'
                               : 'bg-red-500/10 border-red-500/20'
