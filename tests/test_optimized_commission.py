@@ -2,7 +2,6 @@
 测试优化后的浮动代理费筛选策略
 """
 
-import pytest
 from logic import calculate_pricing
 
 
@@ -113,10 +112,8 @@ class TestOptimizedCommission:
         if result["suggested_price"]:
             assert result["suggested_price"] > 0, "建议价格应该大于0"
 
-    @pytest.mark.skip(reason="performance test - too slow")
     def test_performance_optimization(self):
         """测试性能优化效果"""
-        # 创建一个产品，测试多次计算
         product = {
             "unit_price": 200,
             "labeling_fee": 0,

@@ -83,7 +83,8 @@ class TestDecodeAccessToken:
         import jwt as pyjwt
 
         payload = {"sub": "1", "username": "alice"}
-        token = pyjwt.encode(payload, "wrong-secret", algorithm=ALGORITHM)
+        wrong_key = "wrong-secret-that-is-long-enough-for-hmac-sha256"
+        token = pyjwt.encode(payload, wrong_key, algorithm=ALGORITHM)
         with pytest.raises(TokenInvalidError):
             decode_access_token(token)
 

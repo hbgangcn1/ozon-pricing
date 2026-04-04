@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from logic import calculate_logistic_cost, calculate_pricing
 
 
@@ -47,7 +49,11 @@ def test_calculate_logistic_cost_cylinder_rules_reject():
     assert any("返回 None" in s for s in debug)
 
 
-def test_pricing_with_rub_limits():
+@patch(
+    "pricing.calculate_pricing._get_exchange_rates",
+    return_value=(0.0904, 7.2),
+)
+def test_pricing_with_rub_limits(_mock_rates):
     product = {
         "unit_price": 10.0,
         "labeling_fee": 1.0,

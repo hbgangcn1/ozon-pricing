@@ -24,8 +24,7 @@ class UserResponse(UserBase):
     user_type: str = "free"
     remaining_calculations: int = -1
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductBase(BaseModel):
@@ -187,8 +186,7 @@ class LogisticsResponse(LogisticsBase):
     id: int
     user_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BreakdownItem(BaseModel):

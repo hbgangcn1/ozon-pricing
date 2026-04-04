@@ -7,6 +7,7 @@ import sys
 import time
 import warnings
 
+import bcrypt
 import pytest
 
 os.environ["DB_TYPE"] = "postgresql"
@@ -20,6 +21,21 @@ if "POSTGRES_PASSWORD" not in os.environ:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
+warnings.filterwarnings(
+    "ignore",
+    message="Support for class-based.*",
+    category=DeprecationWarning,
+)
+
+# --- 性能优化: 降低 bcrypt rounds 从12 到 4 ---
+_original_gensalt = bcrypt.gensalt
+
+
+def _fast_gensalt(rounds=12, prefix=b"2b"):
+    return _original_gensalt(rounds=4, prefix=prefix)
+
+
+bcrypt.gensalt = _fast_gensalt
 
 
 async def _delete_test_user_async(session, user_id, username):
@@ -130,6 +146,9 @@ async def test_user(db_session):
     user_id = user.id
     yield {"id": user_id, "username": username, "password": password}
 
+    # Release any row locks held by db_session before cleanup
+    await db_session.rollback()
+
     from database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as cleanup_session:
@@ -166,6 +185,9 @@ async def test_admin(db_session):
 
     user_id = user.id
     yield {"id": user_id, "username": username, "password": password}
+
+    # Release any row locks held by db_session before cleanup
+    await db_session.rollback()
 
     from database import AsyncSessionLocal
 
