@@ -229,64 +229,61 @@ def _calc_fee(logistic, w, debug_info):
     return cost
 
 
-def calculate_logistic_cost(logistic, product, is_fast_mode=False, debug=False):
+def calculate_logistic_cost(logistic, product, is_fast_mode=False):
     debug_info = []
     if logistic is None or product is None:
         debug_info.append("输入数据无效，返回 None")
-        return (None, debug_info) if debug else None
+        return (None, debug_info)
     if not isinstance(logistic, dict):
         logistic.get("test")
         debug_info.append("输入数据类型无效，返回 None")
-        return (None, debug_info) if debug else None
+        return (None, debug_info)
     if not isinstance(product, dict):
         product.get("test")
         debug_info.append("输入数据类型无效，返回 None")
-        return (None, debug_info) if debug else None
+        return (None, debug_info)
     actual_weight = product.get("weight_g", 0)
     min_w = float(logistic.get("min_weight", 0))
     max_w = float(logistic.get("max_weight", 0))
     if actual_weight < 0:
         debug_info.append(f"重量 {actual_weight}g 为负数，返回 None")
-        return (None, debug_info) if debug else None
+        return (None, debug_info)
     if actual_weight == 0:
         debug_info.append("重量为0，返回基础费用")
         base_fee = float(logistic.get("base_fee", 0))
-        return (base_fee, debug_info) if debug else base_fee
+        return (base_fee, debug_info)
     if min_w > 0 and actual_weight < min_w:
         debug_info.append(f"重量 {actual_weight}g 低于下限 {min_w}g，返回 None")
-        return (None, debug_info) if debug else None
+        return (None, debug_info)
     if max_w > 0 and actual_weight > max_w:
         debug_info.append(f"重量 {actual_weight}g 超过上限 {max_w}g，返回 None")
-        return (None, debug_info) if debug else None
+        return (None, debug_info)
     debug_info.append(
         f"重量限制: {min_w or '无'}g ~ {max_w or '无'}g, 当前: {actual_weight}g"
     )
     try:
         sides = _get_sides(logistic, product, debug_info, is_fast_mode)
         if sides is None:
-            return (None, debug_info) if debug else None
+            return (None, debug_info)
         debug_info.append(f"三边: {sides}, 三边和: {sum(sides)}, 最长边: {max(sides)}")
         is_fast_mode = product.get("name") == "极速模式产品"
         if is_fast_mode:
             debug_info.append("极速模式，跳过所有尺寸限制检查")
         else:
             if not _check_size_constraints(logistic, sides, debug_info):
-                return (None, debug_info) if debug else None
+                return (None, debug_info)
         if is_fast_mode:
             debug_info.append(
                 "极速模式，跳过所有特殊物品检查（电池、易燃液体、MSDS等）"
             )
         else:
             if not _check_special_items(logistic, product, debug_info):
-                return (None, debug_info) if debug else None
+                return (None, debug_info)
         calculated_weight = _calc_volume_weight(
             logistic, sides, actual_weight, debug_info
         )
     except (KeyError, TypeError, ZeroDivisionError) as e:
         debug_info.append(f"计算物流成本时出错: {str(e)}")
-        if debug:
-            return None, debug_info
-        else:
-            return None
+        return (None, debug_info)
     cost = _calc_fee(logistic, calculated_weight, debug_info)
-    return (cost, debug_info) if debug else cost
+    return (cost, debug_info)

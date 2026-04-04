@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List
 
 from db_utils import get_db_connection, _safe_adapt_sql
@@ -14,11 +14,17 @@ router = APIRouter(prefix="/api/logistics", tags=["物流"])
 
 
 @router.get("", response_model=List[LogisticsResponse])
-def get_logistics(user_id: int = Depends(get_current_user_id)):
+def get_logistics(
+    user_id: int = Depends(get_current_user_id),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
     with get_db_connection() as (conn, c):
-        sql_raw = "SELECT * FROM logistics WHERE user_id = %s"
+        sql_raw = (
+            "SELECT * FROM logistics WHERE user_id = %s ORDER BY id LIMIT %s OFFSET %s"
+        )
         sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
+        c.execute(sql, (user_id, limit, offset))
         columns = [desc[0] for desc in c.description]
         logistics_list = [dict(zip(columns, row)) for row in c.fetchall()]
         return logistics_list

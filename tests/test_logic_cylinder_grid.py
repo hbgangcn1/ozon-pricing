@@ -6,12 +6,12 @@ from logic import calculate_logistic_cost
 @pytest.mark.parametrize(
     "cd,cl,mc_sum,mi_sum,mc_len,mi_len,expect_none",
     [
-        (10, 20, 30, 0, 0, 0, True),   # sum=40 > max_sum -> 淘汰
-        (10, 20, 0, 50, 0, 0, True),   # sum=40 < min_sum -> 淘汰
-        (10, 20, 40, 40, 0, 0, False), # 等于边界 -> 通过
-        (10, 25, 0, 0, 20, 0, True),   # len=25 > max_len=20 -> 淘汰
-        (10, 15, 0, 0, 0, 20, True),   # len=15 < min_len=20 -> 淘汰
-        (10, 20, 0, 0, 20, 20, False), # 等于边界 -> 通过
+        (10, 20, 30, 0, 0, 0, True),  # sum=40 > max_sum -> 淘汰
+        (10, 20, 0, 50, 0, 0, True),  # sum=40 < min_sum -> 淘汰
+        (10, 20, 40, 40, 0, 0, False),  # 等于边界 -> 通过
+        (10, 25, 0, 0, 20, 0, True),  # len=25 > max_len=20 -> 淘汰
+        (10, 15, 0, 0, 0, 20, True),  # len=15 < min_len=20 -> 淘汰
+        (10, 20, 0, 0, 20, 20, False),  # 等于边界 -> 通过
     ],
 )
 def test_cylinder_grid(cd, cl, mc_sum, mi_sum, mc_len, mi_len, expect_none):
@@ -33,12 +33,8 @@ def test_cylinder_grid(cd, cl, mc_sum, mi_sum, mc_len, mi_len, expect_none):
         "cylinder_diameter": cd,
         "cylinder_length": cl,
     }
-    res = calculate_logistic_cost(logistic, product, debug=False)
+    res, _ = calculate_logistic_cost(logistic, product)
     if expect_none:
         assert res is None
     else:
         assert res is not None
-
-
-
-

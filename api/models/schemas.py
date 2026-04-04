@@ -49,13 +49,13 @@ class ProductBase(BaseModel):
     shipping_fee: float = 0
     battery_capacity_mah: int = 0
     battery_voltage: float = 0
-    commission_rate: float = 0
-    target_profit_margin: float = 0
-    promotion_cost_rate: float = 0
-    withdrawal_fee_rate: float = 0
-    payment_processing_fee: float = 0
-    return_rate: float = 0
-    vat_rate: float = 0
+    commission_rate: float = Field(default=0, ge=0, le=100)
+    target_profit_margin: float = Field(default=0, ge=0, le=100)
+    promotion_cost_rate: float = Field(default=0, ge=0, le=100)
+    withdrawal_fee_rate: float = Field(default=0, ge=0, le=100)
+    payment_processing_fee: float = Field(default=0, ge=0, le=100)
+    return_rate: float = Field(default=0, ge=0, le=100)
+    vat_rate: float = Field(default=0, ge=0, le=100)
 
 
 class ProductCreate(ProductBase):

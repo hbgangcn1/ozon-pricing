@@ -20,7 +20,7 @@ def test_calculate_logistic_cost_standard_package_volume_mode():
         "width_cm": 10,
         "height_cm": 5,
     }
-    cost, debug = calculate_logistic_cost(logistic, product, debug=True)
+    cost, debug = calculate_logistic_cost(logistic, product)
     assert cost is not None
     assert any("体积重量" in s for s in debug)
 
@@ -42,7 +42,7 @@ def test_calculate_logistic_cost_cylinder_rules_reject():
         "cylinder_diameter": 10,
         "cylinder_length": 20,
     }
-    cost, debug = calculate_logistic_cost(logistic, product, debug=True)
+    cost, debug = calculate_logistic_cost(logistic, product)
     assert cost is None
     assert any("返回 None" in s for s in debug)
 
@@ -85,6 +85,3 @@ def test_pricing_with_rub_limits():
     assert res["best_land"] is not None
     assert res["land_cost"] is not None
     assert res["suggested_price"] is not None
-
-
-

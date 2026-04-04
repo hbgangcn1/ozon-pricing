@@ -16,8 +16,8 @@ def test_first_plus_continue_threshold_and_units():
     product_eq = {"weight_g": 200, "length_cm": 1, "width_cm": 1, "height_cm": 1}
     product_plus = {"weight_g": 201, "length_cm": 1, "width_cm": 1, "height_cm": 1}
 
-    c_eq = calculate_logistic_cost(logistic, product_eq, debug=False)
-    c_plus = calculate_logistic_cost(logistic, product_plus, debug=False)
+    c_eq, _ = calculate_logistic_cost(logistic, product_eq)
+    c_plus, _ = calculate_logistic_cost(logistic, product_plus)
     # 等于阈值收取首重费用
     assert abs(c_eq - 3.0) < 1e-9
     # 超过 1g -> 续重 ceil((201-200)/100)=1 单位
@@ -42,14 +42,10 @@ def test_volume_mode_ties():
     product_lt = {"weight_g": 999, "length_cm": 10, "width_cm": 10, "height_cm": 10}
     product_gt = {"weight_g": 1001, "length_cm": 10, "width_cm": 10, "height_cm": 10}
 
-    c_lt = calculate_logistic_cost(logistic, product_lt, debug=False)
-    c_gt = calculate_logistic_cost(logistic, product_gt, debug=False)
+    c_lt, _ = calculate_logistic_cost(logistic, product_lt)
+    c_gt, _ = calculate_logistic_cost(logistic, product_gt)
     # 计费重量单位 100g
     # 对于 999g，体积重量更大 -> 1000g => units=10 -> cost=1+1*10
     assert abs(c_lt - (1.0 + 10.0)) < 1e-9
     # 对于 1001g，实际重量更大 -> 1001g => units=11 -> cost=1+1*11
     assert abs(c_gt - (1.0 + 11.0)) < 1e-9
-
-
-
-

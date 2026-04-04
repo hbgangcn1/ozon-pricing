@@ -24,9 +24,9 @@ def test_calculate_logistic_cost_basic():
         "height_cm": 10,
     }
 
-    cost = lg.calculate_logistic_cost(land, product)
+    cost, _ = lg.calculate_logistic_cost(land, product)
     assert cost is not None
-    assert cost > 0  # cost是浮点数
+    assert cost > 0
 
 
 def test_calculate_logistic_cost_weight_limits():
@@ -53,7 +53,7 @@ def test_calculate_logistic_cost_weight_limits():
     }
 
     # 超重情况
-    cost = lg.calculate_logistic_cost(land, product)
+    cost, _ = lg.calculate_logistic_cost(land, product)
     assert cost is None
 
 
@@ -81,7 +81,7 @@ def test_calculate_logistic_cost_dimension_limits():
     }
 
     # 超尺寸情况
-    cost = lg.calculate_logistic_cost(land, product)
+    cost, _ = lg.calculate_logistic_cost(land, product)
     assert cost is None
 
 
@@ -110,9 +110,9 @@ def test_calculate_logistic_cost_fee_modes():
         "height_cm": 10,
     }
 
-    cost = lg.calculate_logistic_cost(land_first_continue, product)
+    cost, _ = lg.calculate_logistic_cost(land_first_continue, product)
     assert cost is not None
-    assert cost > 0  # cost是浮点数
+    assert cost > 0
 
     # 基础续重模式
     land_base_continue = {
@@ -129,9 +129,9 @@ def test_calculate_logistic_cost_fee_modes():
         "max_longest_side": 1000,
     }
 
-    cost = lg.calculate_logistic_cost(land_base_continue, product)
+    cost, _ = lg.calculate_logistic_cost(land_base_continue, product)
     assert cost is not None
-    assert cost > 0  # cost是浮点数
+    assert cost > 0
 
 
 def test_calculate_pricing_basic():
@@ -392,7 +392,7 @@ def test_calculate_logistic_cost_cylinder():
         "cylinder_length": 50,
     }
 
-    cost = lg.calculate_logistic_cost(land, product)
+    cost, _ = lg.calculate_logistic_cost(land, product)
     assert cost is not None
     assert cost > 0  # cost是浮点数
 
@@ -422,7 +422,7 @@ def test_calculate_logistic_cost_volume_weight():
         "height_cm": 50,
     }
 
-    cost = lg.calculate_logistic_cost(land, product)
+    cost, _ = lg.calculate_logistic_cost(land, product)
     assert cost is not None
     assert cost > 0  # cost是浮点数
 
@@ -453,8 +453,5 @@ def test_calculate_logistic_cost_battery_capacity():
         "battery_capacity_wh": 150,  # 超容量
     }
 
-    cost = lg.calculate_logistic_cost(land, product)
+    cost, _ = lg.calculate_logistic_cost(land, product)
     assert cost is None  # 应该被限制
-
-
-

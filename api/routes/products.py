@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List
 
 from db_utils import (
@@ -20,9 +20,13 @@ router = APIRouter(prefix="/api/products", tags=["产品"])
 
 
 @router.get("", response_model=List[ProductResponse])
-def get_products(user_id: int = Depends(get_current_user_id)):
+def get_products(
+    user_id: int = Depends(get_current_user_id),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
     products = get_all_products_for_user(user_id)
-    return products
+    return products[offset : offset + limit]
 
 
 @router.get("/{product_id}", response_model=ProductResponse)

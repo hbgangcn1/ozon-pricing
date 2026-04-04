@@ -372,6 +372,8 @@ def _cleanup_duplicate_rows(conn, table_name, unique_columns):
             conn.rollback()
         except Exception:
             logger.debug("回滚失败", exc_info=True)
+    finally:
+        cursor.close()
 
 
 def _cleanup_duplicate_ids(conn, table_name_or_cursor, id_column_or_table=None):

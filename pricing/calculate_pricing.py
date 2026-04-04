@@ -61,9 +61,7 @@ def _get_exchange_rates():
 def _make_cached_cost(is_fast_mode):
     @lru_cache(maxsize=256)
     def cached_cost(log_tuple, prod_tuple):
-        return calculate_logistic_cost(
-            dict(log_tuple), dict(prod_tuple), is_fast_mode, debug=True
-        )
+        return calculate_logistic_cost(dict(log_tuple), dict(prod_tuple), is_fast_mode)
 
     return cached_cost
 

@@ -319,7 +319,7 @@ def calculate(
 
 
 @router.get("/progress")
-async def pricing_progress():
+async def pricing_progress(user_id: int = Depends(get_current_user_id)):
     """SSE 进度报告端点（模拟）"""
 
     async def event_generator():

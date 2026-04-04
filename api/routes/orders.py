@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -27,7 +27,11 @@ class OrderResponse(BaseModel):
 
 
 @router.get("", response_model=List[OrderResponse])
-def get_orders(user_id: int = Depends(get_current_user_id)):
+def get_orders(
+    user_id: int = Depends(get_current_user_id),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
     with get_db_connection() as (conn, c):
         sql_raw = """
             SELECT id, order_id, order_type, amount,
@@ -35,9 +39,10 @@ def get_orders(user_id: int = Depends(get_current_user_id)):
             FROM payment_orders
             WHERE user_id = %s
             ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
         """
         sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
+        c.execute(sql, (user_id, limit, offset))
         orders = []
         for row in c.fetchall():
             code = row[2] or ""

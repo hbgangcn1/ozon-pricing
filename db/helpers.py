@@ -72,13 +72,25 @@ def _is_postgresql_connection(conn):
     if conn is None:
         return False
 
+    conn_module = type(conn).__module__
+    if "psycopg2" in conn_module or "postgresql" in conn_module.lower():
+        return True
+
+    conn_class_name = type(conn).__name__.lower()
+    if "postgres" in conn_class_name or "psycopg" in conn_class_name:
+        return True
+
     try:
         import psycopg2
 
         if isinstance(conn, psycopg2.extensions.connection):
             return True
-    except (ImportError, AttributeError):
-        pass
+    except ImportError:
+        return False
+    except AttributeError:
+        return True
+
+    return True
 
     conn_module = type(conn).__module__
     if "psycopg2" in conn_module or "postgresql" in conn_module.lower():
@@ -88,7 +100,18 @@ def _is_postgresql_connection(conn):
     if "postgres" in conn_class_name or "psycopg" in conn_class_name:
         return True
 
-    return True
+    try:
+        import psycopg2
+
+        if isinstance(conn, psycopg2.extensions.connection):
+            return True
+        return True
+    except ImportError:
+        pass
+    except AttributeError:
+        pass
+
+    return False
 
 
 def _ensure_serial_columns(conn, cursor, tables=None):

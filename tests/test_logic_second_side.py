@@ -20,7 +20,7 @@ def test_second_side_limits():
         "width_cm": 30,
         "height_cm": 10,
     }
-    cost = calculate_logistic_cost(logistic, product, debug=False)
+    cost, _ = calculate_logistic_cost(logistic, product)
     assert cost is None
 
     # 第二边下限不满足被淘汰
@@ -35,9 +35,5 @@ def test_second_side_limits():
         "width_cm": 20,
         "height_cm": 10,
     }
-    cost2 = calculate_logistic_cost(logistic2, product2, debug=False)
+    cost2, _ = calculate_logistic_cost(logistic2, product2)
     assert cost2 is None
-
-
-
-

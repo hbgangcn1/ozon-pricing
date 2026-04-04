@@ -2,7 +2,7 @@ import os
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -185,14 +185,16 @@ def create_backup(admin: int = Depends(require_admin)):
         if success:
             return MessageResponse(message="备份成功")
         else:
-            return JSONResponse(
+            raise HTTPException(
                 status_code=500,
-                content={"message": "备份失败，请检查服务器日志"},
+                detail="备份失败，请检查服务器日志",
             )
+    except HTTPException:
+        raise
     except Exception as e:
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"message": f"备份异常: {str(e)}"},
+            detail=f"备份异常: {str(e)}",
         )
 
 
@@ -256,9 +258,9 @@ def update_backup_settings(
         update_auto_backup_settings(**kwargs)
         return MessageResponse(message="备份设置已更新")
     except Exception as e:
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"message": f"更新失败: {str(e)}"},
+            detail=f"更新失败: {str(e)}",
         )
 
 
@@ -350,24 +352,23 @@ def delete_backup(filename: str, admin: int = Depends(require_admin)):
     filename = _sanitize_backup_filename(filename)
 
     if not filename.endswith(".dump"):
-        return JSONResponse(
-            status_code=400,
-            content={"message": "只允许删除 .dump 文件"},
-        )
+        raise HTTPException(status_code=400, detail="只允许删除 .dump 文件")
 
     try:
         success = delete_backup_file(filename)
         if success:
             return MessageResponse(message=f"已删除: {filename}")
         else:
-            return JSONResponse(
+            raise HTTPException(
                 status_code=404,
-                content={"message": "备份文件不存在或删除失败"},
+                detail="备份文件不存在或删除失败",
             )
+    except HTTPException:
+        raise
     except Exception as e:
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"message": f"删除失败: {str(e)}"},
+            detail=f"删除失败: {str(e)}",
         )
 
 
@@ -388,10 +389,7 @@ def restore_backup(
     filename = _sanitize_backup_filename(filename)
 
     if not filename.endswith(".dump"):
-        return JSONResponse(
-            status_code=400,
-            content={"message": "只允许从 .dump 文件恢复"},
-        )
+        raise HTTPException(status_code=400, detail="只允许从 .dump 文件恢复")
 
     try:
         success = restore_database(
@@ -401,12 +399,14 @@ def restore_backup(
         if success:
             return MessageResponse(message=f"已从 {filename} 恢复数据库")
         else:
-            return JSONResponse(
+            raise HTTPException(
                 status_code=500,
-                content={"message": "恢复失败，请检查服务器日志"},
+                detail="恢复失败，请检查服务器日志",
             )
+    except HTTPException:
+        raise
     except Exception as e:
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"message": f"恢复异常: {str(e)}"},
+            detail=f"恢复异常: {str(e)}",
         )

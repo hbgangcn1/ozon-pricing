@@ -17,7 +17,7 @@ def test_longest_side_threshold_boundary():
         "max_longest_side": 10**9,
     }
     product = {"weight_g": 100, "length_cm": 30, "width_cm": 10, "height_cm": 5}
-    cost, debug = calculate_logistic_cost(logistic, product, debug=True)
+    cost, debug = calculate_logistic_cost(logistic, product)
     assert cost is not None
     # 调试信息应包含“未超过阈值，使用实际重量”提示
     assert any("未超过阈值" in s or "使用实际重量" in s for s in debug)
@@ -43,7 +43,7 @@ def test_cylinder_limits_equal_boundary():
         "cylinder_diameter": 10,
         "cylinder_length": 20,
     }
-    cost = calculate_logistic_cost(logistic, product, debug=False)
+    cost, _ = calculate_logistic_cost(logistic, product)
     assert cost is not None
 
 
@@ -67,7 +67,7 @@ def test_flammable_and_battery_skip_when_unknown():
         "height_cm": 10,
         "has_liquid": 1,
     }
-    assert calculate_logistic_cost(logistic1, product1, debug=False) is None
+    assert calculate_logistic_cost(logistic1, product1)[0] is None
 
     # 电池未知 (Wh=0 且 mAh=0,V=0) 应跳过容量限制判断，不被淘汰
     logistic2 = {
@@ -87,9 +87,5 @@ def test_flammable_and_battery_skip_when_unknown():
         "battery_capacity_mah": 0,
         "battery_voltage": 0,
     }
-    cost2 = calculate_logistic_cost(logistic2, product2, debug=False)
+    cost2, _ = calculate_logistic_cost(logistic2, product2)
     assert cost2 is not None
-
-
-
-
