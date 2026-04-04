@@ -27,7 +27,7 @@ class OrderResponse(BaseModel):
 
 
 @router.get("", response_model=List[OrderResponse])
-async def get_orders(user_id: int = Depends(get_current_user_id)):
+def get_orders(user_id: int = Depends(get_current_user_id)):
     with get_db_connection() as (conn, c):
         sql_raw = """
             SELECT id, order_id, order_type, amount,

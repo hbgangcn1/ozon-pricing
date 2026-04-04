@@ -1,3 +1,4 @@
+import logging
 import os
 import hashlib
 import bcrypt
@@ -11,6 +12,8 @@ import sys
 from datetime import datetime, date
 from typing import Optional, Tuple, Dict, Any, Sequence, Mapping, cast
 from psycopg2 import sql as psql
+
+logger = logging.getLogger(__name__)
 
 
 class _FakeSessionState:
@@ -686,7 +689,7 @@ def set_system_config(
             conn.commit()
             return True
         except Exception as e:
-            print(f"设置系统配置失败: {e}")
+            logger.warning("设置系统配置失败: %s", e)
             return False
 
 
@@ -832,7 +835,7 @@ def create_user(
             conn.commit()
             return user_id
         except Exception as e:
-            print(f"创建用户失败: {e}")
+            logger.warning("创建用户失败: %s", e)
             return None
 
 
@@ -871,7 +874,7 @@ def verify_user(identifier, password):
                     init_db()
                     _db_initialized_cache["initialized"] = True
                 except Exception:
-                    pass
+                    logger.debug("数据库初始化失败，将在请求时重试", exc_info=True)
 
     with get_db_connection() as (conn, c):
         sql_raw = (
@@ -1549,7 +1552,7 @@ def cleanup_test_products(user_id=None):
             return c.rowcount
     except Exception as e:
         # 如果清理失败，返回0并记录错误（但不抛出异常）
-        print(f"清理测试产品时出错: {e}")
+        logger.warning("清理测试产品时出错: %s", e)
         return 0
 
 
@@ -2371,7 +2374,7 @@ def delete_user(user_id):
                 )
                 print(f"删除登录日志: {rowcount} 条")
             except Exception:
-                print("登录日志表不存在，跳过")
+                logger.debug("登录日志表不存在，跳过", exc_info=True)
 
             try:
                 sql_raw = f"DELETE FROM user_behavior_log WHERE user_id = {placeholder}"
@@ -2384,7 +2387,7 @@ def delete_user(user_id):
                 )
                 print(f"删除行为日志: {rowcount} 条")
             except Exception:
-                print("行为日志表不存在，跳过")
+                logger.debug("行为日志表不存在，跳过", exc_info=True)
 
             # 6. 删除用户的物流规则
             sql_raw = f"DELETE FROM logistics WHERE user_id = {placeholder}"
@@ -2410,7 +2413,7 @@ def delete_user(user_id):
                 )
                 print(f"删除升级历史: {rowcount} 条")
             except Exception:
-                print("升级历史表不存在，跳过")
+                logger.debug("升级历史表不存在，跳过", exc_info=True)
 
             # 8. 删除用户的支付订单
             sql_raw = f"DELETE FROM payment_orders WHERE user_id = {placeholder}"
@@ -2437,7 +2440,7 @@ def delete_user(user_id):
                 )
                 print(f"删除管理员操作日志: {rowcount} 条")
             except Exception:
-                print("管理员操作日志表不存在，跳过")
+                logger.debug("管理员操作日志表不存在，跳过", exc_info=True)
 
             try:
                 sql_raw = (
@@ -2453,7 +2456,7 @@ def delete_user(user_id):
                 )
                 print(f"置空告警处理人: {rowcount} 条")
             except Exception:
-                print("告警记录表不存在，跳过")
+                logger.debug("告警记录表不存在，跳过", exc_info=True)
 
             # 10. 删除用户本身
             sql_raw = f"DELETE FROM users WHERE id = {placeholder}"
@@ -2469,7 +2472,7 @@ def delete_user(user_id):
             return True
 
         except Exception as e:
-            print(f"❌ 删除用户失败: {e}")
+            logger.warning("删除用户失败: %s", e, exc_info=True)
             import traceback
 
             traceback.print_exc()
@@ -2540,7 +2543,7 @@ def migrate_user_preferences():
             # 如果没有需要设置的用户，则不显示任何信息
 
         except (Exception,) as e:
-            print(f"迁移用户偏好失败: {e}")
+            logger.warning("迁移用户偏好失败: %s", e)
             conn.rollback()
 
 
@@ -2876,7 +2879,7 @@ def update_user_subscription_admin(user_id, updates, admin_id):
                     target_type="subscription",
                 )
             except Exception as e:
-                print(f"记录管理员操作日志失败: {e}")
+                logger.warning("记录管理员操作日志失败: %s", e)
 
             return True
 
@@ -2925,7 +2928,7 @@ def freeze_user(user_id, admin_id):
                     target_type="user",
                 )
             except Exception as e:
-                print(f"记录管理员操作日志失败: {e}")
+                logger.warning("记录管理员操作日志失败: %s", e)
 
             return True
 
@@ -2974,7 +2977,7 @@ def unfreeze_user(user_id, admin_id):
                     target_type="user",
                 )
             except Exception as e:
-                print(f"记录管理员操作日志失败: {e}")
+                logger.warning("记录管理员操作日志失败: %s", e)
 
             return True
 
@@ -3033,7 +3036,7 @@ def delete_user_admin(user_id, admin_id):
                     target_type="user",
                 )
             except Exception as e:
-                print(f"记录管理员操作日志失败: {e}")
+                logger.warning("记录管理员操作日志失败: %s", e)
 
             return True
 
@@ -3232,7 +3235,7 @@ def reset_user_password(user_id, admin_id):
                     target_type="user",
                 )
             except Exception as e:
-                print(f"记录管理员操作日志失败: {e}")
+                logger.warning("记录管理员操作日志失败: %s", e)
 
             return new_password
 
@@ -3295,7 +3298,7 @@ def log_user_login(
                 except DB_EXCEPTIONS:
                     pass
                 return True
-            print(f"记录用户登录日志失败: {e}")
+            logger.warning("记录用户登录日志失败: %s", e)
             return False
 
 
@@ -3329,7 +3332,7 @@ def log_user_behavior(
             conn.commit()
             return True
         except Exception as e:
-            print(f"记录用户行为日志失败: {e}")
+            logger.warning("记录用户行为日志失败: %s", e)
             return False
 
 
@@ -3365,7 +3368,7 @@ def log_admin_action(
             conn.commit()
             return True
         except Exception as e:
-            print(f"记录管理员操作日志失败: {e}")
+            logger.warning("记录管理员操作日志失败: %s", e)
             return False
 
 
@@ -3391,7 +3394,7 @@ def create_alert(
             conn.commit()
             return True
         except Exception as e:
-            print(f"创建告警记录失败: {e}")
+            logger.warning("创建告警记录失败: %s", e)
             return False
 
 
@@ -3411,7 +3414,7 @@ def get_statistics_cache(cache_key: str) -> Optional[Dict[str, Any]]:
                 return json.loads(result[0])
             return None
         except Exception as e:
-            print(f"获取缓存失败: {e}")
+            logger.warning("获取缓存失败: %s", e)
             return None
 
 
@@ -3468,7 +3471,7 @@ def set_statistics_cache(
             conn.commit()
             return True
         except Exception as e:
-            print(f"设置缓存失败: {e}")
+            logger.warning("设置缓存失败: %s", e)
             return False
 
 
@@ -3486,7 +3489,7 @@ def clear_expired_cache() -> int:
             conn.commit()
             return c.rowcount
         except Exception as e:
-            print(f"清理缓存失败: {e}")
+            logger.warning("清理缓存失败: %s", e)
             return 0
 
 
@@ -3500,7 +3503,7 @@ def clear_all_statistics_cache() -> int:
             conn.commit()
             return c.rowcount
         except Exception as e:
-            print(f"清除所有缓存失败: {e}")
+            logger.warning("清除所有缓存失败: %s", e)
             return 0
 
 
@@ -3679,7 +3682,7 @@ def get_dashboard_stats() -> Dict[str, Any]:
             set_statistics_cache(cache_key, result, 300)
             return result
         except Exception as e:
-            print(f"获取总览数据失败: {e}")
+            logger.warning("获取总览数据失败: %s", e)
             return {}
 
 
@@ -3723,7 +3726,7 @@ def get_plans(active_only=False, include_free=True):
 
             return plans
         except Exception as e:
-            print(f"获取套餐列表失败: {e}")
+            logger.warning("获取套餐列表失败: %s", e)
             return []
 
 
@@ -3750,7 +3753,7 @@ def get_plan_by_code(plan_code: str):
                 return dict(zip(columns, row))
             return None
         except Exception as e:
-            print(f"获取套餐详情失败: {e}")
+            logger.warning("获取套餐详情失败: %s", e)
             return None
 
 
@@ -3776,7 +3779,7 @@ def get_plan_by_id(plan_id: int):
                 return dict(zip(columns, row))
             return None
         except Exception as e:
-            print(f"获取套餐详情失败: {e}")
+            logger.warning("获取套餐详情失败: %s", e)
             return None
 
 
@@ -3846,7 +3849,7 @@ def create_plan(
             conn.commit()
             return True
         except Exception as e:
-            print(f"创建套餐失败: {e}")
+            logger.warning("创建套餐失败: %s", e)
             return False
 
 
@@ -3907,7 +3910,7 @@ def update_plan(plan_id: int, **kwargs):
 
             return c.rowcount > 0
         except Exception as e:
-            print(f"更新套餐失败: {e}")
+            logger.warning("更新套餐失败: %s", e)
             return False
 
 
@@ -3939,7 +3942,7 @@ def delete_plan(plan_id: int):
 
             return c.rowcount > 0
         except Exception as e:
-            print(f"删除套餐失败: {e}")
+            logger.warning("删除套餐失败: %s", e)
             return False
 
 
@@ -3968,7 +3971,7 @@ def toggle_plan_active(plan_id: int):
 
             return c.rowcount > 0
         except Exception as e:
-            print(f"切换套餐状态失败: {e}")
+            logger.warning("切换套餐状态失败: %s", e)
             return False
 
 
@@ -4053,10 +4056,11 @@ def _cleanup_duplicate_rows(conn, table_name, unique_columns):
         cursor.execute(sql)
         conn.commit()
     except Exception:
+        logger.debug("清理重复行失败，尝试回滚", exc_info=True)
         try:
             conn.rollback()
         except Exception:
-            pass
+            logger.debug("回滚失败", exc_info=True)
 
 
 def _cleanup_duplicate_ids(conn, table_name_or_cursor, id_column_or_table=None):
@@ -4094,10 +4098,11 @@ def _cleanup_duplicate_ids(conn, table_name_or_cursor, id_column_or_table=None):
         cursor.execute(sql)
         conn.commit()
     except Exception:
+        logger.debug("清理重复ID失败，尝试回滚", exc_info=True)
         try:
             conn.rollback()
         except Exception:
-            pass
+            logger.debug("回滚失败", exc_info=True)
     return 0
 
 
@@ -4151,10 +4156,11 @@ def _ensure_serial_primary_key(conn, cursor, table_name, column_name="id"):
         if max_row and max_row[0]:
             cursor.execute(f"SELECT setval('{seq_name}', %s)", (max_row[0],))
     except Exception:
+        logger.debug("确保serial主键失败，尝试回滚", exc_info=True)
         try:
             conn.rollback()
         except Exception:
-            pass
+            logger.debug("回滚失败", exc_info=True)
 
 
 def _ensure_unique_constraint(
@@ -4205,10 +4211,11 @@ def _ensure_unique_constraint(
         )
         conn.commit()
     except Exception:
+        logger.debug("确保唯一约束失败，尝试回滚", exc_info=True)
         try:
             conn.rollback()
         except Exception:
-            pass
+            logger.debug("回滚失败", exc_info=True)
 
 
 def _ensure_foreign_key(
@@ -4234,6 +4241,7 @@ def get_exchange_rate_fallback(currency_pair: str):
             row = c.fetchone()
             return float(row[0]) if row else None
     except Exception:
+        logger.debug("从数据库获取汇率失败，返回None", exc_info=True)
         return None
 
 
@@ -4257,4 +4265,4 @@ def update_exchange_rate_fallback(currency_pair: str, rate: float, source: str =
             c.execute(sql, (currency_pair, rate, source))
             conn.commit()
     except Exception:
-        pass
+        logger.debug("更新汇率fallback到数据库失败", exc_info=True)

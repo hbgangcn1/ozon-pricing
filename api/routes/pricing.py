@@ -222,7 +222,7 @@ def format_combo(combo_results):
 
 
 @router.post("/calculate", response_model=PricingResponse)
-async def calculate(
+def calculate(
     request: PricingRequest,
     user_id: int = Depends(get_current_user_id),
 ):

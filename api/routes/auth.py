@@ -43,7 +43,7 @@ router = APIRouter(prefix="/api/auth", tags=["认证"])
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(credentials: UserLogin):
+def login(credentials: UserLogin):
     user = verify_user(credentials.username, credentials.password)
     if not user:
         raise HTTPException(
@@ -69,12 +69,12 @@ async def login(credentials: UserLogin):
 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout():
+def logout():
     return MessageResponse(message="登出成功")
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(user_data: UserRegister):
+def register(user_data: UserRegister):
     # 检查注册是否开放
     if not is_registration_open():
         raise HTTPException(
@@ -132,7 +132,7 @@ async def register(user_data: UserRegister):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(
+def get_me(
     user: dict = Depends(get_current_user_dep),
 ):
     return UserResponse(
@@ -149,7 +149,7 @@ async def get_me(
 
 
 @router.post("/change-password", response_model=MessageResponse)
-async def change_password(
+def change_password(
     data: ChangePassword,
     user_id: int = Depends(get_current_user_id),
 ):

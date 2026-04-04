@@ -32,7 +32,7 @@ class UserUpdate(BaseModel):
 
 
 @router.get("/users")
-async def get_all_users(
+def get_all_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: Optional[str] = None,
@@ -91,7 +91,7 @@ async def get_all_users(
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(user: UserCreate, admin: int = Depends(require_admin)):
+def create_user(user: UserCreate, admin: int = Depends(require_admin)):
     import bcrypt
 
     password_hash = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt()).decode()
@@ -120,9 +120,7 @@ async def create_user(user: UserCreate, admin: int = Depends(require_admin)):
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
-async def update_user(
-    user_id: int, update: UserUpdate, admin: int = Depends(require_admin)
-):
+def update_user(user_id: int, update: UserUpdate, admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         sql_raw = "SELECT id FROM users WHERE id = %s"
         sql = _safe_adapt_sql(sql_raw, conn)
@@ -160,7 +158,7 @@ async def update_user(
 
 
 @router.post("/users/{user_id}/reset-password", response_model=MessageResponse)
-async def reset_user_password(user_id: int, admin: int = Depends(require_admin)):
+def reset_user_password(user_id: int, admin: int = Depends(require_admin)):
     import bcrypt
     import secrets
 
@@ -178,7 +176,7 @@ async def reset_user_password(user_id: int, admin: int = Depends(require_admin))
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
-async def delete_user(user_id: int, admin: int = Depends(require_admin)):
+def delete_user(user_id: int, admin: int = Depends(require_admin)):
     if user_id == 1:
         raise HTTPException(status_code=400, detail="不能删除超级管理员")
 

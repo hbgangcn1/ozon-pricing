@@ -91,7 +91,7 @@ def _load_backup_service():
 
 
 @router.get("", response_model=SystemConfigResponse)
-async def get_settings(admin: int = Depends(require_admin)):
+def get_settings(admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         sql_raw = "SELECT config_key, config_value FROM system_config"
         sql = _safe_adapt_sql(sql_raw, conn)
@@ -110,7 +110,7 @@ async def get_settings(admin: int = Depends(require_admin)):
 
 
 @router.put("/open-registration", response_model=MessageResponse)
-async def update_open_registration(enabled: bool, admin: int = Depends(require_admin)):
+def update_open_registration(enabled: bool, admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         sql_raw = """
             INSERT INTO system_config (config_key, config_value, updated_at)
@@ -137,7 +137,7 @@ async def update_open_registration(enabled: bool, admin: int = Depends(require_a
 
 
 @router.get("/backups", response_model=List[BackupInfo])
-async def get_backups(admin: int = Depends(require_admin)):
+def get_backups(admin: int = Depends(require_admin)):
     """获取所有备份文件"""
     _, _, _, _, _, _, list_backup_files, _, _, _, _ = _load_backup_service()
     records = list_backup_files()
@@ -176,7 +176,7 @@ async def get_backups(admin: int = Depends(require_admin)):
 
 
 @router.post("/backup", response_model=MessageResponse)
-async def create_backup(admin: int = Depends(require_admin)):
+def create_backup(admin: int = Depends(require_admin)):
     """立即执行一次手动备份"""
     _, _, _, create_manual_backup, _, _, _, _, _, _, _ = _load_backup_service()
 
@@ -202,7 +202,7 @@ async def create_backup(admin: int = Depends(require_admin)):
 
 
 @router.get("/backup/settings", response_model=BackupSettingsResponse)
-async def get_backup_settings(admin: int = Depends(require_admin)):
+def get_backup_settings(admin: int = Depends(require_admin)):
     """获取自动备份设置"""
     _, _, _, _, get_auto_backup_settings, _, _, _, _, _, _ = _load_backup_service()
     settings = get_auto_backup_settings()
@@ -234,7 +234,7 @@ class UpdateBackupSettingsRequest(BaseModel):
 
 
 @router.put("/backup/settings", response_model=MessageResponse)
-async def update_backup_settings(
+def update_backup_settings(
     req: UpdateBackupSettingsRequest,
     admin: int = Depends(require_admin),
 ):
@@ -268,7 +268,7 @@ async def update_backup_settings(
 
 
 @router.get("/backup/stats", response_model=BackupStatsResponse)
-async def get_backup_stats(admin: int = Depends(require_admin)):
+def get_backup_stats(admin: int = Depends(require_admin)):
     """获取备份统计信息"""
     _, _, _, _, _, _, _, get_backup_info, _, _, _ = _load_backup_service()
     stats = get_backup_info()
@@ -310,7 +310,7 @@ async def get_backup_stats(admin: int = Depends(require_admin)):
 
 
 @router.get("/backup/{filename}/download")
-async def download_backup(filename: str, admin: int = Depends(require_admin)):
+def download_backup(filename: str, admin: int = Depends(require_admin)):
     """下载备份文件"""
     _, _, _, _, _, _, _, _, _, read_backup_file, _ = _load_backup_service()
 
@@ -343,7 +343,7 @@ async def download_backup(filename: str, admin: int = Depends(require_admin)):
 
 
 @router.delete("/backup/{filename}", response_model=MessageResponse)
-async def delete_backup(filename: str, admin: int = Depends(require_admin)):
+def delete_backup(filename: str, admin: int = Depends(require_admin)):
     """删除指定的备份文件"""
     _, _, _, _, _, _, _, _, delete_backup_file, _, _ = _load_backup_service()
 
@@ -377,7 +377,7 @@ async def delete_backup(filename: str, admin: int = Depends(require_admin)):
 
 
 @router.post("/backup/{filename}/restore", response_model=MessageResponse)
-async def restore_backup(
+def restore_backup(
     filename: str,
     req: RestoreRequest,
     admin: int = Depends(require_admin),

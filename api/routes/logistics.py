@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/logistics", tags=["物流"])
 
 
 @router.get("", response_model=List[LogisticsResponse])
-async def get_logistics(user_id: int = Depends(get_current_user_id)):
+def get_logistics(user_id: int = Depends(get_current_user_id)):
     with get_db_connection() as (conn, c):
         sql_raw = "SELECT * FROM logistics WHERE user_id = %s"
         sql = _safe_adapt_sql(sql_raw, conn)
@@ -25,9 +25,7 @@ async def get_logistics(user_id: int = Depends(get_current_user_id)):
 
 
 @router.get("/{logistics_id}", response_model=LogisticsResponse)
-async def get_logistics_by_id(
-    logistics_id: int, user_id: int = Depends(get_current_user_id)
-):
+def get_logistics_by_id(logistics_id: int, user_id: int = Depends(get_current_user_id)):
     with get_db_connection() as (conn, c):
         sql_raw = "SELECT * FROM logistics WHERE id = %s AND user_id = %s"
         sql = _safe_adapt_sql(sql_raw, conn)
@@ -40,7 +38,7 @@ async def get_logistics_by_id(
 
 
 @router.post("", response_model=LogisticsResponse, status_code=status.HTTP_201_CREATED)
-async def create_logistics(
+def create_logistics(
     logistics: LogisticsCreate, user_id: int = Depends(get_current_user_id)
 ):
     with get_db_connection() as (conn, c):
@@ -127,7 +125,7 @@ async def create_logistics(
 
 
 @router.put("/{logistics_id}", response_model=LogisticsResponse)
-async def update_logistics_endpoint(
+def update_logistics_endpoint(
     logistics_id: int,
     logistics: LogisticsUpdate,
     user_id: int = Depends(get_current_user_id),
@@ -196,11 +194,11 @@ async def update_logistics_endpoint(
         c.execute(sql, params)
         conn.commit()
 
-    return await get_logistics_by_id(logistics_id, user_id)
+    return get_logistics_by_id(logistics_id, user_id)
 
 
 @router.delete("/{logistics_id}", response_model=MessageResponse)
-async def delete_logistics_endpoint(
+def delete_logistics_endpoint(
     logistics_id: int, user_id: int = Depends(get_current_user_id)
 ):
     with get_db_connection() as (conn, c):
@@ -214,9 +212,7 @@ async def delete_logistics_endpoint(
 
 
 @router.post("/batch-delete", response_model=MessageResponse)
-async def batch_delete_logistics(
-    ids: List[int], user_id: int = Depends(get_current_user_id)
-):
+def batch_delete_logistics(ids: List[int], user_id: int = Depends(get_current_user_id)):
     if not ids:
         raise HTTPException(status_code=400, detail="请提供要删除的ID列表")
     placeholders = ", ".join(["%s"] * len(ids))

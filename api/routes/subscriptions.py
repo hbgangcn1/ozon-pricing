@@ -35,7 +35,7 @@ class SubscriptionResponse(BaseModel):
 
 
 @router.get("/plans", response_model=List[PlanResponse])
-async def get_plans():
+def get_plans():
     with get_db_connection() as (conn, c):
         sql_raw = "SELECT * FROM plans WHERE status = true ORDER BY sort"
         sql = _safe_adapt_sql(sql_raw, conn)
@@ -73,7 +73,7 @@ async def get_plans():
 
 
 @router.get("/current", response_model=SubscriptionResponse)
-async def get_current_subscription(user_id: int = Depends(get_current_user_id)):
+def get_current_subscription(user_id: int = Depends(get_current_user_id)):
     with get_db_connection() as (conn, c):
         sql_raw = """
             SELECT u.user_type, p.calc_limit, p.logistics_limit,

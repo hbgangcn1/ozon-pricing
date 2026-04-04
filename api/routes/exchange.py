@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/exchange", tags=["汇率"])
 
 
 @router.get("/rates", response_model=Dict[str, float])
-async def get_exchange_rates():
+def get_exchange_rates():
     """
     获取四种交叉汇率，精确到小数点后4位。
     返回：RUB/CNY, CNY/RUB, USD/CNY, CNY/USD

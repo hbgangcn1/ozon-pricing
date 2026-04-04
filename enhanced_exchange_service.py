@@ -316,8 +316,8 @@ class LocalFallbackProvider(ExchangeRateProvider):
                     rate = data.get("RUB_CNY")
                     if rate:
                         return data
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.warning("读取RUB兜底汇率JSON文件失败: %s", e)
 
         # 返回空字典，让系统走外部API，不要硬编码
         return {}
@@ -495,8 +495,8 @@ class USDLocalFallbackProvider(ExchangeRateProvider):
                     rate = data.get("USD_CNY")
                     if rate:
                         return data
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.warning("读取USD兜底汇率JSON文件失败: %s", e)
 
         # 返回空字典，让系统走外部API，不要硬编码
         return {}

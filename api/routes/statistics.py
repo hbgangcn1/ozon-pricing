@@ -53,7 +53,7 @@ class FeatureUsage(BaseModel):
 
 
 @router.get("/overview", response_model=OverviewStats)
-async def get_overview(admin: int = Depends(require_admin)):
+def get_overview(admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         c.execute(_safe_adapt_sql("SELECT COUNT(*) FROM users", conn))
         total_users = c.fetchone()[0] or 0
@@ -110,7 +110,7 @@ async def get_overview(admin: int = Depends(require_admin)):
 
 
 @router.get("/retention", response_model=List[RetentionData])
-async def get_retention(admin: int = Depends(require_admin)):
+def get_retention(admin: int = Depends(require_admin)):
     return [
         RetentionData(month="1月", retention=95),
         RetentionData(month="2月", retention=88),
@@ -119,7 +119,7 @@ async def get_retention(admin: int = Depends(require_admin)):
 
 
 @router.get("/revenue", response_model=List[RevenueData])
-async def get_revenue(
+def get_revenue(
     admin: int = Depends(require_admin), months: int = Query(12, ge=1, le=24)
 ):
     return [
@@ -130,7 +130,7 @@ async def get_revenue(
 
 
 @router.get("/login-logs", response_model=List[LoginLog])
-async def get_login_logs(
+def get_login_logs(
     admin: int = Depends(require_admin),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -161,7 +161,7 @@ async def get_login_logs(
 
 
 @router.get("/admin-logs", response_model=List[AdminLog])
-async def get_admin_logs(
+def get_admin_logs(
     admin: int = Depends(require_admin),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -190,7 +190,7 @@ async def get_admin_logs(
 
 
 @router.get("/feature-usage", response_model=List[FeatureUsage])
-async def get_feature_usage(admin: int = Depends(require_admin)):
+def get_feature_usage(admin: int = Depends(require_admin)):
     return [
         FeatureUsage(feature="定价计算", count=1560),
         FeatureUsage(feature="物流管理", count=420),
@@ -200,7 +200,7 @@ async def get_feature_usage(admin: int = Depends(require_admin)):
 
 
 @router.get("/user-groups", response_model=dict)
-async def get_user_groups(admin: int = Depends(require_admin)):
+def get_user_groups(admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         c.execute(
             _safe_adapt_sql(
@@ -228,7 +228,7 @@ async def get_user_groups(admin: int = Depends(require_admin)):
 
 
 @router.get("/funnel", response_model=dict)
-async def get_funnel(admin: int = Depends(require_admin)):
+def get_funnel(admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         c.execute(_safe_adapt_sql("SELECT COUNT(*) FROM users", conn))
         total_users = c.fetchone()[0] or 0
@@ -257,7 +257,7 @@ async def get_funnel(admin: int = Depends(require_admin)):
 
 
 @router.get("/plan-analysis", response_model=dict)
-async def get_plan_analysis(admin: int = Depends(require_admin)):
+def get_plan_analysis(admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         result = {}
         for plan in ["free", "efficiency", "professional", "enterprise"]:
@@ -272,7 +272,7 @@ async def get_plan_analysis(admin: int = Depends(require_admin)):
 
 
 @router.get("/active-users", response_model=dict)
-async def get_active_users(admin: int = Depends(require_admin)):
+def get_active_users(admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         c.execute(
             _safe_adapt_sql(
@@ -299,5 +299,5 @@ async def get_active_users(admin: int = Depends(require_admin)):
 
 
 @router.get("/growth", response_model=dict)
-async def get_growth(admin: int = Depends(require_admin)):
+def get_growth(admin: int = Depends(require_admin)):
     return {"current_month": 3850, "average": 4275, "predicted": 4500, "trend": "-26%"}

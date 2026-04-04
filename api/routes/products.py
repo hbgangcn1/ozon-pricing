@@ -20,13 +20,13 @@ router = APIRouter(prefix="/api/products", tags=["产品"])
 
 
 @router.get("", response_model=List[ProductResponse])
-async def get_products(user_id: int = Depends(get_current_user_id)):
+def get_products(user_id: int = Depends(get_current_user_id)):
     products = get_all_products_for_user(user_id)
     return products
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
-async def get_product(product_id: int, user_id: int = Depends(get_current_user_id)):
+def get_product(product_id: int, user_id: int = Depends(get_current_user_id)):
     product = get_product_by_id(product_id, user_id)
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
@@ -34,9 +34,7 @@ async def get_product(product_id: int, user_id: int = Depends(get_current_user_i
 
 
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
-async def create_product(
-    product: ProductCreate, user_id: int = Depends(get_current_user_id)
-):
+def create_product(product: ProductCreate, user_id: int = Depends(get_current_user_id)):
     product_data = product.model_dump()
     product_data["user_id"] = user_id
     for key in ["is_cylinder", "has_battery", "has_liquid", "has_msds"]:
@@ -49,7 +47,7 @@ async def create_product(
 
 
 @router.put("/{product_id}", response_model=ProductResponse)
-async def update_product_endpoint(
+def update_product_endpoint(
     product_id: int, product: ProductUpdate, user_id: int = Depends(get_current_user_id)
 ):
     existing = get_product_by_id(product_id, user_id)
@@ -68,7 +66,7 @@ async def update_product_endpoint(
 
 
 @router.delete("/{product_id}", response_model=MessageResponse)
-async def delete_product_endpoint(
+def delete_product_endpoint(
     product_id: int, user_id: int = Depends(get_current_user_id)
 ):
     success = delete_product(product_id, user_id)
