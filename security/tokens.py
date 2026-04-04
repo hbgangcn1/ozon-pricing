@@ -4,7 +4,19 @@ from typing import Optional
 
 import jwt
 
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "fallback-dev-key-change-in-production")
+
+def _get_jwt_secret() -> str:
+    secret = os.environ.get("JWT_SECRET_KEY")
+    if secret:
+        return secret
+    if os.environ.get("PRODUCTION_MODE", "").lower() == "true":
+        raise RuntimeError(
+            "JWT_SECRET_KEY environment variable must be set in production"
+        )
+    return "dev-only-jwt-secret-do-not-use-in-production"
+
+
+SECRET_KEY = _get_jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))
 

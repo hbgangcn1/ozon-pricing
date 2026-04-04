@@ -535,7 +535,7 @@ class SessionSecurityEnhanced:
             SessionSecurityEnhanced._hmac_secret_cache = secret_key
         else:
             secret_key = os.environ.get(
-                "SESSION_HMAC_SECRET", "default-dev-secret-key-change-in-production"
+                "SESSION_HMAC_SECRET", "dev-only-hmac-secret-do-not-use-in-production"
             )
             SessionSecurityEnhanced._hmac_secret_cache = secret_key
 

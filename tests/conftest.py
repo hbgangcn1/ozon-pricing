@@ -17,7 +17,8 @@ os.environ["POSTGRES_HOST"] = "localhost"
 os.environ["POSTGRES_PORT"] = "5432"
 os.environ["POSTGRES_DB"] = "logistics"
 os.environ["POSTGRES_USER"] = "postgres"
-os.environ["POSTGRES_PASSWORD"] = "***REMOVED-PG-PWD***"
+if "POSTGRES_PASSWORD" not in os.environ:
+    os.environ["POSTGRES_PASSWORD"] = "***REMOVED-PG-PWD***"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -34,7 +35,7 @@ def _get_psycopg_connection(autocommit: bool = False):
         port=5432,
         dbname="logistics",
         user="postgres",
-        password="***REMOVED-PG-PWD***",
+        password=os.environ.get("POSTGRES_PASSWORD", ""),
     )
     try:
         if autocommit:

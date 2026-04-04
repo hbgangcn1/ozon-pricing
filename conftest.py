@@ -219,7 +219,7 @@ def pytest_sessionfinish(session, exitstatus):
             port=5432,
             dbname="logistics",
             user="postgres",
-            password=os.environ.get("POSTGRES_PASSWORD", "***REMOVED-PG-PWD***"),
+            password=os.environ.get("POSTGRES_PASSWORD", ""),
         )
         try:
             conn.autocommit = False
