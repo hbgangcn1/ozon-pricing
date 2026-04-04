@@ -16,10 +16,6 @@ def get_current_user_id(
 ) -> int:
     """从 JWT token 中提取并验证当前用户 ID。
 
-    兼容策略：
-    1. 先尝试 JWT 解码
-    2. 若失败，回退到旧模式（token=用户名查DB）
-
     Returns:
         用户 ID (int)
 
@@ -27,31 +23,21 @@ def get_current_user_id(
         HTTPException 401: token 无效或用户不存在
     """
     token = api_key.credentials
-
     try:
         user_id = get_user_id_from_token(token)
-        with get_db_connection() as (conn, c):
-            sql = _safe_adapt_sql("SELECT id FROM users WHERE id = %s", conn)
-            c.execute(sql, (user_id,))
-            if c.fetchone():
-                return user_id
+    except (TokenExpiredError, TokenInvalidError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户不存在",
+            detail="无效的认证凭证",
         )
-    except (TokenExpiredError, TokenInvalidError):
-        pass
-
     with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql("SELECT id FROM users WHERE username = %s", conn)
-        c.execute(sql, (token,))
-        row = c.fetchone()
-        if row:
-            return row[0]
-
+        sql = _safe_adapt_sql("SELECT id FROM users WHERE id = %s", conn)
+        c.execute(sql, (user_id,))
+        if c.fetchone():
+            return user_id
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无效的认证凭证",
+        detail="用户不存在",
     )
 
 
@@ -88,23 +74,14 @@ def get_current_user(api_key=Depends(security)) -> dict:
 
 
 def _resolve_user_id(token: str) -> int:
-    """JWT → user_id，失败则回退到旧模式（token=用户名查DB）。"""
+    """JWT → user_id。失败直接抛出401。"""
     try:
         return get_user_id_from_token(token)
     except (TokenExpiredError, TokenInvalidError):
-        pass
-
-    with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql("SELECT id FROM users WHERE username = %s", conn)
-        c.execute(sql, (token,))
-        row = c.fetchone()
-        if row:
-            return row[0]
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无效的认证凭证",
-    )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭证",
+        )
 
 
 def require_admin(

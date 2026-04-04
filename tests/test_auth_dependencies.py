@@ -1,4 +1,3 @@
-import time
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -39,23 +38,17 @@ class TestGetCurrentUserId:
 
     @patch("api.dependencies.get_db_connection")
     @patch("api.dependencies.get_user_id_from_token")
-    def test_fallback_to_username_lookup(self, mock_jwt, mock_db):
+    def test_jwt_failure_raises_401(self, mock_jwt, mock_db):
         from security.tokens import TokenInvalidError
 
         mock_jwt.side_effect = TokenInvalidError("bad")
 
-        ctx = MagicMock()
-        cursor = MagicMock()
-        cursor.fetchone.return_value = (99,)
-        ctx.__enter__ = MagicMock(return_value=(MagicMock(), cursor))
-        ctx.__exit__ = MagicMock(return_value=False)
-        mock_db.return_value = ctx
-
+        api_key = _make_api_key("alice")
         from api.dependencies import get_current_user_id
 
-        api_key = _make_api_key("alice")
-        result = get_current_user_id(api_key)
-        assert result == 99
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_user_id(api_key)
+        assert exc_info.value.status_code == 401
 
     @patch("api.dependencies.get_db_connection")
     @patch("api.dependencies.get_user_id_from_token")
@@ -157,21 +150,16 @@ class TestResolveUserId:
 
     @patch("api.dependencies.get_db_connection")
     @patch("api.dependencies.get_user_id_from_token")
-    def test_fallback_success(self, mock_jwt, mock_db):
+    def test_jwt_failure_raises_401(self, mock_jwt, mock_db):
         from security.tokens import TokenInvalidError
 
         mock_jwt.side_effect = TokenInvalidError("bad")
 
-        ctx = MagicMock()
-        cursor = MagicMock()
-        cursor.fetchone.return_value = (55,)
-        ctx.__enter__ = MagicMock(return_value=(MagicMock(), cursor))
-        ctx.__exit__ = MagicMock(return_value=False)
-        mock_db.return_value = ctx
-
         from api.dependencies import _resolve_user_id
 
-        assert _resolve_user_id("alice") == 55
+        with pytest.raises(HTTPException) as exc_info:
+            _resolve_user_id("alice")
+        assert exc_info.value.status_code == 401
 
     @patch("api.dependencies.get_db_connection")
     @patch("api.dependencies.get_user_id_from_token")
