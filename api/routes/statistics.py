@@ -1,10 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import time
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime, timedelta
+from typing import List
+from sqlalchemy import select, func, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db_utils import get_db_connection, _safe_adapt_sql
-from api.models.schemas import MessageResponse
+from database import get_db
+from models.user import User
+from models.order import PaymentOrder
+from models.log import UserLoginLog, AdminActionLog
+from db.statistics import count_total_users, count_users_by_type
+from db.statistics import count_paid_orders, get_revenue_stats
 from api.dependencies import require_admin
 
 router = APIRouter(prefix="/api/statistics", tags=["统计"])
@@ -53,65 +59,47 @@ class FeatureUsage(BaseModel):
 
 
 @router.get("/overview", response_model=OverviewStats)
-def get_overview(admin: int = Depends(require_admin)):
-    with get_db_connection() as (conn, c):
-        c.execute(_safe_adapt_sql("SELECT COUNT(*) FROM users", conn))
-        total_users = c.fetchone()[0] or 0
+async def get_overview(
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    total_users = await count_total_users(session)
+    by_type = await count_users_by_type(session)
+    pro_users = by_type.get("professional", 0)
+    eff_users = by_type.get("efficiency", 0)
+    free_users = total_users - pro_users - eff_users
 
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE user_type = 'professional'", conn
+    total_orders = await count_paid_orders(session)
+    rev = await get_revenue_stats(session)
+    total_revenue = float(rev.get("total_revenue", 0)) / 100.0
+
+    try:
+        new_users_today = (
+            await session.scalar(
+                select(func.count(User.id)).where(
+                    func.date(func.nullif(func.trim(User.created_at), ""))
+                    == func.current_date()
+                )
             )
+            or 0
         )
-        pro_users = c.fetchone()[0] or 0
+    except Exception:
+        new_users_today = 0
 
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE user_type = 'efficiency'", conn
-            )
-        )
-        eff_users = c.fetchone()[0] or 0
-
-        free_users = total_users - pro_users - eff_users
-
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM payment_orders WHERE status = 'paid'", conn
-            )
-        )
-        total_orders = c.fetchone()[0] or 0
-
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COALESCE(SUM(amount), 0) FROM payment_orders WHERE status = 'paid'",
-                conn,
-            )
-        )
-        total_revenue = float(c.fetchone()[0] or 0)
-
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users"
-                " WHERE DATE(NULLIF(TRIM(created_at), '')) = CURRENT_DATE",
-                conn,
-            )
-        )
-        new_users_today = c.fetchone()[0] or 0
-
-        return OverviewStats(
-            total_users=total_users,
-            active_users=total_users,
-            new_users_today=new_users_today,
-            total_orders=total_orders,
-            total_revenue=total_revenue,
-            pro_users=pro_users,
-            eff_users=eff_users,
-            free_users=free_users,
-        )
+    return OverviewStats(
+        total_users=total_users,
+        active_users=total_users,
+        new_users_today=new_users_today,
+        total_orders=total_orders,
+        total_revenue=total_revenue,
+        pro_users=pro_users,
+        eff_users=eff_users,
+        free_users=free_users,
+    )
 
 
 @router.get("/retention", response_model=List[RetentionData])
-def get_retention(admin: int = Depends(require_admin)):
+async def get_retention(admin: int = Depends(require_admin)):
     return [
         RetentionData(month="1月", retention=95),
         RetentionData(month="2月", retention=88),
@@ -120,8 +108,9 @@ def get_retention(admin: int = Depends(require_admin)):
 
 
 @router.get("/revenue", response_model=List[RevenueData])
-def get_revenue(
-    admin: int = Depends(require_admin), months: int = Query(12, ge=1, le=24)
+async def get_revenue(
+    admin: int = Depends(require_admin),
+    months: int = Query(12, ge=1, le=24),
 ):
     return [
         RevenueData(month="1月", revenue=3800),
@@ -131,67 +120,63 @@ def get_revenue(
 
 
 @router.get("/login-logs", response_model=List[LoginLog])
-def get_login_logs(
+async def get_login_logs(
     admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
     offset = (page - 1) * page_size
-    with get_db_connection() as (conn, c):
-        sql_raw = """
-            SELECT id, user_id, login_time, ip_address, user_agent, device_type, created_at
-            FROM user_login_log
-            ORDER BY created_at DESC
-            LIMIT %s OFFSET %s
-        """
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (page_size, offset))
-        logs = []
-        for row in c.fetchall():
-            logs.append(
-                LoginLog(
-                    id=row[0],
-                    username=str(row[1]) if row[1] else "",
-                    action=row[4] or "",
-                    ip=row[3] or "",
-                    time=str(row[6]) if row[6] else "",
-                    status="success",
-                )
-            )
-        return logs
+    stmt = (
+        select(UserLoginLog)
+        .order_by(UserLoginLog.created_at.desc())
+        .limit(page_size)
+        .offset(offset)
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    return [
+        LoginLog(
+            id=r.id,
+            username=str(r.user_id) if r.user_id else "",
+            action=r.user_agent or "",
+            ip=r.ip_address or "",
+            time=str(r.created_at) if r.created_at else "",
+            status="success",
+        )
+        for r in rows
+    ]
 
 
 @router.get("/admin-logs", response_model=List[AdminLog])
-def get_admin_logs(
+async def get_admin_logs(
     admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
     offset = (page - 1) * page_size
-    with get_db_connection() as (conn, c):
-        sql_raw = """
-            SELECT id, admin_id, action_type, created_at
-            FROM admin_action_log
-            ORDER BY created_at DESC
-            LIMIT %s OFFSET %s
-        """
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (page_size, offset))
-        logs = []
-        for row in c.fetchall():
-            logs.append(
-                AdminLog(
-                    id=row[0],
-                    admin=str(row[1]) if row[1] else "",
-                    action=row[2] or "",
-                    time=str(row[3]) if row[3] else "",
-                )
-            )
-        return logs
+    stmt = (
+        select(AdminActionLog)
+        .order_by(AdminActionLog.created_at.desc())
+        .limit(page_size)
+        .offset(offset)
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    return [
+        AdminLog(
+            id=r.id,
+            admin=str(r.admin_id) if r.admin_id else "",
+            action=r.action_type or "",
+            time=str(r.created_at) if r.created_at else "",
+        )
+        for r in rows
+    ]
 
 
 @router.get("/feature-usage", response_model=List[FeatureUsage])
-def get_feature_usage(admin: int = Depends(require_admin)):
+async def get_feature_usage(admin: int = Depends(require_admin)):
     return [
         FeatureUsage(feature="定价计算", count=1560),
         FeatureUsage(feature="物流管理", count=420),
@@ -201,110 +186,129 @@ def get_feature_usage(admin: int = Depends(require_admin)):
 
 
 @router.get("/user-groups", response_model=dict)
-def get_user_groups(admin: int = Depends(require_admin)):
-    with get_db_connection() as (conn, c):
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE user_type IN ('professional', 'enterprise') AND subscription_expires > EXTRACT(EPOCH FROM NOW())::bigint",
-                conn,
+async def get_user_groups(
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    current_ts = int(time.time())
+    high_value = (
+        await session.scalar(
+            select(func.count(User.id)).where(
+                User.user_type.in_(["professional", "enterprise"]),
+                User.subscription_expires > current_ts,
             )
         )
-        high_value = c.fetchone()[0] or 0
+        or 0
+    )
 
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users"
-                " WHERE NULLIF(TRIM(last_login), '')::timestamp"
-                " > NOW() - INTERVAL '30 days'",
-                conn,
+    try:
+        active = (
+            await session.scalar(
+                select(func.count(User.id)).where(
+                    func.nullif(func.trim(User.last_login), "").cast(text("timestamp"))
+                    > func.now() - text("INTERVAL '30 days'"),
+                )
             )
+            or 0
         )
-        active = c.fetchone()[0] or 0
+    except Exception:
+        active = 0
 
-        total = max(1, high_value + active)
-
-        return {
-            "high_value_users": high_value,
-            "active_users": active,
-            "silent_users": max(0, total - active),
-        }
+    total = max(1, high_value + active)
+    return {
+        "high_value_users": high_value,
+        "active_users": active,
+        "silent_users": max(0, total - active),
+    }
 
 
 @router.get("/funnel", response_model=dict)
-def get_funnel(admin: int = Depends(require_admin)):
-    with get_db_connection() as (conn, c):
-        c.execute(_safe_adapt_sql("SELECT COUNT(*) FROM users", conn))
-        total_users = c.fetchone()[0] or 0
-
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE user_type != 'free'",
-                conn,
-            )
+async def get_funnel(
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    total_users = await session.scalar(select(func.count(User.id))) or 0
+    paid_users = (
+        await session.scalar(
+            select(func.count(User.id)).where(User.user_type != "free")
         )
-        paid_users = c.fetchone()[0] or 0
-
-        trial_users = total_users - paid_users
-
-        return {
-            "registered": total_users,
-            "trial": trial_users,
-            "paid": paid_users,
-            "conversion_trial": round(trial_users / total_users * 100, 1)
-            if total_users > 0
-            else 0,
-            "conversion_paid": round(paid_users / trial_users * 100, 1)
-            if trial_users > 0
-            else 0,
-        }
+        or 0
+    )
+    trial_users = total_users - paid_users
+    return {
+        "registered": total_users,
+        "trial": trial_users,
+        "paid": paid_users,
+        "conversion_trial": round(trial_users / total_users * 100, 1)
+        if total_users > 0
+        else 0,
+        "conversion_paid": round(paid_users / trial_users * 100, 1)
+        if trial_users > 0
+        else 0,
+    }
 
 
 @router.get("/plan-analysis", response_model=dict)
-def get_plan_analysis(admin: int = Depends(require_admin)):
-    with get_db_connection() as (conn, c):
-        result = {}
-        for plan in ["free", "efficiency", "professional", "enterprise"]:
-            c.execute(
-                _safe_adapt_sql(
-                    "SELECT COUNT(*) FROM users WHERE user_type = %s", conn
-                ),
-                (plan,),
+async def get_plan_analysis(
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    result = {}
+    for plan in ["free", "efficiency", "professional", "enterprise"]:
+        count = (
+            await session.scalar(
+                select(func.count(User.id)).where(User.user_type == plan)
             )
-            result[f"{plan}_users"] = c.fetchone()[0] or 0
-        return result
+            or 0
+        )
+        result[f"{plan}_users"] = count
+    return result
 
 
 @router.get("/active-users", response_model=dict)
-def get_active_users(admin: int = Depends(require_admin)):
-    with get_db_connection() as (conn, c):
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users"
-                " WHERE NULLIF(TRIM(last_login), '')::timestamp"
-                " > NOW() - INTERVAL '1 day'",
-                conn,
+async def get_active_users(
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        daily = (
+            await session.scalar(
+                select(func.count(User.id)).where(
+                    func.nullif(func.trim(User.last_login), "").cast(text("timestamp"))
+                    > func.now() - text("INTERVAL '1 day'"),
+                )
             )
+            or 0
         )
-        daily = c.fetchone()[0] or 0
+    except Exception:
+        daily = 0
 
-        c.execute(
-            _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users"
-                " WHERE NULLIF(TRIM(last_login), '')::timestamp"
-                " > NOW() - INTERVAL '7 days'",
-                conn,
+    try:
+        weekly = (
+            await session.scalar(
+                select(func.count(User.id)).where(
+                    func.nullif(func.trim(User.last_login), "").cast(text("timestamp"))
+                    > func.now() - text("INTERVAL '7 days'"),
+                )
             )
+            or 0
         )
-        weekly = c.fetchone()[0] or 0
+    except Exception:
+        weekly = 0
 
-        return {
-            "daily": daily,
-            "weekly": weekly,
-            "trend_daily": "+5",
-            "trend_weekly": "+3",
-        }
+    return {
+        "daily": daily,
+        "weekly": weekly,
+        "trend_daily": "+5",
+        "trend_weekly": "+3",
+    }
 
 
 @router.get("/growth", response_model=dict)
-def get_growth(admin: int = Depends(require_admin)):
-    return {"current_month": 3850, "average": 4275, "predicted": 4500, "trend": "-26%"}
+async def get_growth(admin: int = Depends(require_admin)):
+    return {
+        "current_month": 3850,
+        "average": 4275,
+        "predicted": 4500,
+        "trend": "-26%",
+    }

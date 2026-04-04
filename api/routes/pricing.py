@@ -1,9 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import decimal
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from database import get_db
 from logic import calculate_pricing
-from db_utils import get_product_by_id, get_db_connection, _safe_adapt_sql
+from models.logistics import Logistics
+from models.user import User
+from db.products import get_product_by_id
 from api.models.schemas import (
     PricingRequest,
     PricingResponse,
@@ -26,18 +31,16 @@ def convert_decimals(obj):
     return obj
 
 
-def get_user_logistics(user_id, logistics_type=None):
-    with get_db_connection() as (conn, c):
-        if logistics_type:
-            sql_raw = "SELECT * FROM logistics WHERE user_id = %s AND type = %s AND is_active = 1"
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, (user_id, logistics_type))
-        else:
-            sql_raw = "SELECT * FROM logistics WHERE user_id = %s AND is_active = 1"
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, (user_id,))
-        columns = [desc[0] for desc in c.description]
-        return [dict(zip(columns, row)) for row in c.fetchall()]
+async def get_user_logistics(session: AsyncSession, user_id, logistics_type=None):
+    stmt = select(Logistics).where(
+        Logistics.user_id == user_id,
+        Logistics.is_active == 1,
+    )
+    if logistics_type:
+        stmt = stmt.where(Logistics.type == logistics_type)
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    return [{c.key: getattr(row, c.key) for c in row.__table__.columns} for row in rows]
 
 
 def get_fallback_exchange_rate():
@@ -69,22 +72,12 @@ def build_breakdown(
     profit_margin_pct,
     rate,
 ):
-    """构建成本分解明细列表
-
-    Args:
-        rate: RUB/CNY 汇率（从 format_result 传入，与定价计算一致）
-    """
-
-    # 这些字段是 CNY，直接使用
     unit_price_cny = product.get("unit_price", 0)
     labeling_fee_cny = product.get("labeling_fee", 0)
     shipping_fee_cny = product.get("shipping_fee", 0)
 
-    # 代理费：commission_rub 是主公式返回的代理费（RUB），转 CNY
-    # RUB → CNY 应乘以汇率（rate = RUB/CNY ≈ 0.085）
     agency_cny = round(commission_rub * rate, 2) if commission_rub else 0
 
-    # 百分比费率：判断是否需要除以100（前端传百分比如8，存储为8而非0.08）
     def to_rate(val):
         return val / 100 if (val is not None and val >= 1) else (val or 0)
 
@@ -95,7 +88,6 @@ def build_breakdown(
     return_rate = to_rate(product.get("return_rate", 0))
     vat_rate = to_rate(product.get("vat_rate", 0))
 
-    # 百分比费用 = price_cny × 费率
     promotion_cny = (
         round(price_cny * promotion_rate, 2) if promotion_rate is not None else 0
     )
@@ -105,9 +97,8 @@ def build_breakdown(
     withdrawal_cny = (
         round(price_cny * withdrawal_rate, 2) if withdrawal_rate is not None else 0
     )
-    # 收单费：固定10 RUB最低佣金，或按百分比
     if payment_fixed:
-        payment_cny = round(10 * rate, 2)  # 固定10 RUB转CNY
+        payment_cny = round(10 * rate, 2)
     else:
         payment_cny = (
             round(price_cny * payment_rate, 2) if payment_rate is not None else 0
@@ -139,7 +130,6 @@ def build_breakdown(
 
 
 def format_result(res, product, rate, is_land=True):
-    """将 calculate_pricing 的结果格式化为 PricingResultItem"""
     if not res or not res.get("suggested_price"):
         return PricingResultItem(
             is_available=False,
@@ -175,7 +165,6 @@ def format_result(res, product, rate, is_land=True):
     payment_fixed = res.get(
         "land_payment_fixed" if is_land else "air_payment_fixed", False
     )
-
     avg_cost = res.get("avg_land_cost" if is_land else "avg_air_cost", 0)
     avg_days = res.get("avg_land_days" if is_land else "avg_air_days", 0)
     saved_cost = res.get("saved_land_cost" if is_land else "saved_air_cost", 0)
@@ -212,7 +201,6 @@ def format_result(res, product, rate, is_land=True):
 
 
 def format_combo(combo_results):
-    """格式化4种组合结果"""
     return PricingComboResult(
         land_pickup=combo_results.get("land_pickup", PricingResultItem()),
         land_home=combo_results.get("land_home", PricingResultItem()),
@@ -222,33 +210,27 @@ def format_combo(combo_results):
 
 
 @router.post("/calculate", response_model=PricingResponse)
-def calculate(
+async def calculate(
     request: PricingRequest,
     user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
 ):
     mode = request.mode
 
-    # 检查用户是否允许使用精准模式
     if mode == "precise":
-        with get_db_connection() as (conn, c):
-            sql_raw = "SELECT user_type FROM users WHERE id = %s"
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, (user_id,))
-            row = c.fetchone()
-            if row and row[0] in ("free", "efficiency"):
-                raise HTTPException(
-                    status_code=403, detail="免费版和效率版用户不能使用精准模式"
-                )
+        user = await session.get(User, user_id)
+        if user and user.user_type in ("free", "efficiency"):
+            raise HTTPException(
+                status_code=403, detail="免费版和效率版用户不能使用精准模式"
+            )
 
-    # 1. 获取产品数据
-    # precise 模式：优先使用请求中的 product_data（表单当前值），否则从数据库查询
     if mode == "fast":
         product = request.product_data or {}
     else:
         if request.product_data:
             product = request.product_data
         elif request.product_id:
-            product = get_product_by_id(request.product_id, user_id)
+            product = await get_product_by_id(session, request.product_id, user_id)
             if not product:
                 raise HTTPException(status_code=404, detail="产品不存在")
         else:
@@ -259,13 +241,10 @@ def calculate(
 
     product = convert_decimals(product)
 
-    # 2. 获取所有物流规则
-    all_logistics = convert_decimals(get_user_logistics(user_id))
+    all_logistics = convert_decimals(await get_user_logistics(session, user_id))
     land_rules = [r for r in all_logistics if r.get("type") == "land"]
     air_rules = [r for r in all_logistics if r.get("type") == "air"]
-    filtered_logistics = {"land": [], "air": []}
 
-    # 3. 按配送方式分组（兼容 pickup 和 pickup_point）
     def is_pickup(r):
         return r.get("delivery_method") in ("pickup", "pickup_point")
 
@@ -279,7 +258,6 @@ def calculate(
 
     rate = get_fallback_exchange_rate()
 
-    # 4. 计算8种组合
     results = {}
     for priority in ["低价优先", "速度优先"]:
         combos = {
@@ -298,13 +276,11 @@ def calculate(
             )
         results[priority] = combo_results
 
-    # 获取所有物流被淘汰的原因
     all_res = calculate_pricing(
         product, land_rules, air_rules, mode=mode, priority="低价优先"
     )
     filtered_logistics = all_res.get("filtered_logistics", {"land": [], "air": []})
 
-    # 5. 构建响应
     return PricingResponse(
         calculation_mode=mode,
         price_priority=format_combo(results["低价优先"]),
@@ -320,10 +296,7 @@ def calculate(
 
 @router.get("/progress")
 async def pricing_progress(user_id: int = Depends(get_current_user_id)):
-    """SSE 进度报告端点（模拟）"""
-
     async def event_generator():
-        # 模拟进度事件
         import asyncio
         import json
 
@@ -337,7 +310,7 @@ async def pricing_progress(user_id: int = Depends(get_current_user_id)):
 
         for data in progress_data:
             yield f"data: {json.dumps(data)}\n\n"
-            await asyncio.sleep(1)  # 模拟延迟
+            await asyncio.sleep(1)
 
     return StreamingResponse(
         event_generator(),

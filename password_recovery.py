@@ -10,21 +10,13 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-try:
-    from .db_utils import get_db_connection, hash_password
-    from .security_questions import validate_security_answers
-    from .db_adapter import adapt_sql
-except ImportError:
-    from db_utils import get_db_connection, hash_password
-    from security_questions import validate_security_answers
-
-    try:
-        from db_adapter import adapt_sql
-    except ImportError:
-
-        def adapt_sql(sql: str) -> str:
-            return sql
-
+from database import AsyncSessionLocal
+from models.user import User
+from models.log import PasswordRecoveryLog
+from db.password import hash_password
+from sqlalchemy import select, update
+from security_questions import validate_security_answers
+from password_utils import validate_password_strength
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -34,7 +26,7 @@ MAX_RESET_ATTEMPTS = 3  # 最大尝试次数
 RESET_LOCK_DURATION = 1800  # 锁定时长（秒），30分钟
 
 
-def log_password_recovery_event(
+async def log_password_recovery_event(
     username: str,
     event_type: str,
     success: bool = False,
@@ -56,28 +48,19 @@ def log_password_recovery_event(
     if not ip_address:
         ip_address = "unknown"
 
-    with get_db_connection() as (conn, c):
-        sql = adapt_sql("""
-            INSERT INTO password_recovery_log
-            (username, ip_address, event_type, success, attempt_count,
-             admin_name, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """)
-        c.execute(
-            sql,
-            (
-                username,
-                ip_address,
-                event_type,
-                1 if success else 0,
-                attempt_count,
-                admin_name,
-                int(time.time()),
-            ),
+    async with AsyncSessionLocal() as session:
+        log_entry = PasswordRecoveryLog(
+            username=username,
+            ip_address=ip_address,
+            event_type=event_type,
+            success=1 if success else 0,
+            attempt_count=attempt_count,
+            admin_name=admin_name,
+            created_at=int(time.time()),
         )
-        conn.commit()
+        session.add(log_entry)
+        await session.commit()
 
-    # 同时写入应用日志
     log_msg = (
         f"密码找回事件 - 用户: {username}, 类型: {event_type}, "
         f"成功: {success}, 尝试次数: {attempt_count}, IP: {ip_address}"
@@ -91,7 +74,7 @@ def log_password_recovery_event(
         logger.warning(log_msg)
 
 
-def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
+async def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
     """
     获取用户的安全问题
 
@@ -101,37 +84,29 @@ def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
     Returns:
         包含安全问题的字典，如果用户不存在或未设置安全问题则返回None
     """
-    with get_db_connection() as (conn, c):
-        sql = adapt_sql("""
-            SELECT security_q1, security_q2, reset_locked_until,
-                   reset_attempt_count
-            FROM users
-            WHERE username = ?
-        """)
-        c.execute(sql, (username,))
-        result = c.fetchone()
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.username == username))
+        user = result.scalar_one_or_none()
 
-        if not result:
+        if not user:
             return None
 
-        security_q1, security_q2, reset_locked_until, reset_attempt_count = result
+        reset_locked_until = user.reset_locked_until
+        reset_attempt_count = user.reset_attempt_count or 0
 
-        # 转换时间戳为float（PostgreSQL可能返回Decimal类型）
         if reset_locked_until is not None:
             try:
                 reset_locked_until = float(reset_locked_until)
             except (TypeError, ValueError):
                 reset_locked_until = None
 
-        # 检查是否设置了安全问题
-        if not security_q1 or not security_q2:
+        if not user.security_q1 or not user.security_q2:
             return {
                 "has_questions": False,
                 "reset_locked_until": reset_locked_until,
-                "reset_attempt_count": reset_attempt_count or 0,
+                "reset_attempt_count": reset_attempt_count,
             }
 
-        # 检查是否被锁定
         current_time = time.time()
         is_locked = False
         if reset_locked_until:
@@ -139,24 +114,19 @@ def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
                 is_locked = True
             else:
                 # 锁定已过期，清除锁定状态
-                sql = adapt_sql("""
-                    UPDATE users
-                    SET reset_locked_until = NULL,
-                        reset_attempt_count = 0
-                    WHERE username = ?
-                """)
-                c.execute(sql, (username,))
-                conn.commit()
+                user.reset_locked_until = None
+                user.reset_attempt_count = 0
+                await session.commit()
                 reset_locked_until = None
                 reset_attempt_count = 0
 
         return {
             "has_questions": True,
-            "security_q1": security_q1,
-            "security_q2": security_q2,
+            "security_q1": user.security_q1,
+            "security_q2": user.security_q2,
             "is_locked": is_locked,
             "reset_locked_until": reset_locked_until,
-            "reset_attempt_count": reset_attempt_count or 0,
+            "reset_attempt_count": reset_attempt_count,
             "locked_until": datetime.fromtimestamp(reset_locked_until).strftime(
                 "%Y-%m-%d %H:%M:%S"
             )
@@ -165,7 +135,7 @@ def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]:
         }
 
 
-def verify_security_answers(
+async def verify_security_answers(
     username: str, answer1: str, answer2: str
 ) -> tuple[bool, str]:
     """
@@ -179,110 +149,85 @@ def verify_security_answers(
     Returns:
         tuple: (是否验证成功, 错误信息)
     """
-    # 验证答案格式
     is_valid, error_msg = validate_security_answers(answer1, answer2)
     if not is_valid:
         return False, error_msg
 
-    with get_db_connection() as (conn, c):
-        # 获取用户的安全答案哈希
-        sql = adapt_sql("""
-            SELECT security_a1, security_a2, reset_locked_until,
-                   reset_attempt_count
-            FROM users
-            WHERE username = ?
-        """)
-        c.execute(sql, (username,))
-        result = c.fetchone()
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.username == username))
+        user = result.scalar_one_or_none()
 
-        if not result:
-            log_password_recovery_event(username, "failure", False, 0)
+        if not user:
+            await log_password_recovery_event(username, "failure", False, 0)
             return False, "用户不存在"
 
-        security_a1_hash, security_a2_hash, reset_locked_until, attempt_count = result
-
-        if not security_a1_hash or not security_a2_hash:
+        if not user.security_a1 or not user.security_a2:
             return False, "用户未设置安全问题"
 
-        # 检查是否被锁定
         current_time = time.time()
-        if reset_locked_until and current_time < reset_locked_until:
-            locked_until = datetime.fromtimestamp(reset_locked_until).strftime(
+        reset_locked_until = user.reset_locked_until
+        if reset_locked_until and current_time < float(reset_locked_until):
+            locked_until = datetime.fromtimestamp(float(reset_locked_until)).strftime(
                 "%Y-%m-%d %H:%M:%S"
             )
             return False, (
                 f"账号已被锁定，请于 {locked_until} 后重试。或联系管理员解锁。"
             )
 
-        # 验证答案（不区分大小写）
         answer1_lower = answer1.strip().lower()
         answer2_lower = answer2.strip().lower()
 
-        # 使用bcrypt验证答案
         try:
             a1_valid = bcrypt.checkpw(
-                answer1_lower.encode("utf-8"), security_a1_hash.encode("utf-8")
+                answer1_lower.encode("utf-8"), user.security_a1.encode("utf-8")
             )
             a2_valid = bcrypt.checkpw(
-                answer2_lower.encode("utf-8"), security_a2_hash.encode("utf-8")
+                answer2_lower.encode("utf-8"), user.security_a2.encode("utf-8")
             )
         except Exception as e:
             logger.error(f"验证答案时出错: {e}")
             return False, "验证过程出错，请重试"
 
-        if a1_valid and a2_valid:
-            # 验证成功，重置尝试次数
-            sql = adapt_sql("""
-                UPDATE users
-                SET reset_attempt_count = 0,
-                    reset_locked_until = NULL,
-                    reset_last_attempt = ?
-                WHERE username = ?
-            """)
-            c.execute(sql, (current_time, username))
-            conn.commit()
+        attempt_count = user.reset_attempt_count or 0
 
-            log_password_recovery_event(username, "success", True, attempt_count or 0)
+        if a1_valid and a2_valid:
+            user.reset_attempt_count = 0
+            user.reset_locked_until = None
+            user.reset_last_attempt = current_time
+            await session.commit()
+            await log_password_recovery_event(username, "success", True, attempt_count)
             return True, "验证成功"
         else:
-            # 验证失败，增加尝试次数
-            new_attempt_count = (attempt_count or 0) + 1
-            reset_locked_until = None
+            new_attempt_count = attempt_count + 1
+            new_locked_until = None
 
-            # 如果达到最大尝试次数，锁定账号
             if new_attempt_count >= MAX_RESET_ATTEMPTS:
-                reset_locked_until = current_time + RESET_LOCK_DURATION
-                locked_until = datetime.fromtimestamp(reset_locked_until).strftime(
+                new_locked_until = current_time + RESET_LOCK_DURATION
+                locked_until_str = datetime.fromtimestamp(new_locked_until).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )
-                error_msg = (
+                err = (
                     f"安全验证失败（{new_attempt_count}/{MAX_RESET_ATTEMPTS}次），"
-                    f"账号已锁定至 {locked_until}。"
+                    f"账号已锁定至 {locked_until_str}。"
                     "请稍后重试或联系管理员解锁。"
                 )
             else:
-                error_msg = (
+                err = (
                     f"安全验证失败（{new_attempt_count}/{MAX_RESET_ATTEMPTS}次），"
                     "请重新输入。"
                 )
 
-            sql = adapt_sql("""
-                UPDATE users
-                SET reset_attempt_count = ?,
-                    reset_locked_until = ?,
-                    reset_last_attempt = ?
-                WHERE username = ?
-            """)
-            c.execute(
-                sql, (new_attempt_count, reset_locked_until, current_time, username)
+            user.reset_attempt_count = new_attempt_count
+            user.reset_locked_until = new_locked_until
+            user.reset_last_attempt = current_time
+            await session.commit()
+            await log_password_recovery_event(
+                username, "failure", False, new_attempt_count
             )
-            conn.commit()
-
-            log_password_recovery_event(username, "failure", False, new_attempt_count)
-            return False, error_msg
+            return False, err
 
 
-def reset_password(username: str, new_password: str) -> tuple[bool, str]:
+async def reset_password(username: str, new_password: str) -> tuple[bool, str]:
     """
     重置用户密码
 
@@ -293,43 +238,29 @@ def reset_password(username: str, new_password: str) -> tuple[bool, str]:
     Returns:
         tuple: (是否成功, 错误信息)
     """
-    # 验证密码强度
-    try:
-        from .password_utils import validate_password_strength
-    except ImportError:
-        from password_utils import validate_password_strength
-
     pwd_result = validate_password_strength(new_password)
     if not pwd_result.get("is_valid", False):
         errors = pwd_result.get("errors", [])
         return False, f"密码强度不够：{', '.join(errors)}"
 
-    # 加密新密码
     hashed_password = hash_password(new_password)
 
-    with get_db_connection() as (conn, c):
-        # 检查用户是否存在
-        sql = adapt_sql("SELECT id FROM users WHERE username = ?")
-        c.execute(sql, (username,))
-        if not c.fetchone():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.username == username))
+        user = result.scalar_one_or_none()
+        if not user:
             return False, "用户不存在"
 
-        # 更新密码
-        sql = adapt_sql("""
-            UPDATE users
-            SET password = ?,
-                reset_attempt_count = 0,
-                reset_locked_until = NULL
-            WHERE username = ?
-        """)
-        c.execute(sql, (hashed_password, username))
-        conn.commit()
+        user.password = hashed_password
+        user.reset_attempt_count = 0
+        user.reset_locked_until = None
+        await session.commit()
 
-    log_password_recovery_event(username, "password_reset", True, 0)
+    await log_password_recovery_event(username, "password_reset", True, 0)
     return True, "密码重置成功"
 
 
-def unlock_user(username: str, admin_name: str) -> tuple[bool, str]:
+async def unlock_user(username: str, admin_name: str) -> tuple[bool, str]:
     """
     管理员解锁用户
 
@@ -340,28 +271,21 @@ def unlock_user(username: str, admin_name: str) -> tuple[bool, str]:
     Returns:
         tuple: (是否成功, 错误信息)
     """
-    with get_db_connection() as (conn, c):
-        # 检查用户是否存在
-        sql = adapt_sql("SELECT id FROM users WHERE username = ?")
-        c.execute(sql, (username,))
-        if not c.fetchone():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.username == username))
+        user = result.scalar_one_or_none()
+        if not user:
             return False, "用户不存在"
 
-        # 解锁用户
-        sql = adapt_sql("""
-            UPDATE users
-            SET reset_locked_until = NULL,
-                reset_attempt_count = 0
-            WHERE username = ?
-        """)
-        c.execute(sql, (username,))
-        conn.commit()
+        user.reset_locked_until = None
+        user.reset_attempt_count = 0
+        await session.commit()
 
-    log_password_recovery_event(username, "admin_unlock", True, 0, admin_name)
+    await log_password_recovery_event(username, "admin_unlock", True, 0, admin_name)
     return True, "用户已解锁"
 
 
-def admin_reset_password(
+async def admin_reset_password(
     username: str, new_password: str, admin_name: str
 ) -> tuple[bool, str]:
     """
@@ -375,43 +299,31 @@ def admin_reset_password(
     Returns:
         tuple: (是否成功, 错误信息)
     """
-    # 验证密码强度
-    try:
-        from .password_utils import validate_password_strength
-    except ImportError:
-        from password_utils import validate_password_strength
-
     pwd_result = validate_password_strength(new_password)
     if not pwd_result.get("is_valid", False):
         errors = pwd_result.get("errors", [])
         return False, f"密码强度不够：{', '.join(errors)}"
 
-    # 加密新密码
     hashed_password = hash_password(new_password)
 
-    with get_db_connection() as (conn, c):
-        # 检查用户是否存在
-        sql = adapt_sql("SELECT id FROM users WHERE username = ?")
-        c.execute(sql, (username,))
-        if not c.fetchone():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.username == username))
+        user = result.scalar_one_or_none()
+        if not user:
             return False, "用户不存在"
 
-        # 更新密码并清除锁定状态
-        sql = adapt_sql("""
-            UPDATE users
-            SET password = ?,
-                reset_attempt_count = 0,
-                reset_locked_until = NULL
-            WHERE username = ?
-        """)
-        c.execute(sql, (hashed_password, username))
-        conn.commit()
+        user.password = hashed_password
+        user.reset_attempt_count = 0
+        user.reset_locked_until = None
+        await session.commit()
 
-    log_password_recovery_event(username, "admin_reset", True, 0, admin_name)
+    await log_password_recovery_event(username, "admin_reset", True, 0, admin_name)
     return True, "密码已重置"
 
 
-def get_password_recovery_logs(username: Optional[str] = None, limit: int = 10) -> list:
+async def get_password_recovery_logs(
+    username: Optional[str] = None, limit: int = 10
+) -> list:
     """
     获取密码找回日志
 
@@ -422,39 +334,29 @@ def get_password_recovery_logs(username: Optional[str] = None, limit: int = 10) 
     Returns:
         日志记录列表
     """
-    with get_db_connection() as (_, c):
+    async with AsyncSessionLocal() as session:
+        query = (
+            select(PasswordRecoveryLog)
+            .order_by(PasswordRecoveryLog.created_at.desc())
+            .limit(limit)
+        )
         if username:
-            sql = adapt_sql("""
-                SELECT username, ip_address, event_type, success,
-                       attempt_count, admin_name, created_at
-                FROM password_recovery_log
-                WHERE username = ?
-                ORDER BY created_at DESC
-                LIMIT ?
-            """)
-            c.execute(sql, (username, limit))
-        else:
-            sql = adapt_sql("""
-                SELECT username, ip_address, event_type, success,
-                       attempt_count, admin_name, created_at
-                FROM password_recovery_log
-                ORDER BY created_at DESC
-                LIMIT ?
-            """)
-            c.execute(sql, (limit,))
+            query = query.where(PasswordRecoveryLog.username == username)
 
-        results = c.fetchall()
+        result = await session.execute(query)
+        rows = result.scalars().all()
+
         logs = []
-        for row in results:
+        for row in rows:
             logs.append(
                 {
-                    "username": row[0],
-                    "ip_address": row[1],
-                    "event_type": row[2],
-                    "success": bool(row[3]),
-                    "attempt_count": row[4],
-                    "admin_name": row[5],
-                    "created_at": datetime.fromtimestamp(row[6]).strftime(
+                    "username": row.username,
+                    "ip_address": row.ip_address,
+                    "event_type": row.event_type,
+                    "success": bool(row.success),
+                    "attempt_count": row.attempt_count,
+                    "admin_name": row.admin_name,
+                    "created_at": datetime.fromtimestamp(row.created_at).strftime(
                         "%Y-%m-%d %H:%M:%S"
                     ),
                 }

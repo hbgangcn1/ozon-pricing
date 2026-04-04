@@ -373,3 +373,69 @@ frontend/tests/
 - E2E: **260 passed**, 4 flaky failures (均为预存在的 UI timing 问题)
 - flake8: 0 errors
 - 所有函数 < 100 行，所有文件 < 500 行
+
+---
+
+### Phase 11: SQLAlchemy ORM + Alembic 全量重构 ✅
+
+**设计规格**: `docs/superpowers/specs/2026-04-04-sqlalchemy-alembic-design.md`
+**实现计划**: `docs/superpowers/plans/2026-04-04-sqlalchemy-alembic.md`
+
+#### 决策记录
+
+| 决策 | 选择 |
+|------|------|
+| 迁移框架 | Alembic |
+| ORM 范围 | 全 SQLAlchemy ORM 重构 |
+| 同步/异步 | 异步 SQLAlchemy (create_async_engine + AsyncSession) |
+| 迁移策略 | 一次性替换（非增量） |
+| 架构 | 方案 B — 直接替换，保持扁平 db/ 结构 |
+| 启动迁移 | `run_migrations()` 在 `lifespan` context manager |
+| 初始迁移 | `alembic stamp head`（基线，不执行 DDL） |
+| 新驱动 | asyncpg 替代 psycopg2-binary |
+
+#### 任务完成
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| T1 | ✅ | 安装依赖 + 创建 20 个 ORM 模型 (models/ 包，9 文件) |
+| T2 | ✅ | 创建 database.py (async engine + AsyncSessionLocal + get_db + run_migrations) |
+| T3 | ✅ | 配置 Alembic + 初始迁移 (仅 exchange_rates CREATE TABLE) |
+| T4 | ✅ | 改写 db/ 核心模块 (config, exchange, plans, logging_utils, statistics) |
+| T5 | ✅ | 改写 db/ 用户/产品/管理模块 (users, products, admin, admin_helpers, subscriptions, logistics_crud, sessions_crud) |
+| T6 | ✅ | 改写 db/__init__.py + 删除旧文件 (db_adapter.py, db_utils.py, db/connection.py, db/helpers.py, db/_proxy.py, db/schema.py) |
+| T7 | ✅ | 改写路由层 (api/dependencies.py + 9 route files + db/orders.py NEW) |
+| T8 | ✅ | 改写根模块 (api/main.py, payment_handler.py, session_security*.py) |
+| T9A | ✅ | 删除 19 个测试旧 db_utils/db_adapter 的测试文件 + test_error_handling_paths.py |
+| T9B | ✅ | 重写 tests/conftest.py (277 行，async ORM fixtures) |
+| T9C | ✅ | 重写 API 路由测试 (78/78 pass) |
+| T9D | ✅ | 重写 4 个集成测试文件 (64/64 pass) |
+| T9E | ✅ | 重写 password_recovery.py (462→259 行) + 4 个会话/密码测试文件 (91/91 pass) |
+| T9F | ✅ | 重写 3 个剩余测试文件 (60/60 pass) |
+| T9G | ✅ | 全套件验证 — 621 passed, 1 skipped, 0 failed |
+| T10 | ✅ | 依赖清理 + 最终验证 |
+
+#### 关键变更统计
+
+| 指标 | 数值 |
+|------|------|
+| 新建文件 | 16 (models/ 9文件, database.py, alembic/ 4文件, db/ 3个新模块) |
+| 重写文件 | 30+ (db/ 全量, routes/ 全量, 根模块, 测试文件) |
+| 删除文件 | 28 (db_utils.py, db_adapter.py, 6个db/旧文件, 20个测试文件) |
+| 原始代码行 | ~4500 行 raw SQL → SQLAlchemy ORM |
+| 运行时驱动 | psycopg2-binary → asyncpg (psycopg2 仅保留在测试依赖中) |
+
+#### 关键发现 & 修复
+
+- **密码含 `@` 的 URL 构建**: `database.py` 和 `alembic/env.py` 使用 `urllib.parse.quote_plus()` 处理
+- **psycopg2 测试依赖**: 根 `conftest.py` 的 `pytest_sessionfinish` 使用 psycopg2 做同步清理，移至 `requirements_test.txt`
+- **password_recovery.py 完全重写**: 462→259 行，从 raw SQL 改为 async ORM
+- **session_security_enhanced.py 简化为 3 行重导出**
+
+#### 最终数据
+
+- 后端: **621 passed**, 1 skipped, 0 failed (54.60s)
+- 前端: **169 passed**, 0 failed (21 test files)
+- flake8: **0 errors**
+- 残留旧导入: **0** (db_utils, db_adapter, get_db_connection 全部清除)
+- 所有函数 < 100 行，所有文件 < 500 行，所有测试文件 < 800 行

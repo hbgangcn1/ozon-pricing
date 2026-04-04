@@ -133,7 +133,7 @@ class LogisticsBase(BaseModel):
     continue_unit: str = "g"
     volume_coefficient: float = 5000
     delivery_method: str = "pickup"
-    priority_group: int = 0
+    priority_group: str = "D"
     price_limit_currency: str = "RUB"
     price_min_currency: str = "RUB"
     is_active: bool = True
@@ -177,7 +177,7 @@ class LogisticsUpdate(BaseModel):
     continue_unit: Optional[str] = None
     volume_coefficient: Optional[float] = None
     delivery_method: Optional[str] = None
-    priority_group: Optional[int] = None
+    priority_group: Optional[str] = None
     price_limit_currency: Optional[str] = None
     price_min_currency: Optional[str] = None
     is_active: Optional[bool] = None

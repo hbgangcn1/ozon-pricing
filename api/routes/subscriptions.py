@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db_utils import get_db_connection, _safe_adapt_sql
-from api.models.schemas import MessageResponse
+from database import get_db
+from db.subscriptions import get_user_subscription_info
+from db.plans import get_plans, get_plan_by_code
 from api.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/api/subscriptions", tags=["订阅"])
@@ -35,61 +37,58 @@ class SubscriptionResponse(BaseModel):
 
 
 @router.get("/plans", response_model=List[PlanResponse])
-def get_plans():
-    with get_db_connection() as (conn, c):
-        sql_raw = "SELECT * FROM plans WHERE status = true ORDER BY sort"
-        sql = _safe_adapt_sql(sql_raw, conn)
-        try:
-            c.execute(sql)
-        except Exception:
-            return []
-        columns = [desc[0] for desc in c.description]
-        plans = []
-        for row in c.fetchall():
-            plan = dict(zip(columns, row))
-            features = plan.get("features", "")
-            if isinstance(features, str):
-                features = features.split(",") if features else []
-            plans.append(
-                PlanResponse(
-                    id=plan["id"],
-                    code=plan["code"],
-                    name=plan["name"],
-                    display_price_month=plan.get("display_price_month", 0),
-                    display_price_year=plan.get("display_price_year", 0),
-                    actual_price_month=plan.get("actual_price_month", 0),
-                    actual_price_year=plan.get("actual_price_year", 0),
-                    test_price_month=plan.get("test_price_month", 0),
-                    test_price_year=plan.get("test_price_year", 0),
-                    calc_limit=plan.get("calc_limit", -1),
-                    logistics_limit=plan.get("logistics_limit", 1),
-                    sort=plan.get("sort", 0),
-                    status=plan.get("status", True),
-                    description=plan.get("description", ""),
-                    features=features,
-                )
+async def get_plans_route(session: AsyncSession = Depends(get_db)):
+    try:
+        plans = await get_plans(session, active_only=True)
+    except Exception:
+        return []
+    result = []
+    for p in plans:
+        features = p.get("features", "")
+        if isinstance(features, str):
+            features = features.split(",") if features else []
+        result.append(
+            PlanResponse(
+                id=p["id"],
+                code=p["plan_code"],
+                name=p["plan_name"],
+                display_price_month=p.get("display_price_month", 0),
+                display_price_year=p.get("display_price_year", 0),
+                actual_price_month=p.get("actual_price_month", 0),
+                actual_price_year=p.get("actual_price_year", 0),
+                test_price_month=p.get("test_price_month", 0),
+                test_price_year=p.get("test_price_year", 0),
+                calc_limit=p.get("calc_limit", -1),
+                logistics_limit=p.get("logistics_limit", 1),
+                sort=p.get("sort_order", 0),
+                status=bool(p.get("is_active", True)),
+                description=p.get("description", ""),
+                features=features,
             )
-        return plans
+        )
+    return result
 
 
 @router.get("/current", response_model=SubscriptionResponse)
-def get_current_subscription(user_id: int = Depends(get_current_user_id)):
-    with get_db_connection() as (conn, c):
-        sql_raw = """
-            SELECT u.user_type, p.calc_limit, p.logistics_limit,
-                   u.subscription_expires
-            FROM users u
-            LEFT JOIN plans p ON u.user_type = p.plan_code
-            WHERE u.id = %s
-        """
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="用户不存在")
-        return SubscriptionResponse(
-            plan_code=row[0] or "free",
-            calc_limit=row[1] if row[1] is not None else -1,
-            logistics_limit=row[2] if row[2] is not None else 1,
-            expired_at=str(row[3]) if row[3] else None,
-        )
+async def get_current_subscription(
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    info = await get_user_subscription_info(session, user_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    plan_code = info.get("user_type") or "free"
+    plan = await get_plan_by_code(session, plan_code)
+    calc_limit = plan.get("calc_limit", -1) if plan else -1
+    logistics_limit = plan.get("logistics_limit", 1) if plan else 1
+
+    subscription_expires = info.get("subscription_expires")
+    expired_at = str(subscription_expires) if subscription_expires else None
+
+    return SubscriptionResponse(
+        plan_code=plan_code,
+        calc_limit=calc_limit,
+        logistics_limit=logistics_limit,
+        expired_at=expired_at,
+    )

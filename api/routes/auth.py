@@ -1,14 +1,15 @@
 import re
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db_utils import (
+from database import get_db
+from db.users import (
     verify_user,
-    get_db_connection,
-    _safe_adapt_sql,
-    is_registration_open,
     create_user,
     update_user_password,
+    find_by_username,
 )
+from db.config import is_registration_open
 from api.models.schemas import (
     UserLogin,
     UserResponse,
@@ -25,7 +26,6 @@ from api.dependencies import (
 
 
 def validate_password(password: str) -> bool:
-    """验证密码强度：至少13位，包含大小写字母、数字和特殊字符"""
     if len(password) < 13:
         return False
     if not re.search(r"[a-z]", password):
@@ -43,8 +43,11 @@ router = APIRouter(prefix="/api/auth", tags=["认证"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(credentials: UserLogin):
-    user = verify_user(credentials.username, credentials.password)
+async def login(
+    credentials: UserLogin,
+    session: AsyncSession = Depends(get_db),
+):
+    user = await verify_user(session, credentials.username, credentials.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -69,50 +72,51 @@ def login(credentials: UserLogin):
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout():
+async def logout():
     return MessageResponse(message="登出成功")
 
 
 @router.post("/register", response_model=TokenResponse)
-def register(user_data: UserRegister):
-    # 检查注册是否开放
-    if not is_registration_open():
+async def register(
+    user_data: UserRegister,
+    session: AsyncSession = Depends(get_db),
+):
+    if not await is_registration_open(session):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="注册功能已关闭",
         )
 
-    # 验证用户名格式
     if not re.match(r"^[a-zA-Z0-9_]{3,50}$", user_data.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="用户名只能包含字母、数字和下划线，长度3-50位",
         )
 
-    # 验证密码强度
     if not validate_password(user_data.password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="密码必须至少13位，包含大小写字母、数字和特殊字符",
         )
 
-    # 检查用户名是否已存在
-    with get_db_connection() as (conn, c):
-        sql_raw = "SELECT id FROM users WHERE username = %s"
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_data.username,))
-        if c.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="用户名已存在",
-            )
+    existing = await find_by_username(session, user_data.username)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户名已存在",
+        )
 
-    # 创建用户
-    user_id = create_user(
+    user_id = await create_user(
+        session,
         username=user_data.username,
         password=user_data.password,
         role="user",
     )
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="创建用户失败",
+        )
 
     token = create_access_token(
         user_id=user_id,
@@ -132,7 +136,7 @@ def register(user_data: UserRegister):
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(
+async def get_me(
     user: dict = Depends(get_current_user_dep),
 ):
     return UserResponse(
@@ -149,19 +153,19 @@ def get_me(
 
 
 @router.post("/change-password", response_model=MessageResponse)
-def change_password(
+async def change_password(
     data: ChangePassword,
     user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
 ):
-    # 验证新密码强度
     if not validate_password(data.new_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="密码必须至少13位，包含大小写字母、数字和特殊字符",
         )
 
-    # 使用现有的 update_user_password 函数更新密码
-    success = update_user_password(
+    success = await update_user_password(
+        session,
         user_id,
         data.current_password,
         data.new_password,

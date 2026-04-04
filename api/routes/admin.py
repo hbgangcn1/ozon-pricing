@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db_utils import get_db_connection, _safe_adapt_sql
+from database import get_db
+from models.user import User
 from api.models.schemas import MessageResponse
 from api.dependencies import require_admin
+import db.admin as db_admin
+from db.users import create_user
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
 
@@ -31,160 +34,114 @@ class UserUpdate(BaseModel):
     user_type: Optional[str] = None
 
 
+def _format_to_user_response(user: dict) -> UserResponse:
+    is_frozen = user.get("is_frozen", 0)
+    status_str = "冻结" if is_frozen else "正常"
+    return UserResponse(
+        id=user["id"],
+        username=user.get("username", ""),
+        role=user.get("role", "user"),
+        user_type=user.get("user_type", "free") or "free",
+        subscription_expired_at=user.get("subscription_end"),
+        status=status_str,
+    )
+
+
 @router.get("/users")
-def get_all_users(
+async def get_all_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: Optional[str] = None,
     admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
 ):
-    offset = (page - 1) * page_size
-    with get_db_connection() as (conn, c):
-        # 查询总数
-        if keyword:
-            count_sql = _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE username LIKE %s", conn
-            )
-            c.execute(count_sql, (f"%{keyword}%",))
-        else:
-            count_sql = _safe_adapt_sql("SELECT COUNT(*) FROM users", conn)
-            c.execute(count_sql)
-        total = c.fetchone()[0]
-
-        if keyword:
-            sql_raw = """
-                SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen = 1 THEN '冻结' ELSE '正常' END) AS status
-                FROM users
-                WHERE username LIKE %s
-                ORDER BY id
-                LIMIT %s OFFSET %s
-            """
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, (f"%{keyword}%", page_size, offset))
-        else:
-            sql_raw = """
-                SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen = 1 THEN '冻结' ELSE '正常' END) AS status
-                FROM users
-                ORDER BY id
-                LIMIT %s OFFSET %s
-            """
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, (page_size, offset))
-
-        columns = [desc[0] for desc in c.description]
-        users = []
-        for row in c.fetchall():
-            user = dict(zip(columns, row))
-            users.append(
-                UserResponse(
-                    id=user["id"],
-                    username=user["username"],
-                    role=user["role"],
-                    user_type=user.get("user_type", "free"),
-                    subscription_expired_at=str(user["subscription_expires"])
-                    if user.get("subscription_expires")
-                    else None,
-                    status=user.get("status", "正常"),
-                )
-            )
-        return {"users": users, "total": total, "page": page, "page_size": page_size}
+    result = await db_admin.get_all_users(
+        session,
+        page=page,
+        per_page=page_size,
+        search=keyword,
+    )
+    users = [_format_to_user_response(u) for u in result.get("users", [])]
+    total = result.get("total_count", 0)
+    return {"users": users, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(user: UserCreate, admin: int = Depends(require_admin)):
-    import bcrypt
-
-    password_hash = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt()).decode()
-
-    with get_db_connection() as (conn, c):
-        sql_raw = """
-            INSERT INTO users (username, password, role, user_type, created_at)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(
-            sql,
-            (user.username, password_hash, user.role, user.user_type, datetime.now()),
-        )
-        conn.commit()
-        user_id = c.fetchone()[0]
-
-        return UserResponse(
-            id=user_id,
-            username=user.username,
-            role=user.role,
-            user_type=user.user_type,
-            status="正常",
-        )
+async def create_user_admin(
+    user: UserCreate,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    user_id = await create_user(
+        session,
+        username=user.username,
+        password=user.password,
+        role=user.role,
+        user_type=user.user_type,
+    )
+    if not user_id:
+        raise HTTPException(status_code=400, detail="创建用户失败")
+    return UserResponse(
+        id=user_id,
+        username=user.username,
+        role=user.role,
+        user_type=user.user_type,
+        status="正常",
+    )
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, update: UserUpdate, admin: int = Depends(require_admin)):
-    with get_db_connection() as (conn, c):
-        sql_raw = "SELECT id FROM users WHERE id = %s"
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
-        if not c.fetchone():
-            raise HTTPException(status_code=404, detail="用户不存在")
+async def update_user(
+    user_id: int,
+    update: UserUpdate,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    user_obj = await session.get(User, user_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="用户不存在")
 
-        ALLOWED_USER_UPDATE_FIELDS = {"role", "user_type"}
-        update_data = update.model_dump(exclude_unset=True)
-        sanitized = {
-            k: v for k, v in update_data.items() if k in ALLOWED_USER_UPDATE_FIELDS
-        }
-        if sanitized:
-            set_clause = ", ".join([f"{k} = %s" for k in sanitized.keys()])
-            sql_raw = f"UPDATE users SET {set_clause} WHERE id = %s"
-            sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, list(sanitized.values()) + [user_id])
-            conn.commit()
+    ALLOWED = {"role", "user_type"}
+    update_data = update.model_dump(exclude_unset=True)
+    sanitized = {k: v for k, v in update_data.items() if k in ALLOWED}
+    for field, value in sanitized.items():
+        setattr(user_obj, field, value)
+    await session.flush()
 
-        sql_raw = """
-            SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen = 1 THEN '冻结' ELSE '正常' END) AS status
-            FROM users WHERE id = %s
-        """
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
-        row = c.fetchone()
-        return UserResponse(
-            id=row[0],
-            username=row[1],
-            role=row[2],
-            user_type=row[3] or "free",
-            subscription_expired_at=str(row[4]) if row[4] else None,
-            status=row[5] or "正常",
-        )
+    is_frozen = user_obj.is_frozen or 0
+    status_str = "冻结" if is_frozen else "正常"
+    return UserResponse(
+        id=user_obj.id,
+        username=user_obj.username or "",
+        role=user_obj.role or "user",
+        user_type=user_obj.user_type or "free",
+        subscription_expired_at=None,
+        status=status_str,
+    )
 
 
 @router.post("/users/{user_id}/reset-password", response_model=MessageResponse)
-def reset_user_password(user_id: int, admin: int = Depends(require_admin)):
-    import bcrypt
-    import secrets
-
-    new_password = secrets.token_urlsafe(12)
-    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-
-    with get_db_connection() as (conn, c):
-        sql_raw = "UPDATE users SET password = %s WHERE id = %s"
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (password_hash, user_id))
-        conn.commit()
-        if c.rowcount == 0:
-            raise HTTPException(status_code=404, detail="用户不存在")
+async def reset_user_password(
+    user_id: int,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    new_password = await db_admin.reset_user_password(session, user_id, admin)
+    if not new_password:
+        raise HTTPException(status_code=404, detail="用户不存在")
     return MessageResponse(message=f"密码已重置为: {new_password}")
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
-def delete_user(user_id: int, admin: int = Depends(require_admin)):
+async def delete_user(
+    user_id: int,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
     if user_id == 1:
         raise HTTPException(status_code=400, detail="不能删除超级管理员")
 
-    with get_db_connection() as (conn, c):
-        sql_raw = "DELETE FROM users WHERE id = %s"
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
-        conn.commit()
-        if c.rowcount == 0:
-            raise HTTPException(status_code=404, detail="用户不存在")
+    success = await db_admin.delete_user_admin(session, user_id, admin)
+    if not success:
+        raise HTTPException(status_code=404, detail="用户不存在或删除失败")
     return MessageResponse(message="删除成功")

@@ -3,27 +3,15 @@ Integration tests for orders.py and statistics.py routes.
 These tests hit the real PostgreSQL database.
 """
 
-import os
-import sys
 import time
 import pytest
 
-os.environ["DB_TYPE"] = "postgresql"
-os.environ["POSTGRES_HOST"] = "localhost"
-os.environ["POSTGRES_PORT"] = "5432"
-os.environ["POSTGRES_DB"] = "logistics"
-os.environ["POSTGRES_USER"] = "postgres"
-os.environ["POSTGRES_PASSWORD"] = "***REMOVED-PG-PWD***"
-os.environ["E2E_TEST"] = "1"
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from fastapi.testclient import TestClient
 from api.main import app
 from api.dependencies import get_current_user_id, require_admin
-from db_utils import get_db_connection, _safe_adapt_sql
-
-client = TestClient(app, raise_server_exceptions=False)
+from database import AsyncSessionLocal
+from models.order import PaymentOrder
+from models.log import UserLoginLog, AdminActionLog
+from sqlalchemy import text
 
 # ---------------------------------------------------------------------------
 # Auth override helpers
@@ -63,108 +51,96 @@ def _clear_overrides():
 # ---------------------------------------------------------------------------
 
 
-def insert_test_order(user_id, status="paid", order_type="professional"):
-    """Insert a test payment_order and return its DB id."""
+async def insert_test_order(user_id, status="paid", order_type="professional"):
     order_id = f"TEST_ORD_{int(time.time() * 1000)}"
     ts = int(time.time())
-    with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql(
-            """
-            INSERT INTO payment_orders
-                (order_id, user_id, amount, description, duration,
-                 status, created_at, order_type)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            conn,
+    async with AsyncSessionLocal() as session:
+        order = PaymentOrder(
+            order_id=order_id,
+            user_id=user_id,
+            amount=99,
+            description="test order",
+            duration="30",
+            status=status,
+            created_at=ts,
+            order_type=order_type,
         )
-        c.execute(
-            sql,
-            (order_id, user_id, 99.0, "test order", 30, status, ts, order_type),
-        )
-        row = c.fetchone()
-        conn.commit()
-    return row[0] if row else None
+        session.add(order)
+        await session.flush()
+        pk = order.id
+        await session.commit()
+    return pk
 
 
-def delete_test_order(order_pk):
-    """Delete a payment_order by its primary key."""
+async def delete_test_order(order_pk):
     try:
-        with get_db_connection() as (conn, c):
-            sql = _safe_adapt_sql("DELETE FROM payment_orders WHERE id = %s", conn)
-            c.execute(sql, (order_pk,))
-            conn.commit()
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                text("DELETE FROM payment_orders WHERE id = :pk"),
+                {"pk": order_pk},
+            )
+            await session.commit()
     except Exception:
         pass
 
 
-def insert_login_log(user_id):
-    """Insert a user_login_log row and return its id."""
+async def insert_login_log(user_id):
     ts = int(time.time())
-    with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql(
-            """
-            INSERT INTO user_login_log
-                (user_id, login_time, ip_address, user_agent,
-                 device_type, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            conn,
+    async with AsyncSessionLocal() as session:
+        log = UserLoginLog(
+            user_id=user_id,
+            login_time=ts,
+            ip_address="127.0.0.1",
+            user_agent="test-agent",
+            device_type="desktop",
+            created_at=ts,
         )
-        c.execute(sql, (user_id, ts, "127.0.0.1", "test-agent", "desktop", ts))
-        row = c.fetchone()
-        conn.commit()
-    return row[0] if row else None
+        session.add(log)
+        await session.flush()
+        pk = log.id
+        await session.commit()
+    return pk
 
 
-def delete_login_log(log_id):
+async def delete_login_log(log_id):
     try:
-        with get_db_connection() as (conn, c):
-            sql = _safe_adapt_sql("DELETE FROM user_login_log WHERE id = %s", conn)
-            c.execute(sql, (log_id,))
-            conn.commit()
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                text("DELETE FROM user_login_log WHERE id = :pk"),
+                {"pk": log_id},
+            )
+            await session.commit()
     except Exception:
         pass
 
 
-def insert_admin_log(admin_id):
-    """Insert an admin_action_log row and return its id."""
+async def insert_admin_log(admin_id):
     ts = int(time.time())
-    with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql(
-            """
-            INSERT INTO admin_action_log
-                (admin_id, action_type, action_detail, target_user_id,
-                 target_type, ip_address, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            conn,
+    async with AsyncSessionLocal() as session:
+        log = AdminActionLog(
+            admin_id=admin_id,
+            action_type="test_action",
+            action_detail="integration test",
+            target_user_id=None,
+            target_type="user",
+            ip_address="127.0.0.1",
+            created_at=ts,
         )
-        c.execute(
-            sql,
-            (
-                admin_id,
-                "test_action",
-                "integration test",
-                None,
-                "user",
-                "127.0.0.1",
-                ts,
-            ),
-        )
-        row = c.fetchone()
-        conn.commit()
-    return row[0] if row else None
+        session.add(log)
+        await session.flush()
+        pk = log.id
+        await session.commit()
+    return pk
 
 
-def delete_admin_log(log_id):
+async def delete_admin_log(log_id):
     try:
-        with get_db_connection() as (conn, c):
-            sql = _safe_adapt_sql("DELETE FROM admin_action_log WHERE id = %s", conn)
-            c.execute(sql, (log_id,))
-            conn.commit()
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                text("DELETE FROM admin_action_log WHERE id = :pk"),
+                {"pk": log_id},
+            )
+            await session.commit()
     except Exception:
         pass
 
@@ -175,33 +151,30 @@ def delete_admin_log(log_id):
 
 
 class TestGetOrders:
-    def test_no_orders_returns_empty_list(self, test_user):
+    async def test_no_orders_returns_empty_list(self, client, test_user):
         uid = test_user["id"]
         _set_user(uid)
         try:
-            resp = client.get("/api/orders")
+            resp = await client.get("/api/orders")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
-            # Filter only the test user's own rows (there might be old ones)
             for item in data:
-                # If any rows returned, they belong to this user
                 assert "id" in item
         finally:
             _clear_overrides()
 
-    def test_with_orders_returns_correct_format(self, test_user):
+    async def test_with_orders_returns_correct_format(self, client, test_user):
         uid = test_user["id"]
-        pk = insert_test_order(uid, status="paid", order_type="professional")
+        pk = await insert_test_order(uid, status="paid", order_type="professional")
         _set_user(uid)
         try:
-            resp = client.get("/api/orders")
+            resp = await client.get("/api/orders")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
             assert len(data) >= 1
 
-            # Find our inserted order
             inserted = [d for d in data if d.get("id") == pk]
             assert len(inserted) == 1
             o = inserted[0]
@@ -220,29 +193,28 @@ class TestGetOrders:
         finally:
             _clear_overrides()
             if pk:
-                delete_test_order(pk)
+                await delete_test_order(pk)
 
-    def test_order_updated_at_optional(self, test_user):
+    async def test_order_updated_at_optional(self, client, test_user):
         uid = test_user["id"]
-        pk = insert_test_order(uid)
+        pk = await insert_test_order(uid)
         _set_user(uid)
         try:
-            resp = client.get("/api/orders")
+            resp = await client.get("/api/orders")
             assert resp.status_code == 200
             data = resp.json()
             inserted = [d for d in data if d.get("id") == pk]
             assert len(inserted) == 1
-            # updated_at may be None or a string
             o = inserted[0]
             assert "updated_at" in o
         finally:
             _clear_overrides()
             if pk:
-                delete_test_order(pk)
+                await delete_test_order(pk)
 
-    def test_no_auth_returns_422_or_403(self):
+    async def test_no_auth_returns_422_or_403(self, client):
         _clear_overrides()
-        resp = client.get("/api/orders")
+        resp = await client.get("/api/orders")
         assert resp.status_code in (401, 403, 422)
 
 
@@ -252,10 +224,10 @@ class TestGetOrders:
 
 
 class TestStatisticsOverview:
-    def test_overview_returns_correct_schema(self, test_admin):
+    async def test_overview_returns_correct_schema(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/overview")
+            resp = await client.get("/api/statistics/overview")
             assert resp.status_code == 200
             data = resp.json()
             for key in [
@@ -275,10 +247,10 @@ class TestStatisticsOverview:
         finally:
             _clear_overrides()
 
-    def test_overview_counts_are_non_negative(self, test_admin):
+    async def test_overview_counts_are_non_negative(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/overview")
+            resp = await client.get("/api/statistics/overview")
             assert resp.status_code == 200
             data = resp.json()
             assert data["pro_users"] >= 0
@@ -290,27 +262,25 @@ class TestStatisticsOverview:
 
 
 class TestStatisticsLoginLogs:
-    def test_login_logs_returns_list(self, test_admin):
+    async def test_login_logs_returns_list(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/login-logs")
+            resp = await client.get("/api/statistics/login-logs")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
         finally:
             _clear_overrides()
 
-    def test_login_logs_with_inserted_data(self, test_user, test_admin):
-        log_id = insert_login_log(test_user["id"])
+    async def test_login_logs_with_inserted_data(self, client, test_user, test_admin):
+        log_id = await insert_login_log(test_user["id"])
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/login-logs?page=1&page_size=100")
+            resp = await client.get("/api/statistics/login-logs?page=1&page_size=100")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
-            # At least one log should exist now
             assert len(data) >= 1
-            # Verify schema of first item
             if data:
                 item = data[0]
                 for field in ["id", "username", "action", "ip", "time", "status"]:
@@ -318,12 +288,12 @@ class TestStatisticsLoginLogs:
         finally:
             _clear_overrides()
             if log_id:
-                delete_login_log(log_id)
+                await delete_login_log(log_id)
 
-    def test_login_logs_pagination(self, test_admin):
+    async def test_login_logs_pagination(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/login-logs?page=1&page_size=5")
+            resp = await client.get("/api/statistics/login-logs?page=1&page_size=5")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
@@ -333,21 +303,21 @@ class TestStatisticsLoginLogs:
 
 
 class TestStatisticsAdminLogs:
-    def test_admin_logs_returns_list(self, test_admin):
+    async def test_admin_logs_returns_list(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/admin-logs")
+            resp = await client.get("/api/statistics/admin-logs")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
         finally:
             _clear_overrides()
 
-    def test_admin_logs_with_inserted_data(self, test_admin):
-        log_id = insert_admin_log(test_admin["id"])
+    async def test_admin_logs_with_inserted_data(self, client, test_admin):
+        log_id = await insert_admin_log(test_admin["id"])
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/admin-logs?page=1&page_size=100")
+            resp = await client.get("/api/statistics/admin-logs?page=1&page_size=100")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
@@ -359,12 +329,12 @@ class TestStatisticsAdminLogs:
         finally:
             _clear_overrides()
             if log_id:
-                delete_admin_log(log_id)
+                await delete_admin_log(log_id)
 
-    def test_admin_logs_pagination(self, test_admin):
+    async def test_admin_logs_pagination(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/admin-logs?page=1&page_size=3")
+            resp = await client.get("/api/statistics/admin-logs?page=1&page_size=3")
             assert resp.status_code == 200
             data = resp.json()
             assert len(data) <= 3
@@ -373,10 +343,10 @@ class TestStatisticsAdminLogs:
 
 
 class TestStatisticsUserGroups:
-    def test_user_groups_returns_dict(self, test_admin):
+    async def test_user_groups_returns_dict(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/user-groups")
+            resp = await client.get("/api/statistics/user-groups")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, dict)
@@ -387,10 +357,10 @@ class TestStatisticsUserGroups:
         finally:
             _clear_overrides()
 
-    def test_user_groups_silent_non_negative(self, test_admin):
+    async def test_user_groups_silent_non_negative(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/user-groups")
+            resp = await client.get("/api/statistics/user-groups")
             assert resp.status_code == 200
             data = resp.json()
             assert data["silent_users"] >= 0
@@ -399,10 +369,10 @@ class TestStatisticsUserGroups:
 
 
 class TestStatisticsFunnel:
-    def test_funnel_returns_dict(self, test_admin):
+    async def test_funnel_returns_dict(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/funnel")
+            resp = await client.get("/api/statistics/funnel")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, dict)
@@ -417,10 +387,10 @@ class TestStatisticsFunnel:
         finally:
             _clear_overrides()
 
-    def test_funnel_registered_gte_paid(self, test_admin):
+    async def test_funnel_registered_gte_paid(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/funnel")
+            resp = await client.get("/api/statistics/funnel")
             assert resp.status_code == 200
             data = resp.json()
             assert data["registered"] >= data["paid"]
@@ -429,10 +399,10 @@ class TestStatisticsFunnel:
 
 
 class TestStatisticsPlanAnalysis:
-    def test_plan_analysis_returns_dict(self, test_admin):
+    async def test_plan_analysis_returns_dict(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/plan-analysis")
+            resp = await client.get("/api/statistics/plan-analysis")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, dict)
@@ -446,10 +416,10 @@ class TestStatisticsPlanAnalysis:
         finally:
             _clear_overrides()
 
-    def test_plan_analysis_counts_non_negative(self, test_admin):
+    async def test_plan_analysis_counts_non_negative(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/plan-analysis")
+            resp = await client.get("/api/statistics/plan-analysis")
             assert resp.status_code == 200
             data = resp.json()
             for k, v in data.items():
@@ -459,10 +429,10 @@ class TestStatisticsPlanAnalysis:
 
 
 class TestStatisticsActiveUsers:
-    def test_active_users_returns_dict(self, test_admin):
+    async def test_active_users_returns_dict(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/active-users")
+            resp = await client.get("/api/statistics/active-users")
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, dict)
@@ -471,13 +441,12 @@ class TestStatisticsActiveUsers:
         finally:
             _clear_overrides()
 
-    def test_active_users_daily_lte_weekly(self, test_admin):
+    async def test_active_users_daily_lte_weekly(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.get("/api/statistics/active-users")
+            resp = await client.get("/api/statistics/active-users")
             assert resp.status_code == 200
             data = resp.json()
-            # daily active <= weekly active
             assert data["daily"] <= data["weekly"]
         finally:
             _clear_overrides()

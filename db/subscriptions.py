@@ -1,78 +1,147 @@
 import math
 import time
 from datetime import date, datetime
-from typing import Any, Mapping, Sequence, cast
+from typing import Optional
 
-from db._proxy import _db
-from db.helpers import DB_EXCEPTIONS
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.user import User
 
 
-def get_user_subscription_info(user_id):
-    """获取用户订阅信息"""
-    with _db.get_db_connection() as (conn, c):
-        if c is None:
-            return None
-        sql_raw = (
-            "SELECT id, username, user_type, expiry_date, "
-            "remaining_calculations, first_login_date, "
-            "test_days_remaining, role, subscription_type, "
-            "subscription_expires "
-            "FROM users WHERE id = ?"
+async def get_user_subscription_info(
+    session: AsyncSession,
+    user_id,
+) -> Optional[dict]:
+    user = await session.get(User, user_id)
+    if not user:
+        return None
+    return {
+        "id": user.id,
+        "username": user.username,
+        "user_type": user.user_type,
+        "expiry_date": user.expiry_date,
+        "remaining_calculations": user.remaining_calculations,
+        "first_login_date": user.first_login_date,
+        "test_days_remaining": user.test_days_remaining,
+        "role": user.role,
+        "subscription_type": user.subscription_type,
+        "subscription_expires": user.subscription_expires,
+    }
+
+
+async def update_user_subscription(
+    session: AsyncSession,
+    user_id,
+    updates: dict,
+) -> bool:
+    user = await session.get(User, user_id)
+    if not user:
+        return False
+    for field, value in updates.items():
+        if hasattr(user, field):
+            setattr(user, field, value)
+    return True
+
+
+async def check_user_subscription_status(
+    session: AsyncSession,
+    user_id,
+) -> dict:
+    user_info = await get_user_subscription_info(session, user_id)
+    if not user_info:
+        return {"valid": False, "message": "用户不存在"}
+
+    user_role = user_info.get("role", "user")
+    if user_role == "admin":
+        return {
+            "valid": True,
+            "message": "管理员用户",
+            "user_type": "admin",
+            "role": "admin",
+        }
+
+    user_type = user_info.get("subscription_type") or user_info.get(
+        "user_type", "permanent"
+    )
+
+    if user_type == "permanent":
+        return {"valid": True, "message": "永久用户", "user_type": user_type}
+
+    if user_type == "test":
+        return _check_test_status(user_info, user_type)
+
+    if user_type == "monthly":
+        return _check_monthly_status(user_info, user_type)
+
+    if user_type == "enterprise":
+        return _check_enterprise_status(user_info, user_type)
+
+    if user_type in [
+        "free",
+        "efficiency",
+        "professional",
+        "enterprise",
+        "gratitude",
+    ]:
+        return await _check_new_tier_status(session, user_info, user_type, user_id)
+
+    return {"valid": False, "message": "未知用户类型", "user_type": user_type}
+
+
+async def decrement_user_calculations(
+    session: AsyncSession,
+    user_id,
+) -> bool:
+    user = await session.get(User, user_id)
+    if not user:
+        return False
+
+    user_type = (user.subscription_type or user.user_type or "").strip()
+
+    if user_type in [
+        "admin",
+        "permanent",
+        "enterprise",
+        "gratitude",
+        "efficiency",
+        "professional",
+        "test",
+    ]:
+        return True
+
+    if user_type in ("free", "monthly"):
+        remaining = user.remaining_calculations or 0
+        if remaining <= 0:
+            return False
+        await session.execute(
+            update(User)
+            .where(
+                User.id == user_id,
+                User.remaining_calculations > 0,
+            )
+            .values(remaining_calculations=User.remaining_calculations - 1)
         )
-        sql = _db._safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id,))
-        user = c.fetchone()
+        return True
 
-        if not user:
-            return None
-
-        fields = [
-            "id",
-            "username",
-            "user_type",
-            "expiry_date",
-            "remaining_calculations",
-            "first_login_date",
-            "test_days_remaining",
-            "role",
-            "subscription_type",
-            "subscription_expires",
-        ]
-
-        if isinstance(user, dict):
-            return user
-        if hasattr(user, "keys"):
-            mapped = dict(cast(Mapping[str, Any], user))
-            for field in fields:
-                mapped.setdefault(field, None)
-            return mapped
-
-        values = list(cast(Sequence[Any], user))
-        if len(values) < len(fields):
-            values.extend([None] * (len(fields) - len(values)))
-        return dict(zip(fields, values))
+    return False
 
 
-def update_user_subscription(user_id, updates):
-    """更新用户订阅信息"""
-    with _db.get_db_connection() as (conn, c):
-        placeholder = _db.get_placeholder()
-        set_clauses = []
-        values = []
-        for field, value in updates.items():
-            set_clauses.append(f"{field} = {placeholder}")
-            values.append(value)
-
-        values.append(user_id)
-        sql_raw = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = {placeholder}"
-        sql = _db._safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, values)
-        conn.commit()
-        return c.rowcount > 0
+async def reset_free_users_daily_calculations(
+    session: AsyncSession,
+) -> int:
+    try:
+        result = await session.execute(
+            update(User)
+            .where(User.user_type == "free")
+            .values(remaining_calculations=10)
+        )
+        return result.rowcount
+    except Exception:
+        return 0
 
 
 def _check_test_status(user_info, user_type):
-    """检查测试用户状态"""
     first_login = user_info.get("first_login_date")
     if not first_login:
         return {
@@ -101,7 +170,6 @@ def _check_test_status(user_info, user_type):
 
 
 def _parse_expiry_date(expiry_date):
-    """解析到期日期为datetime对象"""
     if isinstance(expiry_date, datetime):
         return expiry_date
     if isinstance(expiry_date, date):
@@ -117,7 +185,6 @@ def _parse_expiry_date(expiry_date):
 
 
 def _check_monthly_status(user_info, user_type):
-    """检查按月付费用户状态"""
     expiry_date = user_info.get("expiry_date")
     remaining_calculations = user_info.get("remaining_calculations", 0)
     if not expiry_date:
@@ -156,7 +223,6 @@ def _check_monthly_status(user_info, user_type):
 
 
 def _check_enterprise_status(user_info, user_type):
-    """检查企业用户状态"""
     expiry_date = user_info.get("expiry_date")
     if not expiry_date:
         return {
@@ -189,17 +255,19 @@ def _check_enterprise_status(user_info, user_type):
         }
 
 
-def _check_new_tier_free(user_info, user_type, user_id):
-    """检查免费版用户状态，修正异常-1"""
+async def _check_new_tier_free(
+    session: AsyncSession,
+    user_info,
+    user_type,
+    user_id,
+):
     remaining_calculations = user_info.get("remaining_calculations", 0)
     if remaining_calculations == -1:
         try:
-            with _db.get_db_connection() as (fix_conn, fix_cur):
-                sql_raw = "UPDATE users SET remaining_calculations = 10 WHERE id = ?"
-                sql = _db._safe_adapt_sql(sql_raw, fix_conn)
-                fix_cur.execute(sql, (user_id,))
-                fix_conn.commit()
-        except DB_EXCEPTIONS:
+            await session.execute(
+                update(User).where(User.id == user_id).values(remaining_calculations=10)
+            )
+        except Exception:
             pass
         remaining_calculations = 10
     calculations_display = f"{remaining_calculations}次"
@@ -212,7 +280,6 @@ def _check_new_tier_free(user_info, user_type, user_id):
 
 
 def _get_days_remaining_from_info(user_info, user_type):
-    """从订阅信息中计算剩余天数，返回 (days_remaining, error_dict_or_None)"""
     subscription_expires = user_info.get("subscription_expires")
     expiry_date = user_info.get("expiry_date")
     remaining_calculations = user_info.get("remaining_calculations", 0)
@@ -249,10 +316,14 @@ def _get_days_remaining_from_info(user_info, user_type):
     )
 
 
-def _check_new_tier_status(user_info, user_type, user_id):
-    """检查新套餐类型用户状态"""
+async def _check_new_tier_status(
+    session: AsyncSession,
+    user_info,
+    user_type,
+    user_id,
+):
     if user_type == "free":
-        return _check_new_tier_free(user_info, user_type, user_id)
+        return await _check_new_tier_free(session, user_info, user_type, user_id)
     if user_type == "gratitude":
         return {
             "valid": True,
@@ -309,127 +380,3 @@ def _check_new_tier_status(user_info, user_type, user_id):
             "message": "订阅信息错误",
             "user_type": user_type,
         }
-
-
-def check_user_subscription_status(user_id):
-    """检查用户订阅状态"""
-    user_info = _db.get_user_subscription_info(user_id)
-    if not user_info:
-        return {"valid": False, "message": "用户不存在"}
-
-    user_role = user_info.get("role", "user")
-    if user_role == "admin":
-        return {
-            "valid": True,
-            "message": "管理员用户",
-            "user_type": "admin",
-            "role": "admin",
-        }
-
-    user_type = user_info.get("subscription_type") or user_info.get(
-        "user_type", "permanent"
-    )
-
-    if user_type == "permanent":
-        return {"valid": True, "message": "永久用户", "user_type": user_type}
-
-    if user_type == "test":
-        return _check_test_status(user_info, user_type)
-
-    if user_type == "monthly":
-        return _check_monthly_status(user_info, user_type)
-
-    if user_type == "enterprise":
-        return _check_enterprise_status(user_info, user_type)
-
-    if user_type in [
-        "free",
-        "efficiency",
-        "professional",
-        "enterprise",
-        "gratitude",
-    ]:
-        return _check_new_tier_status(user_info, user_type, user_id)
-
-    return {
-        "valid": False,
-        "message": "未知用户类型",
-        "user_type": user_type,
-    }
-
-
-def decrement_user_calculations(user_id):
-    """减少用户计算次数（以 subscription_type 优先判定用户类型）。"""
-    with _db.get_db_connection() as (conn, c):
-        sql_raw = (
-            "SELECT user_type, subscription_type, "
-            "remaining_calculations FROM users WHERE id = ?"
-        )
-        sql = _db._safe_adapt_sql(sql_raw, conn)
-        user = _db._safe_execute_fetchone(c, sql, (user_id,), conn)
-
-        if not user:
-            return False
-
-        db_user_type = user[0]
-        db_subscription_type = user[1] if len(user) > 1 else None
-        remaining = user[2] if len(user) > 2 else -1
-
-        user_type = (db_subscription_type or db_user_type or "").strip()
-
-        if user_type in [
-            "admin",
-            "permanent",
-            "enterprise",
-            "gratitude",
-            "efficiency",
-            "professional",
-        ]:
-            return True
-
-        if user_type == "test":
-            return True
-
-        if user_type in ("free", "monthly"):
-            if remaining <= 0:
-                return False
-            sql_raw = (
-                "UPDATE users SET remaining_calculations = "
-                "remaining_calculations - 1 WHERE id = ? "
-                "AND remaining_calculations > 0"
-            )
-            sql = _db._safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, (user_id,))
-            conn.commit()
-            return c.rowcount > 0
-
-        return False
-
-
-def reset_free_users_daily_calculations():
-    """每日重置免费用户的计算次数为10次"""
-    with _db.get_db_connection() as (conn, c):
-        try:
-            c.execute(
-                """
-                UPDATE users
-                SET remaining_calculations = 10
-                WHERE user_type = 'free'
-                """
-            )
-            affected_rows = c.rowcount
-            conn.commit()
-
-            from logger_config import logger
-
-            logger.info(
-                "每日计算次数重置完成：重置了 %d 个免费用户的计算次数",
-                affected_rows,
-            )
-
-            return affected_rows
-        except Exception as e:
-            from logger_config import logger
-
-            logger.error("重置免费用户计算次数失败: %s", e)
-            return 0

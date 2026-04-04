@@ -1,35 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-会话安全辅助模块
-包含 DistributedLock、数据库/Redis 连接辅助、客户端信息获取等工具。
-从 session_security.py 拆分以保持文件 < 500 行。
-"""
-
 import time
 import logging
 import threading
-from typing import Tuple
-from unittest.mock import MagicMock
 
 logger = logging.getLogger(__name__)
 
-# 直接从 db_utils 导入
-try:
-    from db_utils import get_db_connection
-except ImportError:
-
-    def get_db_connection():
-        return MagicMock()
-
-
-def _get_db_connection():
-    """延迟绑定的数据库连接获取函数，支持测试 monkeypatch"""
-    from db_utils import get_db_connection as _get_conn
-
-    return _get_conn()
-
-
-# Redis 相关
 try:
     from redis_cache import get_redis_client
 
@@ -42,8 +17,6 @@ except ImportError:
 
 
 class DistributedLock:
-    """分布式锁实现"""
-
     def __init__(self, key: str, timeout: int = 10, redis_available: bool = False):
         self.key = key
         self.timeout = timeout
@@ -84,7 +57,6 @@ class DistributedLock:
 
 
 def get_client_info() -> dict:
-    """获取客户端信息（IP、User-Agent等）"""
     ip_address = "unknown"
     user_agent = "unknown"
 
@@ -113,10 +85,6 @@ def get_client_info() -> dict:
                                 ip_address = x_real_ip
                             else:
                                 ip_address = "unknown"
-                        else:
-                            # Host 头不可靠，只在确实有 X-Real-IP 时使用
-                            # 如果没有 X-Forwarded-For 和 X-Real-IP，返回 unknown
-                            pass
                     ua = headers.get("User-Agent")
                     if (
                         ua
@@ -129,3 +97,6 @@ def get_client_info() -> dict:
         pass
 
     return {"ip_address": ip_address, "user_agent": user_agent}
+
+
+__all__ = ["DistributedLock", "get_client_info", "REDIS_AVAILABLE", "get_redis_client"]

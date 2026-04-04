@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db_utils import get_db_connection, _safe_adapt_sql
+from database import get_db
+from db.orders import get_user_orders
 from api.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/api/orders", tags=["订单"])
@@ -27,35 +29,26 @@ class OrderResponse(BaseModel):
 
 
 @router.get("", response_model=List[OrderResponse])
-def get_orders(
+async def get_orders(
     user_id: int = Depends(get_current_user_id),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_db),
 ):
-    with get_db_connection() as (conn, c):
-        sql_raw = """
-            SELECT id, order_id, order_type, amount,
-                   status, created_at, updated_at
-            FROM payment_orders
-            WHERE user_id = %s
-            ORDER BY created_at DESC
-            LIMIT %s OFFSET %s
-        """
-        sql = _safe_adapt_sql(sql_raw, conn)
-        c.execute(sql, (user_id, limit, offset))
-        orders = []
-        for row in c.fetchall():
-            code = row[2] or ""
-            orders.append(
-                OrderResponse(
-                    id=row[0],
-                    order_id=row[1] or "",
-                    order_type=code,
-                    plan_name=PLAN_NAMES.get(code, code),
-                    amount=float(row[3]) if row[3] else 0,
-                    status=row[4] or "pending",
-                    created_at=str(row[5]) if row[5] else "",
-                    updated_at=str(row[6]) if row[6] else None,
-                )
+    orders_data = await get_user_orders(session, user_id, limit=limit, offset=offset)
+    orders = []
+    for row in orders_data:
+        code = row.get("order_type") or ""
+        orders.append(
+            OrderResponse(
+                id=row["id"],
+                order_id=row.get("order_id") or "",
+                order_type=code,
+                plan_name=PLAN_NAMES.get(code, code),
+                amount=row.get("amount", 0),
+                status=row.get("status") or "pending",
+                created_at=row.get("created_at") or "",
+                updated_at=row.get("updated_at"),
             )
-        return orders
+        )
+    return orders

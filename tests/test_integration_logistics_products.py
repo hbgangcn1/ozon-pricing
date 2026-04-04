@@ -1,10 +1,7 @@
 import pytest
-from fastapi.testclient import TestClient
 
 from api.main import app
 from api.dependencies import get_current_user_id
-
-client = TestClient(app)
 
 LOGISTICS_DATA = {
     "name": "Test Logistics Rule",
@@ -43,11 +40,11 @@ def _clear_overrides():
 
 
 class TestListLogistics:
-    def test_list_empty_initially(self, test_user):
+    async def test_list_empty_initially(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.get("/api/logistics")
+            resp = await client.get("/api/logistics")
             assert resp.status_code == 200
             assert isinstance(resp.json(), list)
         finally:
@@ -60,12 +57,12 @@ class TestListLogistics:
 
 
 class TestCreateLogistics:
-    def test_create_success(self, test_user):
+    async def test_create_success(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         created_id = None
         try:
-            resp = client.post("/api/logistics", json=LOGISTICS_DATA)
+            resp = await client.post("/api/logistics", json=LOGISTICS_DATA)
             assert resp.status_code == 201
             data = resp.json()
             assert data["name"] == LOGISTICS_DATA["name"]
@@ -75,7 +72,7 @@ class TestCreateLogistics:
             _clear_overrides()
             if created_id:
                 _user_override(uid)
-                client.delete(f"/api/logistics/{created_id}")
+                await client.delete(f"/api/logistics/{created_id}")
                 _clear_overrides()
 
 
@@ -85,61 +82,61 @@ class TestCreateLogistics:
 
 
 class TestLogisticsCRUD:
-    def test_full_crud_flow(self, test_user):
+    async def test_full_crud_flow(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         created_id = None
         try:
-            list_resp = client.get("/api/logistics")
+            list_resp = await client.get("/api/logistics")
             assert list_resp.status_code == 200
             initial_count = len(list_resp.json())
 
-            create_resp = client.post("/api/logistics", json=LOGISTICS_DATA)
+            create_resp = await client.post("/api/logistics", json=LOGISTICS_DATA)
             assert create_resp.status_code == 201
             created_id = create_resp.json()["id"]
 
-            list_resp2 = client.get("/api/logistics")
+            list_resp2 = await client.get("/api/logistics")
             assert len(list_resp2.json()) == initial_count + 1
 
-            get_resp = client.get(f"/api/logistics/{created_id}")
+            get_resp = await client.get(f"/api/logistics/{created_id}")
             assert get_resp.status_code == 200
             assert get_resp.json()["id"] == created_id
             assert get_resp.json()["name"] == LOGISTICS_DATA["name"]
 
-            update_resp = client.put(
+            update_resp = await client.put(
                 f"/api/logistics/{created_id}",
                 json={"name": "Updated Rule Name"},
             )
             assert update_resp.status_code == 200
             assert update_resp.json()["name"] == "Updated Rule Name"
 
-            del_resp = client.delete(f"/api/logistics/{created_id}")
+            del_resp = await client.delete(f"/api/logistics/{created_id}")
             assert del_resp.status_code == 200
             created_id = None
 
-            gone_resp = client.get(f"/api/logistics/999999999")
+            gone_resp = await client.get("/api/logistics/999999999")
             assert gone_resp.status_code == 404
         finally:
             _clear_overrides()
             if created_id:
                 _user_override(uid)
-                client.delete(f"/api/logistics/{created_id}")
+                await client.delete(f"/api/logistics/{created_id}")
                 _clear_overrides()
 
-    def test_get_nonexistent_returns_404(self, test_user):
+    async def test_get_nonexistent_returns_404(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.get("/api/logistics/999999999")
+            resp = await client.get("/api/logistics/999999999")
             assert resp.status_code == 404
         finally:
             _clear_overrides()
 
-    def test_delete_nonexistent_returns_404(self, test_user):
+    async def test_delete_nonexistent_returns_404(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.delete("/api/logistics/999999999")
+            resp = await client.delete("/api/logistics/999999999")
             assert resp.status_code == 404
         finally:
             _clear_overrides()
@@ -151,7 +148,7 @@ class TestLogisticsCRUD:
 
 
 class TestBatchDeleteLogistics:
-    def test_batch_delete_success(self, test_user):
+    async def test_batch_delete_success(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         ids = []
@@ -159,11 +156,11 @@ class TestBatchDeleteLogistics:
             for i in range(2):
                 data = dict(LOGISTICS_DATA)
                 data["name"] = f"Batch Rule {i}"
-                resp = client.post("/api/logistics", json=data)
+                resp = await client.post("/api/logistics", json=data)
                 assert resp.status_code == 201
                 ids.append(resp.json()["id"])
 
-            batch_resp = client.post("/api/logistics/batch-delete", json=ids)
+            batch_resp = await client.post("/api/logistics/batch-delete", json=ids)
             assert batch_resp.status_code == 200
             assert "message" in batch_resp.json()
             ids = []
@@ -172,14 +169,14 @@ class TestBatchDeleteLogistics:
             if ids:
                 _user_override(uid)
                 for rid in ids:
-                    client.delete(f"/api/logistics/{rid}")
+                    await client.delete(f"/api/logistics/{rid}")
                 _clear_overrides()
 
-    def test_batch_delete_empty_list(self, test_user):
+    async def test_batch_delete_empty_list(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.post("/api/logistics/batch-delete", json=[])
+            resp = await client.post("/api/logistics/batch-delete", json=[])
             assert resp.status_code == 400
         finally:
             _clear_overrides()
@@ -191,11 +188,11 @@ class TestBatchDeleteLogistics:
 
 
 class TestListProducts:
-    def test_list_empty_initially(self, test_user):
+    async def test_list_empty_initially(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.get("/api/products")
+            resp = await client.get("/api/products")
             assert resp.status_code == 200
             assert isinstance(resp.json(), list)
         finally:
@@ -208,12 +205,12 @@ class TestListProducts:
 
 
 class TestCreateProduct:
-    def test_create_success(self, test_user):
+    async def test_create_success(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         created_id = None
         try:
-            resp = client.post("/api/products", json=PRODUCT_DATA)
+            resp = await client.post("/api/products", json=PRODUCT_DATA)
             assert resp.status_code == 201
             data = resp.json()
             assert data["name"] == PRODUCT_DATA["name"]
@@ -223,7 +220,7 @@ class TestCreateProduct:
             _clear_overrides()
             if created_id:
                 _user_override(uid)
-                client.delete(f"/api/products/{created_id}")
+                await client.delete(f"/api/products/{created_id}")
                 _clear_overrides()
 
 
@@ -233,67 +230,67 @@ class TestCreateProduct:
 
 
 class TestProductCRUD:
-    def test_full_crud_flow(self, test_user):
+    async def test_full_crud_flow(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         created_id = None
         try:
-            list_resp = client.get("/api/products")
+            list_resp = await client.get("/api/products")
             assert list_resp.status_code == 200
             initial_count = len(list_resp.json())
 
-            create_resp = client.post("/api/products", json=PRODUCT_DATA)
+            create_resp = await client.post("/api/products", json=PRODUCT_DATA)
             assert create_resp.status_code == 201
             created_id = create_resp.json()["id"]
 
-            list_resp2 = client.get("/api/products")
+            list_resp2 = await client.get("/api/products")
             assert len(list_resp2.json()) == initial_count + 1
 
-            get_resp = client.get(f"/api/products/{created_id}")
+            get_resp = await client.get(f"/api/products/{created_id}")
             assert get_resp.status_code == 200
             assert get_resp.json()["id"] == created_id
             assert get_resp.json()["name"] == PRODUCT_DATA["name"]
 
-            update_resp = client.put(
+            update_resp = await client.put(
                 f"/api/products/{created_id}",
                 json={"name": "Updated Product Name"},
             )
             assert update_resp.status_code == 200
             assert update_resp.json()["name"] == "Updated Product Name"
 
-            del_resp = client.delete(f"/api/products/{created_id}")
+            del_resp = await client.delete(f"/api/products/{created_id}")
             assert del_resp.status_code == 200
             created_id = None
         finally:
             _clear_overrides()
             if created_id:
                 _user_override(uid)
-                client.delete(f"/api/products/{created_id}")
+                await client.delete(f"/api/products/{created_id}")
                 _clear_overrides()
 
-    def test_get_nonexistent_returns_404(self, test_user):
+    async def test_get_nonexistent_returns_404(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.get("/api/products/999999999")
+            resp = await client.get("/api/products/999999999")
             assert resp.status_code == 404
         finally:
             _clear_overrides()
 
-    def test_delete_nonexistent_returns_404(self, test_user):
+    async def test_delete_nonexistent_returns_404(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.delete("/api/products/999999999")
+            resp = await client.delete("/api/products/999999999")
             assert resp.status_code == 404
         finally:
             _clear_overrides()
 
-    def test_update_nonexistent_returns_404(self, test_user):
+    async def test_update_nonexistent_returns_404(self, client, test_user):
         uid = test_user["id"]
         _user_override(uid)
         try:
-            resp = client.put(
+            resp = await client.put(
                 "/api/products/999999999",
                 json={"name": "nope"},
             )

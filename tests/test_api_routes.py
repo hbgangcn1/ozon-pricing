@@ -1,14 +1,13 @@
 import sys
 import os
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi.testclient import TestClient  # noqa: E402
 from api.main import app  # noqa: E402
 from api import dependencies  # noqa: E402
+from database import get_db  # noqa: E402
 
 MOCK_USER = {
     "id": 1,
@@ -25,21 +24,48 @@ app.dependency_overrides[dependencies.get_current_user] = lambda: MOCK_USER
 client = TestClient(app, raise_server_exceptions=False)
 
 
-def _make_db_ctx(fetchone=None, fetchall=None, description=None, rowcount=1):
-    cursor = MagicMock()
-    cursor.fetchone.return_value = fetchone
-    cursor.fetchall.return_value = fetchall or []
-    cursor.description = description or []
-    cursor.rowcount = rowcount
-    conn = MagicMock()
-    ctx = MagicMock()
-    ctx.__enter__ = MagicMock(return_value=(conn, cursor))
-    ctx.__exit__ = MagicMock(return_value=False)
-    return ctx, conn, cursor
-
-
-def _pass_sql(sql, conn):
-    return sql
+def _logistics_row():
+    return {
+        "id": 1,
+        "user_id": 1,
+        "name": "Test",
+        "type": "land",
+        "min_days": 1,
+        "max_days": 10,
+        "price_limit": 0,
+        "price_limit_rub": 0,
+        "price_min": 0,
+        "price_min_rub": 0,
+        "base_fee": 0,
+        "min_weight": 0,
+        "max_weight": 100000,
+        "max_sum_of_sides": 0,
+        "max_longest_side": 0,
+        "max_second_side": 0,
+        "min_second_side": 0,
+        "min_length": 0,
+        "max_cylinder_sum": 0,
+        "min_cylinder_sum": 0,
+        "max_cylinder_length": 0,
+        "min_cylinder_length": 0,
+        "volume_mode": "none",
+        "longest_side_threshold": 0,
+        "allow_battery": 0,
+        "allow_liquid": 0,
+        "battery_capacity_limit_wh": 0,
+        "require_msds": 0,
+        "fee_mode": "base_weight",
+        "first_fee": 0,
+        "first_weight_g": 0,
+        "continue_fee": 0,
+        "continue_unit": "g",
+        "volume_coefficient": 5000,
+        "delivery_method": "pickup",
+        "priority_group": "D",
+        "price_limit_currency": "RUB",
+        "price_min_currency": "RUB",
+        "is_active": 1,
+    }
 
 
 class TestRootEndpoints:
@@ -55,7 +81,7 @@ class TestRootEndpoints:
 
 
 class TestAuth:
-    @patch("api.routes.auth.verify_user")
+    @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
     @patch("api.routes.auth.create_access_token")
     def test_login_success(self, mock_token, mock_verify):
         mock_verify.return_value = {
@@ -70,7 +96,7 @@ class TestAuth:
         assert r.status_code == 200
         assert r.json()["access_token"] == "tok123"
 
-    @patch("api.routes.auth.verify_user")
+    @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
     def test_login_bad_credentials(self, mock_verify):
         mock_verify.return_value = None
         r = client.post("/api/auth/login", json={"username": "u", "password": "wrong"})
@@ -88,7 +114,7 @@ class TestAuth:
         assert data["id"] == 1
         assert data["username"] == "testuser"
 
-    @patch("api.routes.auth.is_registration_open")
+    @patch("api.routes.auth.is_registration_open", new_callable=AsyncMock)
     def test_register_closed(self, mock_open):
         mock_open.return_value = False
         r = client.post(
@@ -102,15 +128,13 @@ class TestAuth:
         )
         assert r.status_code == 403
 
-    @patch("api.routes.auth.is_registration_open")
-    @patch("api.routes.auth.create_user")
     @patch("api.routes.auth.create_access_token")
-    @patch("api.routes.auth.get_db_connection")
-    @patch("api.routes.auth._safe_adapt_sql", side_effect=_pass_sql)
-    def test_register_success(self, _sql, mock_db, mock_token, mock_create, mock_open):
+    @patch("api.routes.auth.create_user", new_callable=AsyncMock)
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    @patch("api.routes.auth.is_registration_open", new_callable=AsyncMock)
+    def test_register_success(self, mock_open, mock_find, mock_create, mock_token):
         mock_open.return_value = True
-        ctx, conn, cursor = _make_db_ctx(fetchone=None)
-        mock_db.return_value = ctx
+        mock_find.return_value = None
         mock_create.return_value = 42
         mock_token.return_value = "newtoken"
         r = client.post(
@@ -125,7 +149,7 @@ class TestAuth:
         assert r.status_code == 200
         assert r.json()["access_token"] == "newtoken"
 
-    @patch("api.routes.auth.update_user_password")
+    @patch("api.routes.auth.update_user_password", new_callable=AsyncMock)
     def test_change_password_success(self, mock_update):
         mock_update.return_value = True
         r = client.post(
@@ -138,7 +162,7 @@ class TestAuth:
         )
         assert r.status_code == 200
 
-    @patch("api.routes.auth.update_user_password")
+    @patch("api.routes.auth.update_user_password", new_callable=AsyncMock)
     def test_change_password_wrong_current(self, mock_update):
         mock_update.return_value = False
         r = client.post(
@@ -153,7 +177,7 @@ class TestAuth:
 
 
 class TestProducts:
-    @patch("api.routes.products.get_all_products_for_user")
+    @patch("api.routes.products.get_all_products_for_user", new_callable=AsyncMock)
     def test_get_products(self, mock_get):
         mock_get.return_value = [
             {
@@ -192,7 +216,7 @@ class TestProducts:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
-    @patch("api.routes.products.get_product_by_id")
+    @patch("api.routes.products.get_product_by_id", new_callable=AsyncMock)
     def test_get_product_found(self, mock_get):
         mock_get.return_value = {
             "id": 1,
@@ -228,7 +252,7 @@ class TestProducts:
         r = client.get("/api/products/1", headers={"Authorization": "Bearer faketoken"})
         assert r.status_code == 200
 
-    @patch("api.routes.products.get_product_by_id")
+    @patch("api.routes.products.get_product_by_id", new_callable=AsyncMock)
     def test_get_product_not_found(self, mock_get):
         mock_get.return_value = None
         r = client.get(
@@ -236,8 +260,8 @@ class TestProducts:
         )
         assert r.status_code == 404
 
-    @patch("api.routes.products.get_product_by_id")
-    @patch("api.routes.products.add_product")
+    @patch("api.routes.products.get_product_by_id", new_callable=AsyncMock)
+    @patch("api.routes.products.add_product", new_callable=AsyncMock)
     def test_create_product(self, mock_add, mock_get):
         product_row = {
             "id": 10,
@@ -279,8 +303,8 @@ class TestProducts:
         )
         assert r.status_code == 201
 
-    @patch("api.routes.products.get_product_by_id")
-    @patch("api.routes.products.update_product")
+    @patch("api.routes.products.get_product_by_id", new_callable=AsyncMock)
+    @patch("api.routes.products.update_product", new_callable=AsyncMock)
     def test_update_product(self, mock_update, mock_get):
         existing = {
             "id": 1,
@@ -322,7 +346,7 @@ class TestProducts:
         )
         assert r.status_code == 200
 
-    @patch("api.routes.products.delete_product")
+    @patch("api.routes.products.delete_product", new_callable=AsyncMock)
     def test_delete_product_success(self, mock_del):
         mock_del.return_value = True
         r = client.delete(
@@ -330,7 +354,7 @@ class TestProducts:
         )
         assert r.status_code == 200
 
-    @patch("api.routes.products.delete_product")
+    @patch("api.routes.products.delete_product", new_callable=AsyncMock)
     def test_delete_product_not_found(self, mock_del):
         mock_del.return_value = False
         r = client.delete(
@@ -339,117 +363,48 @@ class TestProducts:
         assert r.status_code == 404
 
 
-def _logistics_row():
-    return {
-        "id": 1,
-        "user_id": 1,
-        "name": "Test",
-        "type": "land",
-        "min_days": 1,
-        "max_days": 10,
-        "price_limit": 0,
-        "price_limit_rub": 0,
-        "price_min": 0,
-        "price_min_rub": 0,
-        "base_fee": 0,
-        "min_weight": 0,
-        "max_weight": 100000,
-        "max_sum_of_sides": 0,
-        "max_longest_side": 0,
-        "max_second_side": 0,
-        "min_second_side": 0,
-        "min_length": 0,
-        "max_cylinder_sum": 0,
-        "min_cylinder_sum": 0,
-        "max_cylinder_length": 0,
-        "min_cylinder_length": 0,
-        "volume_mode": "none",
-        "longest_side_threshold": 0,
-        "allow_battery": 0,
-        "allow_liquid": 0,
-        "battery_capacity_limit_wh": 0,
-        "require_msds": 0,
-        "fee_mode": "base_weight",
-        "first_fee": 0,
-        "first_weight_g": 0,
-        "continue_fee": 0,
-        "continue_unit": "g",
-        "volume_coefficient": 5000,
-        "delivery_method": "pickup",
-        "priority_group": 0,
-        "price_limit_currency": "RUB",
-        "price_min_currency": "RUB",
-        "is_active": 1,
-    }
-
-
-def _logistics_columns():
-    return [(k,) for k in _logistics_row().keys()]
-
-
 class TestLogistics:
-    @patch("api.routes.logistics.get_db_connection")
-    @patch("api.routes.logistics._safe_adapt_sql", side_effect=_pass_sql)
-    def test_get_logistics_list(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(
-            fetchall=[tuple(_logistics_row().values())],
-            description=_logistics_columns(),
-        )
-        mock_db.return_value = ctx
+    @patch("api.routes.logistics.get_logistics_list", new_callable=AsyncMock)
+    def test_get_logistics_list(self, mock_get):
+        mock_get.return_value = ([_logistics_row()], 1)
         r = client.get("/api/logistics", headers={"Authorization": "Bearer faketoken"})
         assert r.status_code == 200
 
-    @patch("api.routes.logistics.get_db_connection")
-    @patch("api.routes.logistics._safe_adapt_sql", side_effect=_pass_sql)
-    def test_get_logistics_by_id(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(
-            fetchone=tuple(_logistics_row().values()),
-            description=_logistics_columns(),
-        )
-        mock_db.return_value = ctx
+    @patch("api.routes.logistics.get_logistics_by_id", new_callable=AsyncMock)
+    def test_get_logistics_by_id(self, mock_get):
+        mock_get.return_value = _logistics_row()
         r = client.get(
             "/api/logistics/1", headers={"Authorization": "Bearer faketoken"}
         )
         assert r.status_code == 200
 
-    @patch("api.routes.logistics.get_db_connection")
-    @patch("api.routes.logistics._safe_adapt_sql", side_effect=_pass_sql)
-    def test_get_logistics_by_id_not_found(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(
-            fetchone=None,
-            description=_logistics_columns(),
-        )
-        mock_db.return_value = ctx
+    @patch("api.routes.logistics.get_logistics_by_id", new_callable=AsyncMock)
+    def test_get_logistics_by_id_not_found(self, mock_get):
+        mock_get.return_value = None
         r = client.get(
             "/api/logistics/999", headers={"Authorization": "Bearer faketoken"}
         )
         assert r.status_code == 404
 
-    @patch("api.routes.logistics.get_db_connection")
-    @patch("api.routes.logistics._safe_adapt_sql", side_effect=_pass_sql)
-    def test_delete_logistics_success(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(rowcount=1)
-        mock_db.return_value = ctx
+    @patch("api.routes.logistics.delete_logistics", new_callable=AsyncMock)
+    def test_delete_logistics_success(self, mock_del):
+        mock_del.return_value = 1
         r = client.delete(
             "/api/logistics/1", headers={"Authorization": "Bearer faketoken"}
         )
         assert r.status_code == 200
 
-    @patch("api.routes.logistics.get_db_connection")
-    @patch("api.routes.logistics._safe_adapt_sql", side_effect=_pass_sql)
-    def test_delete_logistics_not_found(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(rowcount=0)
-        mock_db.return_value = ctx
+    @patch("api.routes.logistics.delete_logistics", new_callable=AsyncMock)
+    def test_delete_logistics_not_found(self, mock_del):
+        mock_del.return_value = 0
         r = client.delete(
             "/api/logistics/999", headers={"Authorization": "Bearer faketoken"}
         )
         assert r.status_code == 404
 
-    @patch("api.routes.logistics.get_db_connection")
-    @patch("api.routes.logistics._safe_adapt_sql", side_effect=_pass_sql)
-    def test_batch_delete_logistics(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(rowcount=2)
-        mock_db.return_value = ctx
+    @patch("api.routes.logistics.batch_delete_logistics", new_callable=AsyncMock)
+    def test_batch_delete_logistics(self, mock_batch):
+        mock_batch.return_value = 2
         r = client.post(
             "/api/logistics/batch-delete",
             json=[1, 2],
@@ -467,28 +422,20 @@ class TestLogistics:
 
 
 class TestAdmin:
-    @patch("api.routes.admin.get_db_connection")
-    @patch("api.routes.admin._safe_adapt_sql", side_effect=_pass_sql)
-    def test_get_users(self, _sql, mock_db):
-        cols = [
-            ("id",),
-            ("username",),
-            ("role",),
-            ("user_type",),
-            ("subscription_expires",),
-            ("status",),
-        ]
-        rows = [(1, "admin", "admin", "enterprise", None, "正常")]
-        cursor = MagicMock()
-        cursor.fetchone.return_value = (1,)
-        cursor.fetchall.return_value = rows
-        cursor.description = cols
-        cursor.rowcount = 1
-        conn = MagicMock()
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=(conn, cursor))
-        ctx.__exit__ = MagicMock(return_value=False)
-        mock_db.return_value = ctx
+    @patch("api.routes.admin.db_admin.get_all_users", new_callable=AsyncMock)
+    def test_get_users(self, mock_get):
+        mock_get.return_value = {
+            "users": [
+                {
+                    "id": 1,
+                    "username": "admin",
+                    "role": "admin",
+                    "user_type": "enterprise",
+                    "is_frozen": 0,
+                }
+            ],
+            "total_count": 1,
+        }
         r = client.get(
             "/api/admin/users", headers={"Authorization": "Bearer faketoken"}
         )
@@ -496,11 +443,9 @@ class TestAdmin:
         body = r.json()
         assert "users" in body and "total" in body
 
-    @patch("api.routes.admin.get_db_connection")
-    @patch("api.routes.admin._safe_adapt_sql", side_effect=_pass_sql)
-    def test_create_admin_user(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(fetchone=(99,))
-        mock_db.return_value = ctx
+    @patch("api.routes.admin.create_user", new_callable=AsyncMock)
+    def test_create_admin_user(self, mock_create):
+        mock_create.return_value = 99
         r = client.post(
             "/api/admin/users",
             json={
@@ -513,51 +458,44 @@ class TestAdmin:
         )
         assert r.status_code == 201
 
-    @patch("api.routes.admin.get_db_connection")
-    @patch("api.routes.admin._safe_adapt_sql", side_effect=_pass_sql)
-    def test_update_admin_user(self, _sql, mock_db):
-        cursor = MagicMock()
-        cursor.fetchone.side_effect = [
-            (2,),
-            (2, "u2", "user", "free", None, "正常"),
-        ]
-        cursor.description = [
-            ("id",),
-            ("username",),
-            ("role",),
-            ("user_type",),
-            ("subscription_expires",),
-            ("status",),
-        ]
-        cursor.rowcount = 1
-        conn = MagicMock()
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=(conn, cursor))
-        ctx.__exit__ = MagicMock(return_value=False)
-        mock_db.return_value = ctx
-        r = client.put(
-            "/api/admin/users/2",
-            json={"role": "user"},
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
+    def test_update_admin_user(self):
+        mock_user = MagicMock()
+        mock_user.id = 2
+        mock_user.username = "u2"
+        mock_user.role = "user"
+        mock_user.user_type = "free"
+        mock_user.is_frozen = 0
 
-    @patch("api.routes.admin.get_db_connection")
-    @patch("api.routes.admin._safe_adapt_sql", side_effect=_pass_sql)
-    def test_reset_password(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(rowcount=1)
-        mock_db.return_value = ctx
+        mock_session = AsyncMock()
+        mock_session.get.return_value = mock_user
+        mock_session.flush.return_value = None
+
+        async def override_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            r = client.put(
+                "/api/admin/users/2",
+                json={"role": "user"},
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert r.status_code == 200
+        finally:
+            del app.dependency_overrides[get_db]
+
+    @patch("api.routes.admin.db_admin.reset_user_password", new_callable=AsyncMock)
+    def test_reset_password(self, mock_reset):
+        mock_reset.return_value = "new_pass_123"
         r = client.post(
             "/api/admin/users/2/reset-password",
             headers={"Authorization": "Bearer faketoken"},
         )
         assert r.status_code == 200
 
-    @patch("api.routes.admin.get_db_connection")
-    @patch("api.routes.admin._safe_adapt_sql", side_effect=_pass_sql)
-    def test_delete_admin_user(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(rowcount=1)
-        mock_db.return_value = ctx
+    @patch("api.routes.admin.db_admin.delete_user_admin", new_callable=AsyncMock)
+    def test_delete_admin_user(self, mock_del):
+        mock_del.return_value = True
         r = client.delete(
             "/api/admin/users/2",
             headers={"Authorization": "Bearer faketoken"},
@@ -573,25 +511,26 @@ class TestAdmin:
 
 
 class TestOrders:
-    @patch("api.routes.orders.get_db_connection")
-    @patch("api.routes.orders._safe_adapt_sql", side_effect=_pass_sql)
-    def test_get_orders_empty(self, _sql, mock_db):
-        ctx, conn, cursor = _make_db_ctx(fetchall=[])
-        mock_db.return_value = ctx
+    @patch("api.routes.orders.get_user_orders", new_callable=AsyncMock)
+    def test_get_orders_empty(self, mock_get):
+        mock_get.return_value = []
         r = client.get("/api/orders", headers={"Authorization": "Bearer faketoken"})
         assert r.status_code == 200
         assert r.json() == []
 
-    @patch("api.routes.orders.get_db_connection")
-    @patch("api.routes.orders._safe_adapt_sql", side_effect=_pass_sql)
-    def test_get_orders_with_data(self, _sql, mock_db):
-        import datetime as dt
-
-        rows = [
-            (1, "ORD001", "efficiency", 99.0, "paid", dt.datetime(2024, 1, 1), None)
+    @patch("api.routes.orders.get_user_orders", new_callable=AsyncMock)
+    def test_get_orders_with_data(self, mock_get):
+        mock_get.return_value = [
+            {
+                "id": 1,
+                "order_id": "ORD001",
+                "order_type": "efficiency",
+                "amount": 99.0,
+                "status": "paid",
+                "created_at": "2024-01-01",
+                "updated_at": None,
+            }
         ]
-        ctx, conn, cursor = _make_db_ctx(fetchall=rows)
-        mock_db.return_value = ctx
         r = client.get("/api/orders", headers={"Authorization": "Bearer faketoken"})
         assert r.status_code == 200
         data = r.json()

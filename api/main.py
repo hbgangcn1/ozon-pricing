@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 
+from database import run_migrations, engine
 from api.routes import (
     auth,
     products,
@@ -21,6 +22,13 @@ from api.middleware.rate_limit import RateLimitMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 启动时：执行数据库迁移
+    try:
+        run_migrations()
+    except Exception as e:
+        print(f"[lifespan] 数据库迁移失败: {e}")
+        raise  # 迁移失败不应启动
+
     # 启动时：启动自动备份服务
     try:
         from postgres_backup_service import start_backup_service
@@ -38,6 +46,8 @@ async def lifespan(app: FastAPI):
         stop_backup_service()
     except Exception as e:
         print(f"[lifespan] 停止备份服务失败: {e}")
+
+    await engine.dispose()
 
 
 app = FastAPI(

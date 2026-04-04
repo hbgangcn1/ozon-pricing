@@ -1,48 +1,65 @@
 import logging
 from typing import Optional
 
-from db._proxy import _db
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.config import SystemConfig
 
 logger = logging.getLogger(__name__)
 
 
-def get_system_config(
-    config_key: str, default_value: Optional[str] = None
+async def get_system_config(
+    session: AsyncSession,
+    key: str,
 ) -> Optional[str]:
-    with _db.get_db_connection() as (_, c):
-        if c is None:
-            return default_value
-        from db_adapter import adapt_sql as _adapt_sql
-
-        sql = _adapt_sql("SELECT config_value FROM system_config WHERE config_key = ?")
-        c.execute(sql, (config_key,))
-        result = c.fetchone()
-        return result[0] if result else default_value
+    stmt = select(SystemConfig.config_value).where(
+        SystemConfig.config_key == key,
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
-def set_system_config(
-    config_key: str, config_value: str, description: Optional[str] = None
-) -> bool:
-    with _db.get_db_connection() as (conn, c):
-        try:
-            sql_raw = """
-                INSERT INTO system_config
-                (config_key, config_value, description, updated_at)
-                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (config_key) DO UPDATE SET
-                config_value = EXCLUDED.config_value,
-                description = EXCLUDED.description,
-                updated_at = CURRENT_TIMESTAMP
-            """
-            sql = _db._safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, (config_key, config_value, description))
-            conn.commit()
-            return True
-        except Exception as e:
-            logger.warning("设置系统配置失败: %s", e)
-            return False
+async def set_system_config(
+    session: AsyncSession,
+    key: str,
+    value: str,
+    description: str = "",
+) -> None:
+    stmt = select(SystemConfig).where(
+        SystemConfig.config_key == key,
+    )
+    result = await session.execute(stmt)
+    config = result.scalar_one_or_none()
+    if config:
+        config.config_value = value
+        if description:
+            config.description = description
+    else:
+        config = SystemConfig(
+            config_key=key,
+            config_value=value,
+            description=description,
+        )
+        session.add(config)
 
 
-def is_registration_open() -> bool:
-    config_value = _db.get_system_config("open_registration", "false")
-    return config_value is not None and config_value.lower() == "true"
+async def is_registration_open(session: AsyncSession) -> bool:
+    value = await get_system_config(session, "registration_open")
+    return value != "0"
+
+
+async def get_all_config(session: AsyncSession) -> list[dict]:
+    stmt = select(SystemConfig).order_by(SystemConfig.config_key)
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "config_key": r.config_key,
+            "config_value": r.config_value,
+            "description": r.description,
+            "updated_at": (r.updated_at.isoformat() if r.updated_at else None),
+        }
+        for r in rows
+    ]

@@ -3,8 +3,6 @@ import logging
 
 import bcrypt
 
-from db._proxy import _db
-
 logger = logging.getLogger(__name__)
 
 
@@ -18,7 +16,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
     except (ValueError, TypeError):
-        return _db.verify_legacy_password(password, hashed_password)
+        return verify_legacy_password(password, hashed_password)
 
 
 def verify_legacy_password(password: str, hashed_password: str) -> bool:

@@ -1,79 +1,30 @@
-import sys
-
-from db.helpers import (
-    DB_EXCEPTIONS,
-    _FakeSessionState,
-    _st,
-    _is_postgresql_connection,
-    _ensure_serial_columns,
-    _subscription_expires_to_datetime,
-    _serialize_subscription_expires,
-    _build_safe_timestamp_expr,
-    _safe_execute_fetchone,
-    _safe_adapt_sql,
-    _get_table_columns,
-    adapt_sql,
-    get_placeholder,
-    validate_password_strength,
-)
-from db.connection import (
-    _connection_counter,
-    _connection_lock,
-    _postgres_pool_closed_logged,
-    _CONNECTION_WARNINGS,
-    get_connection_count,
-    get_connection_stats,
-    reset_connection_counter,
-    _increment_connection_counter,
-    _decrement_connection_counter,
-    _check_connections_at_exit,
-    _cleanup_on_interrupt,
-    signal_handler,
-    get_db_connection,
-    get_db,
-    DBConnection,
-    get_enhanced_db_connection,
-    get_enhanced_connection_stats,
-)
-from db.password import (
-    hash_password,
-    verify_password,
-    verify_legacy_password,
-    is_bcrypt_hash,
-)
-from db.session import current_user_id, is_admin, require_admin
-from db.config import get_system_config, set_system_config, is_registration_open
-from db.users import (
-    _db_initialized_cache,
+# db/__init__.py
+# 用户相关
+from db.users import (  # noqa: F401
     create_user,
     verify_user,
-    upgrade_user_password_to_bcrypt,
     update_user_password,
     delete_user,
     get_user_preferred_mode,
     update_user_preferred_mode,
-    migrate_user_preferences,
+    find_by_username,
+    get_user_by_id,
+    get_user_role,
 )
-from db.products import (
+
+# 产品相关
+from db.products import (  # noqa: F401
     add_product,
     get_all_products_for_user,
-    ensure_admin_product_deletion_allowed,
     get_product_by_id,
     delete_product,
     batch_delete_products,
-    cleanup_test_products,
     update_product,
     batch_update_pricing_params,
-    calculate_and_update_priority_groups,
 )
-from db.subscriptions import (
-    get_user_subscription_info,
-    update_user_subscription,
-    check_user_subscription_status,
-    decrement_user_calculations,
-    reset_free_users_daily_calculations,
-)
-from db.admin import (
+
+# 管理员相关
+from db.admin import (  # noqa: F401
     authenticate_admin,
     get_all_users,
     get_user_detail,
@@ -85,21 +36,34 @@ from db.admin import (
     get_audit_logs,
     reset_user_password,
 )
-from db.logging_utils import (
+
+# 日志相关
+from db.logging_utils import (  # noqa: F401
     log_user_login,
     log_user_behavior,
     log_admin_action,
     create_alert,
 )
-from db.statistics import (
+
+# 统计相关
+from db.statistics import (  # noqa: F401
     get_statistics_cache,
-    _convert_decimal_to_float,
     set_statistics_cache,
     clear_expired_cache,
     clear_all_statistics_cache,
     get_dashboard_stats,
 )
-from db.plans import (
+
+# 订阅相关
+from db.subscriptions import (  # noqa: F401
+    get_user_subscription_info,
+    update_user_subscription,
+    check_user_subscription_status,
+    decrement_user_calculations,
+)
+
+# 计划相关
+from db.plans import (  # noqa: F401
     get_plans,
     get_plan_by_code,
     get_plan_by_id,
@@ -109,124 +73,38 @@ from db.plans import (
     toggle_plan_active,
     get_plan_price,
 )
-from db.schema import (
-    init_db,
-    _ensure_postgresql_schema,
-    _cleanup_duplicate_rows,
-    _cleanup_duplicate_ids,
-    _ensure_serial_primary_key,
-    _ensure_unique_constraint,
-    _ensure_foreign_key,
+
+# 系统配置
+from db.config import (  # noqa: F401
+    get_system_config,
+    set_system_config,
+    is_registration_open,
+    get_all_config,
 )
-from db.exchange import (
+
+# 汇率
+from db.exchange import (  # noqa: F401
     get_exchange_rate_fallback,
     update_exchange_rate_fallback,
 )
 
-sys.modules.setdefault("db_utils", sys.modules[__name__])
-sys.modules.setdefault("logistics.db_utils", sys.modules[__name__])
+# 物流 CRUD
+from db.logistics_crud import (  # noqa: F401
+    get_logistics_list,
+    get_logistics_by_id,
+    create_logistics,
+    update_logistics,
+    delete_logistics,
+    batch_delete_logistics,
+)
 
-__all__ = [
-    "DB_EXCEPTIONS",
-    "_FakeSessionState",
-    "_st",
-    "_is_postgresql_connection",
-    "_ensure_serial_columns",
-    "_subscription_expires_to_datetime",
-    "_serialize_subscription_expires",
-    "_build_safe_timestamp_expr",
-    "_safe_execute_fetchone",
-    "_safe_adapt_sql",
-    "_get_table_columns",
-    "adapt_sql",
-    "get_placeholder",
-    "validate_password_strength",
-    "_connection_counter",
-    "_connection_lock",
-    "_postgres_pool_closed_logged",
-    "_CONNECTION_WARNINGS",
-    "get_connection_count",
-    "get_connection_stats",
-    "reset_connection_counter",
-    "_increment_connection_counter",
-    "_decrement_connection_counter",
-    "_check_connections_at_exit",
-    "_cleanup_on_interrupt",
-    "signal_handler",
-    "get_db_connection",
-    "get_db",
-    "DBConnection",
-    "get_enhanced_db_connection",
-    "get_enhanced_connection_stats",
-    "hash_password",
-    "verify_password",
-    "verify_legacy_password",
-    "is_bcrypt_hash",
-    "current_user_id",
-    "is_admin",
-    "require_admin",
-    "get_system_config",
-    "set_system_config",
-    "is_registration_open",
-    "_db_initialized_cache",
-    "create_user",
-    "verify_user",
-    "upgrade_user_password_to_bcrypt",
-    "update_user_password",
-    "delete_user",
-    "get_user_preferred_mode",
-    "update_user_preferred_mode",
-    "migrate_user_preferences",
-    "add_product",
-    "get_all_products_for_user",
-    "ensure_admin_product_deletion_allowed",
-    "get_product_by_id",
-    "delete_product",
-    "batch_delete_products",
-    "cleanup_test_products",
-    "update_product",
-    "batch_update_pricing_params",
-    "calculate_and_update_priority_groups",
-    "get_user_subscription_info",
-    "update_user_subscription",
-    "check_user_subscription_status",
-    "decrement_user_calculations",
-    "reset_free_users_daily_calculations",
-    "authenticate_admin",
-    "get_all_users",
-    "get_user_detail",
-    "update_user_subscription_admin",
-    "freeze_user",
-    "unfreeze_user",
-    "delete_user_admin",
-    "batch_update_users",
-    "get_audit_logs",
-    "reset_user_password",
-    "log_user_login",
-    "log_user_behavior",
-    "log_admin_action",
-    "create_alert",
-    "get_statistics_cache",
-    "_convert_decimal_to_float",
-    "set_statistics_cache",
-    "clear_expired_cache",
-    "clear_all_statistics_cache",
-    "get_dashboard_stats",
-    "get_plans",
-    "get_plan_by_code",
-    "get_plan_by_id",
-    "create_plan",
-    "update_plan",
-    "delete_plan",
-    "toggle_plan_active",
-    "get_plan_price",
-    "init_db",
-    "_ensure_postgresql_schema",
-    "_cleanup_duplicate_rows",
-    "_cleanup_duplicate_ids",
-    "_ensure_serial_primary_key",
-    "_ensure_unique_constraint",
-    "_ensure_foreign_key",
-    "get_exchange_rate_fallback",
-    "update_exchange_rate_fallback",
-]
+# 订单
+from db.orders import (  # noqa: F401
+    get_user_orders,
+)
+
+# 会话安全 CRUD
+from db.sessions_crud import *  # noqa: F401, F403
+
+# 密码（不改）
+from db.password import *  # noqa: F401, F403

@@ -3,28 +3,14 @@ Integration tests for subscriptions.py and settings.py routes.
 These tests hit the real PostgreSQL database.
 """
 
-import os
-import sys
-import time
 import pytest
 from unittest.mock import patch
 
-os.environ["DB_TYPE"] = "postgresql"
-os.environ["POSTGRES_HOST"] = "localhost"
-os.environ["POSTGRES_PORT"] = "5432"
-os.environ["POSTGRES_DB"] = "logistics"
-os.environ["POSTGRES_USER"] = "postgres"
-os.environ["POSTGRES_PASSWORD"] = "***REMOVED-PG-PWD***"
-os.environ["E2E_TEST"] = "1"
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from fastapi.testclient import TestClient
 from api.main import app
 from api.dependencies import get_current_user_id, require_admin
-from db_utils import get_db_connection, _safe_adapt_sql
-
-client = TestClient(app, raise_server_exceptions=False)
+from database import AsyncSessionLocal
+from sqlalchemy import select
+from models.config import SystemConfig
 
 _current_user_id = None
 _current_admin_id = None
@@ -55,29 +41,12 @@ def _clear_overrides():
     app.dependency_overrides.pop(require_admin, None)
 
 
-def _get_system_config(key):
-    """Read a system_config value from DB."""
-    with get_db_connection() as (conn, c):
-        sql = _safe_adapt_sql(
-            "SELECT config_value FROM system_config WHERE config_key = %s",
-            conn,
+async def _get_system_config(key):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(SystemConfig.config_value).where(SystemConfig.config_key == key)
         )
-        c.execute(sql, (key,))
-        row = c.fetchone()
-    return row[0] if row else None
-
-
-def _cleanup_system_config(key):
-    """Remove a system_config key inserted during tests."""
-    try:
-        with get_db_connection() as (conn, c):
-            sql = _safe_adapt_sql(
-                "DELETE FROM system_config WHERE config_key = %s", conn
-            )
-            c.execute(sql, (key,))
-            conn.commit()
-    except Exception:
-        pass
+        return result.scalar_one_or_none()
 
 
 _MOCK_BACKUP_RETURN = (
@@ -96,14 +65,14 @@ _MOCK_BACKUP_RETURN = (
 
 
 class TestSubscriptionsPlans:
-    def test_plans_returns_list(self):
-        resp = client.get("/api/subscriptions/plans")
+    async def test_plans_returns_list(self, client):
+        resp = await client.get("/api/subscriptions/plans")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
 
-    def test_plans_schema_when_data_present(self):
-        resp = client.get("/api/subscriptions/plans")
+    async def test_plans_schema_when_data_present(self, client):
+        resp = await client.get("/api/subscriptions/plans")
         assert resp.status_code == 200
         data = resp.json()
         if not data:
@@ -129,15 +98,15 @@ class TestSubscriptionsPlans:
         for field in required:
             assert field in plan, f"Missing field: {field}"
 
-    def test_plans_features_is_list(self):
-        resp = client.get("/api/subscriptions/plans")
+    async def test_plans_features_is_list(self, client):
+        resp = await client.get("/api/subscriptions/plans")
         assert resp.status_code == 200
         data = resp.json()
         for plan in data:
             assert isinstance(plan["features"], list)
 
-    def test_plans_status_true_only(self):
-        resp = client.get("/api/subscriptions/plans")
+    async def test_plans_status_true_only(self, client):
+        resp = await client.get("/api/subscriptions/plans")
         assert resp.status_code == 200
         data = resp.json()
         for plan in data:
@@ -145,10 +114,10 @@ class TestSubscriptionsPlans:
 
 
 class TestSubscriptionsCurrent:
-    def test_current_returns_subscription_schema(self, test_user):
+    async def test_current_returns_subscription_schema(self, client, test_user):
         _set_user(test_user["id"])
         try:
-            resp = client.get("/api/subscriptions/current")
+            resp = await client.get("/api/subscriptions/current")
             assert resp.status_code == 200
             data = resp.json()
             assert "plan_code" in data
@@ -158,10 +127,10 @@ class TestSubscriptionsCurrent:
         finally:
             _clear_overrides()
 
-    def test_current_plan_code_matches_user_type(self, test_user):
+    async def test_current_plan_code_matches_user_type(self, client, test_user):
         _set_user(test_user["id"])
         try:
-            resp = client.get("/api/subscriptions/current")
+            resp = await client.get("/api/subscriptions/current")
             assert resp.status_code == 200
             data = resp.json()
             assert data["plan_code"] in [
@@ -174,31 +143,31 @@ class TestSubscriptionsCurrent:
         finally:
             _clear_overrides()
 
-    def test_current_user_type_free(self, test_user):
+    async def test_current_user_type_free(self, client, test_user):
         _set_user(test_user["id"])
         try:
-            resp = client.get("/api/subscriptions/current")
+            resp = await client.get("/api/subscriptions/current")
             assert resp.status_code == 200
             data = resp.json()
             assert data["plan_code"] == "free"
         finally:
             _clear_overrides()
 
-    def test_current_no_auth_returns_error(self):
+    async def test_current_no_auth_returns_error(self, client):
         _clear_overrides()
-        resp = client.get("/api/subscriptions/current")
+        resp = await client.get("/api/subscriptions/current")
         assert resp.status_code in (401, 403, 422)
 
 
 class TestSettingsGetSettings:
-    def test_get_settings_returns_schema(self, test_admin):
+    async def test_get_settings_returns_schema(self, client, test_admin):
         _set_admin(test_admin["id"])
         with patch(
             "api.routes.settings._load_backup_service",
             return_value=_MOCK_BACKUP_RETURN,
         ):
             try:
-                resp = client.get("/api/settings")
+                resp = await client.get("/api/settings")
                 assert resp.status_code == 200
                 data = resp.json()
                 assert "open_registration" in data
@@ -208,7 +177,7 @@ class TestSettingsGetSettings:
             finally:
                 _clear_overrides()
 
-    def test_get_settings_backup_interval_from_mock(self, test_admin):
+    async def test_get_settings_backup_interval_from_mock(self, client, test_admin):
         _set_admin(test_admin["id"])
         mock_return = list(_MOCK_BACKUP_RETURN)
         mock_return[4] = lambda: {
@@ -221,74 +190,74 @@ class TestSettingsGetSettings:
             return_value=tuple(mock_return),
         ):
             try:
-                resp = client.get("/api/settings")
+                resp = await client.get("/api/settings")
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["backup_interval"] == 12
             finally:
                 _clear_overrides()
 
-    def test_get_settings_no_admin_returns_error(self):
+    async def test_get_settings_no_admin_returns_error(self, client):
         _clear_overrides()
         with patch(
             "api.routes.settings._load_backup_service",
             return_value=_MOCK_BACKUP_RETURN,
         ):
-            resp = client.get("/api/settings")
+            resp = await client.get("/api/settings")
             assert resp.status_code in (401, 403, 422)
 
 
 class TestSettingsOpenRegistration:
-    def test_enable_registration(self, test_admin):
+    async def test_enable_registration(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.put("/api/settings/open-registration?enabled=true")
+            resp = await client.put("/api/settings/open-registration?enabled=true")
             assert resp.status_code == 200
             data = resp.json()
             assert "message" in data
 
-            val = _get_system_config("open_registration")
+            val = await _get_system_config("open_registration")
             assert val == "true"
         finally:
             _clear_overrides()
 
-    def test_disable_registration(self, test_admin):
+    async def test_disable_registration(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.put("/api/settings/open-registration?enabled=false")
+            resp = await client.put("/api/settings/open-registration?enabled=false")
             assert resp.status_code == 200
             data = resp.json()
             assert "message" in data
 
-            val = _get_system_config("open_registration")
+            val = await _get_system_config("open_registration")
             assert val == "false"
         finally:
             _clear_overrides()
 
-    def test_toggle_registration_twice(self, test_admin):
+    async def test_toggle_registration_twice(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            client.put("/api/settings/open-registration?enabled=true")
-            val1 = _get_system_config("open_registration")
+            await client.put("/api/settings/open-registration?enabled=true")
+            val1 = await _get_system_config("open_registration")
             assert val1 == "true"
 
-            client.put("/api/settings/open-registration?enabled=false")
-            val2 = _get_system_config("open_registration")
+            await client.put("/api/settings/open-registration?enabled=false")
+            val2 = await _get_system_config("open_registration")
             assert val2 == "false"
         finally:
             _clear_overrides()
 
-    def test_open_registration_response_message(self, test_admin):
+    async def test_open_registration_response_message(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
-            resp = client.put("/api/settings/open-registration?enabled=true")
+            resp = await client.put("/api/settings/open-registration?enabled=true")
             assert resp.status_code == 200
             data = resp.json()
             assert data.get("message") == "设置已更新"
         finally:
             _clear_overrides()
 
-    def test_no_admin_returns_error(self):
+    async def test_no_admin_returns_error(self, client):
         _clear_overrides()
-        resp = client.put("/api/settings/open-registration?enabled=true")
+        resp = await client.put("/api/settings/open-registration?enabled=true")
         assert resp.status_code in (401, 403, 422)
