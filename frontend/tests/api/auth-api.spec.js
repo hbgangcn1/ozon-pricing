@@ -197,7 +197,7 @@ test.describe('Auth API - 注册', () => {
       headers: authHeaders(adminToken),
     })
 
-    const uniqueUser = `testapi_${Date.now()}`
+    const uniqueUser = `e2e_api_${Date.now()}`
     const resp = await request.post('/api/auth/register', {
       data: {
         username: uniqueUser,

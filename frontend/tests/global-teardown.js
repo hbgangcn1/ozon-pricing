@@ -19,11 +19,11 @@ async function globalTeardown() {
     return;
   }
 
-  const e2eUsers = users.filter(u => /^e2e/.test(u.username));
-  if (e2eUsers.length === 0) return;
+  const testUsers = users.filter(u => /^(e2e|test)/.test(u.username));
+  if (testUsers.length === 0) return;
 
   let deleted = 0;
-  for (const user of e2eUsers) {
+  for (const user of testUsers) {
     try {
       await apiDeleteUser(adminToken, user.id);
       deleted++;
@@ -33,7 +33,7 @@ async function globalTeardown() {
   }
 
   if (deleted > 0) {
-    console.log(`[global-teardown] Cleaned up ${deleted} e2e user(s)`);
+    console.log(`[global-teardown] Cleaned up ${deleted} test user(s)`);
   }
 }
 
