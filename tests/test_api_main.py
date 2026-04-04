@@ -112,6 +112,49 @@ async def test_global_exception_handler_with_debug():
     assert data["detail"] == "Test error message"
 
 
+@pytest.mark.asyncio
+async def test_global_exception_handler_preserves_http_exception():
+    """Test that HTTPException status codes are preserved, not converted to 500."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Hit a non-existent endpoint — FastAPI raises 404
+        response = await ac.get("/this-does-not-exist")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_global_exception_handler_non_http_returns_500():
+    """Test non-HTTP exceptions return 500 without details."""
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+    from fastapi import Request, HTTPException
+
+    test_app = FastAPI()
+
+    @test_app.get("/error")
+    async def error_endpoint():
+        raise RuntimeError("secret internal info")
+
+    @test_app.exception_handler(RuntimeError)
+    async def handler(request: Request, exc: Exception):
+        if isinstance(exc, HTTPException):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+            )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/error")
+    assert response.status_code == 500
+    assert "secret" not in response.json()["detail"]
+    assert response.json()["detail"] == "Internal server error"
+
+
 # ============================================================================
 # LIFESPAN TESTS - Startup and Shutdown
 # ============================================================================
