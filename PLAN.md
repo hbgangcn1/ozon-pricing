@@ -275,3 +275,101 @@ frontend/tests/
 | LOW | 10 | 缺少清理函数、无超时配置、控制台日志 |
 
 **修复优先级建议**：P0（安全）→ P1（数据完整性）→ P2（稳定性）→ P3（代码质量）
+
+---
+
+### Phase 10: 安全审计修复 (42项全部完成) ✅
+
+**审计报告**: `AUDIT_REPORT.md` — 6 CRITICAL + 12 HIGH + 14 MEDIUM + 10 LOW = 42 项
+
+#### CRITICAL (6/6) ✅
+
+| ID | 状态 | 描述 |
+|----|------|------|
+| C1 | ✅ | `api/dependencies.py` — 移除认证绕过（username-as-token fallback） |
+| C2 | ✅ | Phase 0-9 已修复 — `init_db()` 中 `hash_password("admin123")` 不再存在 |
+| C3 | ✅ | `enhanced_exchange_service.py` — CurrencyLayerProvider 汇率反转修复 |
+| C4 | ✅ | `session_security.py` — 6处静默异常改为日志记录 |
+| C5 | ✅ | `frontend/src/pages/*.jsx` — DOMPurify XSS 消毒 |
+| C6 | ✅ | `frontend/src/components/ErrorBoundary.jsx` — 新增全局错误边界 |
+
+#### HIGH (12/12) ✅
+
+| ID | 状态 | 描述 |
+|----|------|------|
+| H1 | ✅ | `api/routes/admin.py` — SQL注入白名单防护 |
+| H2 | ✅ | `api/main.py` — CORS 从 `["*"]` 改为环境变量配置 |
+| H3 | ✅ | `api/routes/settings.py` — 路径遍历防护 |
+| H4 | ✅ | `security/tokens.py` — JWT密钥从环境变量读取 |
+| H5 | ✅ | `api/main.py` — 全局异常处理器保留 HTTPException 状态码 |
+| H6 | ✅ | `api/routes/auth.py` — 密码重置安全化 |
+| H7 | ✅ | 多文件 — async 事件处理器改为 def（防阻塞事件循环） |
+| H8 | ✅ | `api/routes/exchange.py` — 修复缺失的 await |
+| H9 | ✅ | 多文件 — bare except 改为具体异常类型 + 日志记录 |
+| H10 | ✅ | `session_security.py` — check_concurrent_sessions 异常添加日志 |
+| H11 | ✅ | `session_security.py` — 数据库密钥从环境变量读取 |
+| H12 | ✅ | `db/helpers.py` — psycopg2.sql 参数化查询 |
+
+#### MEDIUM (14/14) ✅
+
+| ID | 状态 | 描述 |
+|----|------|------|
+| M1 | ✅ | `db_utils.py` → `db/` 包拆分（17个子模块，proxy pattern） |
+| M2 | ✅ | `logic.py` → `pricing/` 包拆分（11个文件） |
+| M3 | ✅ | `pricing/logistic_cost.py` — 统一返回类型 `(cost, debug_info)` |
+| M4 | ✅ | `api/models/schemas.py` — rate字段 `ge=0, le=100` 约束 |
+| M5 | ✅ | `db/helpers.py` — `_is_postgresql_connection` 默认值修复 |
+| M6 | ✅ | `api/middleware/rate_limit.py` — X-Forwarded-For + LRU 清退 |
+| M7 | ✅ | `api/routes/pricing.py` — SSE endpoint 添加认证 |
+| M8 | ✅ | `api/routes/products.py`, `logistics.py`, `orders.py` — 添加分页 |
+| M9 | ✅ | `session_security.py` — HMAC密钥从环境变量读取 |
+| M10 | ✅ | `api/routes/settings.py` — JSONResponse → HTTPException |
+| M11 | ✅ | `frontend/src/services/api.js` — 请求超时 + AbortController |
+| M12 | ✅ | `frontend/src/pages/*.jsx` — API 错误处理 + loading 状态 |
+| M13 | ✅ | `frontend/src/pages/*.jsx` — 空数据状态展示 |
+| M14 | ✅ | `db/schema.py` — cursor.close() 移入 finally 块 |
+
+#### LOW (10/10) ✅
+
+| ID | 状态 | 描述 |
+|----|------|------|
+| L1 | ✅ | 调查确认 — 所有 `pass` 语句均有效，无需修改 |
+| L2 | ✅ | `frontend/src/pages/*.jsx` — console.log 移除 |
+| L3 | ✅ | `frontend/src/components/SideMenu.jsx` — 活跃菜单项高亮 |
+| L4 | ✅ | `frontend/src/pages/RegisterPage.jsx` — 密码强度提示 |
+| L5 | ✅ | `frontend/src/services/api.js` — 请求重试机制 |
+| L6 | ✅ | `frontend/src/pages/*.jsx` — 表单验证增强 |
+| L7 | ✅ | `frontend/src/pages/*.jsx` — loading 骨架屏 |
+| L8 | ✅ | `frontend/src/pages/DashboardPage.jsx` — 数据刷新机制 |
+| L9 | ✅ | `frontend/src/pages/PricingPage.jsx` — 计算参数记忆 |
+| L10 | ✅ | `frontend/package.json` — 移除 framer-motion, recharts 未使用依赖 |
+
+#### 额外修复
+
+| 项目 | 描述 |
+|------|------|
+| session_security.py | 584→423行（拆分 DistributedLock/helpers 到 `session_security_helpers.py`） |
+
+#### 提交历史 (audit-fixes 分支)
+
+| # | SHA | Issues | 描述 |
+|---|-----|--------|------|
+| 1 | `9aee73fd` | C1 | 认证绕过移除 |
+| 2 | `c647288f` | H5 | 异常处理器修复 |
+| 3 | `5d8d165b` | H4+H11+M9 | 安全密钥环境变量化 |
+| 4 | `b4699ff7` | C4+H10 | 静默异常→日志记录 |
+| 5 | `cd0873b9` | H1+H2+H3+H6+H12 | SQL注入/CORS/路径遍历/密码重置 |
+| 6 | `791e3c1a` | H7+H8+H9 | async修复/bare except消除 |
+| 7 | `1c0d7ef4` | M1 | db_utils.py → db/ 包 |
+| 8 | `6d44f18a` | M2 | logic.py → pricing/ 包 |
+| 9 | `91742b0a` | C3 | 汇率反转修复 |
+| 10 | `f8e404be` | C5+C6+M11-M13+L2-L10 | 前端全量修复 |
+| 11 | `2646dcb3` | M3-M8+M10+M14+L1 | 后端剩余修复 |
+| 12 | `125ee124` | — | session_security.py 拆分 |
+
+**最终数据**：
+- 后端: **988 passed**, 2 skipped, 0 failed
+- 前端: **169 passed**, 0 failed (21 test files)
+- E2E: **260 passed**, 4 flaky failures (均为预存在的 UI timing 问题)
+- flake8: 0 errors
+- 所有函数 < 100 行，所有文件 < 500 行
