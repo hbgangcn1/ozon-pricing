@@ -6,10 +6,13 @@
 
 import sys
 import time
+import logging
 import threading
 from typing import Tuple, Optional
 from unittest.mock import MagicMock
 from contextlib import contextmanager
+
+logger = logging.getLogger(__name__)
 
 # 直接从 db_utils 导入
 try:
@@ -260,6 +263,7 @@ class SessionSecurityEnhanced:
                         "ALTER TABLE active_sessions ALTER COLUMN is_active SET DEFAULT TRUE"
                     )
                 except Exception:
+                    # 预期异常：SQLite 不支持 ALTER COLUMN，或列已存在；忽略即可
                     pass
 
                 sql = adapt_sql("""
@@ -274,8 +278,8 @@ class SessionSecurityEnhanced:
                 """)
                 c.execute(sql)
                 conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("会话表初始化失败: %s", e)
 
     @staticmethod
     def check_suspicious_ip(user_id: int, ip_address: str) -> Tuple[bool, str]:
@@ -306,7 +310,8 @@ class SessionSecurityEnhanced:
                     return True, f"检测到来自新IP {ip_address} 的登录"
 
                 return False, ""
-        except Exception:
+        except Exception as e:
+            logger.warning("IP检查失败: %s", e)
             return False, ""
 
     @staticmethod
@@ -322,8 +327,8 @@ class SessionSecurityEnhanced:
                 """)
                 c.execute(sql, (username, 1 if success else 0, time.time()))
                 conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("登录记录失败: %s", e)
 
     @staticmethod
     def generate_session_id(user_id: int) -> str:
@@ -366,7 +371,8 @@ class SessionSecurityEnhanced:
                 )
                 conn.commit()
                 return session_id
-        except Exception:
+        except Exception as e:
+            logger.error("创建会话失败: %s", e)
             return None
 
     @staticmethod
@@ -413,7 +419,8 @@ class SessionSecurityEnhanced:
                         "role": row[9] if len(row) > 9 else None,
                     }
                 return None
-        except Exception:
+        except Exception as e:
+            logger.warning("获取会话信息失败: %s", e)
             return None
 
     @staticmethod
@@ -445,7 +452,8 @@ class SessionSecurityEnhanced:
                         )
                     return True, "超过最大并发会话数，已自动下线最旧会话"
                 return True, ""
-        except Exception:
+        except Exception as e:
+            logger.error("检查并发会话失败: %s", e)
             return True, ""
 
     @staticmethod
@@ -462,7 +470,8 @@ class SessionSecurityEnhanced:
                 c.execute(sql, (session_id,))
                 conn.commit()
                 return True
-        except Exception:
+        except Exception as e:
+            logger.error("强制登出会话失败: %s", e)
             return False
 
     @staticmethod
@@ -478,7 +487,8 @@ class SessionSecurityEnhanced:
             if info:
                 return True, info
             return False, {}
-        except Exception:
+        except Exception as e:
+            logger.warning("验证会话ID失败: %s", e)
             return False, {}
 
     @staticmethod
@@ -507,7 +517,8 @@ class SessionSecurityEnhanced:
                     c.execute(sql, (user_id,))
                 conn.commit()
                 return c.rowcount
-        except Exception:
+        except Exception as e:
+            logger.error("使会话失效失败: %s", e)
             return 0
 
     @staticmethod
