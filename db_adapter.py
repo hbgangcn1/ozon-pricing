@@ -312,39 +312,16 @@ def adapt_sql(sql: str) -> str:
         flags=re.IGNORECASE | re.DOTALL,
     )
 
-    sql_upper = sql.upper()
-    if (
-        "ACTIVE_SESSIONS" in sql_upper
-        and "VALUES" in sql_upper
-        and "INSERT" in sql_upper
-    ):
-        sql = re.sub(
-            r",\s*1\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))",
-            ", TRUE)",
-            sql,
-            flags=re.IGNORECASE | re.MULTILINE | re.DOTALL,
-        )
-        sql = re.sub(
-            r",\s*0\s*\)(?=\s*(?:$|;|\n|RETURNING|ON CONFLICT))",
-            ", FALSE)",
-            sql,
-            flags=re.IGNORECASE | re.MULTILINE | re.DOTALL,
-        )
-
     sql = sql.replace("?", "%s")
 
-    sql = re.sub(r"\bis_active\s*=\s*1\b", "is_active = TRUE", sql, flags=re.IGNORECASE)
     sql = re.sub(
-        r"\bis_active\s*=\s*0\b", "is_active = FALSE", sql, flags=re.IGNORECASE
-    )
-    sql = re.sub(
-        r"\b(success|is_test_user|is_active)\s*=\s*1\b",
+        r"\b(success|is_test_user)\s*=\s*1\b",
         r"\1 = TRUE",
         sql,
         flags=re.IGNORECASE,
     )
     sql = re.sub(
-        r"\b(success|is_test_user|is_active)\s*=\s*0\b",
+        r"\b(success|is_test_user)\s*=\s*0\b",
         r"\1 = FALSE",
         sql,
         flags=re.IGNORECASE,

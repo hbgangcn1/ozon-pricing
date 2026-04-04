@@ -193,6 +193,10 @@ class PostgresBackupSystem:
         logger.debug("pg_dump 执行成功")
 
     def _run_pg_restore(self, backup_path: str) -> None:
+        # 手动重置 schema（超级用户权限绕过对象归属限制）
+        # 再用 pg_restore 重建所有对象（无需 --clean）
+        self._reset_public_schema()
+
         cmd = [
             "pg_restore",
             "-h",
@@ -201,8 +205,6 @@ class PostgresBackupSystem:
             str(POSTGRES_CONFIG.get("port", 5432)),
             "-U",
             POSTGRES_CONFIG.get("user", "postgres"),
-            "--clean",
-            "--if-exists",
             "--no-owner",
             "--no-privileges",
             "--exit-on-error",
@@ -210,10 +212,6 @@ class PostgresBackupSystem:
             POSTGRES_CONFIG.get("database", "postgres"),
             backup_path,
         ]
-
-        options = POSTGRES_CONFIG.get("options")
-        if options:
-            cmd.extend(["-o", options])
 
         logger.debug("执行 pg_restore: {}", " ".join(cmd))
         result = subprocess.run(
@@ -228,6 +226,54 @@ class PostgresBackupSystem:
             logger.debug(f"pg_restore 输出: {result.stdout}")
         if result.stderr:
             logger.debug(f"pg_restore 警告: {result.stderr}")
+
+    def _reset_public_schema(self) -> None:
+        """以超级用户身份重置 public schema + 清理所有额外 schema。
+
+        超级用户可以删除任意用户的对象，故可绕过 pg_restore --clean
+        阶段因对象归属权导致的 "must be owner" 错误。
+        同时清理 test_sessions_* 等额外 schema，
+        避免 pg_restore 时报 "schema already exists"。
+        """
+        logger.info("正在重置 public schema...")
+        dsn = (
+            f"host={POSTGRES_CONFIG.get('host', 'localhost')} "
+            f"port={POSTGRES_CONFIG.get('port', 5432)} "
+            f"dbname={POSTGRES_CONFIG.get('database', 'postgres')} "
+            f"user={POSTGRES_CONFIG.get('user', 'postgres')}"
+        )
+        password = POSTGRES_CONFIG.get("password", "")
+        if password:
+            dsn += f" password={password}"
+        options = POSTGRES_CONFIG.get("options")
+        if options:
+            dsn += f" options='{options}'"
+
+        try:
+            with closing(psycopg2.connect(dsn)) as conn:
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    # 1. 清理所有非内置 schema（包括 test_sessions_* 等）
+                    cur.execute("""
+                        SELECT schema_name FROM information_schema.schemata
+                        WHERE schema_name NOT IN (
+                            'public', 'pg_catalog', 'information_schema',
+                            'pg_toast', 'pg_temp_1', 'pg_toast_temp_1',
+                            'pg_bitmapindex', 'pg_aoseg', 'pg_global'
+                        )
+                    """)
+                    extra = [r[0] for r in cur.fetchall()]
+                    for s in extra:
+                        cur.execute(f"DROP SCHEMA {s} CASCADE")
+                        logger.info("  已删除额外 schema: {}", s)
+
+                    # 2. 重建 public schema
+                    cur.execute("DROP SCHEMA public CASCADE")
+                    cur.execute("CREATE SCHEMA public")
+                    logger.info("✅ public schema 已重置（清理了 {} 个额外 schema）", len(extra))
+        except Exception as e:
+            logger.warning("重置 public schema 失败: {}", e)
+            raise
 
     # noinspection PyMethodMayBeStatic
     def _drop_all_foreign_keys(self) -> None:
@@ -576,11 +622,8 @@ class PostgresBackupSystem:
     def cleanup_old_backups(self) -> None:
         try:
             records = self._filter_backup_files()
-            # 保留最新的 max_backups 份（不包含 pre_restore 快照）
-            regular_backups = [
-                item for item in records if item["type"] in {"auto", "manual"}
-            ]
-            for item in regular_backups[self.max_backups:]:
+            # 保留最新的 max_backups 份（所有类型：auto、manual、pre_restore）
+            for item in records[self.max_backups:]:
                 try:
                     os.remove(item["path"])
                     logger.info("🗑️ 删除旧备份: {}", item["name"])
@@ -653,24 +696,6 @@ class PostgresBackupSystem:
 
         # 在恢复前等待一小段时间，确保连接真正关闭
         time.sleep(1)
-
-        # 在恢复前删除所有外键约束，避免 --clean 失败
-        try:
-            self._drop_all_foreign_keys()
-        except Exception as fk_exc:  # noqa: B902
-            logger.warning(
-                f"删除外键约束时出现异常: {fk_exc}，"
-                f"继续恢复流程"
-            )
-
-        # 在恢复前删除所有序列的默认值依赖，避免 --clean 失败
-        try:
-            self._drop_sequence_dependencies()
-        except Exception as seq_exc:  # noqa: B902
-            logger.warning(
-                f"删除序列依赖时出现异常: {seq_exc}，"
-                f"继续恢复流程"
-            )
 
         # 尝试恢复，最多重试3次
         max_retries = 3

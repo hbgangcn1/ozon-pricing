@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Layout, Menu } from 'antd'
 import {
@@ -16,6 +16,114 @@ import {
   MenuUnfoldOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../stores/authStore'
+import apiClient from '../services/api'
+
+function ExchangeRateWidget({ collapsed }) {
+  const [rates, setRates] = useState({
+    'RUB/CNY': null,
+    'CNY/RUB': null,
+    'USD/CNY': null,
+    'CNY/USD': null,
+  })
+  const [loading, setLoading] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(null)
+
+  const fetchRates = async () => {
+    setLoading(true)
+    try {
+      const data = await apiClient.get('/exchange/rates')
+      setRates(data)
+      setLastUpdated(new Date())
+    } catch (error) {
+      console.error('获取汇率失败:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchRates()
+    const interval = setInterval(fetchRates, 5 * 60 * 1000) // 5分钟
+    return () => clearInterval(interval)
+  }, [])
+
+  if (collapsed) {
+    return (
+      <div
+        style={{
+          padding: '16px 8px',
+          textAlign: 'center',
+          color: 'rgba(255,255,255,0.65)',
+          fontSize: 12,
+        }}
+      >
+        汇率
+      </div>
+    )
+  }
+
+  return (
+    <div
+      style={{
+        padding: '16px',
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+      }}
+    >
+      <div
+        style={{
+          color: 'rgba(255,255,255,0.85)',
+          fontSize: 14,
+          fontWeight: 'bold',
+          marginBottom: 12,
+        }}
+      >
+        实时汇率
+      </div>
+      <table style={{ width: '100%', color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
+        <tbody>
+          {Object.entries(rates).map(([pair, value]) => (
+            <tr key={pair}>
+              <td style={{ padding: '4px 0' }}>{pair}</td>
+              <td style={{ padding: '4px 0', textAlign: 'right' }}>
+                {value !== null ? value.toFixed(4) : '-'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div
+        style={{
+          marginTop: 12,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: 10,
+          color: 'rgba(255,255,255,0.45)',
+        }}
+      >
+        <span>
+          {lastUpdated
+            ? `更新: ${lastUpdated.toLocaleTimeString()}`
+            : '未更新'}
+        </span>
+        <button
+          onClick={fetchRates}
+          disabled={loading}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'rgba(255,255,255,0.65)',
+            cursor: 'pointer',
+            padding: '2px 6px',
+          }}
+        >
+          {loading ? '刷新中...' : '刷新'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const { Sider } = Layout
 
@@ -92,6 +200,8 @@ function SideMenu() {
         items={menuItems}
         style={{ borderRight: 0, marginTop: 8 }}
       />
+
+      <ExchangeRateWidget collapsed={collapsed} />
 
       <div
         onClick={() => setCollapsed(!collapsed)}

@@ -28,6 +28,9 @@ REDIS_AVAILABLE = _redis_available
 
 # 全局Redis连接
 _redis_client: Optional[Any] = None
+_redis_init_failed: bool = False  # 标记Redis是否初始化失败，避免反复超时重试
+_redis_fail_time: float = 0.0    # 失败时间戳
+_REDIS_RETRY_INTERVAL = 300      # 失败后 300 秒才重试
 
 # 缓存配置
 CACHE_CONFIG = {
@@ -36,9 +39,9 @@ CACHE_CONFIG = {
     'db': 0,
     'password': None,
     'decode_responses': True,
-    'socket_timeout': 5,
-    'socket_connect_timeout': 5,
-    'retry_on_timeout': True,
+    'socket_timeout': 1,
+    'socket_connect_timeout': 1,
+    'retry_on_timeout': False,
     'max_connections': 20,
 }
 
@@ -64,40 +67,42 @@ def init_redis_client(config: Optional[Dict[str, Any]] = None) -> bool:
     Returns:
         bool: 是否初始化成功
     """
-    global _redis_client
+    global _redis_client, _redis_init_failed, _redis_fail_time
 
     if not REDIS_AVAILABLE:
-        # Redis未安装，静默返回False（不使用print，避免干扰）
+        return False
+
+    # 失败后短期内不重试
+    if _redis_init_failed and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL:
         return False
 
     try:
-        # 合并配置
         final_config = {**CACHE_CONFIG}
         if config:
             final_config.update(config)
 
-        # 创建连接池
         if redis is None:
             return False
         pool = redis.ConnectionPool(**final_config)
         _redis_client = redis.Redis(connection_pool=pool)
 
-        # 测试连接
         if _redis_client is not None:
             _redis_client.ping()
-        # Redis连接成功，静默返回（避免在生产环境输出过多信息）
+        _redis_init_failed = False
         return True
 
-    except (RedisError, RedisConnectionError):
-        # Redis连接失败，静默降级到内存缓存
-        # 错误信息已通过异常处理，系统会自动使用L1内存缓存
+    except (RedisError, RedisConnectionError, OSError):
         _redis_client = None
+        _redis_init_failed = True
+        _redis_fail_time = time.time()
         return False
 
 
 def get_redis_client() -> Optional[Any]:
-    """获取Redis客户端"""
+    """获取Redis客户端，失败后短期内不重试"""
     if _redis_client is None:
+        if _redis_init_failed and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL:
+            return None
         init_redis_client()
     return _redis_client
 

@@ -84,16 +84,16 @@ GIT_CLEANUP_REPORT.md
 PROJECT_IMPROVEMENT_ANALYSIS.md
 BACKUP_README.md
 
-# 统一忽略：测试套件与所有 Markdown 文档（保留README.md和核心文档）
-tests/
-test_*.py
-*_test.py
+# Node modules
+node_modules/
+
+# Markdown 文档（保留核心文档）
 *.md
 !README.md
+!PLAN.md
+!AGENTS.md
+!AUDIT_REPORT.md
 !LICENSE
-!*.部署指南.md
-!*.说明.md
-!*.README.md
 
 # 项目特定文件
 pyrightconfig.json
@@ -112,7 +112,6 @@ final_connection_fix.py
 fix_connection_leaks.py
 fix_leaks.py
 fix_tests.py
-pytest.ini
 run_tests.bat
 safe_db_utils.py
 simple_connection_fix.py
@@ -137,7 +136,6 @@ flake8_ui_logistics.txt
 cleanup_test_users.py
 fix_test_placeholders.py
 fix_*.py
-conftest.py
 coverage.xml
 test_*.txt
 test_output*.txt
@@ -158,6 +156,14 @@ cert_env_config.txt
 .env.postgresql
 *_secret.py
 *_private.py
+
+# Playwright auth state (contains JWT tokens — never commit)
+frontend/tests/.auth/
+frontend/playwright-report/
+
+# 临时输出文件
+output*.txt
+_ul
 
 # 保留配置模板文件（不包含敏感信息）
 !env.template

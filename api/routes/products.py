@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer
 from typing import List
 
 from db_utils import (
@@ -15,13 +14,9 @@ from api.models.schemas import (
     ProductResponse,
     MessageResponse,
 )
+from api.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/api/products", tags=["产品"])
-security = HTTPBearer()
-
-
-def get_current_user_id(api_key: str = Depends(security)) -> int:
-    return 1
 
 
 @router.get("", response_model=List[ProductResponse])
@@ -43,6 +38,10 @@ async def create_product(
     product: ProductCreate, user_id: int = Depends(get_current_user_id)
 ):
     product_data = product.model_dump()
+    product_data["user_id"] = user_id
+    for key in ["is_cylinder", "has_battery", "has_liquid", "has_msds"]:
+        if key in product_data and isinstance(product_data[key], bool):
+            product_data[key] = 1 if product_data[key] else 0
     product_id = add_product(product_data)
     if not product_id:
         raise HTTPException(status_code=400, detail="创建产品失败")
@@ -58,6 +57,9 @@ async def update_product_endpoint(
         raise HTTPException(status_code=404, detail="产品不存在")
 
     update_data = product.model_dump(exclude_unset=True)
+    for key in ["is_cylinder", "has_battery", "has_liquid", "has_msds"]:
+        if key in update_data and isinstance(update_data[key], bool):
+            update_data[key] = 1 if update_data[key] else 0
     success = update_product(product_id, user_id, update_data)
     if not success:
         raise HTTPException(status_code=400, detail="更新产品失败")

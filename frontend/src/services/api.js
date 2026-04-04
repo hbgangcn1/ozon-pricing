@@ -18,10 +18,11 @@ apiClient.interceptors.request.use((config) => {
 })
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => response.data,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && window.location.pathname !== '/login') {
       localStorage.removeItem('api_token')
+      localStorage.removeItem('api_user')
       window.location.href = '/login'
     }
     return Promise.reject(error)
@@ -33,6 +34,16 @@ export const authAPI = {
     apiClient.post('/auth/login', { username, password }),
   logout: () => apiClient.post('/auth/logout'),
   getMe: () => apiClient.get('/auth/me'),
+  changePassword: (data) => apiClient.post('/auth/change-password', data),
+  register: (data) => apiClient.post('/auth/register', data),
+  loginAs: (username, password) =>
+    apiClient.post('/auth/login', { username, password }),
+}
+
+export const logoutUser = () => {
+  localStorage.removeItem('api_token')
+  localStorage.removeItem('api_user')
+  window.location.href = '/login'
 }
 
 export const productsAPI = {
@@ -49,13 +60,67 @@ export const logisticsAPI = {
   create: (data) => apiClient.post('/logistics', data),
   update: (id, data) => apiClient.put(`/logistics/${id}`, data),
   delete: (id) => apiClient.delete(`/logistics/${id}`),
+  batchDelete: (ids) => apiClient.post('/logistics/batch-delete', ids),
 }
 
 export const pricingAPI = {
-  calculate: (productId, logisticsId, mode = 'fast') =>
-    apiClient.post('/pricing/calculate', null, {
-      params: { product_id: productId, logistics_id: logisticsId, mode },
+  calculate: (productId, mode, productData) =>
+    apiClient.post('/pricing/calculate', {
+      product_id: productId,
+      product_data: productData,
+      mode: mode,
     }),
+}
+
+export const subscriptionsAPI = {
+  getPlans: () => apiClient.get('/subscriptions/plans'),
+  getCurrent: () => apiClient.get('/subscriptions/current'),
+}
+
+export const ordersAPI = {
+  getAll: () => apiClient.get('/orders'),
+}
+
+export const adminAPI = {
+  getUsers: (page = 1, pageSize = 20, keyword = '') =>
+    apiClient.get('/admin/users', { params: { page, page_size: pageSize, keyword } }),
+  createUser: (data) => apiClient.post('/admin/users', data),
+  updateUser: (id, data) => apiClient.put(`/admin/users/${id}`, data),
+  resetPassword: (id) => apiClient.post(`/admin/users/${id}/reset-password`),
+  deleteUser: (id) => apiClient.delete(`/admin/users/${id}`),
+  getPlans: () => apiClient.get('/subscriptions/plans'),
+  updatePlan: (id, data) => apiClient.put(`/admin/plans/${id}`, data),
+}
+
+export const settingsAPI = {
+  get: () => apiClient.get('/settings'),
+  updateOpenRegistration: (enabled) => apiClient.put('/settings/open-registration', null, { params: { enabled } }),
+  getBackups: () => apiClient.get('/settings/backups'),
+  createBackup: () => apiClient.post('/settings/backup'),
+  getBackupSettings: () => apiClient.get('/settings/backup/settings'),
+  updateBackupSettings: (data) => apiClient.put('/settings/backup/settings', data),
+  getBackupStats: () => apiClient.get('/settings/backup/stats'),
+  deleteBackup: (filename) => apiClient.delete(`/settings/backup/${filename}`),
+  restoreBackup: (filename, createSnapshot = true) =>
+    apiClient.post(`/settings/backup/${filename}/restore`, { create_snapshot: createSnapshot }),
+  downloadBackup: (filename) =>
+    apiClient.get(`/settings/backup/${filename}/download`, { responseType: 'blob' }),
+}
+
+export const statisticsAPI = {
+  getOverview: () => apiClient.get('/statistics/overview'),
+  getRetention: () => apiClient.get('/statistics/retention'),
+  getRevenue: (months = 12) => apiClient.get('/statistics/revenue', { params: { months } }),
+  getLoginLogs: (page = 1, pageSize = 20) =>
+    apiClient.get('/statistics/login-logs', { params: { page, page_size: pageSize } }),
+  getAdminLogs: (page = 1, pageSize = 20) =>
+    apiClient.get('/statistics/admin-logs', { params: { page, page_size: pageSize } }),
+  getFeatureUsage: () => apiClient.get('/statistics/feature-usage'),
+  getUserGroups: () => apiClient.get('/statistics/user-groups'),
+  getFunnel: () => apiClient.get('/statistics/funnel'),
+  getPlanAnalysis: () => apiClient.get('/statistics/plan-analysis'),
+  getActiveUsers: () => apiClient.get('/statistics/active-users'),
+  getGrowth: () => apiClient.get('/statistics/growth'),
 }
 
 export default apiClient

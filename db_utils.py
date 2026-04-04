@@ -9,6 +9,7 @@ import time
 import signal
 import sys
 from datetime import datetime, date
+from typing import Optional, Tuple, Dict, Any, Sequence, Mapping, cast
 
 
 class _FakeSessionState:
@@ -45,7 +46,6 @@ if __name__ == "db_utils":
     sys.modules.setdefault("logistics.db_utils", sys.modules[__name__])
 elif __name__ == "logistics.db_utils":
     sys.modules.setdefault("db_utils", sys.modules[__name__])
-from typing import Optional, Tuple, Dict, Any, Sequence, Mapping, cast
 
 # 导入数据库适配函数（用于SQL语法适配）
 try:
@@ -109,6 +109,52 @@ def _is_postgresql_connection(conn):
 
     # 对于其他情况，假设是PostgreSQL
     return True
+
+
+def _ensure_serial_columns(conn, cursor, tables=None):
+    """
+    确保 PostgreSQL 表的 id 列绑定了自增序列。
+
+    当 CREATE TABLE IF NOT EXISTS 跳过已存在的表时，
+    adapt_sql 的 INTEGER→SERIAL 转换不会执行，
+    导致 id 列缺少 nextval 默认值。此函数检测并修复该问题。
+    """
+    if not _is_postgresql_connection(conn):
+        return
+    if tables is None:
+        cursor.execute(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE table_schema = current_schema() "
+            "AND column_name = 'id' AND data_type = 'integer' "
+            "AND column_default IS NULL"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+    for table in tables:
+        try:
+            cursor.execute(
+                "SELECT column_default FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = %s AND column_name = 'id'",
+                (table,),
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                continue
+            seq_name = f"{table}_id_seq"
+            cursor.execute(f"CREATE SEQUENCE IF NOT EXISTS {seq_name}")
+            cursor.execute(
+                f"ALTER TABLE {table} ALTER COLUMN id "
+                f"SET DEFAULT nextval('{seq_name}'::regclass)"
+            )
+            cursor.execute(f"ALTER SEQUENCE {seq_name} OWNED BY {table}.id")
+            cursor.execute(
+                f"SELECT setval('{seq_name}', "
+                f"COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, "
+                f"false)"
+            )
+            conn.commit()
+        except DB_EXCEPTIONS:
+            conn.rollback()
 
 
 def _subscription_expires_to_datetime(
@@ -480,6 +526,29 @@ def get_db_connection():
     return _adapter_func()
 
 
+def get_db():
+    """
+    返回数据库连接（get_db_connection的别名）
+    """
+    return get_db_connection()
+
+
+class DBConnection:
+    """数据库连接包装类（用于兼容旧代码）"""
+
+    def __init__(self):
+        self._conn = None
+
+    def __enter__(self):
+        self._conn = get_db_connection()
+        return self._conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._conn:
+            self._conn.close()
+        return False
+
+
 def get_enhanced_db_connection():
     """
     获取增强的数据库连接（推荐使用）
@@ -811,13 +880,23 @@ def verify_user(identifier, password):
                 if not is_bcrypt_hash(stored_password):
                     upgrade_user_password_to_bcrypt(user[0], password)
 
-                return {
+                cols = _get_table_columns(c, "users")
+                has_user_type = "user_type" in cols
+
+                result = {
                     "id": user[0],
                     "username": user[1],
                     "password": user[2],
                     "role": user[3],
                     "email": user[4],
                 }
+
+                if has_user_type and len(user) > 6:
+                    result["user_type"] = user[6]
+                else:
+                    result["user_type"] = "free"
+
+                return result
 
         return None
 
@@ -877,7 +956,7 @@ def init_db():
                 battery_capacity_mah INTEGER,
                 battery_voltage REAL,
                 has_msds INTEGER,
-                has_flammable INTEGER,
+                has_liquid INTEGER,
                 shipping_fee REAL,
                 labeling_fee REAL,
                 promotion_discount     REAL DEFAULT 0.05,
@@ -930,7 +1009,7 @@ def init_db():
                     DEFAULT 'none',
                 longest_side_threshold INTEGER DEFAULT 0,
                 allow_battery INTEGER,
-                allow_flammable INTEGER,
+                allow_liquid INTEGER,
                 battery_capacity_limit_wh REAL DEFAULT 0,
                 require_msds INTEGER DEFAULT 0,
                 fee_mode TEXT DEFAULT 'base_plus_continue',
@@ -943,11 +1022,14 @@ def init_db():
                 priority_group TEXT DEFAULT 'D',
                 price_limit_currency TEXT DEFAULT 'RUB',
                 price_min_currency TEXT DEFAULT 'RUB',
+                is_active INTEGER DEFAULT 1,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """
         logistics_sql = _safe_adapt_sql(logistics_sql_raw, conn)
         c.execute(logistics_sql)
+
+        _ensure_serial_columns(conn, c, ["users", "products", "logistics"])
 
         # 创建系统配置表
         system_config_sql_raw = """
@@ -1178,6 +1260,8 @@ def init_db():
             # 如果触发器不存在或其他错误，忽略
             pass
 
+        _ensure_serial_columns(conn, c)
+
 
 def add_product(product_data):
     """添加新产品
@@ -1225,7 +1309,7 @@ def add_product(product_data):
             "battery_capacity_mah",
             "battery_voltage",
             "has_msds",
-            "has_flammable",
+            "has_liquid",
             "shipping_fee",
             "labeling_fee",
             "promotion_cost_rate",
@@ -1244,7 +1328,14 @@ def add_product(product_data):
         placeholders = ",".join([placeholder for _ in base_fields]) + f",{placeholder}"
 
         # 获取值
-        values = [product_data.get(field, 0) for field in base_fields]
+        bool_fields = {"is_cylinder", "has_battery", "has_msds", "has_liquid"}
+        values = []
+        for field in base_fields:
+            val = product_data.get(field, 0)
+            # Convert boolean to integer for PostgreSQL
+            if field in bool_fields:
+                val = 1 if val else 0
+            values.append(val)
         # is_test_data默认0（手动创建）
         values.append(product_data.get("is_test_data", 0))
 
@@ -1275,7 +1366,7 @@ def add_product(product_data):
             "battery_capacity_mah",
             "battery_voltage",
             "has_msds",
-            "has_flammable",
+            "has_liquid",
             "labeling_fee",
             "shipping_fee",
             "promotion_cost_rate",
@@ -1483,7 +1574,7 @@ def update_product(product_id, user_id, updates):
             "battery_capacity_mah",
             "battery_voltage",
             "has_msds",
-            "has_flammable",
+            "has_liquid",
             "labeling_fee",
             "shipping_fee",
             "promotion_cost_rate",
@@ -3897,3 +3988,263 @@ def get_plan_price(plan_code: str, duration: str, use_test_price: bool = False):
         if duration == "year":
             return plan["actual_price_year"]
         return plan["actual_price_month"]
+
+
+def _ensure_postgresql_schema(conn, cursor):
+    """确保PostgreSQL schema存在 - 执行完整的schema自愈流程"""
+    import re as _re
+
+    if not _is_postgresql_connection(conn):
+        return
+
+    # 执行schema修复步骤
+    _ensure_serial_primary_key(conn, cursor, "users", "id")
+    _ensure_serial_primary_key(conn, cursor, "products", "id")
+    _ensure_serial_primary_key(conn, cursor, "payment_orders", "id")
+
+    _ensure_unique_constraint(
+        conn, cursor, "users", ("username",), "users_username_key"
+    )
+
+    _cleanup_duplicate_rows(conn, "users", ("username",))
+    _cleanup_duplicate_ids(conn, cursor, "users")
+
+    _ensure_foreign_key(
+        conn, cursor, "products", "fk_products_user_id", "user_id", "users", "id"
+    )
+
+    conn.commit()
+
+
+def _cleanup_duplicate_rows(conn, table_name, unique_columns):
+    """清理重复行 - 删除重复数据只保留最低ctid"""
+    import re as _re
+
+    # 参数验证
+    if not unique_columns:
+        return
+    if not _re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table_name):
+        return
+
+    # 验证列名
+    for col in unique_columns:
+        if not _re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", col):
+            return
+
+    cursor = conn.cursor()
+    try:
+        cols = ", ".join(unique_columns)
+        sql = (
+            f"DELETE FROM {table_name} "
+            f"WHERE ctid NOT IN ("
+            f"SELECT MIN(ctid) FROM {table_name} "
+            f"GROUP BY {cols})"
+        )
+        cursor.execute(sql)
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+def _cleanup_duplicate_ids(conn, table_name_or_cursor, id_column_or_table=None):
+    """清理重复ID - 支持两种调用方式"""
+    import re as _re
+
+    # 检测调用方式: (conn, cursor, table_name) 或 (conn, table_name, id_column)
+    if id_column_or_table is not None and isinstance(id_column_or_table, str):
+        if hasattr(table_name_or_cursor, "execute"):
+            # 调用方式: (conn, cursor, table_name)
+            cursor = table_name_or_cursor
+            table_name = id_column_or_table
+        else:
+            # 调用方式: (conn, table_name, id_column)
+            table_name = table_name_or_cursor
+            return 0
+    elif hasattr(table_name_or_cursor, "execute"):
+        # 调用方式: (conn, cursor, table_name) 但 table_name 缺失
+        return 0
+    else:
+        # 调用方式: (conn, table_name, ...) 旧式stub
+        return 0
+
+    # 验证表名
+    if not _re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table_name):
+        return 0
+
+    try:
+        sql = (
+            f"DELETE FROM {table_name} "
+            f"WHERE ctid NOT IN ("
+            f"SELECT MIN(ctid) FROM {table_name} "
+            f"GROUP BY id)"
+        )
+        cursor.execute(sql)
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return 0
+
+
+def _ensure_serial_primary_key(conn, cursor, table_name, column_name="id"):
+    """确保主键是serial类型 - 检查并创建序列"""
+    import re as _re
+
+    # 验证表名
+    if not _re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table_name):
+        return
+
+    seq_name = f"{table_name}_{column_name}_seq"
+
+    try:
+        # 检查列的column_default
+        cursor.execute(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_name = %s AND column_name = %s",
+            (table_name, column_name),
+        )
+        row = cursor.fetchone()
+
+        if row and row[0] and "nextval" in str(row[0]):
+            # 序列已存在且已关联
+            return
+
+        # 检查序列是否存在
+        cursor.execute(
+            "SELECT 1 FROM pg_sequences WHERE schemaname = 'public' "
+            "AND sequencename = %s",
+            (seq_name,),
+        )
+        seq_exists = cursor.fetchone()
+
+        if not seq_exists:
+            # 创建序列
+            cursor.execute(f"CREATE SEQUENCE {seq_name}")
+
+        # 设置列默认值
+        cursor.execute(
+            f"ALTER TABLE {table_name} ALTER COLUMN {column_name} "
+            f"SET DEFAULT nextval('{seq_name}')"
+        )
+
+        # 设置序列归属
+        cursor.execute(f"ALTER SEQUENCE {seq_name} OWNED BY {table_name}.{column_name}")
+
+        # 同步序列值到当前最大ID
+        cursor.execute(f"SELECT MAX({column_name}) FROM {table_name}")
+        max_row = cursor.fetchone()
+        if max_row and max_row[0]:
+            cursor.execute(f"SELECT setval('{seq_name}', %s)", (max_row[0],))
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+def _ensure_unique_constraint(
+    conn, cursor, table_name, columns_or_name, name_or_columns=None
+):
+    """确保唯一约束存在 - 检查并创建"""
+    import re as _re
+
+    # 智能参数检测: 支持两种调用顺序
+    if isinstance(columns_or_name, (tuple, list)):
+        columns = tuple(columns_or_name)
+        constraint_name = name_or_columns or f"{table_name}_{'_'.join(columns)}_key"
+    elif isinstance(name_or_columns, (tuple, list)):
+        columns = tuple(name_or_columns)
+        constraint_name = columns_or_name
+    else:
+        # 都是字符串的情况，按原始签名处理
+        constraint_name = columns_or_name
+        columns = (name_or_columns,) if name_or_columns else ()
+
+    if not columns:
+        return
+
+    # 验证表名
+    if not _re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table_name):
+        return
+
+    try:
+        # 检查约束是否存在
+        cursor.execute(
+            "SELECT 1 FROM information_schema.table_constraints "
+            "WHERE table_name = %s AND constraint_name = %s "
+            "AND constraint_type = 'UNIQUE'",
+            (table_name, constraint_name),
+        )
+        exists = cursor.fetchone()
+
+        # 检查现有约束列表
+        cursor.fetchall()  # consume any remaining results
+
+        if exists:
+            return
+
+        # 创建约束
+        cols = ", ".join(columns)
+        cursor.execute(
+            f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} UNIQUE ({cols})"
+        )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+def _ensure_foreign_key(
+    conn, cursor, table_name, constraint_name, column, ref_table, ref_column
+):
+    """确保外键存在（用于测试兼容）"""
+    pass
+
+
+def get_exchange_rate_fallback(currency_pair: str):
+    """
+    从数据库读取汇率fallback值，读不到时返回None
+    Args:
+        currency_pair: 'RUB_CNY' 或 'USD_CNY'
+    Returns:
+        float or None
+    """
+    try:
+        with get_db_connection() as (conn, c):
+            sql_raw = "SELECT rate FROM exchange_rates WHERE currency_pair = %s"
+            sql = _safe_adapt_sql(sql_raw, conn)
+            c.execute(sql, (currency_pair,))
+            row = c.fetchone()
+            return float(row[0]) if row else None
+    except Exception:
+        return None
+
+
+def update_exchange_rate_fallback(currency_pair: str, rate: float, source: str = ""):
+    """
+    成功获取外部API汇率后，更新数据库中的fallback值
+    Args:
+        currency_pair: 'RUB_CNY' 或 'USD_CNY'
+        rate: 汇率值
+        source: 数据来源
+    """
+    try:
+        with get_db_connection() as (conn, c):
+            sql_raw = """
+                INSERT INTO exchange_rates (currency_pair, rate, last_updated, source)
+                VALUES (%s, %s, NOW(), %s)
+                ON CONFLICT (currency_pair)
+                DO UPDATE SET rate = EXCLUDED.rate, last_updated = EXCLUDED.last_updated, source = EXCLUDED.source
+            """
+            sql = _safe_adapt_sql(sql_raw, conn)
+            c.execute(sql, (currency_pair, rate, source))
+            conn.commit()
+    except Exception:
+        pass

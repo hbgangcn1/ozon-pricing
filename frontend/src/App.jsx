@@ -1,9 +1,13 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { useAuthStore } from './stores/authStore'
+import { Skeleton } from './components/ui/skeleton'
 import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 import PricingPage from './pages/PricingPage'
 import LogisticsPage from './pages/LogisticsPage'
-import Layout from './components/Layout'
+import Layout from './components/AppLayout'
 import AccountPage from './pages/AccountPage'
 import SubscriptionPage from './pages/SubscriptionPage'
 import PaymentPage from './pages/PaymentPage'
@@ -14,21 +18,44 @@ import StatisticsPage from './pages/StatisticsPage'
 import AboutPage from './pages/AboutPage'
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, isLoading } = useAuthStore()
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Skeleton className="w-48 h-8" />
+      </div>
+    )
+  }
   return isAuthenticated ? children : <Navigate to="/login" replace />
 }
 
 function AdminRoute({ children }) {
-  const { isAuthenticated, isAdmin } = useAuthStore()
+  const { isAuthenticated, isAdmin, isLoading } = useAuthStore()
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Skeleton className="w-48 h-8" />
+      </div>
+    )
+  }
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (!isAdmin()) return <Navigate to="/pricing" replace />
   return children
 }
 
 function App() {
+  const { initAuth } = useAuthStore()
+
+  useEffect(() => {
+    initAuth()
+  }, [initAuth])
+
   return (
-    <Routes>
+    <>
+      <Toaster position="top-center" richColors />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route
         path="/"
         element={
@@ -78,6 +105,7 @@ function App() {
         <Route path="about" element={<AboutPage />} />
       </Route>
     </Routes>
+    </>
   )
 }
 

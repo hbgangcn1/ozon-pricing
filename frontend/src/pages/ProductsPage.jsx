@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm } from 'antd'
+import React, { useEffect, useState } from 'react'
+import { Table, Button, Modal, Form, Input, InputNumber, message } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import { productsAPI } from '../services/api'
 import { useProductStore } from '../stores/productStore'
@@ -9,6 +9,8 @@ function ProductsPage() {
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(null)
   const [form] = Form.useForm()
 
   useEffect(() => {
@@ -19,7 +21,7 @@ function ProductsPage() {
     setLoading(true)
     try {
       const response = await productsAPI.getAll()
-      setProducts(response.data)
+      setProducts(response)
     } catch (error) {
       message.error('获取产品列表失败')
     } finally {
@@ -39,13 +41,22 @@ function ProductsPage() {
     setModalVisible(true)
   }
 
-  const handleDelete = async (id) => {
+  const handleDelete = (record) => {
+    setPendingDelete(record)
+    setDeleteModalVisible(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
     try {
-      await productsAPI.delete(id)
-      removeProduct(id)
+      await productsAPI.delete(pendingDelete.id)
+      removeProduct(pendingDelete.id)
       message.success('删除成功')
     } catch (error) {
       message.error('删除失败')
+    } finally {
+      setDeleteModalVisible(false)
+      setPendingDelete(null)
     }
   }
 
@@ -54,11 +65,11 @@ function ProductsPage() {
       const values = await form.validateFields()
       if (editingProduct) {
         const response = await productsAPI.update(editingProduct.id, values)
-        updateProduct(editingProduct.id, response.data)
+        updateProduct(editingProduct.id, response)
         message.success('更新成功')
       } else {
         const response = await productsAPI.create(values)
-        addProduct(response.data)
+        addProduct(response)
         message.success('创建成功')
       }
       setModalVisible(false)
@@ -86,14 +97,9 @@ function ProductsPage() {
           >
             编辑
           </Button>
-          <Popconfirm
-            title="确认删除?"
-            onConfirm={() => handleDelete(record.id)}
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
+          <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
+            删除
+          </Button>
         </>
       ),
     },
@@ -132,6 +138,22 @@ function ProductsPage() {
             <InputNumber />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title="确认删除"
+        open={deleteModalVisible}
+        onOk={confirmDelete}
+        onCancel={() => {
+          setDeleteModalVisible(false)
+          setPendingDelete(null)
+        }}
+        okText="确定删除"
+        cancelText="取消"
+        okType="danger"
+      >
+        {pendingDelete && (
+          <p>确定要删除产品「<strong>{pendingDelete.name}</strong>」吗？此操作不可恢复。</p>
+        )}
       </Modal>
     </div>
   )

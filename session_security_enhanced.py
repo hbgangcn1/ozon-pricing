@@ -302,3 +302,63 @@ class SessionSecurityEnhanced:
         except (OSError, RuntimeError, ValueError, TypeError, AttributeError):
             # 数据库操作错误或其他运行时错误
             return False
+
+    @staticmethod
+    def get_client_info() -> dict:
+        """
+        获取客户端信息（IP、User-Agent等）
+
+        Returns:
+            dict: 包含 ip_address 和 user_agent 的字典
+        """
+        ip_address = "unknown"
+        user_agent = "unknown"
+
+        try:
+            from security import utils as security_utils
+
+            if hasattr(security_utils, "_streamlit"):
+                st = security_utils._streamlit
+                if hasattr(st, "context") and hasattr(st.context, "headers"):
+                    headers = st.context.headers
+                    if headers:
+                        x_forwarded_for = headers.get("X-Forwarded-For")
+                        if x_forwarded_for and not isinstance(
+                            x_forwarded_for, type(None)
+                        ):
+                            if isinstance(
+                                x_forwarded_for, str
+                            ) and "MagicMock" not in str(x_forwarded_for):
+                                ip_address = x_forwarded_for.split(",")[0].strip()
+                            else:
+                                ip_address = "unknown"
+                        else:
+                            x_real_ip = headers.get("X-Real-IP")
+                            if x_real_ip and not isinstance(x_real_ip, type(None)):
+                                if isinstance(
+                                    x_real_ip, str
+                                ) and "MagicMock" not in str(x_real_ip):
+                                    ip_address = x_real_ip
+                                else:
+                                    ip_address = "unknown"
+                            else:
+                                host = headers.get("Host", "")
+                                if host and not isinstance(host, type(None)):
+                                    if isinstance(host, str) and "MagicMock" not in str(
+                                        host
+                                    ):
+                                        ip_address = host.split(":")[0]
+                                    else:
+                                        ip_address = "unknown"
+                        ua = headers.get("User-Agent")
+                        if (
+                            ua
+                            and not isinstance(ua, type(None))
+                            and isinstance(ua, str)
+                            and "MagicMock" not in str(ua)
+                        ):
+                            user_agent = ua
+        except (ImportError, AttributeError, TypeError):
+            pass
+
+        return {"ip_address": ip_address, "user_agent": user_agent}

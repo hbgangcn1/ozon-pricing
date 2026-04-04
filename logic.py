@@ -1,20 +1,28 @@
 # logic.py
 
 import math
+from collections import defaultdict
 
 # 为了测试兼容性，导入ExchangeRateService（当前未使用，保留用于未来扩展）
 try:
     from exchange_service import (
         ExchangeRateService,  # pyright: ignore[reportUnusedImport]
-        get_usd_rate  # pyright: ignore[reportUnusedImport]
+        get_usd_rate,  # pyright: ignore[reportUnusedImport]
     )
 except ImportError:
     ExchangeRateService = None
     get_usd_rate = None
 
 
-def calculate_logistic_cost(logistic, product, debug=False):
-    """计算物流成本"""
+def calculate_logistic_cost(logistic, product, is_fast_mode=False, debug=False):
+    """计算物流成本
+
+    Args:
+        logistic: 物流规则字典
+        product: 产品字典
+        is_fast_mode: 是否为极速模式（跳过尺寸检查）
+        debug: 是否返回调试信息
+    """
     debug_info = []
 
     # 处理无效输入
@@ -41,27 +49,31 @@ def calculate_logistic_cost(logistic, product, debug=False):
     volume_coefficient = float(logistic.get("volume_coefficient", 5000))
     debug_info.append(f"体积重量模式: {volume_mode}, 系数: {volume_coefficient}")
 
-    # 基础限制检查
+    # 基础限制检查（0 = 无限制，不参与判断）
     actual_weight = product.get("weight_g", 0)
-    # 转换为float以兼容PostgreSQL的Decimal类型
     min_w = float(logistic.get("min_weight", 0))
-    max_w = float(logistic.get("max_weight", 10**9))
-    debug_info.append(f"重量限制: {min_w}g ~ {max_w}g, 当前: {actual_weight}g")
-    if actual_weight < min_w or actual_weight > max_w:
-        debug_info.append("不满足重量限制，返回 None")
+    max_w = float(logistic.get("max_weight", 0))  # 0 = 无上限
+
+    if actual_weight < 0:
+        debug_info.append(f"重量 {actual_weight}g 为负数，返回 None")
         return (None, debug_info) if debug else None
 
     # 如果重量为0，返回基础费用
     if actual_weight == 0:
         debug_info.append("重量为0，返回基础费用")
-        # 转换为float以兼容PostgreSQL的Decimal类型
         base_fee = float(logistic.get("base_fee", 0))
         return (base_fee, debug_info) if debug else base_fee
 
-    # 如果重量不满足限制，返回None
-    if actual_weight < min_w or actual_weight > max_w:
-        debug_info.append("不满足重量限制，返回 None")
+    # 重量限制检查：min_w=0 表示无下限，max_w=0 表示无上限
+    if min_w > 0 and actual_weight < min_w:
+        debug_info.append(f"重量 {actual_weight}g 低于下限 {min_w}g，返回 None")
         return (None, debug_info) if debug else None
+    if max_w > 0 and actual_weight > max_w:
+        debug_info.append(f"重量 {actual_weight}g 超过上限 {max_w}g，返回 None")
+        return (None, debug_info) if debug else None
+    debug_info.append(
+        f"重量限制: {min_w or '无'}g ~ {max_w or '无'}g, 当前: {actual_weight}g"
+    )
     try:
         # 获取产品包装形状
         is_cylinder = product.get("is_cylinder", False)
@@ -73,10 +85,10 @@ def calculate_logistic_cost(logistic, product, debug=False):
 
             # 首先检查物流是否有圆柱形包装限制
             has_cylinder_limits = (
-                logistic.get("max_cylinder_sum", 0) > 0 or
-                logistic.get("min_cylinder_sum", 0) > 0 or
-                logistic.get("max_cylinder_length", 0) > 0 or
-                logistic.get("min_cylinder_length", 0) > 0
+                logistic.get("max_cylinder_sum", 0) > 0
+                or logistic.get("min_cylinder_sum", 0) > 0
+                or logistic.get("max_cylinder_length", 0) > 0
+                or logistic.get("min_cylinder_length", 0) > 0
             )
 
             if has_cylinder_limits:
@@ -88,7 +100,6 @@ def calculate_logistic_cost(logistic, product, debug=False):
                     f"2倍直径+长度={cylinder_sum}cm"
                 )
                 # 极速模式跳过圆柱形包装尺寸检查
-                is_fast_mode = product.get("name") == "极速模式产品"
                 if is_fast_mode:
                     debug_info.append("极速模式，跳过圆柱形包装尺寸限制检查")
                 else:
@@ -103,10 +114,7 @@ def calculate_logistic_cost(logistic, product, debug=False):
                         )
                         return (None, debug_info) if debug else None
                     min_cylinder_sum = logistic.get("min_cylinder_sum", 0)
-                    if (
-                        min_cylinder_sum > 0 and
-                        cylinder_sum < min_cylinder_sum
-                    ):
+                    if min_cylinder_sum > 0 and cylinder_sum < min_cylinder_sum:
                         debug_info.append(
                             (
                                 "2倍直径与长度之和 "
@@ -115,9 +123,7 @@ def calculate_logistic_cost(logistic, product, debug=False):
                             )
                         )
                         return (None, debug_info) if debug else None
-                    max_cylinder_length = logistic.get(
-                        "max_cylinder_length", 0
-                    )
+                    max_cylinder_length = logistic.get("max_cylinder_length", 0)
                     if 0 < max_cylinder_length < cylinder_length:
                         debug_info.append(
                             (
@@ -172,7 +178,8 @@ def calculate_logistic_cost(logistic, product, debug=False):
             if 0 < max_sum_of_sides < sum(sides):
                 debug_info.append("三边和超限，返回 None")
                 return (None, debug_info) if debug else None
-            if max(sides) > logistic.get("max_longest_side", 10**9):
+            max_longest_side_val = logistic.get("max_longest_side", 10**9)
+            if max_longest_side_val > 0 and max(sides) > max_longest_side_val:
                 debug_info.append("最长边超限，返回 None")
                 return (None, debug_info) if debug else None
             # 第二边长上限检查
@@ -213,18 +220,15 @@ def calculate_logistic_cost(logistic, product, debug=False):
                     )
                     return (None, debug_info) if debug else None
         # 极速模式跳过所有特殊物品检查
-        is_fast_mode = product.get("name") == "极速模式产品"
         if is_fast_mode:
-            debug_info.append("极速模式，跳过所有特殊物品检查（电池、易燃液体、MSDS等）")
+            debug_info.append(
+                "极速模式，跳过所有特殊物品检查（电池、易燃液体、MSDS等）"
+            )
         else:
-            if (
-                product.get("has_battery") and
-                not logistic.get("allow_battery")
-            ):
+            if product.get("has_battery") and not logistic.get("allow_battery"):
                 debug_info.append("产品含电池但物流不允许，返回 None")
                 return (None, debug_info) if debug else None
-            if product.get("has_flammable") and not logistic.get(
-                    "allow_flammable"):
+            if product.get("has_liquid") and not logistic.get("allow_liquid"):
                 debug_info.append("产品含易燃液体但物流不允许，返回 None")
                 return (None, debug_info) if debug else None
             # 电池容量 & MSDS
@@ -240,9 +244,7 @@ def calculate_logistic_cost(logistic, product, debug=False):
                             debug_info.append("电池容量mAh和V都为0，跳过容量限制判断")
                         else:
                             wh = mah * v / 1000.0
-                            debug_info.append(
-                                f"电池容量: {wh}Wh, 限制: {limit_wh}Wh"
-                            )
+                            debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
                             if 0 < limit_wh < wh:
                                 debug_info.append("电池容量超限，返回 None")
                                 return (None, debug_info) if debug else None
@@ -251,23 +253,17 @@ def calculate_logistic_cost(logistic, product, debug=False):
                         if wh <= 0:
                             debug_info.append("电池容量Wh为0，跳过容量限制判断")
                         else:
-                            debug_info.append(
-                                f"电池容量: {wh}Wh, 限制: {limit_wh}Wh"
-                            )
+                            debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
                             if 0 < limit_wh < wh:
                                 debug_info.append("电池容量超限，返回 None")
                                 return (None, debug_info) if debug else None
-                if (
-                    logistic.get("require_msds") and
-                    not product.get("has_msds")
-                ):
+                if logistic.get("require_msds") and not product.get("has_msds"):
                     debug_info.append("要求 MSDS 但产品未提供，返回 None")
                     return (None, debug_info) if debug else None
 
         # 计算体积重量（在包装尺寸确定之后）
         if volume_mode == "max_actual_vs_volume":
-            volume_weight = (sides[0] * sides[1] *
-                             sides[2]) / volume_coefficient
+            volume_weight = (sides[0] * sides[1] * sides[2]) / volume_coefficient
             actual_weight_kg = actual_weight / 1000  # 转换为千克
             # 转换回克
             calculated_weight = max(actual_weight_kg, volume_weight) * 1000
@@ -278,15 +274,13 @@ def calculate_logistic_cost(logistic, product, debug=False):
             )
         elif volume_mode == "longest_side":
             # 转换为float以兼容PostgreSQL的Decimal类型
-            longest_side_threshold = float(
-                logistic.get("longest_side_threshold", 0))
+            longest_side_threshold = float(logistic.get("longest_side_threshold", 0))
             longest_side = max(sides)
             debug_info.append(
                 f"最长边: {longest_side}cm, 阈值: {longest_side_threshold}cm"
             )
             if longest_side > longest_side_threshold:
-                volume_weight = (sides[0] * sides[1] *
-                                 sides[2]) / volume_coefficient
+                volume_weight = (sides[0] * sides[1] * sides[2]) / volume_coefficient
                 # 当最长边超过阈值时，直接使用体积重量计费
                 calculated_weight = volume_weight * 1000  # 转换回克
                 debug_info.append(
@@ -312,21 +306,44 @@ def calculate_logistic_cost(logistic, product, debug=False):
             return None
     # 重量计费
     w = calculated_weight
-    fee_mode = logistic.get("fee_mode", "base_plus_continue")
-    continue_unit = int(logistic.get("continue_unit", 100))
+    fee_mode = logistic.get("fee_mode", "base_weight")
+    # 处理continue_unit：可能是字符串('g'/'kg'/'50g'/'100g'/'500g'/'1kg')或数值
+    continue_unit_raw = logistic.get("continue_unit", 100)
+    if isinstance(continue_unit_raw, str):
+        if continue_unit_raw == "kg":
+            continue_unit = 1000
+        elif continue_unit_raw == "g":
+            continue_unit = 1  # 每克
+        else:
+            # 处理 "50g", "100g", "500g", "1kg" 等格式
+            import re
+
+            g_match = re.match(r"^(\d+)\s*g$", continue_unit_raw, re.IGNORECASE)
+            kg_match = re.match(
+                r"^(\d+(?:\.\d+)?)\s*kg$", continue_unit_raw, re.IGNORECASE
+            )
+            if g_match:
+                continue_unit = int(g_match.group(1))
+            elif kg_match:
+                continue_unit = int(float(kg_match.group(1)) * 1000)
+            else:
+                # 兜底：尝试直接转数字
+                try:
+                    continue_unit = int(continue_unit_raw)
+                except (ValueError, TypeError):
+                    continue_unit = 100
+    else:
+        continue_unit = int(continue_unit_raw) if continue_unit_raw else 100
     # 转换为float以兼容PostgreSQL的Decimal类型
     continue_fee = float(logistic.get("continue_fee", 0))
     debug_info.append(
         f"计费方式: {fee_mode}, 续重单位: {continue_unit}g, 续重费用: {continue_fee:.5f}"
     )
-    if fee_mode == "base_plus_continue":
+    if fee_mode in ("base_weight", "base_plus_continue"):
         units = math.ceil(w / continue_unit)
         base_fee = float(logistic.get("base_fee", 0))
         cost = base_fee + continue_fee * units
-        debug_info.append(
-            f"基础费用: {base_fee}, "
-            f"单位数: {units}, 运费: {cost}"
-        )
+        debug_info.append(f"基础费用: {base_fee}, 单位数: {units}, 运费: {cost}")
     else:  # first_plus_continue
         first_weight = float(logistic.get("first_weight_g", 0))
         first_fee = float(logistic.get("first_fee", 0))
@@ -344,11 +361,13 @@ def calculate_logistic_cost(logistic, product, debug=False):
     return (cost, debug_info) if debug else cost
 
 
-def calculate_pricing(product, land_logistics, air_logistics,
-                      priority="低价优先"):
+def calculate_pricing(
+    product, land_logistics, air_logistics, mode="fast", priority="低价优先"
+):
     """计算定价"""
     from functools import lru_cache
 
+    filtered_logistics = {"land": [], "air": []}
     try:
         # 处理无效输入
         if product is None or land_logistics is None or air_logistics is None:
@@ -366,23 +385,31 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 "air_stats": None,
                 "all_costs_debug": [],
                 "land_debug": [],
-                "air_debug": []
+                "air_debug": [],
+                "avg_land_cost": 0,
+                "avg_land_days": 0,
+                "avg_air_cost": 0,
+                "avg_air_days": 0,
+                "saved_land_cost": 0,
+                "saved_land_days": 0,
+                "saved_air_cost": 0,
+                "saved_air_days": 0,
+                "filtered_logistics": filtered_logistics,
             }
 
         # 1. 基础数据 - 只获取一次汇率
         # 首先检查 product 是否有 get 方法
-        if not hasattr(product, 'get'):
+        if not hasattr(product, "get"):
             # 尝试调用 .get() 方法，这会抛出 AttributeError
             product.get("test")
 
         # 检查DataFrame是否为空
         def is_empty_logistics(logistics):
-            if hasattr(logistics, 'empty'):
+            if hasattr(logistics, "empty"):
                 return logistics.empty
             return not logistics
 
-        if (is_empty_logistics(land_logistics) and
-                is_empty_logistics(air_logistics)):
+        if is_empty_logistics(land_logistics) and is_empty_logistics(air_logistics):
             # 返回空结果字典
             return {
                 "best_land": None,
@@ -398,7 +425,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 "air_stats": None,
                 "all_costs_debug": [],
                 "land_debug": [],
-                "air_debug": []
+                "air_debug": [],
             }
 
         unit_price = float(product.get("unit_price", 0))
@@ -422,24 +449,29 @@ def calculate_pricing(product, land_logistics, air_logistics,
         rate = get_fallback_exchange_rate()
         usd_rate = get_fallback_usd_rate()
 
+        # 判断是否为极速模式
+        is_fast_mode = mode == "fast"
+
         # 2. 缓存版 calculate_logistic_cost
         @lru_cache(maxsize=256)
         def cached_cost(log_tuple, prod_tuple):
             return calculate_logistic_cost(
-                dict(log_tuple), dict(prod_tuple), debug=True)
+                dict(log_tuple), dict(prod_tuple), is_fast_mode, debug=True
+            )
+
         # 3. 过滤可用物流
         all_costs_debug = []
 
         def _cost_and_filter(logistics):
             res = []
             # 在函数开始时处理 product，确保它是字典格式
-            if hasattr(product, 'to_dict'):
+            if hasattr(product, "to_dict"):
                 product_dict = product.to_dict()
             elif isinstance(product, dict):
                 product_dict = product
             else:
                 # 如果是其他类型，尝试转换为字典
-                if hasattr(product, 'items'):
+                if hasattr(product, "items"):
                     # 尝试调用 .get() 方法，如果不存在会抛出 AttributeError
                     product.get("test")
                     product_dict = dict(product)
@@ -451,7 +483,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     raise AttributeError(f"对象 {type(product)} 没有 items() 方法")
 
             # 处理物流数据 - 支持DataFrame和list
-            if hasattr(logistics, 'empty'):
+            if hasattr(logistics, "empty"):
                 # pandas DataFrame
                 if logistics.empty:
                     return res
@@ -464,77 +496,86 @@ def calculate_pricing(product, land_logistics, air_logistics,
 
             for _, log in logistics_iter:
                 # 将 pandas Series 转换为字典
-                current_log_dict = (log.to_dict() if hasattr(log, 'to_dict')
-                                    else dict(log) if hasattr(log, 'items')
-                                    else log)
+                current_log_dict = (
+                    log.to_dict()
+                    if hasattr(log, "to_dict")
+                    else dict(log)
+                    if hasattr(log, "items")
+                    else log
+                )
 
                 cost, debug_info = cached_cost(
-                    tuple(current_log_dict.items()),
-                    tuple(product_dict.items()))
-                all_costs_debug.append({
-                    "logistic": current_log_dict,
-                    "cost": cost,
-                    "debug": debug_info
-                })
+                    tuple(current_log_dict.items()), tuple(product_dict.items())
+                )
+                all_costs_debug.append(
+                    {"logistic": current_log_dict, "cost": cost, "debug": debug_info}
+                )
                 if cost is None:
+                    # 淘汰原因
+                    reason = _debug_filter_reason(current_log_dict, product_dict)
+                    if logistics is land_logistics:
+                        filtered_logistics["land"].append(
+                            {"name": current_log_dict.get("name", ""), "reason": reason}
+                        )
+                    else:
+                        filtered_logistics["air"].append(
+                            {"name": current_log_dict.get("name", ""), "reason": reason}
+                        )
                     continue
 
                 # 浮动代理费价格计算
                 def calc_floating_price(
-                        cost_input,
-                        target_margin_input,
-                        promotion_rate_input,
-                        commission_rate_input,
-                        withdrawal_rate_input,
-                        payment_rate_input,
-                        vat_rate_input,
-                        rate_input,
-                        max_iter=3):
+                    cost_input,
+                    target_margin_input,
+                    promotion_rate_input,
+                    commission_rate_input,
+                    withdrawal_rate_input,
+                    payment_rate_input,
+                    vat_rate_input,
+                    rate_input,
+                    max_iter=3,
+                ):
                     """计算浮动代理费和收单费价格"""
                     commission_fee = 15 * rate_input
                     # 收单费初始值：按比例或最低10 RUB
                     payment_fee_fixed = 10 * rate_input
-                    use_fixed_payment = (payment_rate_input > 0)
+                    use_fixed_payment = payment_rate_input > 0
                     price = 0
                     price_rub = 0.0
 
                     for _ in range(max_iter):
                         if use_fixed_payment:
                             calc_total_cost = (
-                                cost_input + commission_fee +
-                                payment_fee_fixed
+                                cost_input + commission_fee + payment_fee_fixed
                             )
                             price_denominator = (
-                                1 -
-                                target_margin_input -
-                                promotion_rate_input -
-                                commission_rate_input -
-                                withdrawal_rate_input -
-                                vat_rate_input
+                                1
+                                - target_margin_input
+                                - promotion_rate_input
+                                - commission_rate_input
+                                - withdrawal_rate_input
+                                - vat_rate_input
                             )
                         else:
                             calc_total_cost = cost_input + commission_fee
                             price_denominator = (
-                                1 -
-                                target_margin_input -
-                                promotion_rate_input -
-                                commission_rate_input -
-                                withdrawal_rate_input -
-                                payment_rate_input -
-                                vat_rate_input
+                                1
+                                - target_margin_input
+                                - promotion_rate_input
+                                - commission_rate_input
+                                - withdrawal_rate_input
+                                - payment_rate_input
+                                - vat_rate_input
                             )
                         price = calc_total_cost / price_denominator
 
                         price_rub = price / rate_input
-                        new_commission_rub = max(15, min(200,
-                                                         price_rub * 0.02))
+                        new_commission_rub = max(15, min(200, price_rub * 0.02))
                         new_commission_fee = new_commission_rub * rate_input
 
                         # 判断收单费是固定还是按比例
                         if payment_rate_input > 0:
-                            payment_by_rate = (
-                                price_rub * payment_rate_input
-                            )
+                            payment_by_rate = price_rub * payment_rate_input
                             if payment_by_rate < 10:
                                 use_fixed_payment = True
                                 payment_fee_fixed = 10 * rate_input
@@ -546,34 +587,51 @@ def calculate_pricing(product, land_logistics, air_logistics,
                         commission_fee = new_commission_fee
 
                     actual_payment_rub = (
-                        10.0 if use_fixed_payment
-                        else price_rub * payment_rate_input
+                        10.0 if use_fixed_payment else price_rub * payment_rate_input
                     )
-                    return (price, commission_fee / rate_input,
-                            actual_payment_rub, use_fixed_payment)
+                    return (
+                        price,
+                        commission_fee / rate_input,
+                        actual_payment_rub,
+                        use_fixed_payment,
+                    )
 
                 # 基础成本（不包含代理费）
-                base_cost_calc = (unit_price + labeling_fee + shipping_fee +
-                                  cost)
-                filter_target_margin = product_dict.get(
-                    "target_profit_margin", 0.2)
-                filter_promotion_rate = product_dict.get(
-                    "promotion_cost_rate", 0)
-                filter_commission_rate = product_dict.get(
-                    "commission_rate", 0.08)
-                filter_withdrawal_rate = product_dict.get(
-                    "withdrawal_fee_rate", 0.02)
-                filter_payment_rate = product_dict.get(
-                    "payment_processing_fee", 0)
+                base_cost_calc = unit_price + labeling_fee + shipping_fee + cost
+                filter_target_margin = product_dict.get("target_profit_margin", 0.2)
+                filter_promotion_rate = product_dict.get("promotion_cost_rate", 0)
+                filter_commission_rate = product_dict.get("commission_rate", 0.08)
+                filter_withdrawal_rate = product_dict.get("withdrawal_fee_rate", 0.02)
+                filter_payment_rate = product_dict.get("payment_processing_fee", 0)
+                filter_return_rate = product_dict.get("return_rate", 0)
                 filter_vat_rate = product_dict.get("vat_rate", 0)
+                if filter_target_margin >= 1:
+                    filter_target_margin = filter_target_margin / 100
+                if filter_promotion_rate >= 1:
+                    filter_promotion_rate = filter_promotion_rate / 100
+                if filter_commission_rate >= 1:
+                    filter_commission_rate = filter_commission_rate / 100
+                if filter_withdrawal_rate >= 1:
+                    filter_withdrawal_rate = filter_withdrawal_rate / 100
+                if filter_payment_rate >= 1:
+                    filter_payment_rate = filter_payment_rate / 100
+                if filter_return_rate >= 1:
+                    filter_return_rate = filter_return_rate / 100
+                if filter_vat_rate >= 1:
+                    filter_vat_rate = filter_vat_rate / 100
 
                 # 计算浮动代理费和收单费
-                (rough, actual_commission,
-                 actual_payment_rub, fixed_payment) = calc_floating_price(
-                    base_cost_calc, filter_target_margin,
-                    filter_promotion_rate, filter_commission_rate,
-                    filter_withdrawal_rate, filter_payment_rate,
-                    filter_vat_rate, rate
+                (rough, actual_commission, actual_payment_rub, fixed_payment) = (
+                    calc_floating_price(
+                        base_cost_calc,
+                        filter_target_margin,
+                        filter_promotion_rate,
+                        filter_commission_rate,
+                        filter_withdrawal_rate,
+                        filter_payment_rate,
+                        filter_vat_rate,
+                        rate,
+                    )
                 )
 
                 # 根据代理费和收单费范围决定定价公式
@@ -586,11 +644,12 @@ def calculate_pricing(product, land_logistics, air_logistics,
 
                 numerator = base_cost_calc
                 denom_deductions = (
-                    filter_target_margin +
-                    filter_promotion_rate +
-                    filter_commission_rate +
-                    filter_withdrawal_rate +
-                    filter_vat_rate
+                    filter_target_margin
+                    + filter_promotion_rate
+                    + filter_commission_rate
+                    + filter_withdrawal_rate
+                    + filter_return_rate
+                    + filter_vat_rate
                 )
 
                 if commission_in_numerator:
@@ -633,52 +692,76 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 # edit hint
 
                 # 根据货币类型读取正确的价格限制值
-                log_limit_currency = current_log_dict.get(
-                    "price_limit_currency", "RUB")
+                log_limit_currency = current_log_dict.get("price_limit_currency", "RUB")
                 if log_limit_currency == "RUB":
                     # 转换为float以兼容PostgreSQL的Decimal类型
                     log_limit_value = float(
-                        current_log_dict.get("price_limit_rub") or 0)
+                        current_log_dict.get("price_limit_rub") or 0
+                    )
                 else:  # USD
-                    # 如果货币是USD，需要从price_limit字段读取（存储的是转换后的CNY值）
-                    # 然后转换回USD
-                    price_limit_cny = float(
-                        current_log_dict.get("price_limit") or 0)
-                    log_limit_value = (price_limit_cny / usd_rate
-                                       if price_limit_cny > 0 else 0)
+                    # price_limit 字段直接存储 USD 值（用户输入即 USD）
+                    log_limit_value = float(current_log_dict.get("price_limit") or 0)
 
-                log_min_currency = current_log_dict.get(
-                    "price_min_currency", "RUB")
+                log_min_currency = current_log_dict.get("price_min_currency", "RUB")
                 if log_min_currency == "RUB":
                     # 转换为float以兼容PostgreSQL的Decimal类型
-                    log_min_value = float(
-                        current_log_dict.get("price_min_rub") or 0)
+                    log_min_value = float(current_log_dict.get("price_min_rub") or 0)
                 else:  # USD
-                    # 如果货币是USD，需要从price_min字段读取（存储的是转换后的CNY值）
-                    # 然后转换回USD
-                    price_min_cny = float(
-                        current_log_dict.get("price_min") or 0)
-                    log_min_value = (price_min_cny / usd_rate
-                                     if price_min_cny > 0 else 0)
+                    # price_min 字段直接存储 USD 值（用户输入即 USD）
+                    log_min_value = float(current_log_dict.get("price_min") or 0)
 
                 # 根据货币类型进行价格比较
                 if log_limit_currency == "USD" and log_limit_value > 0:
                     # 美元限价：将估算售价转换为美元进行比较
                     rough_usd = rough / usd_rate
-                    debug_msg = (f"限价判断: 估算售价 {rough_usd:.2f} USD, "
-                                 f"上限 {log_limit_value:.2f} USD")
+                    debug_msg = (
+                        f"限价判断: 估算售价 {rough_usd:.2f} USD, "
+                        f"上限 {log_limit_value:.2f} USD"
+                    )
                     debug_info.append(debug_msg)
                     if rough_usd > log_limit_value:
                         debug_info.append("超价格上限，跳过")
+                        reason = f"估算售价 {rough_usd:.2f} USD 超过价格上限 {log_limit_value:.2f} USD"
+                        if logistics is land_logistics:
+                            filtered_logistics["land"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
+                        else:
+                            filtered_logistics["air"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
                         continue
                 elif log_limit_currency == "RUB" and log_limit_value > 0:
                     # 卢布限价：将估算售价转换为卢布进行比较
                     rough_rub = rough / rate
-                    debug_msg = (f"限价判断: 估算售价 {rough_rub:.2f} RUB, "
-                                 f"上限 {log_limit_value:.2f} RUB")
+                    debug_msg = (
+                        f"限价判断: 估算售价 {rough_rub:.2f} RUB, "
+                        f"上限 {log_limit_value:.2f} RUB"
+                    )
                     debug_info.append(debug_msg)
                     if rough_rub > log_limit_value:
                         debug_info.append("超价格上限，跳过")
+                        reason = f"估算售价 {rough_rub:.2f} RUB 超过价格上限 {log_limit_value:.2f} RUB"
+                        if logistics is land_logistics:
+                            filtered_logistics["land"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
+                        else:
+                            filtered_logistics["air"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
                         continue
 
                 # 价格下限调试信息
@@ -694,32 +777,59 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     # 美元下限：将估算售价转换为美元进行比较
                     rough_usd = rough / usd_rate
                     debug_info.append(
-                        f"下限 {log_min_value:.2f} USD, "
-                        f"估算 {rough_usd:.2f} USD"
+                        f"下限 {log_min_value:.2f} USD, 估算 {rough_usd:.2f} USD"
                     )
                     if rough_usd < log_min_value:
                         debug_info.append("低于价格下限，跳过")
+                        reason = f"估算售价 {rough_usd:.2f} USD 低于价格下限 {log_min_value:.2f} USD"
+                        if logistics is land_logistics:
+                            filtered_logistics["land"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
+                        else:
+                            filtered_logistics["air"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
                         continue
                     debug_info.append("通过价格下限检查")
                 elif log_min_currency == "RUB" and log_min_value > 0:
                     # 卢布下限：将估算售价转换为卢布进行比较
                     rough_rub = rough / rate
                     debug_info.append(
-                        f"下限 {log_min_value:.2f} RUB, "
-                        f"估算 {rough_rub:.2f} RUB"
+                        f"下限 {log_min_value:.2f} RUB, 估算 {rough_rub:.2f} RUB"
                     )
                     if rough_rub < log_min_value:
                         debug_info.append("低于价格下限，跳过")
+                        reason = f"估算售价 {rough_rub:.2f} RUB 低于价格下限 {log_min_value:.2f} RUB"
+                        if logistics is land_logistics:
+                            filtered_logistics["land"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
+                        else:
+                            filtered_logistics["air"].append(
+                                {
+                                    "name": current_log_dict.get("name", ""),
+                                    "reason": reason,
+                                }
+                            )
                         continue
                     debug_info.append("通过价格下限检查")
                 else:
-                    debug_info.append(
-                        f"无价格下限 (min_value={log_min_value})"
-                    )
+                    debug_info.append(f"无价格下限 (min_value={log_min_value})")
 
                 # 如果通过了所有价格检查，添加到候选列表
                 res.append((current_log_dict, cost))
             return res
+
         land_candidates = _cost_and_filter(land_logistics)
         air_candidates = _cost_and_filter(air_logistics)
 
@@ -736,12 +846,10 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     priority_group = log.get("priority_group", "D")
                     candidate_min_days = log.get("min_days", 0)
                     candidate_max_days = log.get("max_days", 0)
-                    candidate_avg_time = (candidate_min_days +
-                                          candidate_max_days) / 2
+                    candidate_avg_time = (candidate_min_days + candidate_max_days) / 2
                     # 优先级组：A=0, B=1, C=2, D=3, E=4（时效为0的物流）
-                    group_priority = (
-                        {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
-                        .get(priority_group, 4)
+                    group_priority = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}.get(
+                        priority_group, 4
                     )
                     return group_priority, cost, candidate_avg_time
 
@@ -754,11 +862,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     priority_group = log.get("priority_group", "D")
                     candidate_min_days = log.get("min_days", 0)
                     candidate_max_days = log.get("max_days", 0)
-                    candidate_avg_time = (candidate_min_days +
-                                          candidate_max_days) / 2
-                    group_priority = (
-                        {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
-                        .get(priority_group, 4)
+                    candidate_avg_time = (candidate_min_days + candidate_max_days) / 2
+                    group_priority = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}.get(
+                        priority_group, 4
                     )
                     return cost, group_priority, candidate_avg_time
 
@@ -767,53 +873,81 @@ def calculate_pricing(product, land_logistics, air_logistics,
         land_best = select_best_by_priority(land_candidates, priority)
         air_best = select_best_by_priority(air_candidates, priority)
 
+        # 将通过了所有检查但未被选中的物流加入淘汰列表
+        # 按配送方式分组，每组选最优，其余标记为"未被选中"
+        def _add_unselected(candidates, filtered_list):
+            # 按配送方式分组
+            groups = defaultdict(list)
+            for log_dict, cost in candidates:
+                groups[log_dict.get("delivery_method", "unknown")].append(
+                    (log_dict, cost)
+                )
+            # 每组选最优，其余加入淘汰列表
+            for delivery, group in groups.items():
+                already_filtered = {item["name"] for item in filtered_list}
+                group.sort(key=lambda x: x[1])
+                best_name = group[0][0].get("name", "")
+                for log_dict, cost in group[1:]:
+                    name = log_dict.get("name", "")
+                    if name in already_filtered:
+                        continue
+                    filtered_list.append(
+                        {
+                            "name": name,
+                            "reason": f"未被选中，物流成本较高（¥{cost:.2f}，同类型最优：{best_name} ¥{group[0][1]:.2f}）",
+                        }
+                    )
+
+        _add_unselected(land_candidates, filtered_logistics["land"])
+        _add_unselected(air_candidates, filtered_logistics["air"])
+
         # 5. 最终价格 - 使用浮动代理费
         def _final_price(cost, debug_list=None):
             # 使用与筛选阶段相同的浮动代理费计算方法
             def calc_final_commission(
-                    cost_input,
-                    target_margin_input,
-                    promotion_rate_input,
-                    commission_rate_input,
-                    withdrawal_rate_input,
-                    payment_rate_input,
-                    return_rate_input,
-                    vat_rate_input,
-                    rate_input,
-                    max_iter=5):
+                cost_input,
+                target_margin_input,
+                promotion_rate_input,
+                commission_rate_input,
+                withdrawal_rate_input,
+                payment_rate_input,
+                return_rate_input,
+                vat_rate_input,
+                rate_input,
+                max_iter=5,
+            ):
                 """计算最终价格的浮动代理费和收单费"""
                 commission_fee = 15 * rate_input
                 payment_fee_fixed = 10 * rate_input
-                use_fixed_payment = (payment_rate_input > 0)
+                use_fixed_payment = payment_rate_input > 0
                 price = 0
                 price_rub = 0.0
 
                 for _ in range(max_iter):
                     if use_fixed_payment:
                         iter_total_cost = (
-                            cost_input + commission_fee +
-                            payment_fee_fixed
+                            cost_input + commission_fee + payment_fee_fixed
                         )
                         final_price_denominator = (
-                            1 -
-                            target_margin_input -
-                            promotion_rate_input -
-                            commission_rate_input -
-                            withdrawal_rate_input -
-                            return_rate_input -
-                            vat_rate_input
+                            1
+                            - target_margin_input
+                            - promotion_rate_input
+                            - commission_rate_input
+                            - withdrawal_rate_input
+                            - return_rate_input
+                            - vat_rate_input
                         )
                     else:
                         iter_total_cost = cost_input + commission_fee
                         final_price_denominator = (
-                            1 -
-                            target_margin_input -
-                            promotion_rate_input -
-                            commission_rate_input -
-                            withdrawal_rate_input -
-                            payment_rate_input -
-                            return_rate_input -
-                            vat_rate_input
+                            1
+                            - target_margin_input
+                            - promotion_rate_input
+                            - commission_rate_input
+                            - withdrawal_rate_input
+                            - payment_rate_input
+                            - return_rate_input
+                            - vat_rate_input
                         )
                     price = iter_total_cost / final_price_denominator
 
@@ -823,9 +957,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
 
                     # 判断收单费是固定还是按比例
                     if payment_rate_input > 0:
-                        payment_by_rate = (
-                            price_rub * payment_rate_input
-                        )
+                        payment_by_rate = price_rub * payment_rate_input
                         if payment_by_rate < 10:
                             use_fixed_payment = True
                             payment_fee_fixed = 10 * rate_input
@@ -837,30 +969,52 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     commission_fee = new_commission_fee
 
                 actual_payment_rub = (
-                    10.0 if use_fixed_payment
-                    else price_rub * payment_rate_input
+                    10.0 if use_fixed_payment else price_rub * payment_rate_input
                 )
-                return (price, commission_fee / rate_input,
-                        actual_payment_rub, use_fixed_payment)
+                return (
+                    price,
+                    commission_fee / rate_input,
+                    actual_payment_rub,
+                    use_fixed_payment,
+                )
 
             # 基础成本（不包含代理费）
             base_cost_calc = unit_price + labeling_fee + shipping_fee + cost
             final_target_margin = product.get("target_profit_margin", 0.2)
             final_promotion_rate = product.get("promotion_cost_rate", 0)
             final_commission_rate = product.get("commission_rate", 0.08)
-            final_withdrawal_rate = product.get(
-                "withdrawal_fee_rate", 0.02)
-            final_payment_rate = product.get(
-                "payment_processing_fee", 0)
+            final_withdrawal_rate = product.get("withdrawal_fee_rate", 0.02)
+            final_payment_rate = product.get("payment_processing_fee", 0)
             final_return_rate = product.get("return_rate", 0)
             final_vat_rate = product.get("vat_rate", 0)
+            if final_target_margin >= 1:
+                final_target_margin = final_target_margin / 100
+            if final_promotion_rate >= 1:
+                final_promotion_rate = final_promotion_rate / 100
+            if final_commission_rate >= 1:
+                final_commission_rate = final_commission_rate / 100
+            if final_withdrawal_rate >= 1:
+                final_withdrawal_rate = final_withdrawal_rate / 100
+            if final_payment_rate >= 1:
+                final_payment_rate = final_payment_rate / 100
+            if final_return_rate >= 1:
+                final_return_rate = final_return_rate / 100
+            if final_vat_rate >= 1:
+                final_vat_rate = final_vat_rate / 100
 
             # 计算浮动代理费和收单费
-            (final_price, actual_commission,
-             final_payment_rub, final_fixed_payment) = calc_final_commission(
-                base_cost_calc, final_target_margin, final_promotion_rate,
-                final_commission_rate, final_withdrawal_rate,
-                final_payment_rate, final_return_rate, final_vat_rate, rate
+            (final_price, actual_commission, final_payment_rub, final_fixed_payment) = (
+                calc_final_commission(
+                    base_cost_calc,
+                    final_target_margin,
+                    final_promotion_rate,
+                    final_commission_rate,
+                    final_withdrawal_rate,
+                    final_payment_rate,
+                    final_return_rate,
+                    final_vat_rate,
+                    rate,
+                )
             )
 
             # 根据代理费和收单费范围决定定价公式
@@ -868,34 +1022,27 @@ def calculate_pricing(product, land_logistics, air_logistics,
 
             if debug_list is not None:
                 debug_list.append(
-                    f"代理费判断: "
-                    f"actual_commission={actual_commission:.15f}"
+                    f"代理费判断: actual_commission={actual_commission:.15f}"
                 )
+                debug_list.append(f"  四舍五入后: {actual_commission_rounded}")
+                debug_list.append(f"  原值 >= 200? {actual_commission >= 200}")
                 debug_list.append(
-                    f"  四舍五入后: {actual_commission_rounded}"
-                )
-                debug_list.append(
-                    f"  原值 >= 200? {actual_commission >= 200}"
-                )
-                debug_list.append(
-                    f"  四舍五入后 >= 200? "
-                    f"{actual_commission_rounded >= 200}"
+                    f"  四舍五入后 >= 200? {actual_commission_rounded >= 200}"
                 )
 
             commission_in_num = (
-                actual_commission_rounded <= 15 or
-                actual_commission_rounded >= 200
+                actual_commission_rounded <= 15 or actual_commission_rounded >= 200
             )
             payment_in_num = final_fixed_payment
 
             numerator = base_cost_calc
             denom_deductions = (
-                final_target_margin +
-                final_promotion_rate +
-                final_commission_rate +
-                final_withdrawal_rate +
-                final_return_rate +
-                final_vat_rate
+                final_target_margin
+                + final_promotion_rate
+                + final_commission_rate
+                + final_withdrawal_rate
+                + final_return_rate
+                + final_vat_rate
             )
 
             if commission_in_num:
@@ -928,9 +1075,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
             final_actual_commission = final_commission_rub
             # 重新计算收单费
             if final_payment_rate > 0:
-                final_payment_by_rate = (
-                    final_price_rub * final_payment_rate
-                )
+                final_payment_by_rate = final_price_rub * final_payment_rate
                 if final_payment_by_rate < 10:
                     final_actual_payment_rub = 10.0
                     final_fixed_payment = True
@@ -942,18 +1087,10 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 final_fixed_payment = False
 
             if debug_list is not None:
-                debug_list.append(
-                    f"迭代计算代理费: {actual_commission:.2f} RUB"
-                )
-                debug_list.append(
-                    f"最终售价: {final_price:.2f} CNY"
-                )
-                debug_list.append(
-                    f"最终售价(卢布): {final_price_rub:.2f} RUB"
-                )
-                debug_list.append(
-                    f"最终浮动代理费: {final_actual_commission:.2f} RUB"
-                )
+                debug_list.append(f"迭代计算代理费: {actual_commission:.2f} RUB")
+                debug_list.append(f"最终售价: {final_price:.2f} CNY")
+                debug_list.append(f"最终售价(卢布): {final_price_rub:.2f} RUB")
+                debug_list.append(f"最终浮动代理费: {final_actual_commission:.2f} RUB")
                 debug_list.append(
                     f"最终代理费(CNY): {final_actual_commission * rate:.2f}"
                 )
@@ -965,41 +1102,23 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 debug_list.append("定价公式详细参数:")
                 debug_list.append(f"  基础成本: {base_cost_calc:.2f}")
                 if commission_in_num:
-                    total_cost_display = (
-                        base_cost_calc + final_actual_commission * rate
-                    )
+                    total_cost_display = base_cost_calc + final_actual_commission * rate
                     if payment_in_num:
-                        total_cost_display += (
-                            final_actual_payment_rub * rate
-                        )
-                    debug_list.append(
-                        f"  总成本: {total_cost_display:.2f}"
-                    )
+                        total_cost_display += final_actual_payment_rub * rate
+                    debug_list.append(f"  总成本: {total_cost_display:.2f}")
                 else:
-                    debug_list.append(
-                        f"  总成本: {base_cost_calc:.2f} (代理费在分母)"
-                    )
-                debug_list.append(
-                    f"  目标利润率: -{final_target_margin * 100:.2f}%"
-                )
-                debug_list.append(
-                    f"  推广费率: -{final_promotion_rate * 100:.2f}%"
-                )
-                debug_list.append(
-                    f"  佣金率: -{final_commission_rate * 100:.2f}%"
-                )
-                debug_list.append(
-                    f"  提现费率: -{final_withdrawal_rate * 100:.2f}%"
-                )
+                    debug_list.append(f"  总成本: {base_cost_calc:.2f} (代理费在分母)")
+                debug_list.append(f"  目标利润率: -{final_target_margin * 100:.2f}%")
+                debug_list.append(f"  推广费率: -{final_promotion_rate * 100:.2f}%")
+                debug_list.append(f"  佣金率: -{final_commission_rate * 100:.2f}%")
+                debug_list.append(f"  提现费率: -{final_withdrawal_rate * 100:.2f}%")
                 if final_fixed_payment:
                     debug_list.append(
                         f"  收单费: {final_actual_payment_rub:.2f} RUB"
                         f" (固定下限，在分子中)"
                     )
                 else:
-                    debug_list.append(
-                        f"  收单费率: -{final_payment_rate * 100:.2f}%"
-                    )
+                    debug_list.append(f"  收单费率: -{final_payment_rate * 100:.2f}%")
                 debug_list.append(f"  退货率: -{final_return_rate * 100:.2f}%")
                 debug_list.append(f"  增值税率: -{final_vat_rate * 100:.2f}%")
                 if 15 < final_actual_commission < 200:
@@ -1007,9 +1126,14 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 debug_list.append(f"  定价分母: {denominator:.4f}")
                 debug_list.append(f"  计算售价: {final_price:.2f}")
 
-            return (round(final_price, 2), final_actual_commission,
-                    pricing_mode, final_actual_payment_rub,
-                    final_fixed_payment)
+            return (
+                round(final_price, 2),
+                final_actual_commission,
+                pricing_mode,
+                final_actual_payment_rub,
+                final_fixed_payment,
+            )
+
         land_debug = []
         air_debug = []
 
@@ -1031,16 +1155,22 @@ def calculate_pricing(product, land_logistics, air_logistics,
         air_payment_fixed = False
 
         if land_log:
-            (land_price, land_commission_info, land_pricing_mode,
-             land_payment_info, land_payment_fixed) = (
-                _final_price(land_cost, land_debug)
-            )
+            (
+                land_price,
+                land_commission_info,
+                land_pricing_mode,
+                land_payment_info,
+                land_payment_fixed,
+            ) = _final_price(land_cost, land_debug)
 
         if air_log:
-            (air_price, air_commission_info, air_pricing_mode,
-             air_payment_info, air_payment_fixed) = (
-                _final_price(air_cost, air_debug)
-            )
+            (
+                air_price,
+                air_commission_info,
+                air_pricing_mode,
+                air_payment_info,
+                air_payment_fixed,
+            ) = _final_price(air_cost, air_debug)
 
         # 计算统计信息
         land_stats = None
@@ -1058,17 +1188,25 @@ def calculate_pricing(product, land_logistics, air_logistics,
             avg_land_cost = sum(land_costs) / len(land_costs)
             avg_land_time = sum(land_times) / len(land_times)
 
-            cost_saving = ((avg_land_cost - land_cost) / avg_land_cost * 100
-                           ) if land_cost and avg_land_cost > 0 else 0
-            time_saving = (avg_land_time - (
-                (land_log.get("min_days", 0) + land_log.get("max_days", 0)) / 2
-            )) if land_log else 0
+            cost_saving = (
+                ((avg_land_cost - land_cost) / avg_land_cost * 100)
+                if land_cost and avg_land_cost > 0
+                else 0
+            )
+            time_saving = (
+                (
+                    avg_land_time
+                    - ((land_log.get("min_days", 0) + land_log.get("max_days", 0)) / 2)
+                )
+                if land_log
+                else 0
+            )
 
             land_stats = {
                 "avg_cost": avg_land_cost,
                 "cost_saving": cost_saving,
                 "avg_time": avg_land_time,
-                "time_saving": time_saving
+                "time_saving": time_saving,
             }
 
         if air_candidates:
@@ -1083,18 +1221,58 @@ def calculate_pricing(product, land_logistics, air_logistics,
             avg_air_cost = sum(air_costs) / len(air_costs)
             avg_air_time = sum(air_times) / len(air_times)
 
-            cost_saving = ((avg_air_cost - air_cost) / avg_air_cost * 100
-                           ) if air_cost and avg_air_cost > 0 else 0
-            time_saving = (avg_air_time - (
-                (air_log.get("min_days", 0) + air_log.get("max_days", 0)) / 2
-            )) if air_log else 0
+            cost_saving = (
+                ((avg_air_cost - air_cost) / avg_air_cost * 100)
+                if air_cost and avg_air_cost > 0
+                else 0
+            )
+            time_saving = (
+                (
+                    avg_air_time
+                    - ((air_log.get("min_days", 0) + air_log.get("max_days", 0)) / 2)
+                )
+                if air_log
+                else 0
+            )
 
             air_stats = {
                 "avg_cost": avg_air_cost,
                 "cost_saving": cost_saving,
                 "avg_time": avg_air_time,
-                "time_saving": time_saving
+                "time_saving": time_saving,
             }
+
+        # 提取平均值和节省值（用于API返回）
+        avg_land_cost = land_stats["avg_cost"] if land_stats else 0
+        avg_land_days = land_stats["avg_time"] if land_stats else 0
+        avg_air_cost = air_stats["avg_cost"] if air_stats else 0
+        avg_air_days = air_stats["avg_time"] if air_stats else 0
+        saved_land_cost = (
+            land_stats["avg_cost"] - land_cost if land_stats and land_cost else 0
+        )
+        saved_land_days = (
+            land_stats["avg_time"]
+            - (
+                (land_log.get("min_days", 0) + land_log.get("max_days", 0)) / 2
+                if land_log
+                else 0
+            )
+            if land_stats
+            else 0
+        )
+        saved_air_cost = (
+            air_stats["avg_cost"] - air_cost if air_stats and air_cost else 0
+        )
+        saved_air_days = (
+            air_stats["avg_time"]
+            - (
+                (air_log.get("min_days", 0) + air_log.get("max_days", 0)) / 2
+                if air_log
+                else 0
+            )
+            if air_stats
+            else 0
+        )
 
         # 计算建议售价和利润
         suggested_price = land_price if land_price else air_price
@@ -1111,15 +1289,22 @@ def calculate_pricing(product, land_logistics, air_logistics,
         payment_rate = product.get("payment_processing_fee", 0)
         return_rate = product.get("return_rate", 0)
         vat_rate = product.get("vat_rate", 0)
+        if target_margin >= 1:
+            target_margin = target_margin / 100
+        if promotion_rate >= 1:
+            promotion_rate = promotion_rate / 100
+        if commission_rate >= 1:
+            commission_rate = commission_rate / 100
+        if withdrawal_rate >= 1:
+            withdrawal_rate = withdrawal_rate / 100
+        if payment_rate >= 1:
+            payment_rate = payment_rate / 100
+        if return_rate >= 1:
+            return_rate = return_rate / 100
 
-        if (
-            land_price and land_cost is not None and
-            land_commission_info is not None
-        ):
+        if land_price and land_cost is not None and land_commission_info is not None:
             # 使用定价阶段返回的代理费和收单费信息
-            land_base_cost = (
-                unit_price + labeling_fee + shipping_fee + land_cost
-            )
+            land_base_cost = unit_price + labeling_fee + shipping_fee + land_cost
             land_actual_commission = land_commission_info
             land_commission_fee = land_actual_commission * rate
             # 收单费
@@ -1131,8 +1316,11 @@ def calculate_pricing(product, land_logistics, air_logistics,
             # 计算总成本和实际收入
             land_total_cost = land_base_cost
             revenue_deductions = (
-                promotion_rate + commission_rate +
-                withdrawal_rate + return_rate + vat_rate
+                promotion_rate
+                + commission_rate
+                + withdrawal_rate
+                + return_rate
+                + vat_rate
             )
 
             # 代理费：固定则加分子，浮动则加分母
@@ -1151,8 +1339,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
             land_expected_profit = actual_revenue - land_total_cost
             profit_mode = land_pricing_mode or ""
             # 添加陆运预期利润计算调试信息
-            land_profit_margin = (land_expected_profit / land_price * 100
-                                  if land_price > 0 else 0)
+            land_profit_margin = (
+                land_expected_profit / land_price * 100 if land_price > 0 else 0
+            )
             land_debug.append("陆运预期利润计算:")
             land_debug.append(f"  产品成本: {unit_price}")
             land_debug.append(f"  贴标费: {labeling_fee}")
@@ -1182,9 +1371,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     f"    收单费: {land_actual_payment:.2f} RUB (固定，在分子中)"
                 )
             else:
-                land_debug.append(
-                    f"    收单费率: -{payment_rate * 100:.2f}%"
-                )
+                land_debug.append(f"    收单费率: -{payment_rate * 100:.2f}%")
             land_debug.append(f"    退货率: -{return_rate * 100:.2f}%")
             land_debug.append(f"    增值税率: -{vat_rate * 100:.2f}%")
             if "代理费在分母中" in profit_mode:
@@ -1196,37 +1383,29 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 f"{revenue_factor:.4f} = "
                 f"{land_price * revenue_factor:.2f}"
             )
-            land_debug.append(
-                f"  陆运预期利润: {land_expected_profit:.2f} CNY"
-            )
-            land_debug.append(
-                f"  陆运利润率: {land_profit_margin:.2f}%"
-            )
-            land_debug.append(
-                f"  目标利润率: {target_margin * 100:.2f}%"
-            )
+            land_debug.append(f"  陆运预期利润: {land_expected_profit:.2f} CNY")
+            land_debug.append(f"  陆运利润率: {land_profit_margin:.2f}%")
+            land_debug.append(f"  目标利润率: {target_margin * 100:.2f}%")
             land_debug.append(
                 f"  利润率差异: {land_profit_margin - target_margin * 100:+.2f}%"
             )
-        if (
-            air_price and air_cost is not None and
-            air_commission_info is not None
-        ):
+        if air_price and air_cost is not None and air_commission_info is not None:
             # 使用定价阶段返回的代理费和收单费信息
             air_base_cost = unit_price + labeling_fee + shipping_fee + air_cost
             air_actual_commission = air_commission_info
             air_commission_fee = air_actual_commission * rate
             # 收单费
-            air_actual_payment = (
-                air_payment_info if air_payment_info is not None else 0
-            )
+            air_actual_payment = air_payment_info if air_payment_info is not None else 0
             air_payment_fee = air_actual_payment * rate
 
             # 计算总成本和实际收入
             air_total_cost = air_base_cost
             air_revenue_deductions = (
-                promotion_rate + commission_rate +
-                withdrawal_rate + return_rate + vat_rate
+                promotion_rate
+                + commission_rate
+                + withdrawal_rate
+                + return_rate
+                + vat_rate
             )
 
             # 代理费
@@ -1245,8 +1424,9 @@ def calculate_pricing(product, land_logistics, air_logistics,
             air_expected_profit = actual_revenue - air_total_cost
             profit_mode = air_pricing_mode or ""
             # 添加空运预期利润计算调试信息
-            air_profit_margin = (air_expected_profit / air_price * 100
-                                 if air_price > 0 else 0)
+            air_profit_margin = (
+                air_expected_profit / air_price * 100 if air_price > 0 else 0
+            )
             air_debug.append("空运预期利润计算:")
             air_debug.append(f"  产品成本: {unit_price}")
             air_debug.append(f"  贴标费: {labeling_fee}")
@@ -1276,9 +1456,7 @@ def calculate_pricing(product, land_logistics, air_logistics,
                     f"    收单费: {air_actual_payment:.2f} RUB (固定，在分子中)"
                 )
             else:
-                air_debug.append(
-                    f"    收单费率: -{payment_rate * 100:.2f}%"
-                )
+                air_debug.append(f"    收单费率: -{payment_rate * 100:.2f}%")
             air_debug.append(f"    退货率: -{return_rate * 100:.2f}%")
             air_debug.append(f"    增值税率: -{vat_rate * 100:.2f}%")
             if "代理费在分母中" in profit_mode:
@@ -1290,12 +1468,8 @@ def calculate_pricing(product, land_logistics, air_logistics,
                 f"{air_revenue_factor:.4f} = "
                 f"{air_price * air_revenue_factor:.2f}"
             )
-            air_debug.append(
-                f"  空运预期利润: {air_expected_profit:.2f} CNY"
-            )
-            air_debug.append(
-                f"  空运利润率: {air_profit_margin:.2f}%"
-            )
+            air_debug.append(f"  空运预期利润: {air_expected_profit:.2f} CNY")
+            air_debug.append(f"  空运利润率: {air_profit_margin:.2f}%")
             air_debug.append(f"  目标利润率: {target_margin * 100:.2f}%")
             air_debug.append(
                 f"  利润率差异: {air_profit_margin - target_margin * 100:+.2f}%"
@@ -1340,7 +1514,16 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "air_payment_info": air_payment_info,
             "land_payment_fixed": land_payment_fixed,
             "air_payment_fixed": air_payment_fixed,
-            "product_info": product
+            "product_info": product,
+            "avg_land_cost": avg_land_cost,
+            "avg_land_days": avg_land_days,
+            "avg_air_cost": avg_air_cost,
+            "avg_air_days": avg_air_days,
+            "saved_land_cost": saved_land_cost,
+            "saved_land_days": saved_land_days,
+            "saved_air_cost": saved_air_cost,
+            "saved_air_days": saved_air_days,
+            "filtered_logistics": filtered_logistics,
         }
     except ZeroDivisionError:
         # 重新抛出 ZeroDivisionError
@@ -1376,7 +1559,15 @@ def calculate_pricing(product, land_logistics, air_logistics,
             "air_payment_info": None,
             "land_payment_fixed": False,
             "air_payment_fixed": False,
-            "product_info": product
+            "product_info": product,
+            "avg_land_cost": 0,
+            "avg_land_days": 0,
+            "avg_air_cost": 0,
+            "avg_air_days": 0,
+            "saved_land_cost": 0,
+            "saved_land_days": 0,
+            "saved_air_cost": 0,
+            "saved_air_days": 0,
         }
 
 
@@ -1391,20 +1582,14 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
     volume_coefficient = logistic.get("volume_coefficient", 5000)
 
     if volume_mode == "max_actual_vs_volume":
-        volume_weight = (
-            length_cm * width_cm * height_cm
-        ) / volume_coefficient
+        volume_weight = (length_cm * width_cm * height_cm) / volume_coefficient
         actual_weight = product.get("weight_g", 0) / 1000  # 转换为千克
-        calculated_weight = (
-            max(actual_weight, volume_weight) * 1000
-        )  # 转换回克
+        calculated_weight = max(actual_weight, volume_weight) * 1000  # 转换回克
     elif volume_mode == "longest_side":
         longest_side_threshold = logistic.get("longest_side_threshold", 0)
         longest_side = max(length_cm, width_cm, height_cm)
         if longest_side > longest_side_threshold:
-            volume_weight = (
-                length_cm * width_cm * height_cm
-            ) / volume_coefficient
+            volume_weight = (length_cm * width_cm * height_cm) / volume_coefficient
             # 当最长边超过阈值时，直接使用体积重量计费
             calculated_weight = volume_weight * 1000  # 转换回克
         else:
@@ -1430,10 +1615,10 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
 
         # 首先检查物流是否有圆柱形包装限制
         has_cylinder_limits = (
-            logistic.get("max_cylinder_sum", 0) > 0 or
-            logistic.get("min_cylinder_sum", 0) > 0 or
-            logistic.get("max_cylinder_length", 0) > 0 or
-            logistic.get("min_cylinder_length", 0) > 0
+            logistic.get("max_cylinder_sum", 0) > 0
+            or logistic.get("min_cylinder_sum", 0) > 0
+            or logistic.get("max_cylinder_length", 0) > 0
+            or logistic.get("min_cylinder_length", 0) > 0
         )
 
         if has_cylinder_limits:
@@ -1454,8 +1639,7 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
             max_cylinder_length = logistic.get("max_cylinder_length", 0)
             if 0 < max_cylinder_length < cylinder_length:
                 return (
-                    f"圆柱长度 {cylinder_length} cm 超过限制 "
-                    f"{max_cylinder_length} cm"
+                    f"圆柱长度 {cylinder_length} cm 超过限制 {max_cylinder_length} cm"
                 )
             min_cyl = logistic.get("min_cylinder_length", 0)
             if min_cyl > 0 and cylinder_length < min_cyl:
@@ -1480,7 +1664,7 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
     if 0 < max_sum < sum(sides):
         return f"三边之和 {sum(sides)} cm 超过限制 {max_sum} cm"
     max_long = logistic.get("max_longest_side", 10**9)
-    if max(sides) > max_long:
+    if max_long > 0 and max(sides) > max_long:
         return f"最长边 {max(sides)} cm 超过限制 {max_long} cm"
     # 第二边长上限检查
     max_second_side = logistic.get("max_second_side", 0)
@@ -1505,7 +1689,7 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
     # 3. 特殊物品
     if product.get("has_battery") and not logistic.get("allow_battery"):
         return "产品含电池但物流不允许电池"
-    if product.get("has_flammable") and not logistic.get("allow_flammable"):
+    if product.get("has_liquid") and not logistic.get("allow_liquid"):
         return "产品含易燃液体但物流不允许易燃液体"
     # 4. 电池容量 & MSDS
     if product.get("has_battery"):
@@ -1537,17 +1721,44 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
         try:
             from exchange_service import get_fallback_exchange_rate
         except ImportError:
+
             def get_fallback_exchange_rate():
                 return 0.0904
+
         rate = get_fallback_exchange_rate()  # 1 CNY = x RUB
         unit_price = float(product.get("unit_price", 0))
         labeling_fee = float(product.get("labeling_fee", 0))
         shipping_fee = float(product.get("shipping_fee", 0))
         # 先计算运费（复用与正式计算完全一致的公式）
         # 使用上面已经计算好的重量 w
-        fee_mode = logistic.get("fee_mode", "base_plus_continue")
-        continue_unit = int(logistic.get("continue_unit", 100))
-        if fee_mode == "base_plus_continue":
+        fee_mode = logistic.get("fee_mode", "base_weight")
+        # 处理continue_unit：可能是字符串('g'/'kg'/'50g'/'100g'/'500g'/'1kg')或数值
+        continue_unit_raw = logistic.get("continue_unit", 100)
+        if isinstance(continue_unit_raw, str):
+            if continue_unit_raw == "kg":
+                continue_unit = 1000
+            elif continue_unit_raw == "g":
+                continue_unit = 1  # 每克
+            else:
+                # 处理 "50g", "100g", "500g", "1kg" 等格式
+                import re
+
+                g_match = re.match(r"^(\d+)\s*g$", continue_unit_raw, re.IGNORECASE)
+                kg_match = re.match(
+                    r"^(\d+(?:\.\d+)?)\s*kg$", continue_unit_raw, re.IGNORECASE
+                )
+                if g_match:
+                    continue_unit = int(g_match.group(1))
+                elif kg_match:
+                    continue_unit = int(float(kg_match.group(1)) * 1000)
+                else:
+                    try:
+                        continue_unit = int(continue_unit_raw)
+                    except (ValueError, TypeError):
+                        continue_unit = 100
+        else:
+            continue_unit = int(continue_unit_raw) if continue_unit_raw else 100
+        if fee_mode in ("base_weight", "base_plus_continue"):
             units = math.ceil(w / continue_unit)
             # 转换为float以兼容PostgreSQL的Decimal类型
             base_fee_val = float(logistic.get("base_fee", 0))
@@ -1561,20 +1772,19 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
             cost = (
                 first_cost
                 if w <= first_w
-                else first_cost +
-                math.ceil((w - first_w) / continue_unit) *
-                continue_fee_val
+                else first_cost
+                + math.ceil((w - first_w) / continue_unit) * continue_fee_val
             )
         # 估算人民币总成本
         total_cny = unit_price + labeling_fee + shipping_fee + 15 * rate + cost
         # 估算人民币售价
         denominator = (
-            1 -
-            product.get("target_profit_margin", 0) -
-            product.get("promotion_cost_rate", 0) -
-            product.get("commission_rate", 0) -
-            product.get("withdrawal_fee_rate", 0) -
-            product.get("payment_processing_fee", 0)
+            1
+            - product.get("target_profit_margin", 0)
+            - product.get("promotion_cost_rate", 0)
+            - product.get("commission_rate", 0)
+            - product.get("withdrawal_fee_rate", 0)
+            - product.get("payment_processing_fee", 0)
         )
         if denominator == 0:
             return "费率参数异常导致除以 0"
@@ -1586,8 +1796,10 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
         try:
             from exchange_service import get_fallback_usd_rate
         except ImportError:
+
             def get_fallback_usd_rate():
                 return 7.2
+
         usd_rate = get_fallback_usd_rate()
 
         # 根据货币类型读取正确的价格限制值
@@ -1596,22 +1808,16 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
             # 转换为float以兼容PostgreSQL的Decimal类型
             limit_value = float(logistic.get("price_limit_rub", 0))
         else:  # USD
-            # 如果货币是USD，需要从price_limit字段读取（存储的是转换后的CNY值）
-            # 然后转换回USD
-            price_limit_cny = float(logistic.get("price_limit", 0))
-            limit_value = (price_limit_cny / usd_rate
-                           if price_limit_cny > 0 else 0)
+            # price_limit 字段直接存储 USD 值
+            limit_value = float(logistic.get("price_limit", 0))
 
         min_currency = logistic.get("price_min_currency", "RUB")
         if min_currency == "RUB":
             # 转换为float以兼容PostgreSQL的Decimal类型
             min_value = float(logistic.get("price_min_rub", 0))
         else:  # USD
-            # 如果货币是USD，需要从price_min字段读取（存储的是转换后的CNY值）
-            # 然后转换回USD
-            price_min_cny = float(logistic.get("price_min", 0))
-            min_value = (price_min_cny / usd_rate
-                         if price_min_cny > 0 else 0)
+            # price_min 字段直接存储 USD 值
+            min_value = float(logistic.get("price_min", 0))
 
         # 根据货币类型进行价格比较
 
@@ -1619,8 +1825,7 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
             # 美元限价：将估算售价转换为美元进行比较
             rough_usd = rough_cny / usd_rate
             if rough_usd > limit_value:
-                return (f"估算售价 {rough_usd:.2f} USD "
-                        f"超价格上限 {limit_value} USD")
+                return f"估算售价 {rough_usd:.2f} USD 超价格上限 {limit_value} USD"
         elif limit_value > 0:
             # 卢布限价：直接比较卢布价格
             if rough_rub > limit_value:
