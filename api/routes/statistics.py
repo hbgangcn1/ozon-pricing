@@ -91,7 +91,8 @@ def get_overview(admin: int = Depends(require_admin)):
 
         c.execute(
             _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE DATE(created_at) = CURRENT_DATE",
+                "SELECT COUNT(*) FROM users"
+                " WHERE DATE(NULLIF(TRIM(created_at), '')) = CURRENT_DATE",
                 conn,
             )
         )
@@ -212,7 +213,9 @@ def get_user_groups(admin: int = Depends(require_admin)):
 
         c.execute(
             _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '30 days'",
+                "SELECT COUNT(*) FROM users"
+                " WHERE NULLIF(TRIM(last_login), '')::timestamp"
+                " > NOW() - INTERVAL '30 days'",
                 conn,
             )
         )
@@ -276,7 +279,9 @@ def get_active_users(admin: int = Depends(require_admin)):
     with get_db_connection() as (conn, c):
         c.execute(
             _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '1 day'",
+                "SELECT COUNT(*) FROM users"
+                " WHERE NULLIF(TRIM(last_login), '')::timestamp"
+                " > NOW() - INTERVAL '1 day'",
                 conn,
             )
         )
@@ -284,7 +289,9 @@ def get_active_users(admin: int = Depends(require_admin)):
 
         c.execute(
             _safe_adapt_sql(
-                "SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '7 days'",
+                "SELECT COUNT(*) FROM users"
+                " WHERE NULLIF(TRIM(last_login), '')::timestamp"
+                " > NOW() - INTERVAL '7 days'",
                 conn,
             )
         )

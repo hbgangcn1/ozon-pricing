@@ -246,7 +246,7 @@ def freeze_user(user_id, admin_id):
     with _db.get_db_connection() as (conn, c):
         if _detect_is_pg(conn):
             sql = _db._safe_adapt_sql(
-                "UPDATE users SET is_frozen = TRUE WHERE id = ?", conn
+                "UPDATE users SET is_frozen = 1 WHERE id = ?", conn
             )
         else:
             sql = _db._safe_adapt_sql(
@@ -281,7 +281,7 @@ def unfreeze_user(user_id, admin_id):
     with _db.get_db_connection() as (conn, c):
         if _detect_is_pg(conn):
             sql = _db._safe_adapt_sql(
-                "UPDATE users SET is_frozen = FALSE WHERE id = ?", conn
+                "UPDATE users SET is_frozen = 0 WHERE id = ?", conn
             )
         else:
             sql = _db._safe_adapt_sql(

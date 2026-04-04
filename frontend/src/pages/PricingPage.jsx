@@ -762,9 +762,9 @@ export default function PricingPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <RateInput label="进货单价（元）" value={fastForm.unit_price}
-                  onChange={(v) => setFastForm({ ...fastForm, unit_price: v })} defaultVal="30" />
+                  onChange={(v) => setFastForm({ ...fastForm, unit_price: v })} defaultVal="0" />
                 <RateInput label="商品重量（克）" value={fastForm.weight_g}
-                  onChange={(v) => setFastForm({ ...fastForm, weight_g: v })} defaultVal="300" />
+                  onChange={(v) => setFastForm({ ...fastForm, weight_g: v })} defaultVal="0" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <RateInput label="佣金费率(%)" value={fastForm.commission_rate}

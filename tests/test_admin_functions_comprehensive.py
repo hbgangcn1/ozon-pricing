@@ -691,11 +691,7 @@ class TestFreezeUnfreezeUser:
             sql = adapt_sql("SELECT is_frozen FROM users WHERE id = ?")
             c.execute(sql, (user_id,))
             row = c.fetchone()
-            # PostgreSQL返回True/False，SQLite返回1/0
-            if is_pg:
-                assert row[0] is True
-            else:
-                assert row[0] == 1
+            assert row[0] == 1
 
     def test_unfreeze_user_success(self, clean_db):  # noqa: ARG002
         """测试成功解冻用户
@@ -757,11 +753,7 @@ class TestFreezeUnfreezeUser:
             sql = adapt_sql("SELECT is_frozen FROM users WHERE id = ?")
             c.execute(sql, (user_id,))
             row = c.fetchone()
-            # PostgreSQL返回True/False，SQLite返回1/0
-            if is_pg:
-                assert row[0] is False
-            else:
-                assert row[0] == 0
+            assert row[0] == 0
 
 
 class TestDeleteUserAdmin:

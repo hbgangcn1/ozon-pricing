@@ -166,8 +166,8 @@ describe('PricingPage', () => {
 
   it('renders fast mode input fields', () => {
     render(<PricingPage />);
-    expect(screen.getAllByPlaceholderText('30').length).toBeGreaterThan(0);
-    expect(screen.getAllByPlaceholderText('300').length).toBeGreaterThan(0);
+    const zeroInputs = screen.getAllByPlaceholderText('0');
+    expect(zeroInputs.length).toBeGreaterThanOrEqual(2);
   });
 
   it('calls productsAPI.getAll on mount', async () => {
@@ -192,11 +192,10 @@ describe('PricingPage', () => {
     pricingAPI.calculate.mockResolvedValue(mockPricingResult);
     render(<PricingPage />);
 
-    const priceInputs = screen.getAllByPlaceholderText('30');
-    fireEvent.change(priceInputs[0], { target: { value: '50' } });
+    const zeroInputs = screen.getAllByPlaceholderText('0');
+    fireEvent.change(zeroInputs[0], { target: { value: '50' } });
 
-    const weightInputs = screen.getAllByPlaceholderText('300');
-    fireEvent.change(weightInputs[0], { target: { value: '500' } });
+    fireEvent.change(zeroInputs[1], { target: { value: '500' } });
 
     const calcBtns = screen.getAllByText('开始计算');
     fireEvent.click(calcBtns[0]);
@@ -214,11 +213,10 @@ describe('PricingPage', () => {
     pricingAPI.calculate.mockResolvedValue(mockPricingResult);
     render(<PricingPage />);
 
-    const priceInputs = screen.getAllByPlaceholderText('30');
-    fireEvent.change(priceInputs[0], { target: { value: '50' } });
+    const zeroInputs = screen.getAllByPlaceholderText('0');
+    fireEvent.change(zeroInputs[0], { target: { value: '50' } });
 
-    const weightInputs = screen.getAllByPlaceholderText('300');
-    fireEvent.change(weightInputs[0], { target: { value: '500' } });
+    fireEvent.change(zeroInputs[1], { target: { value: '500' } });
 
     const calcBtns = screen.getAllByText('开始计算');
     fireEvent.click(calcBtns[0]);
@@ -233,11 +231,10 @@ describe('PricingPage', () => {
     pricingAPI.calculate.mockRejectedValue({ response: { data: { detail: '计算失败' } } });
     render(<PricingPage />);
 
-    const priceInputs = screen.getAllByPlaceholderText('30');
-    fireEvent.change(priceInputs[0], { target: { value: '50' } });
+    const zeroInputs = screen.getAllByPlaceholderText('0');
+    fireEvent.change(zeroInputs[0], { target: { value: '50' } });
 
-    const weightInputs = screen.getAllByPlaceholderText('300');
-    fireEvent.change(weightInputs[0], { target: { value: '500' } });
+    fireEvent.change(zeroInputs[1], { target: { value: '500' } });
 
     const calcBtns = screen.getAllByText('开始计算');
     fireEvent.click(calcBtns[0]);

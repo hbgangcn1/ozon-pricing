@@ -53,7 +53,7 @@ def get_all_users(
 
         if keyword:
             sql_raw = """
-                SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen THEN '冻结' ELSE '正常' END) AS status
+                SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen = 1 THEN '冻结' ELSE '正常' END) AS status
                 FROM users
                 WHERE username LIKE %s
                 ORDER BY id
@@ -63,7 +63,7 @@ def get_all_users(
             c.execute(sql, (f"%{keyword}%", page_size, offset))
         else:
             sql_raw = """
-                SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen THEN '冻结' ELSE '正常' END) AS status
+                SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen = 1 THEN '冻结' ELSE '正常' END) AS status
                 FROM users
                 ORDER BY id
                 LIMIT %s OFFSET %s
@@ -141,7 +141,7 @@ def update_user(user_id: int, update: UserUpdate, admin: int = Depends(require_a
             conn.commit()
 
         sql_raw = """
-            SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen THEN '冻结' ELSE '正常' END) AS status
+            SELECT id, username, role, user_type, subscription_expires, (CASE WHEN is_frozen = 1 THEN '冻结' ELSE '正常' END) AS status
             FROM users WHERE id = %s
         """
         sql = _safe_adapt_sql(sql_raw, conn)
