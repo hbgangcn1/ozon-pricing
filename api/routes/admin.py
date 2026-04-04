@@ -130,12 +130,16 @@ async def update_user(
         if not c.fetchone():
             raise HTTPException(status_code=404, detail="用户不存在")
 
+        ALLOWED_USER_UPDATE_FIELDS = {"role", "user_type"}
         update_data = update.model_dump(exclude_unset=True)
-        if update_data:
-            set_clause = ", ".join([f"{k} = %s" for k in update_data.keys()])
+        sanitized = {
+            k: v for k, v in update_data.items() if k in ALLOWED_USER_UPDATE_FIELDS
+        }
+        if sanitized:
+            set_clause = ", ".join([f"{k} = %s" for k in sanitized.keys()])
             sql_raw = f"UPDATE users SET {set_clause} WHERE id = %s"
             sql = _safe_adapt_sql(sql_raw, conn)
-            c.execute(sql, list(update_data.values()) + [user_id])
+            c.execute(sql, list(sanitized.values()) + [user_id])
             conn.commit()
 
         sql_raw = """
@@ -158,9 +162,10 @@ async def update_user(
 @router.post("/users/{user_id}/reset-password", response_model=MessageResponse)
 async def reset_user_password(user_id: int, admin: int = Depends(require_admin)):
     import bcrypt
+    import secrets
 
-    default_password = "123456"
-    password_hash = bcrypt.hashpw(default_password.encode(), bcrypt.gensalt()).decode()
+    new_password = secrets.token_urlsafe(12)
+    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
 
     with get_db_connection() as (conn, c):
         sql_raw = "UPDATE users SET password = %s WHERE id = %s"
@@ -169,7 +174,7 @@ async def reset_user_password(user_id: int, admin: int = Depends(require_admin))
         conn.commit()
         if c.rowcount == 0:
             raise HTTPException(status_code=404, detail="用户不存在")
-    return MessageResponse(message=f"密码已重置为: {default_password}")
+    return MessageResponse(message=f"密码已重置为: {new_password}")
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)

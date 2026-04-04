@@ -10,6 +10,7 @@ import signal
 import sys
 from datetime import datetime, date
 from typing import Optional, Tuple, Dict, Any, Sequence, Mapping, cast
+from psycopg2 import sql as psql
 
 
 class _FakeSessionState:
@@ -141,16 +142,25 @@ def _ensure_serial_columns(conn, cursor, tables=None):
             if row and row[0] is not None:
                 continue
             seq_name = f"{table}_id_seq"
-            cursor.execute(f"CREATE SEQUENCE IF NOT EXISTS {seq_name}")
+            seq_name_id = psql.Identifier(seq_name)
+            table_id = psql.Identifier(table)
             cursor.execute(
-                f"ALTER TABLE {table} ALTER COLUMN id "
-                f"SET DEFAULT nextval('{seq_name}'::regclass)"
+                psql.SQL("CREATE SEQUENCE IF NOT EXISTS {}").format(seq_name_id)
             )
-            cursor.execute(f"ALTER SEQUENCE {seq_name} OWNED BY {table}.id")
             cursor.execute(
-                f"SELECT setval('{seq_name}', "
-                f"COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, "
-                f"false)"
+                psql.SQL(
+                    "ALTER TABLE {} ALTER COLUMN id SET DEFAULT nextval({}::regclass)"
+                ).format(table_id, psql.Literal(seq_name))
+            )
+            cursor.execute(
+                psql.SQL("ALTER SEQUENCE {} OWNED BY {}.id").format(
+                    seq_name_id, table_id
+                )
+            )
+            cursor.execute(
+                psql.SQL(
+                    "SELECT setval({}, COALESCE((SELECT MAX(id) FROM {}), 0) + 1, false)"
+                ).format(psql.Literal(seq_name), table_id)
             )
             conn.commit()
         except DB_EXCEPTIONS:

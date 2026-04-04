@@ -136,17 +136,60 @@ async def update_logistics_endpoint(
     if not existing:
         raise HTTPException(status_code=404, detail="物流规则不存在")
 
+    ALLOWED_LOGISTICS_UPDATE_FIELDS = {
+        "name",
+        "type",
+        "min_days",
+        "max_days",
+        "price_limit",
+        "price_limit_rub",
+        "price_min",
+        "price_min_rub",
+        "base_fee",
+        "min_weight",
+        "max_weight",
+        "max_sum_of_sides",
+        "max_longest_side",
+        "max_second_side",
+        "min_second_side",
+        "min_length",
+        "max_cylinder_sum",
+        "min_cylinder_sum",
+        "max_cylinder_length",
+        "min_cylinder_length",
+        "volume_mode",
+        "longest_side_threshold",
+        "allow_battery",
+        "allow_liquid",
+        "battery_capacity_limit_wh",
+        "require_msds",
+        "fee_mode",
+        "first_fee",
+        "first_weight_g",
+        "continue_fee",
+        "continue_unit",
+        "volume_coefficient",
+        "delivery_method",
+        "priority_group",
+        "price_limit_currency",
+        "price_min_currency",
+        "is_active",
+    }
+
     update_data = logistics.model_dump(exclude_unset=True)
-    if not update_data:
+    sanitized = {
+        k: v for k, v in update_data.items() if k in ALLOWED_LOGISTICS_UPDATE_FIELDS
+    }
+    if not sanitized:
         return existing
 
     for key in ["allow_battery", "allow_liquid", "require_msds", "is_active"]:
-        if key in update_data and isinstance(update_data[key], bool):
-            update_data[key] = 1 if update_data[key] else 0
+        if key in sanitized and isinstance(sanitized[key], bool):
+            sanitized[key] = 1 if sanitized[key] else 0
 
-    set_clause = ", ".join([f"{k} = %s" for k in update_data.keys()])
+    set_clause = ", ".join([f"{k} = %s" for k in sanitized.keys()])
     sql_raw = f"UPDATE logistics SET {set_clause} WHERE id = %s AND user_id = %s"
-    params = list(update_data.values()) + [logistics_id, user_id]
+    params = list(sanitized.values()) + [logistics_id, user_id]
 
     with get_db_connection() as (conn, c):
         sql = _safe_adapt_sql(sql_raw, conn)

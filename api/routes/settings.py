@@ -1,3 +1,6 @@
+import os
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
@@ -9,6 +12,16 @@ from api.models.schemas import MessageResponse
 from api.dependencies import require_admin
 
 router = APIRouter(prefix="/api/settings", tags=["设置"])
+
+_SAFE_BACKUP_NAME = re.compile(r"^[a-zA-Z0-9_.\-]+\.dump$")
+
+
+def _sanitize_backup_filename(filename: str) -> str:
+    """Sanitize backup filename to prevent path traversal."""
+    safe_name = os.path.basename(filename)
+    if not _SAFE_BACKUP_NAME.match(safe_name):
+        raise HTTPException(status_code=400, detail="非法的备份文件名")
+    return safe_name
 
 
 class SystemConfigResponse(BaseModel):
@@ -301,6 +314,8 @@ async def download_backup(filename: str, admin: int = Depends(require_admin)):
     """下载备份文件"""
     _, _, _, _, _, _, _, _, _, read_backup_file, _ = _load_backup_service()
 
+    filename = _sanitize_backup_filename(filename)
+
     # 安全检查：只允许下载 .dump 文件
     if not filename.endswith(".dump"):
         raise HTTPException(status_code=400, detail="只允许下载 .dump 文件")
@@ -331,6 +346,8 @@ async def download_backup(filename: str, admin: int = Depends(require_admin)):
 async def delete_backup(filename: str, admin: int = Depends(require_admin)):
     """删除指定的备份文件"""
     _, _, _, _, _, _, _, _, delete_backup_file, _, _ = _load_backup_service()
+
+    filename = _sanitize_backup_filename(filename)
 
     if not filename.endswith(".dump"):
         return JSONResponse(
@@ -367,6 +384,8 @@ async def restore_backup(
 ):
     """从指定备份文件恢复数据库"""
     _, _, _, _, _, _, _, _, _, _, restore_database = _load_backup_service()
+
+    filename = _sanitize_backup_filename(filename)
 
     if not filename.endswith(".dump"):
         return JSONResponse(
