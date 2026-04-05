@@ -554,3 +554,18 @@ frontend/tests/
 - 后端: **1272 passed**, 0 failed, 0 skipped, 0 warnings (21s)
 - flake8: 0 errors
 - Commit: `3ed26273` — fix: PricingPage产品编辑弹窗精度
+
+### Phase 15: 侧边栏UI改造 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 15.1 | ✅ | `Sidebar.jsx` — 移除 `collapsed` state 和收起/展开按钮, 固定 `w-64` 展开状态, 移除所有 `!collapsed &&` 条件渲染 |
+| 15.2 | ✅ | `Sidebar.jsx` — `ExchangeRateDropdown` 重写为 `ExchangeRatePanel`, 汇率直接内联显示(无折叠), 移除 `isOpen` state 和 `ChevronDown` 图标 |
+| 15.3 | ✅ | `Sidebar.test.jsx` — 移除 `collapse toggle works` 测试, 新增 `sidebar is always expanded with fixed width` 和 `ExchangeRatePanel displays rates directly` 测试 |
+| 15.4 | ✅ | `AppLayout.jsx` — 无需修改, `ml-64` 已为固定宽度 |
+| 15.5 | ✅ | 前端全套件验证 — 169 tests passed, 0 failed |
+
+#### 最终数据
+
+- 前端: **169 passed**, 0 failed (21个测试文件)
+- Commit: `67c85099` — fix: 侧边栏固定展开 — 移除收起/展开功能，汇率直接内联显示
