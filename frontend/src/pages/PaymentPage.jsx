@@ -58,13 +58,13 @@ function PaymentPage() {
 
   return (
     <div className={`space-y-6 ${fullscreen ? 'fixed inset-0 z-50 bg-surface p-6 overflow-auto' : ''}`}>
-      <h1 className="text-xl font-semibold text-text-primary">
+      <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary">
         💳 支付与订单管理
       </h1>
       
-      <div className="bg-blue-900/30 border border-blue-800/50 rounded-lg p-4 flex items-start gap-3">
-        <Info className="w-5 h-5 text-blue-400 mt-0.5" />
-        <p className="text-sm text-blue-200">
+      <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 flex items-start gap-3">
+        <Info className="w-5 h-5 text-primary-dim mt-0.5" />
+        <p className="text-sm text-text-secondary">
           💡 如需订阅或升级套餐，请前往「订阅管理」页面
         </p>
       </div>
@@ -82,17 +82,17 @@ function PaymentPage() {
                   setSearchText(e.target.value)
                   setCurrentPage(1)
                 }}
-                className="pl-10 w-64"
+                className="pl-10 w-64 transition-all duration-200"
               />
             </div>
-            <Button variant="outline" size="icon" onClick={() => toast.info('刷新中...')}>
+            <Button variant="outline" size="icon" onClick={() => toast.info('刷新中...')} className="transition-all duration-200">
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Button variant="outline" onClick={handleExportCSV}>
+            <Button variant="outline" onClick={handleExportCSV} className="transition-all duration-200">
               <Download className="h-4 w-4 mr-2" />
               导出CSV
             </Button>
-            <Button variant="outline" size="icon" onClick={() => setFullscreen(!fullscreen)}>
+            <Button variant="outline" size="icon" onClick={() => setFullscreen(!fullscreen)} className="transition-all duration-200">
               <Maximize2 className="h-4 w-4" />
             </Button>
           </div>
@@ -138,6 +138,7 @@ function PaymentPage() {
                 size="sm"
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
+                className="transition-all duration-200"
               >
                 上一页
               </Button>
@@ -158,7 +159,7 @@ function PaymentPage() {
                       key={pageNum}
                       variant={currentPage === pageNum ? "default" : "outline"}
                       size="sm"
-                      className="w-8 h-8"
+                      className={`w-8 h-8 transition-all duration-200 ${currentPage === pageNum ? 'bg-primary text-white hover:bg-primary-dim' : ''}`}
                       onClick={() => setCurrentPage(pageNum)}
                     >
                       {pageNum}
@@ -171,6 +172,7 @@ function PaymentPage() {
                 size="sm"
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
+                className="transition-all duration-200"
               >
                 下一页
               </Button>

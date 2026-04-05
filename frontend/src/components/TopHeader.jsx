@@ -16,15 +16,15 @@ const TopHeader = () => {
     <div className="h-14 bg-surface border-b border-surface-high flex items-center justify-between px-6 sticky top-0 z-30">
       {/* 左侧：系统标题 */}
       <div className="flex items-center gap-2">
-        <Package className="w-4 h-4 text-[#d4d8dd]" />
-        <span className="text-sm font-medium text-[#d4d8dd]">物流定价系统</span>
+        <Package className="w-4 h-4 text-text-secondary" />
+        <span className="text-sm font-medium text-text-secondary">物流定价系统</span>
       </div>
 
       {/* 右侧：用户信息和操作 */}
       <div className="flex items-center gap-4">
         {/* 管理员 badge */}
         {user?.role === 'admin' && (
-          <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full text-xs">
+          <span className="bg-primary/20 text-primary-dim px-2 py-0.5 rounded-full text-xs">
             管理员
           </span>
         )}

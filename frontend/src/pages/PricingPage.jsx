@@ -92,12 +92,12 @@ function RateInput({ label, value, onChange, defaultVal, step }) {
 function ResultCard({ title, item }) {
   if (!item?.is_available) {
     const emptyTitleClass = title.includes('自提') && title.includes('陆运')
-      ? 'bg-[rgba(0,128,128,0.3)] text-teal-300'
+      ? 'bg-teal-500/30 text-teal-300'
       : title.includes('自提') && title.includes('空运')
-        ? 'bg-[rgba(30,64,175,0.3)] text-blue-300'
+        ? 'bg-blue-700/30 text-blue-300'
         : title.includes('送货上门') && title.includes('陆运')
-          ? 'bg-[rgba(128,0,128,0.3)] text-purple-300'
-          : 'bg-[rgba(157,23,114,0.3)] text-fuchsia-300'
+          ? 'bg-purple-500/30 text-purple-300'
+          : 'bg-fuchsia-700/30 text-fuchsia-300'
     return (
       <Card className="border-dashed">
         <CardContent className="py-3 px-4">
@@ -121,12 +121,12 @@ function ResultCard({ title, item }) {
         <div
           className={`flex justify-between items-center p-2 rounded ${
             title.includes('自提') && title.includes('陆运')
-              ? 'bg-[rgba(0,128,128,0.3)] text-teal-300'
+              ? 'bg-teal-500/30 text-teal-300'
               : title.includes('自提') && title.includes('空运')
-                ? 'bg-[rgba(30,64,175,0.3)] text-blue-300'
+                ? 'bg-blue-700/30 text-blue-300'
                 : title.includes('送货上门') && title.includes('陆运')
-                  ? 'bg-[rgba(128,0,128,0.3)] text-purple-300'
-                  : 'bg-[rgba(157,23,114,0.3)] text-fuchsia-300'
+                  ? 'bg-purple-500/30 text-purple-300'
+                  : 'bg-fuchsia-700/30 text-fuchsia-300'
           }`}
         >
           <span className="text-sm font-medium">{title}</span>
@@ -157,7 +157,7 @@ function ResultCard({ title, item }) {
         {/* 底部3行对比数据 */}
         <div className="space-y-2">
           {/* 第1行：运费与时效 */}
-          <div className="flex justify-between bg-[rgba(59,130,246,0.05)] rounded p-1">
+          <div className="flex justify-between bg-blue-500/5 rounded p-1 transition-colors duration-200">
             <div className="flex justify-between flex-1 mr-2">
               <span className="text-blue-300">运费</span>
               <span className="text-white font-medium">¥{item.logistics_cost?.toFixed(2)}</span>
@@ -169,7 +169,7 @@ function ResultCard({ title, item }) {
           </div>
 
           {/* 第2行：平均运费与节省运费 */}
-          <div className="flex justify-between bg-[rgba(34,197,94,0.05)] rounded p-1">
+          <div className="flex justify-between bg-green-500/5 rounded p-1 transition-colors duration-200">
             <div className="flex justify-between flex-1 mr-2">
               <span className="text-blue-300">平均运费</span>
               <span className="text-white font-medium">¥{item.avg_cost?.toFixed(2)}</span>
@@ -181,7 +181,7 @@ function ResultCard({ title, item }) {
           </div>
 
           {/* 第3行：平均时效与节省时效 */}
-          <div className="flex justify-between bg-[rgba(249,115,22,0.05)] rounded p-1">
+          <div className="flex justify-between bg-orange-500/5 rounded p-1 transition-colors duration-200">
             <div className="flex justify-between flex-1 mr-2">
               <span className="text-blue-300">平均时效</span>
               <span className="text-white font-medium">{item.avg_days?.toFixed(1)}天</span>
@@ -670,7 +670,7 @@ export default function PricingPage() {
         </div>
 
         {/* 价格优先方案 */}
-        <div className="bg-[rgba(59,130,246,0.05)] p-4 rounded">
+        <div className="bg-blue-500/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">价格优先方案</h3>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -685,7 +685,7 @@ export default function PricingPage() {
         </div>
 
         {/* 速度优先方案 */}
-        <div className="bg-[rgba(34,197,94,0.05)] p-4 rounded">
+        <div className="bg-green-500/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">速度优先方案</h3>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -701,7 +701,7 @@ export default function PricingPage() {
 
         {/* 被淘汰的物流 */}
         {result.filtered_logistics && (
-          <div className="bg-[rgba(100,100,100,0.15)] p-5 rounded-lg">
+          <div className="bg-zinc-500/15 p-5 rounded-lg">
             <h3 className="text-lg font-semibold mb-4 text-gray-400">被淘汰的物流</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {['land', 'air'].map(type => (
@@ -746,7 +746,7 @@ export default function PricingPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">物流定价计算</h1>
+      <h1 className="text-2xl font-bold font-headline tracking-tight mb-6">物流定价计算</h1>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4 grid grid-cols-2 w-full">
@@ -784,7 +784,7 @@ export default function PricingPage() {
                   onChange={(v) => setFastForm({ ...fastForm, vat_rate: v })} defaultVal="0" step="1" />
               </div>
 
-              <Button onClick={handleFastCalculate} disabled={loading} className="w-full">
+              <Button onClick={handleFastCalculate} disabled={loading} className="w-full transition-all duration-200">
                 {loading ? '计算中...' : '开始计算'}
               </Button>
             </CardContent>
@@ -818,7 +818,7 @@ export default function PricingPage() {
                     </Select>
                   </div>
                   <div className="flex items-end gap-2">
-                    <Button size="sm" onClick={() => setProductListDialogOpen(true)} className="h-8">打开产品列表</Button>
+                    <Button size="sm" onClick={() => setProductListDialogOpen(true)} className="h-8 transition-all duration-200">打开产品列表</Button>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -956,8 +956,8 @@ export default function PricingPage() {
               </div>
 
               <div className="flex gap-3">
-                <Button onClick={handleSavePreciseProduct} className="flex-1">保存产品</Button>
-                <Button onClick={handlePreciseCalculate} disabled={loading} className="flex-1">
+                <Button onClick={handleSavePreciseProduct} className="flex-1 transition-all duration-200">保存产品</Button>
+                <Button onClick={handlePreciseCalculate} disabled={loading} className="flex-1 transition-all duration-200">
                   {loading ? '计算中...' : '开始计算'}
                 </Button>
               </div>
@@ -988,18 +988,18 @@ export default function PricingPage() {
                     </div>
                   </div>
                   <div className="flex gap-1 ml-2">
-                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => {
+                    <Button variant="ghost" size="sm" className="h-7 px-2 transition-all duration-200" onClick={() => {
                       setProductListDialogOpen(false)
                       handleEditProduct(product)
                     }}>✏️</Button>
-                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => handleDeleteProduct(product)}>🗑️</Button>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 transition-all duration-200" onClick={() => handleDeleteProduct(product)}>🗑️</Button>
                   </div>
                 </div>
               ))
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProductListDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" onClick={() => setProductListDialogOpen(false)} className="transition-all duration-200">关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1179,8 +1179,8 @@ export default function PricingPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProductDialogOpen(false)}>取消</Button>
-            <Button onClick={handleSaveProduct}>{editingProduct ? '保存修改' : '创建'}</Button>
+            <Button variant="outline" onClick={() => setProductDialogOpen(false)} className="transition-all duration-200">取消</Button>
+            <Button onClick={handleSaveProduct} className="transition-all duration-200">{editingProduct ? '保存修改' : '创建'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Package, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
 import { authAPI } from '../services/api';
@@ -49,27 +49,29 @@ function LoginPage() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4 fixed inset-0 z-50">
-      <div className="w-full max-w-md border border-surface-high rounded-xl p-8" style={{ backgroundColor: '#111113' }}>
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
+      <div className="w-full max-w-md bg-surface-container border border-surface-high shadow-xl shadow-black/40 rounded-2xl p-8 animate-fade-in-up">
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4 border border-primary/20">
+            <Package className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="text-3xl font-headline font-bold text-text-primary tracking-tight mb-2">
             物流定价系统
           </h1>
           <p className="text-text-secondary text-sm">
-            请登录您的账户
+            请登录您的账户以继续
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
           {/* 用户名输入 */}
-          <div>
-            <label className="text-sm text-text-secondary mb-1.5 block">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-text-secondary block">
               用户名
             </label>
             <input
               {...register('username')}
               type="text"
-              className="w-full border border-surface-highest rounded-md px-3 py-2 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              style={{ color: '#fafafa', backgroundColor: 'rgba(39, 39, 42, 0.5)' }}
+              className="w-full bg-surface-high/50 border border-surface-highest rounded-lg px-3.5 py-2.5 text-text-primary placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-surface-high hover:border-surface-bright transition-all duration-200 ease-out"
               placeholder="请输入用户名"
             />
             {errors.username && (
@@ -80,23 +82,22 @@ function LoginPage() {
           </div>
 
           {/* 密码输入 */}
-          <div>
-            <label className="text-sm text-text-secondary mb-1.5 block">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-text-secondary block">
               密码
             </label>
             <div className="relative">
               <input
                 {...register('password')}
                 type={showPassword ? 'text' : 'password'}
-                className="w-full border border-surface-highest rounded-md px-3 py-2 pr-10 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                style={{ color: '#fafafa', backgroundColor: 'rgba(39, 39, 42, 0.5)' }}
+                className="w-full bg-surface-high/50 border border-surface-highest rounded-lg px-3.5 py-2.5 pr-10 text-text-primary placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-surface-high hover:border-surface-bright transition-all duration-200 ease-out"
                 placeholder="请输入密码"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
-                style={{ color: '#71717a' }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-300 transition-colors p-1"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
               >
                 {showPassword ? (
                   <EyeOff className="w-4 h-4" />
@@ -114,7 +115,7 @@ function LoginPage() {
 
           {/* 错误提示 */}
           {errorMsg && (
-            <div className="bg-red-500/10 border border-red-500/50 rounded-md px-3 py-2 text-red-400 text-sm">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm flex items-center">
               {errorMsg}
             </div>
           )}
@@ -123,18 +124,25 @@ function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-500 text-white rounded-md py-2 hover:bg-indigo-600 transition-colors disabled:opacity-50 font-medium"
+            className="w-full bg-primary text-white rounded-lg py-2.5 hover:bg-primary-dim transition-all duration-200 ease-out active:scale-[0.98] font-medium flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100 mt-2 shadow-lg shadow-primary/20"
           >
-            {loading ? '登录中...' : '登录'}
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                登录中...
+              </>
+            ) : (
+              '登录'
+            )}
           </button>
 
           {/* 注册链接 */}
-          <div className="text-center mt-4">
-            <span className="text-text-secondary text-sm">没有账号？</span>
+          <div className="text-center pt-2">
+            <span className="text-text-muted text-sm">没有账号？</span>
             <button
               type="button"
               onClick={() => navigate('/register')}
-              className="text-indigo-400 hover:text-indigo-300 text-sm ml-1"
+              className="text-primary hover:text-primary-dim text-sm ml-1.5 transition-colors font-medium"
             >
               去注册
             </button>
@@ -143,29 +151,28 @@ function LoginPage() {
       </div>
 
       {/* 备案信息 */}
-      <div className="flex justify-center items-center space-x-4 mt-4">
-        <div className="text-xs text-muted-foreground">
+      <div className="flex justify-center items-center space-x-6 mt-8 opacity-60 hover:opacity-100 transition-opacity duration-300">
+        <div className="text-xs text-zinc-400">
           <a
             href="https://beian.miit.gov.cn/"
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-text-secondary"
+            className="hover:text-zinc-300 transition-colors"
           >
             ICP备案号：粤ICP备2025471825号-1
           </a>
         </div>
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-zinc-400 flex items-center">
           <img
             src="/PSB Filing Icon.png"
             alt="公安备案图标"
-            className="inline-block w-5 h-5 align-middle mr-1"
-            style={{ verticalAlign: 'middle' }}
+            className="inline-block w-4 h-4 align-middle mr-1.5 opacity-80"
           />
           <a
             href="https://beian.mps.gov.cn/#/query/webSearch"
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-text-secondary"
+            className="hover:text-zinc-300 transition-colors"
           >
             粤公网安备44030002008086号
           </a>

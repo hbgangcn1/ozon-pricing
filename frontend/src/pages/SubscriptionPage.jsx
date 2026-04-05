@@ -95,13 +95,13 @@ function SubscriptionPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-text-primary">
+      <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary">
         💎 订阅管理 — 管理订阅和套餐信息
       </h1>
 
-      <div className="bg-blue-900/30 border border-blue-800/50 rounded-lg p-4 flex items-start gap-3">
-        <Info className="w-5 h-5 text-blue-400 mt-0.5" />
-        <p className="text-sm text-blue-200">
+      <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 flex items-start gap-3">
+        <Info className="w-5 h-5 text-primary-dim mt-0.5" />
+        <p className="text-sm text-text-secondary">
           💡 支付成功后，请点击上方'刷新状态'按钮查看最新账户状态
         </p>
       </div>
@@ -131,7 +131,7 @@ function SubscriptionPage() {
               </div>
               <div className="flex gap-2">
                 <Badge variant="outline" className="border-green-500/30 text-green-400">永久有效</Badge>
-                <Badge variant="outline" className="border-blue-500/30 text-blue-400">计算次数无限</Badge>
+                <Badge variant="outline" className="border-primary/30 text-primary-dim">计算次数无限</Badge>
               </div>
             </div>
           </div>
@@ -146,10 +146,10 @@ function SubscriptionPage() {
           return (
             <Card 
               key={plan.code} 
-              className={`relative flex flex-col ${isCurrentPlan ? 'ring-2 ring-blue-500' : ''}`}
+              className={`relative flex flex-col transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${isCurrentPlan ? 'ring-2 ring-primary' : ''}`}
             >
               {isCurrentPlan && (
-                <Badge className="absolute top-3 right-3 bg-blue-500">当前</Badge>
+                <Badge className="absolute top-3 right-3 bg-primary">当前</Badge>
               )}
               {plan.developing && (
                 <Badge className="absolute top-3 right-3 bg-orange-500">开发中</Badge>

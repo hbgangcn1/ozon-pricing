@@ -23,14 +23,14 @@ function AboutPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-text-primary mb-6">
+      <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary mb-6">
         关于我们
       </h1>
 
       {/* 公司信息卡片 */}
       <div className="bg-surface border border-surface-high rounded-lg p-6 mb-4">
         <div className="flex items-center mb-4">
-          <Building2 className="w-5 h-5 text-indigo-400 mr-2" />
+          <Building2 className="w-5 h-5 text-primary-dim mr-2" />
           <h2 className="text-lg font-medium text-text-primary">
             公司信息
           </h2>

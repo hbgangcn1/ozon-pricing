@@ -40,12 +40,12 @@ vi.mock('marked', () => ({
   },
 }));
 
-vi.mock('antd', () => ({
-  Checkbox: ({ checked, onChange, className }) => (
+vi.mock('../components/ui/checkbox', () => ({
+  Checkbox: ({ checked, onCheckedChange, className }) => (
     <input
       type="checkbox"
       checked={checked}
-      onChange={onChange}
+      onChange={(e) => onCheckedChange(e.target.checked)}
       className={className}
       data-testid="eula-checkbox"
     />

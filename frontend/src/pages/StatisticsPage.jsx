@@ -59,7 +59,7 @@ function StatisticCard({ title, value, suffix = '', icon: Icon, trend = null }) 
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-text-secondary">{title}</p>
-            <div className="text-2xl font-bold text-text-primary mt-1">
+            <div className="text-2xl font-bold text-text-primary mt-1 font-headline tracking-tight">
               {value}{suffix && <span className="text-sm font-normal text-text-secondary ml-1">{suffix}</span>}
             </div>
             {trend && (
@@ -84,7 +84,7 @@ function StatisticsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-text-primary">
+      <h1 className="text-xl font-semibold text-text-primary font-headline tracking-tight">
         📈 数据统计 — 系统数据统计与分析
       </h1>
 
@@ -158,7 +158,7 @@ function StatisticsPage() {
                   <Card key={d.month} className="bg-surface border-surface-high">
                     <CardContent className="pt-4">
                       <p className="text-sm text-text-secondary">{d.month}</p>
-                      <div className="text-2xl font-bold text-text-primary mt-1">
+                      <div className="text-2xl font-bold text-text-primary mt-1 font-headline tracking-tight">
                         {d.retention}%
                       </div>
                       <Progress value={d.retention} className="mt-2" />
@@ -176,8 +176,8 @@ function StatisticsPage() {
               <CardTitle>用户留存率分析</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="bg-blue-900/30 border border-blue-800/50 rounded-lg p-4 mb-4">
-                <p className="text-sm text-blue-200">
+              <div className="bg-surface-high/30 border border-surface-highest/50 rounded-lg p-4 mb-4">
+                <p className="text-sm text-text-secondary">
                   留存分析数据基于用户月度活跃情况统计
                 </p>
               </div>
@@ -270,7 +270,7 @@ function StatisticsPage() {
                   <Card key={d.month} className="bg-surface border-surface-high">
                     <CardContent className="pt-4">
                       <p className="text-sm text-text-secondary">{d.month}</p>
-                      <div className="text-2xl font-bold text-text-primary mt-1">
+                      <div className="text-2xl font-bold text-text-primary mt-1 font-headline tracking-tight">
                         ¥{d.revenue}
                       </div>
                     </CardContent>
@@ -289,7 +289,7 @@ function StatisticsPage() {
                 <div className="flex gap-2">
                   <div className="relative w-full md:w-64">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
-                    <Input placeholder="搜索" className="pl-10" />
+                    <Input placeholder="搜索" className="pl-10 transition-all duration-200" />
                   </div>
                   <Button variant="outline">
                     <Download className="w-4 h-4 mr-2" />
@@ -340,7 +340,7 @@ function StatisticsPage() {
                 <div className="flex gap-2">
                   <div className="relative w-full md:w-48">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
-                    <Input placeholder="搜索用户" className="pl-10" />
+                    <Input placeholder="搜索用户" className="pl-10 transition-all duration-200" />
                   </div>
                   <Button variant="outline">
                     <Download className="w-4 h-4 mr-2" />

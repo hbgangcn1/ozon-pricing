@@ -18,7 +18,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
   const cx = size / 2
   const cy = size / 2
   const total = data.reduce((s, d) => s + d.value, 0)
-  if (total === 0) return <div style={{ textAlign: 'center', color: '#8b949e', fontSize: 13, lineHeight: '200px' }}>暂无数据</div>
+  if (total === 0) return <div className="text-center text-text-muted text-sm leading-[200px]">暂无数据</div>
 
   // 按金额从大到小排序
   const sortedData = [...data].sort((a, b) => b.value - a.value)
@@ -70,7 +70,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
 function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingComparison, timeComparison }) {
   if (!breakdown || breakdown.length === 0) {
     return (
-      <div style={{ textAlign: 'center', color: '#8b949e', padding: '16px 0', fontSize: 13 }}>
+      <div className="text-center text-text-muted py-4 text-sm">
         暂无数据
       </div>
     )
@@ -85,31 +85,25 @@ function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingC
   }))
 
   return (
-    <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(68,72,79,0.3)' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '18px' }}>
-        {/* 左侧饼图 */}
-        <div style={{ width: 200, height: 200, flexShrink: 0 }}>
+    <div className="mt-3 pt-3 border-t border-surface-highest/30">
+      <div className="flex items-start gap-[18px]">
+        <div className="w-[200px] h-[200px] shrink-0">
            <SimplePieChart data={pieData} size={200} innerRadius={3} outerRadius={95} />
          </div>
 
-        {/* 右侧图例 */}
-        <div style={{ flex: 1 }}>
+        <div className="flex-1">
           {pieData.map((item) => (
-            <div key={item.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '15px', lineHeight: '2.0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                <span style={{ 
-                  width: 15, 
-                  height: 15, 
-                  borderRadius: '50%', 
-                  backgroundColor: item.color, 
-                  display: 'inline-block', 
-                  flexShrink: 0 
-                }} />
-                <span style={{ color: '#8b949e' }}>{item.name}</span>
+            <div key={item.name} className="flex items-center justify-between text-[15px] leading-[2.0]">
+              <div className="flex items-center gap-[9px]">
+                <span
+                  className="w-[15px] h-[15px] rounded-full inline-block shrink-0"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span className="text-text-muted">{item.name}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>¥{item.value.toFixed(2)}</span>
-                <span style={{ color: '#8b949e' }}>{item.percentage}%</span>
+              <div className="flex items-center gap-3">
+                <span className="text-text-primary font-bold">¥{item.value.toFixed(2)}</span>
+                <span className="text-text-muted">{item.percentage}%</span>
               </div>
             </div>
           ))}
@@ -118,19 +112,19 @@ function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingC
 
       {/* 对比指标行 */}
       {(shippingComparison || timeComparison) && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(68,72,79,0.3)', fontSize: '11px' }}>
+        <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-surface-highest/30 text-[11px]">
           {shippingComparison && (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#a8abb3' }}>运费对比</span>
-              <span style={{ color: shippingComparison.trend === 'up' ? '#FC8181' : '#6DD5A0' }}>
+            <div className="flex justify-between">
+              <span className="text-text-secondary">运费对比</span>
+              <span className={shippingComparison.trend === 'up' ? 'text-red-400' : 'text-emerald-400'}>
                 {shippingComparison.value}{shippingComparison.trend === 'up' ? ' ↑' : ' ↓'}
               </span>
             </div>
           )}
           {timeComparison && (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#a8abb3' }}>时效对比</span>
-              <span style={{ color: timeComparison.trend === 'up' ? '#FC8181' : '#6DD5A0' }}>
+            <div className="flex justify-between">
+              <span className="text-text-secondary">时效对比</span>
+              <span className={timeComparison.trend === 'up' ? 'text-red-400' : 'text-emerald-400'}>
                 {timeComparison.value}{timeComparison.trend === 'up' ? ' ↑' : ' ↓'}
               </span>
             </div>

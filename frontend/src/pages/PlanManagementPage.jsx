@@ -188,7 +188,7 @@ function PlanEditForm({ plan, onSave, onCancel }) {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* 价格配置 */}
           <div>
-            <h3 className="text-lg font-medium text-text-primary mb-4">💵 价格配置</h3>
+            <h3 className="text-lg font-medium text-text-primary mb-4 font-headline tracking-tight">💵 价格配置</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="space-y-2">
                 <Label>显示价（月）</Label>
@@ -255,7 +255,7 @@ function PlanEditForm({ plan, onSave, onCancel }) {
 
           {/* 功能配置 */}
           <div>
-            <h3 className="text-lg font-medium text-text-primary mb-4">⚙️ 功能配置</h3>
+            <h3 className="text-lg font-medium text-text-primary mb-4 font-headline tracking-tight">⚙️ 功能配置</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label>计算次数</Label>
@@ -349,7 +349,7 @@ function PlanManagementPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-text-primary">
+      <h1 className="text-xl font-semibold text-text-primary font-headline tracking-tight">
         🎁 套餐管理 — 管理系统套餐
       </h1>
 

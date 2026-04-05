@@ -96,7 +96,7 @@ function UserManagementPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-text-primary">
+      <h1 className="text-xl font-semibold text-text-primary font-headline tracking-tight">
         👥 用户管理 — 管理系统用户
       </h1>
 
@@ -144,7 +144,7 @@ function UserManagementPage() {
                 <div className="relative">
                   <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted z-10" />
                   <Select value={formData.role} onValueChange={(value) => handleFormChange('role', value)}>
-                    <SelectTrigger className="pl-10">
+                    <SelectTrigger className="pl-10 transition-all duration-200">
                       <SelectValue placeholder="选择角色" />
                     </SelectTrigger>
                     <SelectContent>
@@ -173,7 +173,7 @@ function UserManagementPage() {
               </div>
 
               <div className="flex items-end">
-                <Button type="submit" className="w-full">
+                <Button type="submit" className="w-full transition-all duration-200">
                   <UserPlus className="w-4 h-4 mr-2" />
                   创建用户
                 </Button>

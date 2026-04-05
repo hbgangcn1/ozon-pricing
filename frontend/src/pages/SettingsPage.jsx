@@ -228,7 +228,7 @@ function SettingsPage() {
           <Button
             variant="outline"
             size="sm"
-            className="text-green-400 hover:text-green-300"
+            className="text-green-400 hover:text-green-300 transition-all duration-200"
             onClick={() => setRestoreTarget({ name: row.original.name })}
           >
             <PlayCircle className="h-4 w-4 mr-1" />
@@ -237,7 +237,7 @@ function SettingsPage() {
           <Button
             variant="outline"
             size="sm"
-            className="text-red-400 hover:text-red-300"
+            className="text-red-400 hover:text-red-300 transition-all duration-200"
             onClick={() => setDeleteTarget({ name: row.original.name })}
           >
             <Trash2 className="h-4 w-4 mr-1" />
@@ -352,7 +352,7 @@ function SettingsPage() {
       </AlertDialog>
 
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary mb-2">⚙️ 系统设置</h1>
+        <h1 className="text-2xl font-bold text-text-primary mb-2 font-headline tracking-tight">⚙️ 系统设置</h1>
         <p className="text-text-secondary">配置系统参数、备份管理和系统信息</p>
       </div>
 
@@ -547,9 +547,9 @@ function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                  <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
                     <div className="flex items-start gap-3">
-                      <Info className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />
+                      <Info className="h-5 w-5 text-primary-dim mt-0.5 shrink-0" />
                       <div className="text-sm text-text-secondary">
                         自动备份在后台每 {backupSettings.interval_hours} 小时执行一次。手动备份无限制。
                         超过 {backupSettings.max_backups} 个自动备份时，系统会自动删除最旧的备份。
@@ -563,11 +563,11 @@ function SettingsPage() {
             {/* 备份说明 */}
             <TabsContent value="info" className="mt-4">
               <div className="space-y-4">
-                <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
                   <div className="flex items-start gap-3">
-                    <Info className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />
+                    <Info className="h-5 w-5 text-primary-dim mt-0.5 shrink-0" />
                     <div>
-                      <h3 className="font-medium text-blue-400 mb-2">备份说明</h3>
+                      <h3 className="font-medium text-primary-dim mb-2 font-headline tracking-tight">备份说明</h3>
                       <ul className="space-y-1 text-text-secondary">
                         <li>• 备份文件格式为 PostgreSQL dump (.dump)</li>
                         <li>• 自动备份频率：每 {backupSettings.interval_hours} 小时一次</li>
@@ -580,7 +580,7 @@ function SettingsPage() {
                 </div>
 
                 <div className="space-y-3">
-                  <h3 className="font-medium text-text-primary">如何恢复备份？</h3>
+                  <h3 className="font-medium text-text-primary font-headline tracking-tight">如何恢复备份？</h3>
                   <ol className="list-decimal list-inside space-y-2 text-text-secondary">
                     <li>在备份列表中找到要恢复的备份</li>
                     <li>点击"恢复"按钮</li>

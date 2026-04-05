@@ -135,6 +135,7 @@ flake8_ui_logistics.txt
 # 测试工具和输出文件
 cleanup_test_users.py
 fix_test_placeholders.py
+tests/write_test.py
 fix_*.py
 coverage.xml
 test_*.txt
@@ -160,6 +161,7 @@ cert_env_config.txt
 # Playwright auth state (contains JWT tokens — never commit)
 frontend/tests/.auth/
 frontend/playwright-report/
+frontend/test-results/
 
 # 临时输出文件
 output*.txt

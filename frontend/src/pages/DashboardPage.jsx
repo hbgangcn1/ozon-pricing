@@ -69,7 +69,7 @@ function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-text-primary mb-6">
+      <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary mb-6">
         系统概览
       </h1>
 
@@ -84,7 +84,7 @@ function DashboardPage() {
               </div>
             ) : (
               <>
-                <card.icon className="w-8 h-8 text-indigo-400 mb-3" />
+                <card.icon className="w-8 h-8 text-primary-dim mb-3" />
                 <div className="text-3xl font-mono font-bold text-text-primary">
                   {card.value}
                 </div>
@@ -93,7 +93,7 @@ function DashboardPage() {
                 </div>
                 {card.trend && (
                   <div className="mt-2">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-400">
                       {card.trend === 'stable' ? '稳定' : '正常'}
                     </span>
                   </div>

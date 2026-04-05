@@ -33,8 +33,8 @@ function ExchangeRatePanel() {
       const data = await apiClient.get('/exchange/rates');
       setRates(data);
       setLastUpdated(new Date());
-    } catch (error) {
-      console.error('获取汇率失败:', error);
+    } catch {
+      // silently fail — rate widget is non-critical
     } finally {
       setLoading(false);
     }
@@ -124,7 +124,7 @@ export default function Sidebar() {
               className={cn(
                 'flex items-center px-3 py-2 rounded-md transition-colors relative',
                 'hover:bg-surface',
-                isActive && 'bg-surface-container border-l-2 border-indigo-500'
+                isActive && 'bg-surface-container border-l-2 border-primary'
               )}
             >
               <IconComponent className="w-5 h-5 text-text-secondary" />
@@ -133,7 +133,7 @@ export default function Sidebar() {
               </span>
               {/* Active indicator */}
               {isActive && (
-                <div className="absolute left-0 top-0 h-full w-0.5 bg-indigo-500"></div>
+                <div className="absolute left-0 top-0 h-full w-0.5 bg-primary"></div>
               )}
             </Link>
           );

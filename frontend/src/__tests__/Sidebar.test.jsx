@@ -95,6 +95,6 @@ describe('Sidebar Component', () => {
     );
     
     const activeLink = screen.getByText('物流管理').closest('a');
-    expect(activeLink.className).toContain('border-indigo-500');
+    expect(activeLink.className).toContain('border-primary');
   });
 });

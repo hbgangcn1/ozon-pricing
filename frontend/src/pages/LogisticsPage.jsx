@@ -67,7 +67,7 @@ const DEFAULT_FORM = {
 
 function SectionTitle({ children }) {
   return (
-    <h3 className="text-sm font-semibold text-zinc-400 border-b border-zinc-800 pb-1 mb-3">
+    <h3 className="text-sm font-semibold text-text-secondary border-b border-surface-high pb-1 mb-3">
       {children}
     </h3>
   )
@@ -99,12 +99,12 @@ function TooltipIcon({ content }) {
   return (
     <span className="relative inline-flex ml-1">
       <HelpCircle
-        className="h-3 w-3 text-zinc-500 cursor-help"
+        className="h-3 w-3 text-text-muted cursor-help"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       />
       {show && (
-        <span className="absolute left-0 top-full mt-1 z-50 w-64 p-2 text-xs bg-zinc-800 text-zinc-200 rounded border border-zinc-700 shadow-lg">
+        <span className="absolute left-0 top-full mt-1 z-50 w-64 p-2 text-xs bg-surface-high text-text-primary rounded border border-surface-highest shadow-lg">
           {content}
         </span>
       )}
@@ -116,7 +116,7 @@ function FormField({ label, tooltip, children }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center">
-        <Label className="text-xs text-zinc-400">{label}</Label>
+        <Label className="text-xs text-text-secondary">{label}</Label>
         {tooltip && <TooltipIcon content={tooltip} />}
       </div>
       {children}
@@ -313,10 +313,10 @@ export default function LogisticsPage() {
   const renderLogisticsList = (items) => (
     <div className="space-y-2">
       {items.length === 0 ? (
-        <div className="text-center text-zinc-500 py-8">暂无物流规则</div>
+        <div className="text-center text-text-muted py-8">暂无物流规则</div>
       ) : (
         items.map(item => (
-          <Card key={item.id} className={`bg-zinc-900 border-zinc-800 ${!item.is_active ? 'opacity-50' : ''}`}>
+          <Card key={item.id} className={`bg-surface-container border-surface-high ${!item.is_active ? 'opacity-50' : ''}`}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex-1 grid grid-cols-9 gap-4 items-center">
@@ -330,7 +330,7 @@ export default function LogisticsPage() {
                       {item.delivery_method === 'pickup' ? '取货点' : item.delivery_method === 'door' ? '送货上门' : '未知'}
                     </Badge>
                   </div>
-                  <div className="text-sm text-zinc-400">
+                  <div className="text-sm text-text-secondary">
                     {item.min_days || 0}-{item.max_days || 0}天
                   </div>
                   <div className="text-sm">
@@ -343,14 +343,14 @@ export default function LogisticsPage() {
                     {item.allow_battery ? (
                       <Zap className="h-4 w-4 text-green-500" />
                     ) : (
-                      <Zap className="h-4 w-4 text-zinc-600" />
+                      <Zap className="h-4 w-4 text-surface-highest" />
                     )}
                   </div>
                   <div className="flex items-center gap-1">
                     {item.allow_liquid ? (
                       <Droplets className="h-4 w-4 text-blue-500" />
                     ) : (
-                      <Droplets className="h-4 w-4 text-zinc-600" />
+                      <Droplets className="h-4 w-4 text-surface-highest" />
                     )}
                   </div>
                   <div className="flex gap-1">
@@ -358,10 +358,10 @@ export default function LogisticsPage() {
                       checked={!!item.is_active}
                       onCheckedChange={(checked) => handleToggleActive(item.id, checked)}
                     />
-                    <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} aria-label="编辑">
+                    <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} aria-label="编辑" className="transition-all duration-200">
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(item.id)} aria-label="删除" className="text-red-400">
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(item.id)} aria-label="删除" className="text-red-400 transition-all duration-200">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -750,8 +750,8 @@ export default function LogisticsPage() {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
-          <Button onClick={handleSubmit}>{editingItem ? '更新' : '创建'}</Button>
+          <Button variant="outline" onClick={() => setDialogOpen(false)} className="transition-all duration-200">取消</Button>
+          <Button onClick={handleSubmit} className="transition-all duration-200">{editingItem ? '更新' : '创建'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -760,15 +760,15 @@ export default function LogisticsPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">物流规则管理</h1>
-        <Button onClick={handleAdd}>
+        <h1 className="text-2xl font-bold font-headline tracking-tight">物流规则管理</h1>
+        <Button onClick={handleAdd} className="transition-all duration-200">
           <Plus className="h-4 w-4 mr-1" />
           添加物流规则
         </Button>
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center py-8 text-zinc-400">
+        <div className="flex items-center justify-center py-8 text-text-secondary">
           <span className="animate-spin mr-2">⏳</span>
           加载中...
         </div>
@@ -805,12 +805,12 @@ export default function LogisticsPage() {
       </AlertDialog>
 
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-zinc-800 border border-zinc-700 rounded-lg px-6 py-3 shadow-lg">
-          <span className="text-sm text-zinc-300">已选 {selectedIds.size} 项</span>
-          <Button variant="ghost" size="sm" onClick={handleClearSelection}>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-surface-high border border-surface-highest rounded-lg px-6 py-3 shadow-lg">
+          <span className="text-sm text-text-primary">已选 {selectedIds.size} 项</span>
+          <Button variant="ghost" size="sm" onClick={handleClearSelection} className="transition-all duration-200">
             清除
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => setBatchDeleteDialogOpen(true)}>
+          <Button variant="destructive" size="sm" onClick={() => setBatchDeleteDialogOpen(true)} className="transition-all duration-200">
             <Trash2 className="h-4 w-4 mr-1" />
             批量删除
           </Button>

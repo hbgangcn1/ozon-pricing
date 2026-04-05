@@ -15,7 +15,7 @@ const AppLayout = () => {
         <TopHeader />
         
         {/* 主内容区 */}
-        <main className="flex-1 m-6 p-6 overflow-y-auto" style={{ background: '#09090b', minHeight: 0 }}>
+        <main className="flex-1 m-6 p-6 overflow-y-auto bg-zinc-950 min-h-0">
           <Outlet />
         </main>
       </div>

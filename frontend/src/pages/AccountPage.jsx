@@ -47,7 +47,7 @@ function AccountPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-text-primary">
+      <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary">
         🔐 账户管理 — 管理账户信息和密码
       </h1>
 
@@ -68,7 +68,7 @@ function AccountPage() {
                   value={formData.current_password}
                   onChange={handleChange}
                   required
-                  className="w-full rounded-md border border-surface-highest bg-surface py-2 pl-10 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  className="w-full rounded-md border border-surface-highest bg-surface py-2 pl-10 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                 />
               </div>
             </div>
@@ -85,7 +85,7 @@ function AccountPage() {
                   onChange={handleChange}
                   required
                   minLength={13}
-                  className="w-full rounded-md border border-surface-highest bg-surface py-2 pl-10 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  className="w-full rounded-md border border-surface-highest bg-surface py-2 pl-10 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                 />
               </div>
             </div>
@@ -101,7 +101,7 @@ function AccountPage() {
                   value={formData.confirm_password}
                   onChange={handleChange}
                   required
-                  className="w-full rounded-md border border-surface-highest bg-surface py-2 pl-10 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  className="w-full rounded-md border border-surface-highest bg-surface py-2 pl-10 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                 />
               </div>
             </div>
@@ -110,7 +110,7 @@ function AccountPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-md bg-blue-600 py-2 px-4 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-md bg-primary py-2 px-4 text-sm font-medium text-white hover:bg-primary-dim focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-container transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? '修改中...' : '修改密码'}
               </button>
