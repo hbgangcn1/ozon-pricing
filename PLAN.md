@@ -239,8 +239,8 @@ frontend/tests/
 
 ## 完成标准
 
-- [x] `python -m pytest --tb=short` — **986 passed**, 0 failures, 0 errors
-- [x] `python -m pytest --cov=... --cov-report=term-missing` — 6核心模块均94-100%覆盖率
+- [x] `python -m pytest --tb=short` — **1272 passed**, 0 failures, 0 errors, 0 warnings
+- [x] `python -m coverage run + report` — **94%** 总覆盖率，23个核心模块均90%+
 - [x] `python -m flake8` — 0 errors, 0 warnings
 - [x] `npx vitest run` (frontend/) — **169 tests**, 0 failures (21 test files)
 - [x] `npm run build` (frontend/) — 构建成功
@@ -439,3 +439,72 @@ frontend/tests/
 - flake8: **0 errors**
 - 残留旧导入: **0** (db_utils, db_adapter, get_db_connection 全部清除)
 - 所有函数 < 100 行，所有文件 < 500 行，所有测试文件 < 800 行
+
+---
+
+### Phase 12: 后端测试覆盖率全量补充 ✅
+
+**实现计划**: `docs/superpowers/plans/2026-04-04-test-coverage.md` — 16 个 Task
+
+#### 任务完成
+
+| Task | 文件 | 测试数 | 目标覆盖率 | 状态 |
+|------|------|--------|------------|------|
+| 1 | `test_db_subscriptions.py` | 73 | subscriptions 94% | ✅ (efb79218) |
+| 2 | `test_db_exchange_logging.py` | 27 | exchange+logging 100% | ✅ |
+| 3 | `test_db_sessions_crud.py` | 46 | sessions_crud 100% | ✅ |
+| 4 | `test_db_products.py` | 40 | products 100% | ✅ |
+| 5 | `test_db_plans.py` | 44 | plans 100% | ✅ |
+| 6 | `test_db_statistics.py` | 39 | statistics 100% | ✅ |
+| 7 | `test_db_config.py` | 28 | config 100% | ✅ |
+| 8 | `test_db_users.py` | 58 | users 99% | ✅ |
+| 9 | `test_db_logistics_crud.py` | 42 | logistics_crud 100% | ✅ |
+| 10 | `test_db_admin.py` | 79 | admin 99%/admin_helpers 100% | ✅ |
+| 11 | `test_session_security_full.py` | 72 | session_security 99%/helpers 96% | ✅ |
+| 12 | `test_routes_pricing.py` | 43 | pricing路由 100% | ✅ |
+| 13 | `test_routes_settings.py` | 37 | settings路由 95% | ✅ |
+| 14 | `test_routes_misc.py` | 17 | main 93%/deps 100%/database 100% | ✅ |
+| 15 | 零警告修复 | — | 0 warnings/skips | ✅ (efb79218) |
+| 16 | 最终验证+收尾 | 5 | orders 100% | ✅ |
+
+#### 修复的关键问题
+
+- **dependency_overrides 跨测试污染**: `test_integration_subs_settings.py` 清除 module-level 设置的 overrides → 改为 autouse fixture
+- **sys.modules.clear()**: `test_session_security_full.py` 中 `_restore_modules()` → 改为 selective key deletion
+- **db/orders.py 覆盖率 88%→100%**: 新增 `test_db_orders.py` 5个测试
+
+#### 覆盖率汇总
+
+| 模块 | 覆盖率 | 目标 |
+|------|--------|------|
+| `db/admin.py` | 99% | 90%+ ✅ |
+| `db/admin_helpers.py` | 100% | 90%+ ✅ |
+| `db/config.py` | 100% | 90%+ ✅ |
+| `db/exchange.py` | 100% | 90%+ ✅ |
+| `db/logging_utils.py` | 100% | 90%+ ✅ |
+| `db/logistics_crud.py` | 100% | 90%+ ✅ |
+| `db/orders.py` | 100% | 90%+ ✅ |
+| `db/plans.py` | 100% | 90%+ ✅ |
+| `db/products.py` | 100% | 90%+ ✅ |
+| `db/sessions_crud.py` | 100% | 90%+ ✅ |
+| `db/statistics.py` | 100% | 90%+ ✅ |
+| `db/subscriptions.py` | 94% | 90%+ ✅ |
+| `db/users.py` | 99% | 90%+ ✅ |
+| `session_security.py` | 99% | 90%+ ✅ |
+| `session_security_helpers.py` | 96% | 90%+ ✅ |
+| `api/routes/pricing.py` | 100% | 90%+ ✅ |
+| `api/routes/settings.py` | 95% | 90%+ ✅ |
+| `api/routes/admin.py` | 100% | 90%+ ✅ |
+| `api/routes/orders.py` | 100% | 90%+ ✅ |
+| `api/routes/statistics.py` | 100% | 90%+ ✅ |
+| `api/main.py` | 93% | 90%+ ✅ |
+| `database.py` | 100% | 90%+ ✅ |
+| `api/dependencies.py` | 100% | 90%+ ✅ |
+| **总计** | **94%** | 90%+ ✅ |
+
+#### 最终数据
+
+- 后端: **1272 passed**, 0 failed, 0 skipped, 0 warnings (29s)
+- 覆盖率: **94%** 总计，所有 23 个核心模块均 ≥90%
+- flake8: 0 errors
+- 所有测试文件 < 800 行
