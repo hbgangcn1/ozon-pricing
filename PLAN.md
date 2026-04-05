@@ -15,7 +15,7 @@
 - **目标**：修复所有功能缺陷，实现缺失模块，JWT认证替换，90%+ 测试覆盖率
 - **本地目录**：`C:\Users\hbgan\OneDrive\Robert\learn\logistics`
 - **生产服务器**：`SERVER_IP` (`/var/www/ozon-pricing`)
-- **数据库**：PostgreSQL (logistics) - 36个用户，19张表
+- **数据库**：PostgreSQL (logistics) - 36个真实用户，19张表
 - **部署方式**：git pull + systemd
 - **目标分支**：`release/v1`
 
@@ -508,3 +508,49 @@ frontend/tests/
 - 覆盖率: **94%** 总计，所有 23 个核心模块均 ≥90%
 - flake8: 0 errors
 - 所有测试文件 < 800 行
+
+---
+
+### Phase 13: 手动测试 Bug 修复 (第二轮) ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 13.1 | ✅ | Bug 1: `ProductsPage.jsx` — `weight_g` 列 `toFixed(1)` → `toFixed(2)` + 两个 `InputNumber` 添加 `precision={2}`, `step={0.01}` |
+| 13.2 | ✅ | Bug 2: `LogisticsPage.jsx` — `continue_fee` 显示 `toFixed(2)` → `toFixed(5)` |
+| 13.3 | ✅ | Bug 3: 测试用户泄漏清理 — `global-teardown.js` 重写为分页获取所有用户 + 18 种测试用户名模式匹配; `auth-api.spec.js` 添加 `afterAll` 清理注册用户; SQL 一次性删除 129 个泄漏测试用户 |
+| 13.4 | ✅ | Bug 4: `db/admin.py` — 移除 `where(User.role != "admin")` 过滤，用户列表现在包含 admin 用户，按 ID 升序从 admin(ID=1) 开始 |
+| 13.5 | ✅ | 全套件验证 — pytest 1272 passed, flake8 0 errors |
+
+**根因分析**：
+- Bug 1: `ProductsPage.jsx` 行 86 的 `weight_g` 列用了 `toFixed(1)` 而不是 `toFixed(2)`; 编辑表单的 `InputNumber` 缺少 `precision` 属性
+- Bug 2: `LogisticsPage.jsx` 行 340 的 `continue_fee` 用了 `toFixed(2)`，用户要求精确到 5 位小数
+- Bug 3: E2E 测试通过 `/api/auth/register` 端点创建用户但无清理机制; `global-teardown.js` 仅获取第一页(20条)无法清理分布在后续页面的测试用户
+- Bug 4: `db/admin.py` 的 `get_all_users` 查询硬编码了 `where(User.role != "admin")` 过滤，导致 admin 用户被排除
+
+**数据库状态**：165 → 36 个真实用户（删除 129 个泄漏测试用户）
+
+#### 最终数据
+
+- 后端: **1272 passed**, 0 failed, 0 skipped, 0 warnings (24s)
+- flake8: 0 errors
+- 数据库: 36 个真实用户（0 个测试用户泄漏）
+
+---
+
+### Phase 14: 手动测试 Bug 修复 (第三轮) ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 14.1 | ✅ | Bug A: `PricingPage.jsx` — 产品编辑弹窗精度修复: (1) `handleEditProduct` 金额字段 `toFixed(2)`, 百分比字段 `*100` 显示整数 (2) `handleSaveProduct` 百分比字段 `/100` 保存小数 (3) `handleProductSelect` 金额 `toFixed(2)`, 百分比 `*100` (4) `RateInput` 组件透传 `step` prop (5) 产品弹窗金额 Input `step="0.01"`, 百分比 RateInput `step="1"` (6) 快速模式+精准模式 RateInput 也添加对应 step |
+| 14.2 | ✅ | Bug B: 用户管理排序 — `db/admin.py` 代码已正确(Phase 13修复), DB 验证 admin(ID=1) 在首位, 问题为后端服务器未重启加载新代码 |
+| 14.3 | ✅ | 全套件验证 — pytest 1272 passed, flake8 0 errors |
+
+**根因分析**：
+- Bug A: 数据库存储百分比为小数(如0.05), `handleEditProduct`/`handleProductSelect` 直接 `String()` 显示导致"0.05"而非"5"; `handleSaveProduct` 不做 `/100` 导致存入原始输入值; 金额字段无 `toFixed()` 导致浮点精度问题
+- Bug B: 代码已在 Phase 13 修复, 但用户本地后端服务器未重启仍运行旧代码
+
+#### 最终数据
+
+- 后端: **1272 passed**, 0 failed, 0 skipped, 0 warnings (21s)
+- flake8: 0 errors
+- Commit: `3ed26273` — fix: PricingPage产品编辑弹窗精度
