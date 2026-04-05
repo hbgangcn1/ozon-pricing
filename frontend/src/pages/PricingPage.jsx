@@ -983,7 +983,7 @@ export default function PricingPage() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate">{product.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      ¥{product.unit_price} / {product.weight_g}g
+                      ¥{Number(product.unit_price).toFixed(2)} / {product.weight_g}g
                       {product.is_cylinder ? ' / 圆柱' : ' / 常规'}
                     </div>
                   </div>
