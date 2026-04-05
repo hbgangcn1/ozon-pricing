@@ -73,12 +73,13 @@ const DEFAULT_PRECISE = {
   vat_rate: '0',
 }
 
-function RateInput({ label, value, onChange, defaultVal }) {
+function RateInput({ label, value, onChange, defaultVal, step }) {
   return (
     <div className="space-y-1">
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Input
         type="number"
+        step={step}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={defaultVal}
@@ -286,9 +287,9 @@ export default function PricingPage() {
     setEditingProduct(product)
     setProductForm({
       name: product.name || '',
-      unit_price: String(product.unit_price || ''),
-      labeling_fee: String(product.labeling_fee || '0'),
-      shipping_fee: String(product.shipping_fee || '0'),
+      unit_price: product.unit_price != null ? Number(product.unit_price).toFixed(2) : '',
+      labeling_fee: Number(product.labeling_fee || 0).toFixed(2),
+      shipping_fee: Number(product.shipping_fee || 0).toFixed(2),
       weight_g: String(product.weight_g || ''),
       length_cm: String(product.length_cm || ''),
       width_cm: String(product.width_cm || ''),
@@ -303,13 +304,13 @@ export default function PricingPage() {
       battery_capacity_type: product.battery_capacity_type || 'wh',
       has_msds: !!product.has_msds,
       has_liquid: !!product.has_liquid,
-      commission_rate: String(product.commission_rate || '0'),
-      target_profit_margin: String(product.target_profit_margin || '0'),
-      promotion_cost_rate: String(product.promotion_cost_rate || '0'),
-      withdrawal_fee_rate: String(product.withdrawal_fee_rate || '0'),
-      payment_processing_fee: String(product.payment_processing_fee || '0'),
-      return_rate: String(product.return_rate || '0'),
-      vat_rate: String(product.vat_rate || '0'),
+      commission_rate: String(Math.round((product.commission_rate || 0) * 100)),
+      target_profit_margin: String(Math.round((product.target_profit_margin || 0) * 100)),
+      promotion_cost_rate: String(Math.round((product.promotion_cost_rate || 0) * 100)),
+      withdrawal_fee_rate: String(Math.round((product.withdrawal_fee_rate || 0) * 100)),
+      payment_processing_fee: String(Math.round((product.payment_processing_fee || 0) * 100)),
+      return_rate: String(Math.round((product.return_rate || 0) * 100)),
+      vat_rate: String(Math.round((product.vat_rate || 0) * 100)),
     })
     setProductDialogOpen(true)
   }
@@ -380,13 +381,13 @@ export default function PricingPage() {
         battery_capacity_type: productForm.battery_capacity_type || 'wh',
         has_msds: productForm.has_msds,
         has_liquid: productForm.has_liquid,
-        commission_rate: Number(productForm.commission_rate) || 0,
-        target_profit_margin: Number(productForm.target_profit_margin) || 0,
-        promotion_cost_rate: Number(productForm.promotion_cost_rate) || 0,
-        withdrawal_fee_rate: Number(productForm.withdrawal_fee_rate) || 0,
-        payment_processing_fee: Number(productForm.payment_processing_fee) || 0,
-        return_rate: Number(productForm.return_rate) || 0,
-        vat_rate: Number(productForm.vat_rate) || 0,
+        commission_rate: (Number(productForm.commission_rate) || 0) / 100,
+        target_profit_margin: (Number(productForm.target_profit_margin) || 0) / 100,
+        promotion_cost_rate: (Number(productForm.promotion_cost_rate) || 0) / 100,
+        withdrawal_fee_rate: (Number(productForm.withdrawal_fee_rate) || 0) / 100,
+        payment_processing_fee: (Number(productForm.payment_processing_fee) || 0) / 100,
+        return_rate: (Number(productForm.return_rate) || 0) / 100,
+        vat_rate: (Number(productForm.vat_rate) || 0) / 100,
       }
       if (editingProduct) {
         await productsAPI.update(editingProduct.id, data)
@@ -629,9 +630,9 @@ export default function PricingPage() {
         ...DEFAULT_PRECISE,
         product_id: productId,
         name: product.name || '',
-        unit_price: String(product.unit_price || ''),
-        labeling_fee: String(product.labeling_fee || '0'),
-        shipping_fee: String(product.shipping_fee || '0'),
+        unit_price: product.unit_price != null ? Number(product.unit_price).toFixed(2) : '',
+        labeling_fee: Number(product.labeling_fee || 0).toFixed(2),
+        shipping_fee: Number(product.shipping_fee || 0).toFixed(2),
         weight_g: String(product.weight_g || ''),
         length_cm: String(product.length_cm || ''),
         width_cm: String(product.width_cm || ''),
@@ -646,13 +647,13 @@ export default function PricingPage() {
         battery_capacity_type: product.battery_capacity_type || 'wh',
         has_msds: !!product.has_msds,
         has_liquid: !!product.has_liquid,
-        commission_rate: String(product.commission_rate ?? '0'),
-        target_profit_margin: String(product.target_profit_margin ?? '0'),
-        promotion_cost_rate: String(product.promotion_cost_rate ?? '0'),
-        withdrawal_fee_rate: String(product.withdrawal_fee_rate ?? '0'),
-        payment_processing_fee: String(product.payment_processing_fee ?? '0'),
-        return_rate: String(product.return_rate ?? '0'),
-        vat_rate: String(product.vat_rate ?? '0'),
+        commission_rate: String(Math.round((product.commission_rate ?? 0) * 100)),
+        target_profit_margin: String(Math.round((product.target_profit_margin ?? 0) * 100)),
+        promotion_cost_rate: String(Math.round((product.promotion_cost_rate ?? 0) * 100)),
+        withdrawal_fee_rate: String(Math.round((product.withdrawal_fee_rate ?? 0) * 100)),
+        payment_processing_fee: String(Math.round((product.payment_processing_fee ?? 0) * 100)),
+        return_rate: String(Math.round((product.return_rate ?? 0) * 100)),
+        vat_rate: String(Math.round((product.vat_rate ?? 0) * 100)),
       })
     }
   }
@@ -768,19 +769,19 @@ export default function PricingPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <RateInput label="佣金费率(%)" value={fastForm.commission_rate}
-                  onChange={(v) => setFastForm({ ...fastForm, commission_rate: v })} defaultVal="0" />
+                  onChange={(v) => setFastForm({ ...fastForm, commission_rate: v })} defaultVal="0" step="1" />
                 <RateInput label="运营利润率(%)" value={fastForm.target_profit_margin}
-                  onChange={(v) => setFastForm({ ...fastForm, target_profit_margin: v })} defaultVal="20" />
+                  onChange={(v) => setFastForm({ ...fastForm, target_profit_margin: v })} defaultVal="20" step="1" />
                 <RateInput label="推广费率(%)" value={fastForm.promotion_cost_rate}
-                  onChange={(v) => setFastForm({ ...fastForm, promotion_cost_rate: v })} defaultVal="5" />
+                  onChange={(v) => setFastForm({ ...fastForm, promotion_cost_rate: v })} defaultVal="5" step="1" />
                 <RateInput label="打款提现费率(%)" value={fastForm.withdrawal_fee_rate}
-                  onChange={(v) => setFastForm({ ...fastForm, withdrawal_fee_rate: v })} defaultVal="2" />
+                  onChange={(v) => setFastForm({ ...fastForm, withdrawal_fee_rate: v })} defaultVal="2" step="1" />
                 <RateInput label="收单手续费率(%)" value={fastForm.payment_processing_fee}
-                  onChange={(v) => setFastForm({ ...fastForm, payment_processing_fee: v })} defaultVal="1" />
+                  onChange={(v) => setFastForm({ ...fastForm, payment_processing_fee: v })} defaultVal="1" step="1" />
                 <RateInput label="历史退货率(%)" value={fastForm.return_rate}
-                  onChange={(v) => setFastForm({ ...fastForm, return_rate: v })} defaultVal="3" />
+                  onChange={(v) => setFastForm({ ...fastForm, return_rate: v })} defaultVal="3" step="1" />
                 <RateInput label="增值税率(%)" value={fastForm.vat_rate}
-                  onChange={(v) => setFastForm({ ...fastForm, vat_rate: v })} defaultVal="0" />
+                  onChange={(v) => setFastForm({ ...fastForm, vat_rate: v })} defaultVal="0" step="1" />
               </div>
 
               <Button onClick={handleFastCalculate} disabled={loading} className="w-full">
@@ -828,7 +829,7 @@ export default function PricingPage() {
                       placeholder="必填" className="h-8" />
                   </div>
                   <RateInput label="进货单价（元）" value={preciseForm.unit_price}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, unit_price: v })} />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, unit_price: v })} step="0.01" />
                 </div>
               </div>
 
@@ -932,25 +933,25 @@ export default function PricingPage() {
                 <Label className="text-sm font-medium">定价参数</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <RateInput label="贴标费用（元）" value={preciseForm.labeling_fee}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, labeling_fee: v })} />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, labeling_fee: v })} step="0.01" />
                   <RateInput label="供货方不包邮运费（元）" value={preciseForm.shipping_fee}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, shipping_fee: v })} />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, shipping_fee: v })} step="0.01" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <RateInput label="佣金费率(%)" value={preciseForm.commission_rate}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, commission_rate: v })} defaultVal="0" />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, commission_rate: v })} defaultVal="0" step="1" />
                   <RateInput label="运营利润率(%)" value={preciseForm.target_profit_margin}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, target_profit_margin: v })} defaultVal="20" />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, target_profit_margin: v })} defaultVal="20" step="1" />
                   <RateInput label="推广费率(%)" value={preciseForm.promotion_cost_rate}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, promotion_cost_rate: v })} defaultVal="5" />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, promotion_cost_rate: v })} defaultVal="5" step="1" />
                   <RateInput label="打款提现费率(%)" value={preciseForm.withdrawal_fee_rate}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, withdrawal_fee_rate: v })} defaultVal="2" />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, withdrawal_fee_rate: v })} defaultVal="2" step="1" />
                   <RateInput label="收单手续费率(%)" value={preciseForm.payment_processing_fee}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, payment_processing_fee: v })} defaultVal="1" />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, payment_processing_fee: v })} defaultVal="1" step="1" />
                   <RateInput label="历史退货率(%)" value={preciseForm.return_rate}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, return_rate: v })} defaultVal="3" />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, return_rate: v })} defaultVal="3" step="1" />
                   <RateInput label="增值税率(%)" value={preciseForm.vat_rate}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, vat_rate: v })} defaultVal="0" />
+                    onChange={(v) => setPreciseForm({ ...preciseForm, vat_rate: v })} defaultVal="0" step="1" />
                 </div>
               </div>
 
@@ -1034,7 +1035,7 @@ export default function PricingPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>进货单价（元） <span className="text-red-400">*</span></Label>
-                <Input type="number" value={productForm.unit_price}
+                <Input type="number" step="0.01" value={productForm.unit_price}
                   onChange={(e) => setProductForm({ ...productForm, unit_price: e.target.value })} />
               </div>
               <div>
@@ -1151,30 +1152,30 @@ export default function PricingPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>贴标费用（元）</Label>
-                <Input type="number" value={productForm.labeling_fee}
+                <Input type="number" step="0.01" value={productForm.labeling_fee}
                   onChange={(e) => setProductForm({ ...productForm, labeling_fee: e.target.value })} />
               </div>
               <div>
                 <Label>供货方不包邮运费（元）</Label>
-                <Input type="number" value={productForm.shipping_fee}
+                <Input type="number" step="0.01" value={productForm.shipping_fee}
                   onChange={(e) => setProductForm({ ...productForm, shipping_fee: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <RateInput label="佣金费率(%)" value={productForm.commission_rate}
-                onChange={(v) => setProductForm({ ...productForm, commission_rate: v })} defaultVal="0" />
+                onChange={(v) => setProductForm({ ...productForm, commission_rate: v })} defaultVal="0" step="1" />
               <RateInput label="运营利润率(%)" value={productForm.target_profit_margin}
-                onChange={(v) => setProductForm({ ...productForm, target_profit_margin: v })} defaultVal="0" />
+                onChange={(v) => setProductForm({ ...productForm, target_profit_margin: v })} defaultVal="0" step="1" />
               <RateInput label="推广费率(%)" value={productForm.promotion_cost_rate}
-                onChange={(v) => setProductForm({ ...productForm, promotion_cost_rate: v })} defaultVal="0" />
+                onChange={(v) => setProductForm({ ...productForm, promotion_cost_rate: v })} defaultVal="0" step="1" />
               <RateInput label="打款提现费率(%)" value={productForm.withdrawal_fee_rate}
-                onChange={(v) => setProductForm({ ...productForm, withdrawal_fee_rate: v })} defaultVal="0" />
+                onChange={(v) => setProductForm({ ...productForm, withdrawal_fee_rate: v })} defaultVal="0" step="1" />
               <RateInput label="收单手续费率(%)" value={productForm.payment_processing_fee}
-                onChange={(v) => setProductForm({ ...productForm, payment_processing_fee: v })} defaultVal="0" />
+                onChange={(v) => setProductForm({ ...productForm, payment_processing_fee: v })} defaultVal="0" step="1" />
               <RateInput label="历史退货率(%)" value={productForm.return_rate}
-                onChange={(v) => setProductForm({ ...productForm, return_rate: v })} defaultVal="0" />
+                onChange={(v) => setProductForm({ ...productForm, return_rate: v })} defaultVal="0" step="1" />
               <RateInput label="增值税率(%)" value={productForm.vat_rate}
-                onChange={(v) => setProductForm({ ...productForm, vat_rate: v })} defaultVal="0" />
+                onChange={(v) => setProductForm({ ...productForm, vat_rate: v })} defaultVal="0" step="1" />
             </div>
           </div>
           <DialogFooter>
