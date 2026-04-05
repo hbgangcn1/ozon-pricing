@@ -136,6 +136,21 @@ test.describe('Auth API - 登出', () => {
 })
 
 test.describe('Auth API - 注册', () => {
+  const createdUserIds = [];
+
+  test.afterAll(async ({ request }) => {
+    if (createdUserIds.length === 0) return;
+    const token = await getToken(request, ADMIN_USER, ADMIN_PASS);
+    if (!token) return;
+    for (const uid of createdUserIds) {
+      try {
+        await request.delete(`/api/admin/users/${uid}`, {
+          headers: authHeaders(token),
+        });
+      } catch { }
+    }
+  });
+
   test('POST /api/auth/register - 注册关闭时返回 403', async ({ request }) => {
     // 先确保注册关闭
     const adminToken = await getToken(request, ADMIN_USER, ADMIN_PASS)
@@ -206,15 +221,14 @@ test.describe('Auth API - 注册', () => {
         security_answer: 'Buddy',
       },
     })
-    // 成功注册返回 200
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(data).toHaveProperty('access_token')
     expect(data).toHaveProperty('user')
     expect(data.user.username).toBe(uniqueUser)
     expect(data.user.role).toBe('user')
+    if (data.user.id) createdUserIds.push(data.user.id)
 
-    // 关闭注册（还原状态）
     await request.put('/api/settings/open-registration?enabled=false', {
       headers: authHeaders(adminToken),
     })

@@ -337,7 +337,7 @@ export default function LogisticsPage() {
                     {item.base_fee != null ? `¥${Number(item.base_fee).toFixed(2)}` : '-'}
                   </div>
                   <div className="text-sm">
-                    {item.continue_fee != null ? `¥${Number(item.continue_fee).toFixed(2)}/${item.continue_unit || 'kg'}` : '-'}
+                    {item.continue_fee != null ? `¥${Number(item.continue_fee).toFixed(5)}/${item.continue_unit || 'kg'}` : '-'}
                   </div>
                   <div className="flex items-center gap-1">
                     {item.allow_battery ? (

@@ -83,7 +83,7 @@ function ProductsPage() {
     { title: '产品名称', dataIndex: 'name', key: 'name' },
     { title: '类别', dataIndex: 'category', key: 'category' },
     { title: '单价', dataIndex: 'unit_price', key: 'unit_price', render: (v) => v != null ? Number(v).toFixed(2) : '-' },
-    { title: '重量(g)', dataIndex: 'weight_g', key: 'weight_g', render: (v) => v != null ? Number(v).toFixed(1) : '-' },
+    { title: '重量(g)', dataIndex: 'weight_g', key: 'weight_g', render: (v) => v != null ? Number(v).toFixed(2) : '-' },
     {
       title: '操作',
       key: 'action',
@@ -132,10 +132,10 @@ function ProductsPage() {
             <Input />
           </Form.Item>
           <Form.Item name="unit_price" label="单价">
-            <InputNumber step={0.01} />
+            <InputNumber step={0.01} precision={2} />
           </Form.Item>
           <Form.Item name="weight_g" label="重量(g)">
-            <InputNumber />
+            <InputNumber step={0.01} precision={2} />
           </Form.Item>
         </Form>
       </Modal>

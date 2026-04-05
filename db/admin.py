@@ -74,7 +74,7 @@ async def get_all_users(
     status_filter=None,
 ) -> dict:
     conditions = _build_users_filter(search, user_type_filter, status_filter)
-    base = select(User).where(User.role != "admin")
+    base = select(User)
     for cond in conditions:
         base = base.where(cond)
 
