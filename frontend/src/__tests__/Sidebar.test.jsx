@@ -55,7 +55,7 @@ describe('Sidebar Component', () => {
     expect(screen.queryByText('系统设置')).not.toBeInTheDocument();
   });
 
-  test('ExchangeRateDropdown renders and toggles', async () => {
+  test('ExchangeRatePanel displays rates directly', async () => {
     useAuthStore.mockReturnValue({ isAdmin: () => false });
     render(
       <MemoryRouter initialEntries={['/pricing']}>
@@ -65,14 +65,12 @@ describe('Sidebar Component', () => {
     
     expect(apiClient.get).toHaveBeenCalledWith('/exchange/rates');
     
-    const dropdownToggle = screen.getByText('实时汇率');
-    fireEvent.click(dropdownToggle);
-    
     const rateText = await screen.findByText('RUB/CNY');
     expect(rateText).toBeInTheDocument();
+    expect(screen.getByText('实时汇率')).toBeInTheDocument();
   });
 
-  test('collapse toggle works', () => {
+  test('sidebar is always expanded with fixed width', () => {
     useAuthStore.mockReturnValue({ isAdmin: () => false });
     const { container } = render(
       <MemoryRouter initialEntries={['/pricing']}>
@@ -80,13 +78,12 @@ describe('Sidebar Component', () => {
       </MemoryRouter>
     );
     
-    expect(screen.getAllByText('物流定价').length).toBe(2);
+    const titleElems = screen.getAllByText('物流定价');
+    expect(titleElems.length).toBe(2);
+    expect(screen.queryByText('收起')).not.toBeInTheDocument();
     
-    const toggleBtn = screen.getByText('收起');
-    if (toggleBtn) {
-      fireEvent.click(toggleBtn);
-      expect(screen.queryByText('物流定价')).not.toBeInTheDocument();
-    }
+    const sidebar = container.firstChild;
+    expect(sidebar.className).toContain('w-64');
   });
 
   test('active item highlighted based on location', () => {

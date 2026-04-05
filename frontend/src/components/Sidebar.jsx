@@ -11,15 +11,13 @@ import {
   Gift, 
   BarChart3, 
   Info,
-  ChevronsLeftRight,
-  ChevronDown,
   RefreshCw
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
 import apiClient from '@/services/api';
 
-function ExchangeRateDropdown() {
+function ExchangeRatePanel() {
   const [rates, setRates] = useState({
     'RUB/CNY': null,
     'CNY/RUB': null,
@@ -27,7 +25,6 @@ function ExchangeRateDropdown() {
     'CNY/USD': null,
   });
   const [loading, setLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const fetchRates = async () => {
@@ -50,48 +47,33 @@ function ExchangeRateDropdown() {
   }, []);
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2 text-text-secondary hover:text-text-primary hover:bg-surface rounded-md transition-colors"
-      >
+    <div className="border-t border-surface-high pt-3">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center">
-          <DollarSign className="w-5 h-5" />
-          <span className="ml-3 text-sm">实时汇率</span>
+          <DollarSign className="w-4 h-4 text-text-secondary" />
+          <span className="ml-2 text-xs font-medium text-text-secondary">实时汇率</span>
         </div>
-        <ChevronDown className={cn('w-4 h-4 transition-transform', isOpen && 'rotate-180')} />
-      </button>
-      
-      {isOpen && (
-        <div className="absolute left-0 right-0 mt-1 bg-surface-container border border-surface-highest rounded-md shadow-lg z-50">
-          <div className="p-3 border-b border-surface-highest">
-            <div className="text-xs text-text-secondary">实时汇率</div>
-            <div className="text-xs text-text-muted mt-1">
-              {lastUpdated ? `更新: ${lastUpdated.toLocaleTimeString()}` : '加载中...'}
-            </div>
+        <button
+          onClick={fetchRates}
+          disabled={loading}
+          className="flex items-center text-xs text-text-muted hover:text-text-secondary transition-colors"
+        >
+          <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
+        </button>
+      </div>
+      <div className="space-y-1">
+        {Object.entries(rates).map(([pair, value]) => (
+          <div key={pair} className="flex justify-between items-center py-0.5 px-1">
+            <span className="text-xs text-text-muted">{pair}</span>
+            <span className="text-xs font-medium text-text-primary">
+              {value !== null ? value.toFixed(4) : '-'}
+            </span>
           </div>
-          <div className="p-2">
-            {Object.entries(rates).map(([pair, value]) => (
-              <div key={pair} className="flex justify-between items-center py-1 px-2 hover:bg-surface-high rounded">
-                <span className="text-sm text-text-secondary">{pair}</span>
-                <span className="text-sm font-medium text-text-primary">
-                  {value !== null ? value.toFixed(4) : '-'}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="p-2 border-t border-surface-highest">
-            <button
-              onClick={fetchRates}
-              disabled={loading}
-              className="w-full flex items-center justify-center py-1 text-xs text-text-secondary hover:text-[#d4d8dd] transition-colors"
-            >
-              <RefreshCw className={cn('w-3 h-3 mr-1', loading && 'animate-spin')} />
-              {loading ? '刷新中...' : '刷新'}
-            </button>
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
+      <div className="text-xs text-text-muted mt-1">
+        {lastUpdated ? `更新: ${lastUpdated.toLocaleTimeString()}` : '加载中...'}
+      </div>
     </div>
   );
 }
@@ -110,7 +92,6 @@ const menuItems = [
 ];
 
 export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const { isAdmin } = useAuthStore();
 
@@ -119,19 +100,14 @@ export default function Sidebar() {
   );
 
   return (
-    <div className={cn(
-      'bg-surface border-r border-surface-high h-screen fixed left-0 top-0 z-40 transition-all duration-200',
-      collapsed ? 'w-16' : 'w-64'
-    )}>
+    <div className="bg-surface border-r border-surface-high h-screen fixed left-0 top-0 z-40 w-64">
       {/* Logo */}
       <div className="p-4 border-b border-surface-high">
         <div className="flex items-center">
           <span className="text-2xl">📦</span>
-          {!collapsed && (
-            <span className="ml-3 text-lg font-semibold text-text-primary">
-              物流定价
-            </span>
-          )}
+          <span className="ml-3 text-lg font-semibold text-text-primary">
+            物流定价
+          </span>
         </div>
       </div>
 
@@ -152,11 +128,9 @@ export default function Sidebar() {
               )}
             >
               <IconComponent className="w-5 h-5 text-text-secondary" />
-              {!collapsed && (
-                <span className="ml-3 text-sm text-text-secondary">
-                  {item.label}
-                </span>
-              )}
+              <span className="ml-3 text-sm text-text-secondary">
+                {item.label}
+              </span>
               {/* Active indicator */}
               {isActive && (
                 <div className="absolute left-0 top-0 h-full w-0.5 bg-indigo-500"></div>
@@ -166,27 +140,9 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Exchange Rate Dropdown */}
-      <div className="px-3 py-2">
-        <ExchangeRateDropdown />
-      </div>
-
-      {/* Collapse Button */}
-      <div className="absolute bottom-4 left-4 right-4">
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center w-full px-3 py-2 text-text-secondary hover:text-text-primary hover:bg-surface rounded-md transition-colors"
-        >
-          <ChevronsLeftRight className={cn(
-            'w-5 h-5 transition-transform',
-            collapsed && 'rotate-180'
-          )} />
-          {!collapsed && (
-            <span className="ml-3 text-sm">
-              {collapsed ? '展开' : '收起'}
-            </span>
-          )}
-        </button>
+      {/* Exchange Rate Panel */}
+      <div className="px-4 py-2">
+        <ExchangeRatePanel />
       </div>
     </div>
   );
