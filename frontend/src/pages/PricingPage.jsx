@@ -1,7 +1,8 @@
-﻿import React, { useEffect, useState, useRef } from 'react'
+﻿import React, { useEffect, useState, useRef , Suspense, useMemo } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Button } from '../components/ui/button'
+import { Skeleton } from '../components/ui/skeleton'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
@@ -12,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from 'sonner'
 import { pricingAPI, productsAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
-import CostPieChart from '../components/charts/CostPieChart'
+const CostPieChart = React.lazy(() => import('../components/charts/CostPieChart'))
 
 // 安全提取 API 错误信息，避免将对象渲染到 React toast
 const getApiError = (error) => {
@@ -92,12 +93,12 @@ function RateInput({ label, value, onChange, defaultVal, step }) {
 function ResultCard({ title, item }) {
   if (!item?.is_available) {
     const emptyTitleClass = title.includes('自提') && title.includes('陆运')
-      ? 'bg-teal-500/30 text-teal-300'
+      ? 'bg-cost-agent/30 text-cost-agent'
       : title.includes('自提') && title.includes('空运')
-        ? 'bg-blue-700/30 text-blue-300'
+        ? 'bg-cost-withdraw/30 text-cost-withdraw'
         : title.includes('送货上门') && title.includes('陆运')
-          ? 'bg-purple-500/30 text-purple-300'
-          : 'bg-fuchsia-700/30 text-fuchsia-300'
+          ? 'bg-cost-commission/30 text-cost-commission'
+          : 'bg-cost-commission/60 text-cost-commission'
     return (
       <Card className="border-dashed">
         <CardContent className="py-3 px-4">
@@ -121,12 +122,12 @@ function ResultCard({ title, item }) {
         <div
           className={`flex justify-between items-center p-2 rounded ${
             title.includes('自提') && title.includes('陆运')
-              ? 'bg-teal-500/30 text-teal-300'
+              ? 'bg-cost-agent/30 text-cost-agent'
               : title.includes('自提') && title.includes('空运')
-                ? 'bg-blue-700/30 text-blue-300'
+                ? 'bg-cost-withdraw/30 text-cost-withdraw'
                 : title.includes('送货上门') && title.includes('陆运')
-                  ? 'bg-purple-500/30 text-purple-300'
-                  : 'bg-fuchsia-700/30 text-fuchsia-300'
+                  ? 'bg-cost-commission/30 text-cost-commission'
+                  : 'bg-cost-commission/60 text-cost-commission'
           }`}
         >
           <span className="text-sm font-medium">{title}</span>
@@ -141,53 +142,55 @@ function ResultCard({ title, item }) {
           </div>
           <div className="text-sm">
             <span className="text-muted-foreground">运营利润率 </span>
-            <span className="font-semibold text-green-400">{item.profit_margin_pct?.toFixed(1)}%</span>
+            <span className="font-semibold text-cost-profit">{item.profit_margin_pct?.toFixed(1)}%</span>
           </div>
         </div>
 
         {/* 饼图行 */}
         {item.breakdown && item.breakdown.length > 0 && (
-          <CostPieChart
+          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+            <CostPieChart
             breakdown={item.breakdown}
             totalPrice={item.price_cny}
             netProfit={item.profit_cny}
           />
+          </Suspense>
         )}
 
         {/* 底部3行对比数据 */}
         <div className="space-y-2">
           {/* 第1行：运费与时效 */}
-          <div className="flex justify-between bg-blue-500/5 rounded p-1 transition-colors duration-200">
+          <div className="flex justify-between bg-cost-logistics/5 rounded p-1 transition-colors duration-200">
             <div className="flex justify-between flex-1 mr-2">
-              <span className="text-blue-300">运费</span>
+              <span className="text-cost-logistics">运费</span>
               <span className="text-white font-medium">¥{item.logistics_cost?.toFixed(2)}</span>
             </div>
             <div className="flex justify-between flex-1 ml-2">
-              <span className="text-blue-300">时效</span>
+              <span className="text-cost-logistics">时效</span>
               <span className="text-white font-medium">{item.days_min}-{item.days_max}天</span>
             </div>
           </div>
 
           {/* 第2行：平均运费与节省运费 */}
-          <div className="flex justify-between bg-green-500/5 rounded p-1 transition-colors duration-200">
+          <div className="flex justify-between bg-cost-profit/5 rounded p-1 transition-colors duration-200">
             <div className="flex justify-between flex-1 mr-2">
-              <span className="text-blue-300">平均运费</span>
+              <span className="text-cost-logistics">平均运费</span>
               <span className="text-white font-medium">¥{item.avg_cost?.toFixed(2)}</span>
             </div>
             <div className="flex justify-between flex-1 ml-2">
-              <span className="text-blue-300">节省</span>
+              <span className="text-cost-logistics">节省</span>
               <span className="text-white font-medium">{savedCostPct !== null ? `${savedCostPct > 0 ? '+' : ''}${savedCostPct}%` : '-'}</span>
             </div>
           </div>
 
           {/* 第3行：平均时效与节省时效 */}
-          <div className="flex justify-between bg-orange-500/5 rounded p-1 transition-colors duration-200">
+          <div className="flex justify-between bg-cost-logistics/10 rounded p-1 transition-colors duration-200">
             <div className="flex justify-between flex-1 mr-2">
-              <span className="text-blue-300">平均时效</span>
+              <span className="text-cost-logistics">平均时效</span>
               <span className="text-white font-medium">{item.avg_days?.toFixed(1)}天</span>
             </div>
             <div className="flex justify-between flex-1 ml-2">
-              <span className="text-blue-300">节省</span>
+              <span className="text-cost-logistics">节省</span>
               <span className="text-white font-medium">{item.saved_days != null ? `${item.saved_days > 0 ? '+' : ''}${item.saved_days.toFixed(1)}天` : '-'}</span>
             </div>
           </div>
@@ -670,7 +673,7 @@ export default function PricingPage() {
         </div>
 
         {/* 价格优先方案 */}
-        <div className="bg-blue-500/5 p-4 rounded">
+        <div className="bg-cost-logistics/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">价格优先方案</h3>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -685,7 +688,7 @@ export default function PricingPage() {
         </div>
 
         {/* 速度优先方案 */}
-        <div className="bg-green-500/5 p-4 rounded">
+        <div className="bg-cost-profit/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">速度优先方案</h3>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -701,7 +704,7 @@ export default function PricingPage() {
 
         {/* 被淘汰的物流 */}
         {result.filtered_logistics && (
-          <div className="bg-zinc-500/15 p-5 rounded-lg">
+          <div className="bg-surface-highest/50 p-5 rounded-lg">
             <h3 className="text-lg font-semibold mb-4 text-gray-400">被淘汰的物流</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {['land', 'air'].map(type => (
@@ -714,15 +717,15 @@ export default function PricingPage() {
                         return (
                           <div key={`${type}-${item.name}`} className={`rounded px-3 py-2 text-sm border ${
                             isUnselected
-                              ? 'bg-blue-500/10 border-blue-500/20'
-                              : 'bg-red-500/10 border-red-500/20'
+                              ? 'bg-primary/10 border-primary/20'
+                              : 'bg-status-error/10 border-status-error/20'
                           }`}>
                             <div className="flex items-center justify-between mb-1">
                               <span className="font-medium">{item.name}</span>
                               <span className={`text-xs px-2 py-0.5 rounded-full ${
                                 isUnselected
-                                  ? 'bg-blue-500/20 text-blue-400'
-                                  : 'bg-red-500/20 text-red-400'
+                                  ? 'bg-primary/20 text-primary'
+                                  : 'bg-status-error/20 text-status-error'
                               }`}>
                                 {isUnselected ? '备选' : '淘汰'}
                               </span>
@@ -823,7 +826,7 @@ export default function PricingPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">产品名称 <span className="text-red-400">*</span></Label>
+                    <Label className="text-xs text-muted-foreground">产品名称 <span className="text-status-error">*</span></Label>
                     <Input value={preciseForm.name}
                       onChange={(e) => setPreciseForm({ ...preciseForm, name: e.target.value })}
                       placeholder="必填" className="h-8" />
@@ -1015,7 +1018,7 @@ export default function PricingPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => { setDeleteConfirmOpen(false); setPendingDeleteProduct(null) }}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteProduct} className="bg-red-600 hover:bg-red-700">确认删除</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDeleteProduct} className="bg-status-error hover:bg-status-error/85">确认删除</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1028,18 +1031,18 @@ export default function PricingPage() {
           </DialogHeader>
           <div className="space-y-3 max-h-96 overflow-y-auto">
             <div>
-              <Label>产品名称 <span className="text-red-400">*</span></Label>
+              <Label>产品名称 <span className="text-status-error">*</span></Label>
               <Input value={productForm.name}
                 onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>进货单价（元） <span className="text-red-400">*</span></Label>
+                <Label>进货单价（元） <span className="text-status-error">*</span></Label>
                 <Input type="number" step="0.01" value={productForm.unit_price}
                   onChange={(e) => setProductForm({ ...productForm, unit_price: e.target.value })} />
               </div>
               <div>
-                <Label>重量（克） <span className="text-red-400">*</span></Label>
+                <Label>重量（克） <span className="text-status-error">*</span></Label>
                 <Input type="number" value={productForm.weight_g}
                   onChange={(e) => setProductForm({ ...productForm, weight_g: e.target.value })} />
               </div>

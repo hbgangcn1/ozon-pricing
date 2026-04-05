@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Package, Truck, User, Activity } from 'lucide-react';
 import { Skeleton } from '../components/ui/skeleton';
 import { productsAPI, logisticsAPI } from '../services/api';
@@ -36,7 +36,7 @@ function DashboardPage() {
     return () => { controller.abort() }
   }, []);
 
-  const statisticCards = [
+  const statisticCards = useMemo(() => [
     {
       title: '产品数量',
       value: stats.products,
@@ -65,7 +65,7 @@ function DashboardPage() {
       loading: false,
       trend: 'normal',
     },
-  ];
+  ], [stats]);
 
   return (
     <div>
@@ -85,7 +85,7 @@ function DashboardPage() {
             ) : (
               <>
                 <card.icon className="w-8 h-8 text-primary-dim mb-3" />
-                <div className="text-3xl font-mono font-bold text-text-primary">
+                <div className="text-2xl font-headline font-bold text-text-primary tracking-tight">
                   {card.value}
                 </div>
                 <div className="text-sm text-text-secondary mt-1">
@@ -93,7 +93,7 @@ function DashboardPage() {
                 </div>
                 {card.trend && (
                   <div className="mt-2">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-400">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-status-success/15 text-status-success">
                       {card.trend === 'stable' ? '稳定' : '正常'}
                     </span>
                   </div>

@@ -7,10 +7,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-indigo-500 text-white hover:bg-indigo-600',
-        secondary: 'bg-zinc-800 text-zinc-50 hover:bg-zinc-700',
-        ghost: 'hover:bg-zinc-800 hover:text-zinc-50',
-        destructive: 'bg-red-500 text-white hover:bg-red-600',
+        default: 'bg-primary text-white hover:bg-primary/85',
+        secondary: 'bg-surface-high text-text-primary hover:bg-surface-highest',
+        ghost: 'hover:bg-surface-high hover:text-text-primary',
+        destructive: 'bg-status-error text-white hover:bg-status-error/85',
       },
       size: {
         default: 'h-9 px-4 py-2',

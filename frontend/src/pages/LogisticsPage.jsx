@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useMemo } from 'react'
 import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -73,8 +73,8 @@ function SectionTitle({ children }) {
   )
 }
 
-function FormRow({ children }) {
-  return <div className="grid grid-cols-2 gap-3">{children}</div>
+function FormRow({ children, className = '' }) {
+  return <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${className}`}>{children}</div>
 }
 
 function TooltipIcon({ content }) {
@@ -307,8 +307,8 @@ export default function LogisticsPage() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  const landLogistics = logistics.filter(l => l.type === 'land')
-  const airLogistics = logistics.filter(l => l.type === 'air')
+  const landLogistics = useMemo(() => logistics.filter(l => l.type === 'land'), [logistics])
+  const airLogistics = useMemo(() => logistics.filter(l => l.type === 'air'), [logistics])
 
   const renderLogisticsList = (items) => (
     <div className="space-y-2">
@@ -319,7 +319,7 @@ export default function LogisticsPage() {
           <Card key={item.id} className={`bg-surface-container border-surface-high ${!item.is_active ? 'opacity-50' : ''}`}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div className="flex-1 grid grid-cols-9 gap-4 items-center">
+                <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4 items-center">
                   <Checkbox
                     checked={selectedIds.has(item.id)}
                     onCheckedChange={() => toggleSelect(item.id)}
@@ -341,14 +341,14 @@ export default function LogisticsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     {item.allow_battery ? (
-                      <Zap className="h-4 w-4 text-green-500" />
+                      <Zap className="h-4 w-4 text-status-success" />
                     ) : (
                       <Zap className="h-4 w-4 text-surface-highest" />
                     )}
                   </div>
                   <div className="flex items-center gap-1">
                     {item.allow_liquid ? (
-                      <Droplets className="h-4 w-4 text-blue-500" />
+                      <Droplets className="h-4 w-4 text-status-info" />
                     ) : (
                       <Droplets className="h-4 w-4 text-surface-highest" />
                     )}
@@ -361,7 +361,7 @@ export default function LogisticsPage() {
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} aria-label="编辑" className="transition-all duration-200">
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(item.id)} aria-label="删除" className="text-red-400 transition-all duration-200">
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(item.id)} aria-label="删除" className="text-status-error transition-all duration-200">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -376,7 +376,7 @@ export default function LogisticsPage() {
 
   const renderForm = () => (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingItem ? '编辑物流规则' : '添加物流规则'}</DialogTitle>
         </DialogHeader>
@@ -395,7 +395,7 @@ export default function LogisticsPage() {
                 <RadioGroup
                   value={form.type}
                   onValueChange={v => setFormField('type', v)}
-                  className="flex gap-4"
+                  className="flex flex-wrap gap-4"
                 >
                   <RadioLabel label="陆运" value="land" itemClassName="mt-0.5" />
                   <RadioLabel label="空运" value="air" itemClassName="mt-0.5" />
@@ -431,7 +431,7 @@ export default function LogisticsPage() {
                 <RadioGroup
                   value={form.fee_mode}
                   onValueChange={v => setFormField('fee_mode', v)}
-                  className="flex gap-4"
+                  className="flex flex-wrap gap-4"
                 >
                   <RadioLabel label="基础费用+续重费用" value="base_weight" itemClassName="mt-0.5" />
                   <RadioLabel label="首重费用+续重费用" value="first_weight" itemClassName="mt-0.5" />
@@ -658,7 +658,7 @@ export default function LogisticsPage() {
             <RadioGroup
               value={form.delivery_method}
               onValueChange={v => setFormField('delivery_method', v)}
-              className="flex gap-4"
+              className="flex flex-wrap gap-4"
             >
               <RadioLabel label="送货到取货点" value="pickup" itemClassName="mt-0.5" />
               <RadioLabel label="送货上门" value="door" itemClassName="mt-0.5" />
@@ -713,7 +713,7 @@ export default function LogisticsPage() {
 
           <div>
             <SectionTitle>特殊物品限制</SectionTitle>
-            <div className="flex gap-6">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-4 sm:gap-6">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="allow_battery"

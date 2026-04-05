@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Loader2, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { productsAPI } from '../services/api'
@@ -29,7 +29,7 @@ function ProductsPage() {
     fetchProducts()
   }, [])
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     setLoading(true)
     try {
       const response = await productsAPI.getAll()
@@ -39,15 +39,15 @@ function ProductsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [setProducts])
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     setEditingProduct(null)
     setFormData({ name: '', category: '', unit_price: '', weight_g: '' })
     setModalVisible(true)
-  }
+  }, [])
 
-  const handleEdit = (record) => {
+  const handleEdit = useCallback((record) => {
     setEditingProduct(record)
     setFormData({
       name: record.name || '',
@@ -56,14 +56,14 @@ function ProductsPage() {
       weight_g: record.weight_g || ''
     })
     setModalVisible(true)
-  }
+  }, [])
 
-  const handleDelete = (record) => {
+  const handleDelete = useCallback((record) => {
     setPendingDelete(record)
     setDeleteModalVisible(true)
-  }
+  }, [])
 
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
     if (!pendingDelete) return
     try {
       await productsAPI.delete(pendingDelete.id)
@@ -75,14 +75,14 @@ function ProductsPage() {
       setDeleteModalVisible(false)
       setPendingDelete(null)
     }
-  }
+  }, [pendingDelete, removeProduct])
 
-  const handleFormChange = (e) => {
+  const handleFormChange = useCallback((e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
-  }
+  }, [])
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!formData.name) {
       toast.error('请填写产品名称')
       return
@@ -109,12 +109,14 @@ function ProductsPage() {
     } catch (error) {
       toast.error('操作失败')
     }
-  }
+  }, [formData, editingProduct, addProduct, updateProduct])
 
-  const inputClass = "bg-surface-high/50 border border-surface-highest rounded-lg px-3.5 py-2.5 text-text-primary placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-surface-high hover:border-surface-bright transition-all duration-200 ease-out flex w-full"
+  const memoizedProducts = useMemo(() => products, [products])
+
+  const inputClass = "bg-surface-high/50 border border-surface-highest rounded-lg px-3.5 py-2.5 text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-surface-high hover:border-surface-bright transition-all duration-200 ease-out flex w-full"
   const primaryButtonClass = "bg-primary text-white rounded-lg px-4 py-2.5 hover:bg-primary-dim transition-all duration-200 ease-out active:scale-[0.98] font-medium shadow-lg shadow-primary/20 inline-flex items-center justify-center"
   const outlineButtonClass = "bg-surface-high text-text-primary border border-surface-highest rounded-lg px-4 py-2.5 hover:bg-surface-highest hover:border-surface-bright transition-all duration-200 ease-out font-medium inline-flex items-center justify-center"
-  const dangerButtonClass = "bg-red-500 text-white rounded-lg px-4 py-2.5 hover:bg-red-600 transition-all duration-200 ease-out active:scale-[0.98] font-medium shadow-lg shadow-red-500/20 inline-flex items-center justify-center"
+  const dangerButtonClass = "bg-status-error text-white rounded-lg px-4 py-2.5 hover:bg-status-error/85 transition-all duration-200 ease-out active:scale-[0.98] font-medium shadow-lg shadow-status-error/20 inline-flex items-center justify-center"
 
   return (
     <div className="space-y-6">
@@ -145,7 +147,7 @@ function ProductsPage() {
                   <Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" />
                 </TableCell>
               </TableRow>
-            ) : products.length === 0 ? (
+            ) : memoizedProducts.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-48 text-center text-text-muted">
                   <div className="flex flex-col items-center justify-center space-y-3">
@@ -155,7 +157,7 @@ function ProductsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              products.map((record) => (
+              memoizedProducts.map((record) => (
                 <TableRow key={record.id} className="border-b border-surface-highest hover:bg-surface-high/50 transition-colors">
                   <TableCell className="text-text-primary">{record.id}</TableCell>
                   <TableCell className="text-text-primary font-medium">{record.name}</TableCell>
@@ -172,7 +174,7 @@ function ProductsPage() {
                     </button>
                     <button 
                       onClick={() => handleDelete(record)}
-                      className="inline-flex items-center text-red-400 hover:text-red-300 p-2 rounded-lg hover:bg-surface-high transition-all duration-200"
+                      className="inline-flex items-center text-status-error hover:text-status-error/80 p-2 rounded-lg hover:bg-surface-high transition-all duration-200"
                     >
                       <Trash2 className="h-4 w-4" />
                       <span className="sr-only">删除</span>
@@ -255,7 +257,7 @@ function ProductsPage() {
       }}>
         <DialogContent className="bg-surface-container border border-surface-highest text-text-primary sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle className="font-headline font-bold text-xl text-red-400">确认删除</DialogTitle>
+            <DialogTitle className="font-headline font-bold text-xl text-status-error">确认删除</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             {pendingDelete && (

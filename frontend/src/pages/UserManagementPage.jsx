@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect , useMemo } from 'react'
 import { UserPlus, Key, Trash2, RefreshCw, Search, X, Plus, User, Lock, Shield, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { adminAPI } from '../services/api'
@@ -50,9 +50,9 @@ function UserManagementPage() {
     fetchUsers()
   }, [])
 
-  const filteredUsers = users.filter(u =>
+  const filteredUsers = useMemo(() => users.filter(u =>
     u.username.toLowerCase().includes(searchText.toLowerCase())
-  )
+  ), [users, searchText])
 
   const handleAddUser = async (e) => {
     e.preventDefault()
@@ -230,6 +230,7 @@ function UserManagementPage() {
                 <button
                   onClick={() => setSearchText('')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
+                  aria-label="关闭"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -275,7 +276,7 @@ function UserManagementPage() {
                   </TableCell>
                   <TableCell>{user.user_type}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="border-green-500/30 text-green-400">
+                    <Badge variant="outline" className="border-status-success/30 text-status-success">
                       {user.status}
                     </Badge>
                   </TableCell>

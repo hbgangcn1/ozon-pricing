@@ -51,19 +51,21 @@ function AccountPage() {
         🔐 账户管理 — 管理账户信息和密码
       </h1>
 
-      <Card className="max-w-xl">
-        <CardHeader>
-          <CardTitle>🔒 修改密码</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-text-secondary">当前密码</label>
-              <div className="relative">
-                <Key className="absolute left-3 top-3 h-4 w-4 text-text-muted" />
-                <input
-                  type="password"
-                  name="current_password"
+      <div className="flex flex-col lg:flex-row gap-6">
+        <Card className="w-full max-w-xl">
+          <CardHeader>
+            <CardTitle>🔒 修改密码</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="current_password" className="text-sm font-medium text-text-secondary">当前密码</label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-3 h-4 w-4 text-text-muted" />
+                  <input
+                    id="current_password"
+                    type="password"
+                    name="current_password"
                   placeholder="请输入当前密码"
                   value={formData.current_password}
                   onChange={handleChange}
@@ -74,10 +76,11 @@ function AccountPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-secondary">新密码</label>
+              <label htmlFor="new_password" className="text-sm font-medium text-text-secondary">新密码</label>
               <div className="relative">
                 <ShieldCheck className="absolute left-3 top-3 h-4 w-4 text-text-muted" />
                 <input
+                  id="new_password"
                   type="password"
                   name="new_password"
                   placeholder="请输入新密码（至少13位）"
@@ -91,10 +94,11 @@ function AccountPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-secondary">确认新密码</label>
+              <label htmlFor="confirm_password" className="text-sm font-medium text-text-secondary">确认新密码</label>
               <div className="relative">
                 <ShieldCheck className="absolute left-3 top-3 h-4 w-4 text-text-muted" />
                 <input
+                  id="confirm_password"
                   type="password"
                   name="confirm_password"
                   placeholder="请再次输入新密码"
@@ -119,7 +123,7 @@ function AccountPage() {
         </CardContent>
       </Card>
 
-      <Card className="max-w-xl">
+      <Card className="w-full max-w-xl">
         <CardHeader>
           <CardTitle>ℹ️ 账户信息</CardTitle>
         </CardHeader>
@@ -130,7 +134,7 @@ function AccountPage() {
           </div>
           <div className="flex">
             <span className="text-text-secondary w-24">用户角色：</span>
-            <span className={`text-text-primary ${user?.role === 'admin' ? 'text-red-400' : ''}`}>
+            <span className={`text-text-primary ${user?.role === 'admin' ? 'text-status-error' : ''}`}>
               {user?.role === 'admin' ? '管理员' : '普通用户'}
             </span>
           </div>
@@ -140,6 +144,7 @@ function AccountPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }

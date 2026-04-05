@@ -57,6 +57,7 @@ function ExchangeRatePanel() {
           onClick={fetchRates}
           disabled={loading}
           className="flex items-center text-xs text-text-muted hover:text-text-secondary transition-colors"
+          aria-label="刷新汇率"
         >
           <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
         </button>

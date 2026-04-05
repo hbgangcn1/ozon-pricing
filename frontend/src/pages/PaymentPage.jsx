@@ -57,7 +57,7 @@ function PaymentPage() {
   }
 
   return (
-    <div className={`space-y-6 ${fullscreen ? 'fixed inset-0 z-50 bg-surface p-6 overflow-auto' : ''}`}>
+    <div className={`space-y-6 w-full max-w-full overflow-x-hidden ${fullscreen ? 'fixed inset-0 z-50 bg-surface p-6 overflow-auto' : ''}`}>
       <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary">
         💳 支付与订单管理
       </h1>
@@ -70,10 +70,10 @@ function PaymentPage() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-4 sm:space-y-0 pb-2">
           <CardTitle>📋 订单历史</CardTitle>
-          <div className="flex items-center gap-2">
-            <div className="relative">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 min-w-[200px] sm:min-w-0 sm:w-auto">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-text-muted" />
               <Input
                 placeholder="搜索订单号或套餐"
@@ -82,41 +82,45 @@ function PaymentPage() {
                   setSearchText(e.target.value)
                   setCurrentPage(1)
                 }}
-                className="pl-10 w-64 transition-all duration-200"
+                className="pl-10 w-full sm:w-64 transition-all duration-200"
               />
             </div>
-            <Button variant="outline" size="icon" onClick={() => toast.info('刷新中...')} className="transition-all duration-200">
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" onClick={handleExportCSV} className="transition-all duration-200">
-              <Download className="h-4 w-4 mr-2" />
-              导出CSV
-            </Button>
-            <Button variant="outline" size="icon" onClick={() => setFullscreen(!fullscreen)} className="transition-all duration-200">
-              <Maximize2 className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button aria-label="刷新" variant="outline" size="icon" onClick={() => toast.info('刷新中...')} className="transition-all duration-200">
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" onClick={handleExportCSV} className="transition-all duration-200">
+                <Download className="h-4 w-4 mr-2" />
+                <span className="hidden sm:inline">导出CSV</span>
+                <span className="sm:hidden">导出</span>
+              </Button>
+              <Button aria-label="全屏" variant="outline" size="icon" onClick={() => setFullscreen(!fullscreen)} className="transition-all duration-200">
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[180px]">订单号</TableHead>
-                <TableHead className="w-[100px]">套餐</TableHead>
-                <TableHead className="w-[100px]">金额（元）</TableHead>
-                <TableHead className="w-[100px]">状态</TableHead>
-                <TableHead className="w-[160px]">创建时间</TableHead>
-                <TableHead className="w-[160px]">支付时间</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <div className="overflow-x-auto w-full">
+            <Table className="min-w-max">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-32 sm:w-[180px]">订单号</TableHead>
+                  <TableHead className="w-20 sm:w-[100px]">套餐</TableHead>
+                  <TableHead className="w-20 sm:w-[100px]">金额（元）</TableHead>
+                  <TableHead className="w-20 sm:w-[100px]">状态</TableHead>
+                  <TableHead className="w-24 sm:w-[160px]">创建时间</TableHead>
+                  <TableHead className="w-24 sm:w-[160px]">支付时间</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
               {paginatedData.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-mono text-sm">{order.id}</TableCell>
                   <TableCell>{order.plan}</TableCell>
                   <TableCell>¥{order.amount.toFixed(2)}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="border-green-500/30 text-green-400">
+                    <Badge variant="outline" className="border-status-success/30 text-status-success">
                       {order.status}
                     </Badge>
                   </TableCell>
@@ -125,7 +129,8 @@ function PaymentPage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
           
           {/* 分页 */}
           <div className="flex items-center justify-between mt-4">

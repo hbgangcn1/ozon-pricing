@@ -36,6 +36,7 @@ export default {
         'text-primary': '#f1f3fc',
         'text-secondary': '#a8abb3',
         'text-muted': '#72757d',
+        status: { success: '#34D399', error: '#F87171', warning: '#FACC15', info: '#60A5FA' },
       },
       fontFamily: {
         headline: ['Manrope', 'system-ui', 'sans-serif'],

@@ -22,13 +22,13 @@ function AboutPage() {
   ];
 
   return (
-    <div>
-      <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary mb-6">
+    <div className="w-full max-w-4xl mx-auto space-y-6">
+      <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary">
         关于我们
       </h1>
 
       {/* 公司信息卡片 */}
-      <div className="bg-surface border border-surface-high rounded-lg p-6 mb-4">
+      <div className="w-full bg-surface border border-surface-high rounded-lg p-6">
         <div className="flex items-center mb-4">
           <Building2 className="w-5 h-5 text-primary-dim mr-2" />
           <h2 className="text-lg font-medium text-text-primary">
@@ -36,24 +36,26 @@ function AboutPage() {
           </h2>
         </div>
         
-        <table className="w-full">
-          <tbody>
-            {companyInfo.map((item, index) => (
-              <tr key={index} className="border-b border-surface-high">
-                <td className="py-3 text-sm text-text-secondary w-32">
-                  {item.label}
-                </td>
-                <td className="py-3 text-sm text-text-primary">
-                  {item.value}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-[500px]">
+            <tbody>
+              {companyInfo.map((item, index) => (
+                <tr key={index} className="border-b border-surface-high">
+                  <td className="py-3 text-sm text-text-secondary w-32 min-w-[128px]">
+                    {item.label}
+                  </td>
+                  <td className="py-3 text-sm text-text-primary">
+                    {item.value}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* 业务简介卡片 */}
-      <div className="bg-surface border border-surface-high rounded-lg p-6">
+      <div className="w-full bg-surface border border-surface-high rounded-lg p-6">
         <div className="flex items-center mb-4">
           <span className="text-lg mr-2">🚀</span>
           <h2 className="text-lg font-medium text-text-primary">

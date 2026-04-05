@@ -85,18 +85,18 @@ function StatisticsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-text-primary font-headline tracking-tight">
-        📈 数据统计 — 系统数据统计与分析
+        数据统计 — 系统数据统计与分析
       </h1>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="overview">📊 总览</TabsTrigger>
-          <TabsTrigger value="retention">📈 留存分析</TabsTrigger>
-          <TabsTrigger value="active">🔥 用户活跃</TabsTrigger>
-          <TabsTrigger value="revenue">💰 充值与收入</TabsTrigger>
-          <TabsTrigger value="logs">📜 操作日志</TabsTrigger>
-          <TabsTrigger value="loginLogs">🔑 登录记录</TabsTrigger>
-          <TabsTrigger value="monitor">⚠️ 异常监控</TabsTrigger>
+          <TabsTrigger value="overview">总览</TabsTrigger>
+          <TabsTrigger value="retention">留存分析</TabsTrigger>
+          <TabsTrigger value="active">用户活跃</TabsTrigger>
+          <TabsTrigger value="revenue">充值与收入</TabsTrigger>
+          <TabsTrigger value="logs">操作日志</TabsTrigger>
+          <TabsTrigger value="loginLogs">登录记录</TabsTrigger>
+          <TabsTrigger value="monitor">异常监控</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -155,15 +155,13 @@ function StatisticsPage() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {mockRetentionData.map(d => (
-                  <Card key={d.month} className="bg-surface border-surface-high">
-                    <CardContent className="pt-4">
-                      <p className="text-sm text-text-secondary">{d.month}</p>
-                      <div className="text-2xl font-bold text-text-primary mt-1 font-headline tracking-tight">
-                        {d.retention}%
-                      </div>
-                      <Progress value={d.retention} className="mt-2" />
-                    </CardContent>
-                  </Card>
+                  <div key={d.month} className="bg-surface-container rounded-lg border border-surface-high p-4">
+                    <p className="text-sm text-text-secondary">{d.month}</p>
+                    <div className="text-2xl font-bold text-text-primary mt-1 font-headline tracking-tight">
+                      {d.retention}%
+                    </div>
+                    <Progress value={d.retention} className="mt-2" />
+                  </div>
                 ))}
               </div>
             </CardContent>
@@ -285,7 +283,7 @@ function StatisticsPage() {
           <Card>
             <CardHeader>
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <CardTitle>📜 管理员操作日志</CardTitle>
+                <CardTitle>管理员操作日志</CardTitle>
                 <div className="flex gap-2">
                   <div className="relative w-full md:w-64">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
@@ -336,7 +334,7 @@ function StatisticsPage() {
           <Card>
             <CardHeader>
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <CardTitle>🔑 用户登录记录</CardTitle>
+                <CardTitle>用户登录记录</CardTitle>
                 <div className="flex gap-2">
                   <div className="relative w-full md:w-48">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
@@ -344,7 +342,7 @@ function StatisticsPage() {
                   </div>
                   <Button variant="outline">
                     <Download className="w-4 h-4 mr-2" />
-                    📥 导出登录记录
+                    导出登录记录
                   </Button>
                   <Button variant="outline">
                     <RefreshCw className="w-4 h-4 mr-2" />
@@ -406,11 +404,11 @@ function StatisticsPage() {
               <div className="bg-green-900/30 border border-green-800/50 rounded-lg p-4">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-green-800 flex items-center justify-center">
-                    <Activity className="h-4 w-4 text-green-400" />
+                    <Activity className="h-4 w-4 text-status-success" />
                   </div>
                   <div>
                     <p className="text-green-200">暂无异常情况</p>
-                    <p className="text-sm text-green-300/70">系统运行正常</p>
+                    <p className="text-sm text-status-success/70">系统运行正常</p>
                   </div>
                 </div>
               </div>

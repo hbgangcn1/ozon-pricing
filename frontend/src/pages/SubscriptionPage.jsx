@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState , useCallback } from 'react'
 import { Crown, CheckCircle, ArrowUp, Info } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -74,24 +74,24 @@ function SubscriptionPage() {
     }
   }
 
-  const handleUpgrade = (planCode) => {
+  const handleUpgrade = useCallback((planCode) => {
     toast.info(`升级到${planCode}功能开发中，请联系客服`)
-  }
+  }, [])
 
-  const getCurrentPlanName = () => {
+  const getCurrentPlanName = useCallback(() => {
     if (user?.user_type === 'enterprise') return '企业版'
     if (user?.user_type === 'professional') return '专业版'
     if (user?.user_type === 'efficiency') return '效率版'
     return '免费版'
-  }
+  }, [user])
 
-  const getCalcLimitText = (limit) => {
+  const getCalcLimitText = useCallback((limit) => {
     return limit === -1 ? '无限次' : `${limit}次/月`
-  }
+  }, [])
 
-  const getLogisticsLimitText = (limit) => {
+  const getLogisticsLimitText = useCallback((limit) => {
     return limit === -1 ? '无限' : `${limit}个`
-  }
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -113,14 +113,14 @@ function SubscriptionPage() {
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-6">
-            <Crown className="w-12 h-12 text-yellow-500" />
+            <Crown className="w-12 h-12 text-status-warning" />
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <h2 className="text-lg font-medium text-text-primary">
                   {user?.role === 'admin' ? '管理员' : getCurrentPlanName()}
                 </h2>
                 {user?.role === 'admin' && (
-                  <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                  <Badge variant="secondary" className="bg-status-warning/20 text-status-warning border-status-warning/30">
                     永久免费
                   </Badge>
                 )}
@@ -130,7 +130,7 @@ function SubscriptionPage() {
                 <span>物流模板: <strong className="text-text-primary">{getLogisticsLimitText(currentPlan?.logistics_limit || 1)}</strong></span>
               </div>
               <div className="flex gap-2">
-                <Badge variant="outline" className="border-green-500/30 text-green-400">永久有效</Badge>
+                <Badge variant="outline" className="border-status-success/30 text-status-success">永久有效</Badge>
                 <Badge variant="outline" className="border-primary/30 text-primary-dim">计算次数无限</Badge>
               </div>
             </div>
@@ -152,12 +152,12 @@ function SubscriptionPage() {
                 <Badge className="absolute top-3 right-3 bg-primary">当前</Badge>
               )}
               {plan.developing && (
-                <Badge className="absolute top-3 right-3 bg-orange-500">开发中</Badge>
+                <Badge className="absolute top-3 right-3 bg-status-warning">开发中</Badge>
               )}
               
               <CardContent className="flex-1 flex flex-col pt-10">
                 <div className="text-center mb-4">
-                  <Crown className={`w-9 h-9 mx-auto ${plan.code === 'professional' ? 'text-yellow-500' : 'text-text-muted'}`} />
+                  <Crown className={`w-9 h-9 mx-auto ${plan.code === 'professional' ? 'text-status-warning' : 'text-text-muted'}`} />
                   <h3 className="text-lg font-medium text-text-primary mt-2">{plan.name}</h3>
                 </div>
 
@@ -180,7 +180,7 @@ function SubscriptionPage() {
                 <div className="mb-4 flex-1">
                   {plan.features.map((f, i) => (
                     <div key={i} className="flex items-start text-sm text-text-secondary mb-2">
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2 mt-0.5 shrink-0" />
+                      <CheckCircle className="w-4 h-4 text-status-success mr-2 mt-0.5 shrink-0" />
                       <span>{f}</span>
                     </div>
                   ))}
