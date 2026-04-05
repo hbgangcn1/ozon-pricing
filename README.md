@@ -1,56 +1,312 @@
-跨境运费决策引擎 README（2025-08-01 版）
-9 个月跨境 0-1 实测：19 万销售额、62 单 0 亏损
-3 秒完成 400+ 物流方案筛选，运费 0 误差，平均节省 12–18% 成本
-支持送货上门 / 到取货点双场景，速度优先 / 低价优先双策略
-✅ 核心能力
-| 功能          | 描述                                      |
-| ----------- | --------------------------------------- |
-| **运费 0 误差** | 中国邮政 4 条官方示例实测，系统价与官网完全一致               |
-| **多策略定价**   | 速度优先 / 低价优先，一键切换                        |
-| **双交付方式**   | 送货上门、到取货点、混合场景全覆盖                       |
-| **多维限制引擎**  | 重量、尺寸、电池、MSDS、易燃液体、圆柱/方形、最长边阈值、三边之和一次过滤 |
-| **实时汇率**    | 离岸人民币 ↔ 美元/卢布，每小时更新                     |
-| **可配置体积**   | 体积重量系数、最长边触发阈值任意可调                      |
-| **费率可视化**   | 所有费率统一显示为百分比，一目了然                       |
+# 物流定价系统
 
-🚀 在线体验（任意注册）
-🔗立即体验 3 秒运费计算
-https://crossborder-pricing-engine-4viqqtwnjszrquyrevbwly.streamlit.app/
+基于 FastAPI + React 的现代化跨境电商物流定价管理系统，提供产品管理、物流规则配置、智能定价计算、数据统计、订阅管理等功能。
 
-📊 实测截图
-- 中国邮政运费 0 误差验证  
-  ![postal_verified](https://raw.githubusercontent.com/hbgangcn1/crossborder-pricing-engine/main/docs/postal_verified.jpg)
+## 快速启动
 
-- 运费 & 时效节省对比（速度/低价双策略）  
-![saving_report](https://raw.githubusercontent.com/hbgangcn1/crossborder-pricing-engine/main/docs/saving_report.jpg)
+### 方法一：使用批处理脚本（推荐）
 
-🛠️ 技术栈
-语言：Python 3.12
-框架：Streamlit
-数据库：SQLite（多用户隔离，账号体系）
-汇率：实时离岸人民币 ↔ 美元/卢布
-体积计算：三边之和、最长边阈值、体积重量系数可配置
-部署：Streamlit Cloud（免备案，国内 CDN）
+1. **安装依赖**：
+   ```bash
+   install_dependencies.bat
+   ```
 
-📋 项目背景
-12 年游戏行业经验 + 3 年餐饮创业后，我于 2023 年 7 月开启跨境电商项目，9 个月实现了从 0 到 19 万销售额的突破。通过自研的运费决策引擎，成功将运费决策时间从 45 分钟压缩到 3 秒，在低价优先情况下，可平均节省 12–18% 运费成本，在速度优先情况下，可在时效和运费之间取得帕累托最优，在最快的物流之中选择最便宜的。本系统是由最初的Excel版本进化而来的网页版本。
+2. **启动应用**：
+   ```bash
+   start_app.bat
+   ```
 
+### 方法二：使用 PowerShell
 
-🎯 优势与价值
-这个系统可以帮助你避免以下常见问题：
-运费预估错误：通过精准的运费计算和实时汇率支持，确保运费报价的准确性，避免因运费估算不准确导致的客户不满或成本超支。  
-物流商选择不当：系统能够自动筛选出符合条件的物流商，并根据速度和成本进行优化选择，帮助你避免因选择不当的物流商而导致的额外成本或服务延误。  
-盲目定价：通过智能的定价策略和成本分析，系统支持速度优先和低价优先的双模式定价，帮助你在激烈的市场竞争中实现精准定价，避免盲目定价导致的利润损失或销售机会的错失。
+```powershell
+.\start_app.ps1
+```
 
-📦 一键本地运行
-pip install -r requirements.txt
-streamlit run app.py
+### 方法三：手动启动
 
-📈 下一步
-机器学习预测运费波动（LightGBM 分支已预留）
-开放 API，供 ERP / 店铺插件调用
+1. **激活虚拟环境**：
+   ```bash
+   .venv\Scripts\activate
+   ```
 
-🎯 作者
-12 年游戏行业 + 3 年餐饮创业 + 2年跨境电商业务
-英语专八，已开源 2 套工具
-求职方向：AI 产品经理（跨境 / 物流 / 供应链）
+2. **启动后端**：
+   ```bash
+   uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+3. **启动前端**（新终端）：
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+## 技术栈
+
+### 后端
+- **FastAPI** — REST API 框架
+- **SQLAlchemy 2.0** (async) — ORM
+- **Alembic** — 数据库迁移
+- **PostgreSQL** (asyncpg) — 主数据库
+- **Pydantic v2** — 数据校验
+- **PyJWT** — JWT 认证
+- **bcrypt** — 密码加密
+- **loguru** — 日志
+
+### 前端
+- **React 18** + **Vite**
+- **shadcn/ui** (Radix UI) + **Tailwind CSS** — 组件与样式
+- **Zustand** — 状态管理
+- **Axios** — HTTP 客户端
+- **React Router v6** — 路由
+- **React Hook Form** + **Zod** — 表单校验
+- **lucide-react** — 图标
+- **sonner** — 通知提示
+
+### 测试
+- **pytest** — 后端测试（47 个测试文件）
+- **Vitest** + **Testing Library** — 前端单元测试（20 个测试文件）
+- **Playwright** — 前端 E2E 测试
+
+## 数据库配置
+
+### 配置步骤
+
+1. **创建配置文件**：
+   ```bash
+   cp env.template .env
+   ```
+
+2. **编辑 `.env` 文件**（关键字段）：
+   ```env
+   # 数据库类型：sqlite 或 postgresql
+   DB_TYPE=postgresql
+
+   # PostgreSQL 配置
+   POSTGRES_HOST=localhost
+   POSTGRES_PORT=5432
+   POSTGRES_DB=logistics
+   POSTGRES_USER=postgres
+   POSTGRES_PASSWORD=your_password_here
+   ```
+
+3. **运行数据库迁移**：
+   ```bash
+   alembic upgrade head
+   ```
+
+完整环境变量说明见 `env.template`。
+
+## 功能特性
+
+### 核心功能
+- **用户管理** — 注册、登录、JWT 认证、角色权限控制
+- **产品管理** — 产品 CRUD、批量操作
+- **物流规则** — 物流方案配置、费用计算
+- **智能定价** — 自动定价计算、利润率分析、SSE 实时进度
+- **数据统计** — 用户行为分析、收入统计、留存分析
+- **订阅管理** — 订阅计划、用户升级、权限管理
+- **汇率服务** — 实时汇率查询
+
+### 安全特性
+- **JWT 认证** — 无状态令牌认证
+- **密码加密** — bcrypt 加密存储
+- **会话安全** — 增强会话管理
+- **CORS** — 跨域访问控制
+- **请求限流** — API 速率限制
+- **微信支付** — V3 API 安全验证
+
+### 数据库
+- **SQLAlchemy ORM** — 类型安全的数据库操作
+- **Alembic 迁移** — 版本化数据库变更
+- **连接池** — asyncpg 异步连接池
+- **PostgreSQL 备份** — 自动备份与恢复
+
+## 测试
+
+### 运行后端测试
+```bash
+python -m pytest tests/ --tb=short
+```
+
+### 运行前端测试
+```bash
+cd frontend
+npm run test
+```
+
+### 运行 E2E 测试
+```bash
+cd frontend
+npm run test:e2e
+```
+
+## 项目结构
+
+```
+logistics/
+├── api/                             # FastAPI 后端
+│   ├── main.py                      # FastAPI 应用入口（CORS、限流、异常处理）
+│   ├── dependencies.py              # 共享依赖（JWT 认证）
+│   ├── middleware/                   # 中间件（限流等）
+│   ├── models/                      # API schemas
+│   └── routes/                      # API 路由
+│       ├── admin.py                 # 管理员用户管理
+│       ├── auth.py                  # 登录/注册/改密
+│       ├── exchange.py              # 汇率查询
+│       ├── logistics.py             # 物流记录 CRUD
+│       ├── orders.py                # 订单查询
+│       ├── pricing.py               # 定价计算 + SSE 进度
+│       ├── products.py              # 产品 CRUD
+│       ├── settings.py              # 系统设置 + 备份管理
+│       ├── statistics.py            # 统计报表
+│       └── subscriptions.py         # 订阅计划
+├── models/                          # SQLAlchemy ORM 模型
+│   ├── user.py                      # 用户模型
+│   ├── product.py                   # 产品模型
+│   ├── logistics.py                 # 物流模型
+│   ├── order.py                     # 订单模型
+│   ├── session.py                   # 会话模型
+│   ├── config.py                    # 配置模型
+│   ├── cache.py                     # 缓存模型
+│   └── log.py                       # 日志模型
+├── db/                              # 数据库操作层（CRUD）
+│   ├── users.py                     # 用户操作
+│   ├── products.py                  # 产品操作
+│   ├── logistics_crud.py            # 物流操作
+│   ├── orders.py                    # 订单操作
+│   ├── subscriptions.py             # 订阅操作
+│   ├── statistics.py                # 统计查询
+│   ├── admin.py                     # 管理员操作
+│   ├── sessions_crud.py             # 会话操作
+│   ├── exchange.py                  # 汇率操作
+│   ├── config.py                    # 配置操作
+│   └── plans.py                     # 计划操作
+├── pricing/                         # 定价计算模块
+│   ├── calculate_pricing.py         # 定价主流程
+│   ├── final_price.py               # 最终价格计算
+│   ├── profit.py                    # 利润计算
+│   ├── logistic_cost.py             # 物流成本
+│   ├── floating_price.py            # 浮动价格
+│   ├── exchange_rate.py             # 汇率转换
+│   ├── cost_filter.py               # 成本过滤
+│   ├── filter.py                    # 通用过滤
+│   └── select_best.py               # 最优方案选择
+├── security/                        # 安全模块
+│   ├── tokens.py                    # JWT 令牌生成/验证
+│   └── utils.py                     # 安全工具函数
+├── alembic/                         # 数据库迁移
+├── frontend/                        # React 前端
+│   ├── src/
+│   │   ├── components/              # 共享组件（AppLayout, Sidebar, TopHeader 等）
+│   │   ├── pages/                   # 14 个页面
+│   │   ├── stores/                  # Zustand 状态管理
+│   │   ├── services/                # API 调用层
+│   │   ├── lib/                     # 工具库
+│   │   ├── styles/                  # 全局样式
+│   │   ├── __tests__/               # 前端单元测试
+│   │   └── App.jsx                  # 路由入口
+│   ├── tests/                       # Playwright E2E 测试
+│   ├── vite.config.js
+│   └── vitest.config.js
+├── tests/                           # 后端 pytest 测试（47 个文件）
+├── scripts/                         # 脚本工具
+├── database.py                      # 数据库连接与会话管理
+├── logic.py                         # 业务逻辑
+├── exchange_service.py              # 汇率服务
+├── enhanced_exchange_service.py     # 增强汇率服务
+├── payment_handler.py               # 支付处理
+├── payment_callback_enhanced.py     # 增强支付回调
+├── postgres_backup_service.py       # PostgreSQL 备份服务
+├── session_security.py              # 会话安全
+├── session_security_enhanced.py     # 增强会话安全
+├── session_security_helpers.py      # 会话安全辅助
+├── password_recovery.py             # 密码恢复
+├── password_utils.py                # 密码工具
+├── security_questions.py            # 安全问题
+├── sql_security.py                  # SQL 安全检查
+├── logger_config.py                 # 日志配置
+├── utils.py                         # 通用工具
+├── wechat_pay_config.py             # 微信支付配置
+├── wechat_pay_v3_api.py             # 微信支付 V3 API
+├── requirements.txt                 # Python 依赖
+├── env.template                     # 环境变量模板
+├── setup.cfg                        # flake8 配置
+├── pytest.ini                       # pytest 配置
+├── start_app.bat                    # Windows 启动脚本
+├── start_app.ps1                    # PowerShell 启动脚本
+└── README.md                        # 本文件
+```
+
+## 部署
+
+### 生产环境启动
+
+```bash
+# Windows
+start_production.bat
+
+# Linux
+./start_production_gunicorn.sh
+```
+
+### 回滚
+
+```bash
+./rollback_production.sh
+```
+
+### 数据库备份
+
+备份功能集成在系统设置页面中，也可通过 API 调用：
+- `POST /api/settings/backup` — 创建备份
+- `GET /api/settings/backups` — 查看备份列表
+
+## 故障排除
+
+### 常见问题
+
+1. **依赖安装失败**
+   - 确保已激活虚拟环境：`.venv\Scripts\activate`
+   - 重新安装：`pip install -r requirements.txt`
+
+2. **数据库连接错误**
+   - 确认 PostgreSQL 服务正在运行
+   - 检查 `.env` 中的数据库配置
+   - 运行迁移：`alembic upgrade head`
+
+3. **前端启动失败**
+   - 确认 Node.js 已安装
+   - 重新安装依赖：`cd frontend && npm install`
+
+4. **JWT 认证问题**
+   - 检查 `.env` 中的 `SESSION_SECRET` 是否已设置
+   - 确认后端服务正在运行
+
+### 日志文件
+- 应用日志：`app.log`
+
+## 技术支持
+
+如遇到问题，请检查：
+1. 虚拟环境是否正确激活
+2. 所有依赖是否正确安装（`pip install -r requirements.txt` + `cd frontend && npm install`）
+3. PostgreSQL 是否正在运行
+4. `.env` 配置是否正确
+5. 数据库迁移是否已执行（`alembic upgrade head`）
+6. 日志文件中的错误信息
+
+## 版本信息
+
+- **当前版本**：v4.0.0
+- **Python 版本**：3.10+
+- **Node.js 版本**：18+
+- **最后更新**：2026-04
+- **主要更新**：
+  - 前端全站视觉统一 — 移除 Ant Design，迁移至 shadcn/ui + Tailwind CSS
+  - 后端从 Streamlit 迁移至 FastAPI REST API
+  - 数据库层从原始 SQL (db_utils) 迁移至 SQLAlchemy ORM + Alembic
+  - 定价逻辑重构为独立 `pricing/` 模块
+  - 新增 JWT 无状态认证
+  - 前端状态管理迁移至 Zustand
+  - 新增 Playwright E2E 测试

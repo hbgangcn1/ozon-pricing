@@ -1,0 +1,23 @@
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+    *_backup.py
+    run_tests*.py
+    test_*.py
+    htmlcov/*
+    docs/*
+    ml_demo/*
+    base/*
+    __pycache__
+    .venv
+    venv
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.: 
+show_missing = True
+skip_covered = False
+

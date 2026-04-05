@@ -1,0 +1,237 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import RegisterPage from '../pages/RegisterPage';
+import { authAPI } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
+import { toast } from 'sonner';
+
+vi.mock('../services/api', () => ({
+  authAPI: {
+    register: vi.fn(),
+  },
+}));
+
+vi.mock('../stores/authStore', () => ({
+  useAuthStore: vi.fn(),
+}));
+
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('../最终用户协议.md?raw', () => ({ default: '# EULA Content' }));
+
+vi.mock('marked', () => ({
+  marked: {
+    parse: vi.fn(() => '<h1>EULA Content</h1>'),
+  },
+}));
+
+vi.mock('../components/ui/checkbox', () => ({
+  Checkbox: ({ checked, onCheckedChange, className }) => (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => onCheckedChange(e.target.checked)}
+      className={className}
+      data-testid="eula-checkbox"
+    />
+  ),
+}));
+
+vi.mock('../components/ui/dialog', () => ({
+  Dialog: ({ children, open }) => (open ? <div data-testid="dialog">{children}</div> : null),
+  DialogContent: ({ children }) => <div>{children}</div>,
+  DialogHeader: ({ children }) => <div>{children}</div>,
+  DialogTitle: ({ children }) => <h2>{children}</h2>,
+}));
+
+describe('RegisterPage', () => {
+  const mockSetAuth = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAuthStore.mockReturnValue({ setAuth: mockSetAuth });
+  });
+
+  const renderComponent = () =>
+    render(
+      <MemoryRouter>
+        <RegisterPage />
+      </MemoryRouter>
+    );
+
+  it('renders registration form with all fields', () => {
+    renderComponent();
+    expect(screen.getByPlaceholderText(/请输入用户名/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/13位以上/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/请再次输入密码/)).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/请输入安全答案/)).toBeInTheDocument();
+  });
+
+  it('shows "物流定价系统" heading and "创建新账户" subtitle', () => {
+    renderComponent();
+    expect(screen.getByText('物流定价系统')).toBeInTheDocument();
+    expect(screen.getByText('创建新账户')).toBeInTheDocument();
+  });
+
+  it('shows "立即登录" link', () => {
+    renderComponent();
+    expect(screen.getByText('立即登录')).toBeInTheDocument();
+    expect(screen.getByText('立即登录').closest('a')).toHaveAttribute('href', '/login');
+  });
+
+  it('validates username min length (3)', async () => {
+    renderComponent();
+    fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), { target: { value: 'ab' } });
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    
+    await waitFor(() => {
+      expect(screen.getByText('用户名至少3位')).toBeInTheDocument();
+    });
+  });
+
+  it('validates password requirements (min 13, regex for complexity)', async () => {
+    renderComponent();
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'short' } });
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    
+    await waitFor(() => {
+      expect(screen.getByText('密码至少13位')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'thisislongenoughbutnocapitalornumbers' } });
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    
+    await waitFor(() => {
+      expect(screen.getByText('密码必须包含大小写字母、数字和特殊字符')).toBeInTheDocument();
+    });
+  });
+
+  it('shows "两次密码不一致" when passwords don\'t match', async () => {
+    renderComponent();
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), { target: { value: 'ValidPassword123@' } });
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    
+    await waitFor(() => {
+      expect(screen.getByText('两次密码不一致')).toBeInTheDocument();
+    });
+  });
+
+  it('shows error when EULA not agreed', async () => {
+    renderComponent();
+    fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), { target: { value: 'validuser' } });
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
+    fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
+    
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('请阅读并同意最终用户协议');
+    });
+  });
+
+  it('EULA checkbox and dialog interaction', async () => {
+    renderComponent();
+    
+    expect(screen.queryByTestId('dialog')).not.toBeInTheDocument();
+    
+    fireEvent.click(screen.getByText('《最终用户协议》'));
+    expect(screen.getByTestId('dialog')).toBeInTheDocument();
+    expect(screen.getByText('最终用户协议')).toBeInTheDocument();
+    
+    const checkbox = screen.getByTestId('eula-checkbox');
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('calls authAPI.register and setAuth + navigates on success', async () => {
+    renderComponent();
+    
+    const mockResponse = { access_token: 'token123', user: { id: 1, username: 'validuser' } };
+    authAPI.register.mockResolvedValueOnce(mockResponse);
+
+    fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), { target: { value: 'validuser' } });
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
+    fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
+    
+    const checkbox = screen.getByTestId('eula-checkbox');
+    fireEvent.click(checkbox);
+
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+
+    await waitFor(() => {
+      expect(authAPI.register).toHaveBeenCalledWith({
+        username: 'validuser',
+        password: 'ValidPassword123!',
+        security_question: '您母亲的姓氏是什么？',
+        security_answer: 'answer',
+      });
+      expect(mockSetAuth).toHaveBeenCalledWith(mockResponse.user, mockResponse.access_token);
+      expect(toast.success).toHaveBeenCalledWith('注册成功');
+      expect(mockNavigate).toHaveBeenCalledWith('/pricing');
+    });
+  });
+
+  it('shows error on registration failure', async () => {
+    renderComponent();
+    
+    authAPI.register.mockRejectedValueOnce({ response: { data: { detail: '用户名已存在' } } });
+
+    fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), { target: { value: 'validuser' } });
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
+    fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
+    
+    const checkbox = screen.getByTestId('eula-checkbox');
+    fireEvent.click(checkbox);
+
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('用户名已存在');
+    });
+  });
+
+  it('submit button shows "注册中..." when loading', async () => {
+    renderComponent();
+    
+    authAPI.register.mockImplementationOnce(() => new Promise((resolve) => setTimeout(resolve, 100)));
+
+    fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), { target: { value: 'validuser' } });
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), { target: { value: 'ValidPassword123!' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
+    fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
+    
+    const checkbox = screen.getByTestId('eula-checkbox');
+    fireEvent.click(checkbox);
+
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '注册中...' })).toBeInTheDocument();
+    });
+  });
+});
