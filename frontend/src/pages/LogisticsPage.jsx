@@ -175,8 +175,8 @@ export default function LogisticsPage() {
       type: record.type ?? 'land',
       fee_mode: record.fee_mode ?? 'base_weight',
       delivery_method: record.delivery_method ?? 'pickup',
-      base_fee: record.base_fee ?? '',
-      continue_fee: record.continue_fee ?? '',
+      base_fee: record.base_fee != null ? Number(Number(record.base_fee).toFixed(2)) : '',
+      continue_fee: record.continue_fee != null ? Number(Number(record.continue_fee).toFixed(5)) : '',
       continue_unit: record.continue_unit ?? 'kg',
       min_weight: record.min_weight ?? '',
       max_weight: record.max_weight ?? '',
@@ -451,11 +451,11 @@ export default function LogisticsPage() {
                 <FormField label="续重费用">
                   <Input
                     type="number"
-                    step="0.01"
+                    step="0.00001"
                     min="0"
                     value={form.continue_fee}
                     onChange={e => setFormField('continue_fee', e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0.00000"
                   />
                 </FormField>
               </FormRow>
