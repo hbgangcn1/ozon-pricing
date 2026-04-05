@@ -45,10 +45,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-def run_migrations() -> None:
-    """同步调用 Alembic upgrade head。在 app startup 时调用。"""
+async def run_migrations() -> None:
+    """异步执行 Alembic upgrade head。在 app lifespan 中 await 调用。"""
     from alembic.config import Config
-    from alembic import command
     import os
 
     alembic_ini = os.path.join(
@@ -56,5 +55,15 @@ def run_migrations() -> None:
         "alembic.ini",
     )
     alembic_cfg = Config(alembic_ini)
-    command.upgrade(alembic_cfg, "head")
+
+    # 复用已有 engine 执行迁移，避免 asyncio.run() 冲突
+    async with engine.connect() as connection:
+        await connection.run_sync(_do_alembic_upgrade, alembic_cfg)
     logger.info("Alembic migrations applied successfully")
+
+
+def _do_alembic_upgrade(connection, alembic_cfg):
+    from alembic import command
+
+    alembic_cfg.attributes["connection"] = connection
+    command.upgrade(alembic_cfg, "head")

@@ -82,8 +82,8 @@ function ProductsPage() {
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: '产品名称', dataIndex: 'name', key: 'name' },
     { title: '类别', dataIndex: 'category', key: 'category' },
-    { title: '单价', dataIndex: 'unit_price', key: 'unit_price' },
-    { title: '重量(g)', dataIndex: 'weight_g', key: 'weight_g' },
+    { title: '单价', dataIndex: 'unit_price', key: 'unit_price', render: (v) => v != null ? Number(v).toFixed(2) : '-' },
+    { title: '重量(g)', dataIndex: 'weight_g', key: 'weight_g', render: (v) => v != null ? Number(v).toFixed(1) : '-' },
     {
       title: '操作',
       key: 'action',

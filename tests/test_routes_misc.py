@@ -24,22 +24,26 @@ def _ensure_overrides():
 
 
 class TestRunMigrations:
-    def test_run_migrations_calls_upgrade_head(self):
+    async def test_run_migrations_calls_upgrade_head(self):
         with patch("alembic.command.upgrade") as mock_upgrade:
             from database import run_migrations
 
-            run_migrations()
+            await run_migrations()
+            mock_upgrade.assert_called_once()
             args = mock_upgrade.call_args[0]
             assert args[1] == "head"
 
-    def test_run_migrations_propagates_exception(self):
-        with patch("alembic.command.upgrade", side_effect=RuntimeError("alembic fail")):
+    async def test_run_migrations_propagates_exception(self):
+        with patch(
+            "alembic.command.upgrade",
+            side_effect=RuntimeError("alembic fail"),
+        ):
             from database import run_migrations
 
             with pytest.raises(RuntimeError, match="alembic fail"):
-                run_migrations()
+                await run_migrations()
 
-    def test_run_migrations_ini_path_ends_with_alembic_ini(self):
+    async def test_run_migrations_ini_path_ends_with_alembic_ini(self):
         captured = {}
 
         def fake_upgrade(cfg, revision):
@@ -49,7 +53,7 @@ class TestRunMigrations:
         with patch("alembic.command.upgrade", side_effect=fake_upgrade):
             from database import run_migrations
 
-            run_migrations()
+            await run_migrations()
 
         assert captured["revision"] == "head"
         assert captured["ini"].endswith("alembic.ini")

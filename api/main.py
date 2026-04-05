@@ -24,7 +24,7 @@ from api.middleware.rate_limit import RateLimitMiddleware
 async def lifespan(app: FastAPI):
     # 启动时：执行数据库迁移
     try:
-        run_migrations()
+        await run_migrations()
     except Exception as e:
         print(f"[lifespan] 数据库迁移失败: {e}")
         raise  # 迁移失败不应启动

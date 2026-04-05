@@ -92,6 +92,14 @@ async def _delete_test_user_async(session, user_id, username):
     except Exception:
         pass
 
+    try:
+        await session.execute(
+            text("DELETE FROM audit_logs WHERE admin_id = :uid"),
+            {"uid": user_id},
+        )
+    except Exception:
+        pass
+
     await session.execute(
         text("DELETE FROM users WHERE id = :uid"),
         {"uid": user_id},
@@ -106,6 +114,19 @@ async def db_session():
     async with AsyncSessionLocal() as session:
         yield session
         await session.rollback()
+
+    # Clean committed test users that rollback cannot undo
+    async with AsyncSessionLocal() as cleanup:
+        try:
+            from sqlalchemy import text
+
+            ids_q = "SELECT id, username FROM users WHERE is_test_user = 1"
+            rows = (await cleanup.execute(text(ids_q))).fetchall()
+            for uid, uname in rows:
+                await _delete_test_user_async(cleanup, uid, uname)
+            await cleanup.commit()
+        except Exception:
+            await cleanup.rollback()
 
 
 @pytest.fixture
@@ -271,6 +292,15 @@ async def clean_db():
                             "DELETE FROM admin_action_log"
                             f" WHERE admin_id IN ({test_user_subquery})"
                             f" OR target_user_id IN ({test_user_subquery})"
+                        )
+                    )
+                except Exception:
+                    pass
+                try:
+                    await session.execute(
+                        text(
+                            "DELETE FROM audit_logs"
+                            f" WHERE admin_id IN ({test_user_subquery})"
                         )
                     )
                 except Exception:

@@ -82,11 +82,7 @@ async def get_all_users(
     total_count = await session.scalar(count_stmt) or 0
 
     offset = (page - 1) * per_page
-    query = (
-        base.order_by(User.created_at.desc(), User.id.desc())
-        .limit(per_page)
-        .offset(offset)
-    )
+    query = base.order_by(User.id.asc()).limit(per_page).offset(offset)
     result = await session.execute(query)
     users = result.scalars().all()
 

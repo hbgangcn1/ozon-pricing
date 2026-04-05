@@ -83,7 +83,7 @@ def test_remaining_empty_string():
 
 async def test_create_user_success(db_session):
     username = _unique("create")
-    uid = await create_user(db_session, username, "P@ssw0rd!")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid is not None
     assert isinstance(uid, int)
 
@@ -91,44 +91,50 @@ async def test_create_user_success(db_session):
 async def test_create_user_with_email(db_session):
     username = _unique("emailuser")
     email = f"{username}@example.com"
-    uid = await create_user(db_session, username, "P@ssw0rd!", email=email)
+    uid = await create_user(
+        db_session, username, "P@ssw0rd!", email=email, is_test_user=True
+    )
     assert uid is not None
 
 
 async def test_create_user_without_email(db_session):
     username = _unique("noemail")
-    uid = await create_user(db_session, username, "P@ssw0rd!", email=None)
+    uid = await create_user(
+        db_session, username, "P@ssw0rd!", email=None, is_test_user=True
+    )
     assert uid is not None
 
 
 async def test_create_user_empty_username(db_session):
-    result = await create_user(db_session, "", "P@ssw0rd!")
+    result = await create_user(db_session, "", "P@ssw0rd!", is_test_user=True)
     assert result is None
 
 
 async def test_create_user_whitespace_username(db_session):
-    result = await create_user(db_session, "   ", "P@ssw0rd!")
+    result = await create_user(db_session, "   ", "P@ssw0rd!", is_test_user=True)
     assert result is None
 
 
 async def test_create_user_none_username(db_session):
-    result = await create_user(db_session, None, "P@ssw0rd!")
+    result = await create_user(db_session, None, "P@ssw0rd!", is_test_user=True)
     assert result is None
 
 
 async def test_create_user_duplicate_username(db_session):
     username = _unique("dup")
-    uid1 = await create_user(db_session, username, "P@ssw0rd!")
+    uid1 = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid1 is not None
-    uid2 = await create_user(db_session, username, "P@ssw0rd!")
+    uid2 = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid2 is None
 
 
 async def test_create_user_duplicate_username_case_insensitive(db_session):
     username = _unique("casedup")
-    uid1 = await create_user(db_session, username, "P@ssw0rd!")
+    uid1 = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid1 is not None
-    uid2 = await create_user(db_session, username.upper(), "P@ssw0rd!")
+    uid2 = await create_user(
+        db_session, username.upper(), "P@ssw0rd!", is_test_user=True
+    )
     assert uid2 is None
 
 
@@ -136,9 +142,13 @@ async def test_create_user_duplicate_email(db_session):
     username1 = _unique("dupemail1")
     username2 = _unique("dupemail2")
     email = f"{_unique('em')}@example.com"
-    uid1 = await create_user(db_session, username1, "P@ssw0rd!", email=email)
+    uid1 = await create_user(
+        db_session, username1, "P@ssw0rd!", email=email, is_test_user=True
+    )
     assert uid1 is not None
-    uid2 = await create_user(db_session, username2, "P@ssw0rd!", email=email)
+    uid2 = await create_user(
+        db_session, username2, "P@ssw0rd!", email=email, is_test_user=True
+    )
     assert uid2 is None
 
 
@@ -146,10 +156,20 @@ async def test_create_user_duplicate_email_case_insensitive(db_session):
     username1 = _unique("dupemci1")
     username2 = _unique("dupemci2")
     email_lower = f"{_unique('emci')}@example.com"
-    uid1 = await create_user(db_session, username1, "P@ssw0rd!", email=email_lower)
+    uid1 = await create_user(
+        db_session,
+        username1,
+        "P@ssw0rd!",
+        email=email_lower,
+        is_test_user=True,
+    )
     assert uid1 is not None
     uid2 = await create_user(
-        db_session, username2, "P@ssw0rd!", email=email_lower.upper()
+        db_session,
+        username2,
+        "P@ssw0rd!",
+        email=email_lower.upper(),
+        is_test_user=True,
     )
     assert uid2 is None
 
@@ -176,20 +196,28 @@ async def test_create_user_exception_returns_none(db_session):
     with patch.object(
         db_session, "flush", new_callable=AsyncMock, side_effect=Exception("DB error")
     ):
-        result = await create_user(db_session, username, "P@ssw0rd!")
+        result = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert result is None
 
 
 async def test_create_user_free_type_remaining(db_session):
     username = _unique("freetype")
-    uid = await create_user(db_session, username, "P@ssw0rd!", user_type="free")
+    uid = await create_user(
+        db_session, username, "P@ssw0rd!", user_type="free", is_test_user=True
+    )
     user = await db_session.get(User, uid)
     assert user.remaining_calculations == 10
 
 
 async def test_create_user_enterprise_type_remaining(db_session):
     username = _unique("enttype")
-    uid = await create_user(db_session, username, "P@ssw0rd!", user_type="enterprise")
+    uid = await create_user(
+        db_session,
+        username,
+        "P@ssw0rd!",
+        user_type="enterprise",
+        is_test_user=True,
+    )
     user = await db_session.get(User, uid)
     assert user.remaining_calculations == -1
 
@@ -222,7 +250,9 @@ async def test_verify_user_not_found(db_session):
 async def test_verify_user_by_email(db_session):
     username = _unique("verifyemail")
     email = f"{username}@test.com"
-    uid = await create_user(db_session, username, "TestP@ss1!", email=email)
+    uid = await create_user(
+        db_session, username, "TestP@ss1!", email=email, is_test_user=True
+    )
     assert uid is not None
     await db_session.commit()
     result = await verify_user(db_session, email, "TestP@ss1!")
@@ -233,7 +263,9 @@ async def test_verify_user_by_email(db_session):
 async def test_verify_user_by_email_case_insensitive(db_session):
     username = _unique("verifyemci")
     email = f"{username}@test.com"
-    uid = await create_user(db_session, username, "TestP@ss1!", email=email)
+    uid = await create_user(
+        db_session, username, "TestP@ss1!", email=email, is_test_user=True
+    )
     assert uid is not None
     await db_session.commit()
     result = await verify_user(db_session, email.upper(), "TestP@ss1!")
@@ -251,6 +283,7 @@ async def test_verify_user_empty_password_fallback(db_session):
         user_type="free",
         subscription_type="free",
         remaining_calculations=10,
+        is_test_user=1,
         created_at=str(int(time.time())),
     )
     db_session.add(user)
@@ -263,7 +296,7 @@ async def test_verify_user_empty_password_fallback(db_session):
 async def test_verify_user_user_type_none_defaults_free(db_session):
     """When user.user_type is None, returned dict should have 'free'."""
     username = _unique("notypeusr")
-    uid = await create_user(db_session, username, "TestP@ss1!")
+    uid = await create_user(db_session, username, "TestP@ss1!", is_test_user=True)
     assert uid is not None
     # Force user_type to None directly
     user = await db_session.get(User, uid)
@@ -316,7 +349,7 @@ async def test_update_user_password_wrong_current(db_session, test_user):
 async def test_delete_user_success(db_session):
     """Create a user with dependent rows, verify delete_user removes them."""
     username = _unique("deluser")
-    uid = await create_user(db_session, username, "P@ssw0rd!")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid is not None
     await db_session.flush()
 
@@ -411,7 +444,7 @@ async def test_delete_user_admin_blocked(db_session, test_admin):
 async def test_delete_user_cleans_alert_record(db_session):
     """Alert records with handled_by=user_id get handled_by set to None."""
     username = _unique("alertdel")
-    uid = await create_user(db_session, username, "P@ssw0rd!")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid is not None
     await db_session.flush()
 
@@ -456,7 +489,7 @@ async def test_get_user_preferred_mode_not_found(db_session):
 
 async def test_get_user_preferred_mode_set_value(db_session):
     username = _unique("prefmode")
-    uid = await create_user(db_session, username, "P@ssw0rd!")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     user = await db_session.get(User, uid)
     user.preferred_mode = "accurate"
     await db_session.flush()
@@ -484,7 +517,7 @@ async def test_update_user_preferred_mode_not_found(db_session):
 
 async def test_update_user_preferred_mode_changes_value(db_session):
     username = _unique("updatemode")
-    uid = await create_user(db_session, username, "P@ssw0rd!")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     await update_user_preferred_mode(db_session, uid, "fast")
     user = await db_session.get(User, uid)
     assert user.preferred_mode == "fast"
@@ -561,7 +594,9 @@ async def test_create_user_all_paid_types_remaining(db_session):
     paid_types = ["test", "gratitude", "efficiency", "professional", "enterprise"]
     for utype in paid_types:
         username = _unique(f"type_{utype}")
-        uid = await create_user(db_session, username, "P@ssw0rd!", user_type=utype)
+        uid = await create_user(
+            db_session, username, "P@ssw0rd!", user_type=utype, is_test_user=True
+        )
         assert uid is not None, f"Expected user created for type={utype}"
         user = await db_session.get(User, uid)
         assert user.remaining_calculations == -1, f"Failed for type={utype}"
@@ -569,7 +604,7 @@ async def test_create_user_all_paid_types_remaining(db_session):
 
 async def test_verify_user_username_case_insensitive(db_session):
     username = _unique("verifycaseuser")
-    uid = await create_user(db_session, username, "TestP@ss1!")
+    uid = await create_user(db_session, username, "TestP@ss1!", is_test_user=True)
     assert uid is not None
     await db_session.commit()
     result = await verify_user(db_session, username.upper(), "TestP@ss1!")
@@ -580,7 +615,7 @@ async def test_verify_user_username_case_insensitive(db_session):
 async def test_delete_user_with_no_dependent_rows(db_session):
     """Deleting a user with zero dependent rows should succeed."""
     username = _unique("cleanuser")
-    uid = await create_user(db_session, username, "P@ssw0rd!")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid is not None
     await db_session.flush()
     result = await delete_user(db_session, uid)
@@ -594,7 +629,9 @@ async def test_delete_user_with_no_dependent_rows(db_session):
 
 async def test_create_user_role_stored(db_session):
     username = _unique("roleuser")
-    uid = await create_user(db_session, username, "P@ssw0rd!", role="admin")
+    uid = await create_user(
+        db_session, username, "P@ssw0rd!", role="admin", is_test_user=True
+    )
     user = await db_session.get(User, uid)
     assert user.role == "admin"
 
@@ -602,7 +639,9 @@ async def test_create_user_role_stored(db_session):
 async def test_create_user_email_stored(db_session):
     username = _unique("emailstored")
     email = f"{username}@stored.com"
-    uid = await create_user(db_session, username, "P@ssw0rd!", email=email)
+    uid = await create_user(
+        db_session, username, "P@ssw0rd!", email=email, is_test_user=True
+    )
     user = await db_session.get(User, uid)
     assert user.email == email
 
@@ -617,6 +656,7 @@ async def test_update_user_password_null_stored(db_session):
         user_type="free",
         subscription_type="free",
         remaining_calculations=10,
+        is_test_user=1,
         created_at=str(int(time.time())),
     )
     db_session.add(user)
@@ -629,7 +669,7 @@ async def test_update_user_password_null_stored(db_session):
 async def test_delete_user_admin_target_user_in_log(db_session):
     """Admin action log targeting a non-admin user gets cleaned up."""
     username = _unique("tgtuser")
-    uid = await create_user(db_session, username, "P@ssw0rd!")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
     assert uid is not None
     await db_session.flush()
 

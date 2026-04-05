@@ -334,10 +334,10 @@ export default function LogisticsPage() {
                     {item.min_days || 0}-{item.max_days || 0}天
                   </div>
                   <div className="text-sm">
-                    {item.base_fee != null ? `¥${item.base_fee}` : '-'}
+                    {item.base_fee != null ? `¥${Number(item.base_fee).toFixed(2)}` : '-'}
                   </div>
                   <div className="text-sm">
-                    {item.continue_fee != null ? `¥${item.continue_fee}/${item.continue_unit || 'kg'}` : '-'}
+                    {item.continue_fee != null ? `¥${Number(item.continue_fee).toFixed(2)}/${item.continue_unit || 'kg'}` : '-'}
                   </div>
                   <div className="flex items-center gap-1">
                     {item.allow_battery ? (
