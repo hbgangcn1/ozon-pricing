@@ -66,6 +66,14 @@ async def _cleanup_login_data(db_session, identifier):
     await db_session.execute(
         delete(UserLockout).where(UserLockout.identifier == identifier)
     )
+    from sqlalchemy import text
+
+    await db_session.execute(
+        text(
+            "SELECT setval('login_attempts_id_seq', "
+            "COALESCE((SELECT MAX(id) FROM login_attempts), 0) + 1, false)"
+        )
+    )
     await db_session.flush()
 
 

@@ -156,8 +156,8 @@ async def test_set_system_config_returns_none(db_session):
 
 
 async def test_is_registration_open_value_one_returns_true(db_session):
-    """Returns True when registration_open == '1'."""
-    key = "registration_open"
+    """Returns True when open_registration == '1'."""
+    key = "open_registration"
     # Clean up any existing row first (or just set it)
     await set_system_config(db_session, key, "1")
     await db_session.flush()
@@ -167,8 +167,8 @@ async def test_is_registration_open_value_one_returns_true(db_session):
 
 
 async def test_is_registration_open_value_zero_returns_false(db_session):
-    """Returns False when registration_open == '0'."""
-    key = "registration_open"
+    """Returns False when open_registration == '0'."""
+    key = "open_registration"
     await set_system_config(db_session, key, "0")
     await db_session.flush()
 
@@ -185,7 +185,7 @@ async def test_is_registration_open_key_missing_returns_true(db_session):
     # We test the None path by temporarily using a different helper.
     from sqlalchemy import select
 
-    stmt = select(SystemConfig).where(SystemConfig.config_key == "registration_open")
+    stmt = select(SystemConfig).where(SystemConfig.config_key == "open_registration")
     res = await db_session.execute(stmt)
     existing = res.scalar_one_or_none()
 

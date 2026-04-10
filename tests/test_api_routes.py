@@ -32,16 +32,15 @@ def _logistics_row():
         "type": "land",
         "min_days": 1,
         "max_days": 10,
-        "price_limit": 0,
-        "price_limit_rub": 0,
-        "price_min": 0,
-        "price_min_rub": 0,
+        "price_limit_cny": 0,
+        "price_min_cny": 0,
         "base_fee": 0,
         "min_weight": 0,
         "max_weight": 100000,
         "max_sum_of_sides": 0,
         "max_longest_side": 0,
         "max_second_side": 0,
+        "max_third_side": 0,
         "min_second_side": 0,
         "min_length": 0,
         "max_cylinder_sum": 0,
@@ -50,6 +49,7 @@ def _logistics_row():
         "min_cylinder_length": 0,
         "volume_mode": "none",
         "longest_side_threshold": 0,
+        "sum_of_sides_threshold": 0,
         "allow_battery": 0,
         "allow_liquid": 0,
         "battery_capacity_limit_wh": 0,
@@ -62,9 +62,12 @@ def _logistics_row():
         "volume_coefficient": 5000,
         "delivery_method": "pickup",
         "priority_group": "D",
-        "price_limit_currency": "RUB",
-        "price_min_currency": "RUB",
         "is_active": 1,
+        "fulfillment_type": "rfbs",
+        "destination": "RU",
+        "fbp_service_level": None,
+        "fbp_company": None,
+        "is_smart": 0,
     }
 
 
@@ -364,7 +367,7 @@ class TestProducts:
 
 
 class TestLogistics:
-    @patch("api.routes.logistics.get_logistics_list", new_callable=AsyncMock)
+    @patch("api.routes.logistics.get_logistics_by_filters", new_callable=AsyncMock)
     def test_get_logistics_list(self, mock_get):
         mock_get.return_value = ([_logistics_row()], 1)
         r = client.get("/api/logistics", headers={"Authorization": "Bearer faketoken"})
