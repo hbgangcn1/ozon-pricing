@@ -53,6 +53,9 @@ def test_parse_volume_coeff_parses_divisors_and_defaults():
     assert parse_volume_coeff("L×W×H÷6000") == 6000.0
     assert parse_volume_coeff("Volume ÷5000") == 5000.0
     assert parse_volume_coeff("Physical weight") == 5000.0
+    assert parse_volume_coeff("-") == 0.0
+    assert parse_volume_coeff("") == 0.0
+    assert parse_volume_coeff(None) == 0.0
 
 
 def test_parse_price_limit_cny_parses_range_text():

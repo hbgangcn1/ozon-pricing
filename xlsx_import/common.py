@@ -81,6 +81,8 @@ def parse_rate(value: Any) -> tuple[float, float, str]:
 
 def parse_volume_coeff(value: Any) -> float:
     text = strip_thousands_sep(normalize_text(value))
+    if not text or text == "-":
+        return 0.0
     match = re.search(r"÷\s*(\d+(?:\.\d+)?)", text)
     if match:
         return float(match.group(1))

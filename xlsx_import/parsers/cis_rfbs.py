@@ -47,7 +47,8 @@ def parse(
         sheets = [
             ws
             for ws in wb.worksheets
-            if "kz & by" in ws.title.lower() or "other cis" in ws.title.lower()
+            if ("kz & by" in ws.title.lower() or "other cis" in ws.title.lower())
+            and "中文" not in ws.title
         ]
         for ws in sheets:
             is_kz_by = "kz & by" in ws.title.lower()
