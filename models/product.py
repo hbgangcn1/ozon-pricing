@@ -65,3 +65,8 @@ class Product(Base):
         Integer,
         server_default=text("0"),
     )
+    commission_category_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        server_default=text("NULL"),
+        nullable=True,
+    )

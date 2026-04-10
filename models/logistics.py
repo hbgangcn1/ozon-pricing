@@ -23,6 +23,14 @@ class Logistics(Base):
         Float,
         server_default=text("0"),
     )
+    price_limit_cny: Mapped[Optional[float]] = mapped_column(
+        Float,
+        server_default=text("0"),
+    )
+    price_min_cny: Mapped[Optional[float]] = mapped_column(
+        Float,
+        server_default=text("0"),
+    )
     base_fee: Mapped[Optional[float]] = mapped_column(
         Float,
         server_default=text("0"),
@@ -32,6 +40,10 @@ class Logistics(Base):
     max_sum_of_sides: Mapped[Optional[int]] = mapped_column(Integer)
     max_longest_side: Mapped[Optional[int]] = mapped_column(Integer)
     max_second_side: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        server_default=text("0"),
+    )
+    max_third_side: Mapped[Optional[int]] = mapped_column(
         Integer,
         server_default=text("0"),
     )
@@ -64,6 +76,10 @@ class Logistics(Base):
         server_default=text("'none'"),
     )
     longest_side_threshold: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        server_default=text("0"),
+    )
+    sum_of_sides_threshold: Mapped[Optional[int]] = mapped_column(
         Integer,
         server_default=text("0"),
     )
@@ -116,6 +132,20 @@ class Logistics(Base):
     price_min_currency: Mapped[Optional[str]] = mapped_column(
         String,
         server_default=text("'RUB'"),
+    )
+    fulfillment_type: Mapped[Optional[str]] = mapped_column(
+        String,
+        server_default=text("'rfbs'"),
+    )
+    destination: Mapped[Optional[str]] = mapped_column(
+        String,
+        server_default=text("'RU'"),
+    )
+    fbp_service_level: Mapped[Optional[str]] = mapped_column(String)
+    fbp_company: Mapped[Optional[str]] = mapped_column(String)
+    is_smart: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        server_default=text("0"),
     )
     is_active: Mapped[Optional[int]] = mapped_column(
         Integer,

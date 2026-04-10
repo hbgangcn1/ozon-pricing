@@ -9,6 +9,8 @@ class Base(DeclarativeBase):
 from models.user import User, Plan, SubscriptionUpgradeHistory  # noqa: E402, F401
 from models.product import Product  # noqa: E402, F401
 from models.logistics import Logistics  # noqa: E402, F401
+from models.commission_category import CommissionCategory  # noqa: E402, F401
+from models.logistics_pool import LogisticsPool  # noqa: E402, F401
 from models.order import PaymentOrder  # noqa: E402, F401
 from models.config import SystemConfig, ExchangeRate  # noqa: E402, F401
 from models.session import (  # noqa: E402, F401
@@ -35,6 +37,8 @@ __all__ = [
     "SubscriptionUpgradeHistory",
     "Product",
     "Logistics",
+    "CommissionCategory",
+    "LogisticsPool",
     "PaymentOrder",
     "SystemConfig",
     "ExchangeRate",
