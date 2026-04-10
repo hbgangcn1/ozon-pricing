@@ -39,48 +39,48 @@ bcrypt.gensalt = _fast_gensalt
 
 
 async def _delete_test_user_async(session, user_id, username):
-    """Delete a test user and all FK-dependent rows."""
+    """Delete a test user and all FK-dependent rows.
+
+    Handles ALL known FK dependencies consistently with clean_db
+    and pytest_sessionfinish.
+    """
     from sqlalchemy import text
 
-    for table, col in [
-        ("products", "user_id"),
-        ("active_sessions", "user_id"),
-        ("logistics", "user_id"),
-        ("payment_orders", "user_id"),
+    # user_id FK tables (comprehensive list matching clean_db)
+    for table in [
+        "products",
+        "active_sessions",
+        "logistics",
+        "payment_orders",
+        "logistics_pricing_rules",
+        "pricing_plans",
+        "orders",
+        "session_security_audit_log",
+        "user_sessions",
+        "rate_limit_log",
+        "user_login_log",
+        "user_behavior_log",
+        "subscription_upgrade_history",
     ]:
         try:
             await session.execute(
-                text(f"DELETE FROM {table} WHERE {col} = :uid"),
+                text(f"DELETE FROM {table} WHERE user_id = :uid"),
                 {"uid": user_id},
             )
         except Exception:
             pass
 
-    for table, col in [
-        ("login_attempts", "identifier"),
-        ("user_lockouts", "identifier"),
-    ]:
+    # identifier FK tables (username-based)
+    for table in ["login_attempts", "user_lockouts"]:
         try:
             await session.execute(
-                text(f"DELETE FROM {table} WHERE {col} = :uname"),
+                text(f"DELETE FROM {table} WHERE identifier = :uname"),
                 {"uname": username},
             )
         except Exception:
             pass
 
-    for table, col in [
-        ("user_login_log", "user_id"),
-        ("user_behavior_log", "user_id"),
-        ("subscription_upgrade_history", "user_id"),
-    ]:
-        try:
-            await session.execute(
-                text(f"DELETE FROM {table} WHERE {col} = :uid"),
-                {"uid": user_id},
-            )
-        except Exception:
-            pass
-
+    # admin_action_log references both admin_id and target_user_id
     try:
         await session.execute(
             text(
@@ -92,6 +92,7 @@ async def _delete_test_user_async(session, user_id, username):
     except Exception:
         pass
 
+    # audit_logs references admin_id
     try:
         await session.execute(
             text("DELETE FROM audit_logs WHERE admin_id = :uid"),
@@ -125,7 +126,8 @@ async def db_session():
             for uid, uname in rows:
                 await _delete_test_user_async(cleanup, uid, uname)
             await cleanup.commit()
-        except Exception:
+        except Exception as exc:
+            print(f"[db_session cleanup] FAILED: {exc}")
             await cleanup.rollback()
 
 
@@ -176,7 +178,8 @@ async def test_user(db_session):
         try:
             await _delete_test_user_async(cleanup_session, user_id, username)
             await cleanup_session.commit()
-        except Exception:
+        except Exception as exc:
+            print(f"[test_user cleanup] FAILED for {username}: {exc}")
             await cleanup_session.rollback()
 
 
@@ -216,7 +219,8 @@ async def test_admin(db_session):
         try:
             await _delete_test_user_async(cleanup_session, user_id, username)
             await cleanup_session.commit()
-        except Exception:
+        except Exception as exc:
+            print(f"[test_admin cleanup] FAILED for {username}: {exc}")
             await cleanup_session.rollback()
 
 

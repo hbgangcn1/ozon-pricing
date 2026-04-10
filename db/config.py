@@ -45,8 +45,10 @@ async def set_system_config(
 
 
 async def is_registration_open(session: AsyncSession) -> bool:
-    value = await get_system_config(session, "registration_open")
-    return value != "0"
+    value = await get_system_config(session, "open_registration")
+    if value is None:
+        return True
+    return value.lower() not in ("0", "false", "no")
 
 
 async def get_all_config(session: AsyncSession) -> list[dict]:

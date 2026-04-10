@@ -1,3 +1,5 @@
+import logging
+import traceback
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +18,8 @@ from api.routes import (
     settings,
     statistics,
     exchange,
+    commission_categories,
+    logistics_pool,
 )
 from api.middleware.rate_limit import RateLimitMiddleware
 
@@ -80,6 +84,8 @@ app.include_router(admin.router)
 app.include_router(settings.router)
 app.include_router(statistics.router)
 app.include_router(exchange.router)
+app.include_router(commission_categories.router)
+app.include_router(logistics_pool.router)
 
 
 @app.get("/")
@@ -99,6 +105,13 @@ async def global_exception_handler(request: Request, exc: Exception):
             status_code=exc.status_code,
             content={"detail": exc.detail},
         )
+    logging.getLogger("api.error").error(
+        "Unhandled %s at %s %s:\n%s",
+        type(exc).__name__,
+        request.method,
+        request.url.path,
+        traceback.format_exc(),
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},

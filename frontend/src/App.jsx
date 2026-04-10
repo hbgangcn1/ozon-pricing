@@ -17,6 +17,9 @@ import UserManagementPage from './pages/UserManagementPage'
 import PlanManagementPage from './pages/PlanManagementPage'
 import StatisticsPage from './pages/StatisticsPage'
 import AboutPage from './pages/AboutPage'
+import CommissionCategoriesPage from './pages/CommissionCategoriesPage'
+import LogisticsPoolPage from './pages/LogisticsPoolPage'
+import ProductImportPage from './pages/ProductImportPage'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuthStore()
@@ -72,6 +75,9 @@ function App() {
         <Route path="account" element={<AccountPage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
         <Route path="payment" element={<PaymentPage />} />
+        <Route path="commission-categories" element={<CommissionCategoriesPage />} />
+        <Route path="logistics-pool" element={<LogisticsPoolPage />} />
+        <Route path="product-import" element={<ProductImportPage />} />
         <Route
           path="settings"
           element={

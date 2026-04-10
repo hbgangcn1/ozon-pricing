@@ -246,7 +246,8 @@ def pytest_sessionfinish(session, exitstatus):
                     c.execute(
                         f"DELETE FROM {table} WHERE user_id IN ({test_user_subquery})"
                     )
-                except Exception:
+                except Exception as exc:
+                    print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
                     conn.rollback()
 
             for table in ["login_attempts", "user_lockouts"]:
@@ -254,7 +255,8 @@ def pytest_sessionfinish(session, exitstatus):
                     c.execute(
                         f"DELETE FROM {table} WHERE identifier IN ({test_name_subquery})"
                     )
-                except Exception:
+                except Exception as exc:
+                    print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
                     conn.rollback()
 
             for table in [
@@ -272,7 +274,8 @@ def pytest_sessionfinish(session, exitstatus):
                     c.execute(
                         f"DELETE FROM {table} WHERE user_id IN ({test_user_subquery})"
                     )
-                except Exception:
+                except Exception as exc:
+                    print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
                     conn.rollback()
 
             try:
@@ -281,7 +284,16 @@ def pytest_sessionfinish(session, exitstatus):
                     f" WHERE admin_id IN ({test_user_subquery})"
                     f" OR target_user_id IN ({test_user_subquery})"
                 )
-            except Exception:
+            except Exception as exc:
+                print(f"[pytest_sessionfinish] cleanup admin_action_log failed: {exc}")
+                conn.rollback()
+
+            try:
+                c.execute(
+                    f"DELETE FROM audit_logs WHERE admin_id IN ({test_user_subquery})"
+                )
+            except Exception as exc:
+                print(f"[pytest_sessionfinish] cleanup audit_logs failed: {exc}")
                 conn.rollback()
 
             c.execute(
@@ -295,9 +307,10 @@ def pytest_sessionfinish(session, exitstatus):
 
             if deleted > 0:
                 print(
-                    f"\n[pytest_sessionfinish] Cleaned up {deleted} orphaned test user(s)."
+                    f"\n[pytest_sessionfinish] Cleaned up {deleted}"
+                    " orphaned test user(s)."
                 )
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[pytest_sessionfinish] global cleanup FAILED: {exc}")

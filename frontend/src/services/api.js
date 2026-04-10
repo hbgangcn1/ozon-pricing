@@ -55,7 +55,7 @@ export const logoutUser = () => {
 }
 
 export const productsAPI = {
-  getAll: () => apiClient.get('/products'),
+  getAll: () => apiClient.get('/products', { params: { limit: 1000 } }),
   getById: (id) => apiClient.get(`/products/${id}`),
   create: (data) => apiClient.post('/products', data),
   update: (id, data) => apiClient.put(`/products/${id}`, data),
@@ -63,17 +63,24 @@ export const productsAPI = {
 }
 
 export const logisticsAPI = {
-  getAll: () => apiClient.get('/logistics'),
+  getAll: (params) => apiClient.get('/logistics', { params }),
   getById: (id) => apiClient.get(`/logistics/${id}`),
   create: (data) => apiClient.post('/logistics', data),
   update: (id, data) => apiClient.put(`/logistics/${id}`, data),
   delete: (id) => apiClient.delete(`/logistics/${id}`),
   batchDelete: (ids) => apiClient.post('/logistics/batch-delete', ids),
+  toggleTransport: (id) => apiClient.patch(`/logistics/${id}/toggle-transport`),
 }
 
 export const pricingAPI = {
   calculate: (productId, mode, productData) =>
     apiClient.post('/pricing/calculate', {
+      product_id: productId,
+      product_data: productData,
+      mode: mode,
+    }),
+  calculateGrouped: (productId, mode, productData) =>
+    apiClient.post('/pricing/calculate-grouped', {
       product_id: productId,
       product_data: productData,
       mode: mode,
@@ -98,6 +105,9 @@ export const adminAPI = {
   deleteUser: (id) => apiClient.delete(`/admin/users/${id}`),
   getPlans: () => apiClient.get('/subscriptions/plans'),
   updatePlan: (id, data) => apiClient.put(`/admin/plans/${id}`, data),
+  extendSubscription: (id, days) => apiClient.post(`/admin/users/${id}/subscription/extend`, { days }),
+  adjustCalculations: (id, delta) => apiClient.post(`/admin/users/${id}/calculations/adjust`, { delta }),
+  setUserType: (id, userType) => apiClient.post(`/admin/users/${id}/type`, { user_type: userType }),
 }
 
 export const settingsAPI = {
@@ -129,6 +139,29 @@ export const statisticsAPI = {
   getPlanAnalysis: () => apiClient.get('/statistics/plan-analysis'),
   getActiveUsers: () => apiClient.get('/statistics/active-users'),
   getGrowth: () => apiClient.get('/statistics/growth'),
+}
+
+export const commissionCategoriesAPI = {
+  getAll: () => apiClient.get('/commission-categories'),
+  create: (data) => apiClient.post('/commission-categories', data),
+  update: (id, data) => apiClient.patch(`/commission-categories/${id}`, data),
+  delete: (id) => apiClient.delete(`/commission-categories/${id}`),
+}
+
+export const logisticsPoolAPI = {
+  getAll: (params) => apiClient.get('/logistics-pool', { params }),
+  importXlsx: (formData) => apiClient.post('/logistics-pool/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  addToMyLogistics: (id) => apiClient.post(`/logistics-pool/${id}/add-to-my-logistics`),
+  deleteAll: () => apiClient.delete('/logistics-pool/all'),
+}
+
+export const productImportAPI = {
+  preview: (formData) => apiClient.post('/products/import/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  confirm: (data) => apiClient.post('/products/import/confirm', data),
 }
 
 export default apiClient

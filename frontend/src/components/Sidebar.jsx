@@ -11,7 +11,9 @@ import {
   Gift, 
   BarChart3, 
   Info,
-  RefreshCw
+  RefreshCw,
+  Upload,
+  FolderOpen
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
@@ -82,10 +84,13 @@ function ExchangeRatePanel() {
 const menuItems = [
   { path: '/pricing', icon: DollarSign, label: '物流定价', adminOnly: false },
   { path: '/logistics', icon: Truck, label: '物流管理', adminOnly: false },
+  { path: '/logistics-pool', icon: FolderOpen, label: '公共物流池', adminOnly: false },
+  { path: '/product-import', icon: Upload, label: '产品批量导入', adminOnly: false },
   { path: '/account', icon: Key, label: '账号管理', adminOnly: false },
   { path: '/subscription', icon: Crown, label: '订阅管理', adminOnly: false },
   { path: '/payment', icon: CreditCard, label: '支付设置', adminOnly: false },
   { path: '/settings', icon: Settings, label: '系统设置', adminOnly: true },
+  { path: '/commission-categories', icon: DollarSign, label: '佣金类目', adminOnly: true },
   { path: '/users', icon: Users, label: '用户管理', adminOnly: true },
   { path: '/plans', icon: Gift, label: '方案管理', adminOnly: true },
   { path: '/statistics', icon: BarChart3, label: '数据统计', adminOnly: true },
