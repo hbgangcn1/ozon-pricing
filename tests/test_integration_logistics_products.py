@@ -1,5 +1,3 @@
-import pytest
-
 from api.main import app
 from api.dependencies import get_current_user_id
 
@@ -46,9 +44,111 @@ class TestListLogistics:
         try:
             resp = await client.get("/api/logistics")
             assert resp.status_code == 200
-            assert isinstance(resp.json(), list)
+            data = resp.json()
+            assert "items" in data
+            assert isinstance(data["items"], list)
         finally:
             _clear_overrides()
+
+    async def test_filters_by_fulfillment_type_and_destination(self, client, test_user):
+        uid = test_user["id"]
+        _user_override(uid)
+        created_ids = []
+        try:
+            payloads = [
+                {
+                    **LOGISTICS_DATA,
+                    "name": "RFBS-RU Rule",
+                    "fulfillment_type": "rfbs",
+                    "destination": "RU",
+                },
+                {
+                    **LOGISTICS_DATA,
+                    "name": "FBP-BY Rule",
+                    "type": "air",
+                    "fulfillment_type": "fbp",
+                    "destination": "BY",
+                },
+                {
+                    **LOGISTICS_DATA,
+                    "name": "RFBS-KZ Rule",
+                    "fulfillment_type": "rfbs",
+                    "destination": "KZ",
+                },
+            ]
+
+            for payload in payloads:
+                resp = await client.post("/api/logistics", json=payload)
+                assert resp.status_code == 201
+                created_ids.append(resp.json()["id"])
+
+            fulfillment_resp = await client.get(
+                "/api/logistics", params={"fulfillment_type": "fbp"}
+            )
+            assert fulfillment_resp.status_code == 200
+            fulfillment_items = fulfillment_resp.json()["items"]
+            assert [item["name"] for item in fulfillment_items] == ["FBP-BY Rule"]
+
+            destination_resp = await client.get(
+                "/api/logistics", params={"destination": "KZ"}
+            )
+            assert destination_resp.status_code == 200
+            destination_items = destination_resp.json()["items"]
+            assert [item["name"] for item in destination_items] == ["RFBS-KZ Rule"]
+
+            combined_resp = await client.get(
+                "/api/logistics",
+                params={"fulfillment_type": "rfbs", "destination": "RU"},
+            )
+            assert combined_resp.status_code == 200
+            combined_items = combined_resp.json()["items"]
+            assert [item["name"] for item in combined_items] == ["RFBS-RU Rule"]
+        finally:
+            _clear_overrides()
+            if created_ids:
+                _user_override(uid)
+                for created_id in created_ids:
+                    await client.delete(f"/api/logistics/{created_id}")
+                _clear_overrides()
+
+    async def test_filters_by_type(self, client, test_user):
+        uid = test_user["id"]
+        _user_override(uid)
+        created_ids = []
+        try:
+            payloads = [
+                {**LOGISTICS_DATA, "name": "Land-1", "type": "land"},
+                {**LOGISTICS_DATA, "name": "Land-2", "type": "land"},
+                {**LOGISTICS_DATA, "name": "Air-1", "type": "air"},
+            ]
+            for payload in payloads:
+                resp = await client.post("/api/logistics", json=payload)
+                assert resp.status_code == 201
+                created_ids.append(resp.json()["id"])
+
+            land_resp = await client.get("/api/logistics", params={"type": "land"})
+            assert land_resp.status_code == 200
+            land_data = land_resp.json()
+            land_names = [i["name"] for i in land_data["items"]]
+            assert "Land-1" in land_names
+            assert "Land-2" in land_names
+            assert "Air-1" not in land_names
+            assert land_data["total"] >= 2
+
+            air_resp = await client.get("/api/logistics", params={"type": "air"})
+            assert air_resp.status_code == 200
+            air_data = air_resp.json()
+            air_names = [i["name"] for i in air_data["items"]]
+            assert "Air-1" in air_names
+            assert "Land-1" not in air_names
+            assert air_data["total"] >= 1
+        finally:
+            _clear_overrides()
+            if created_ids:
+                _user_override(uid)
+                for created_id in created_ids:
+                    await client.delete(f"/api/logistics/{created_id}")
+                _clear_overrides()
 
 
 # ---------------------------------------------------------------------------
@@ -89,14 +189,14 @@ class TestLogisticsCRUD:
         try:
             list_resp = await client.get("/api/logistics")
             assert list_resp.status_code == 200
-            initial_count = len(list_resp.json())
+            initial_count = len(list_resp.json()["items"])
 
             create_resp = await client.post("/api/logistics", json=LOGISTICS_DATA)
             assert create_resp.status_code == 201
             created_id = create_resp.json()["id"]
 
             list_resp2 = await client.get("/api/logistics")
-            assert len(list_resp2.json()) == initial_count + 1
+            assert len(list_resp2.json()["items"]) == initial_count + 1
 
             get_resp = await client.get(f"/api/logistics/{created_id}")
             assert get_resp.status_code == 200
@@ -297,3 +397,105 @@ class TestProductCRUD:
             assert resp.status_code == 404
         finally:
             _clear_overrides()
+
+
+# ---------------------------------------------------------------------------
+# commission_category_id round-trip for products
+# ---------------------------------------------------------------------------
+
+
+class TestProductCommissionCategory:
+    async def test_create_product_with_commission_category_id(self, client, test_user):
+        uid = test_user["id"]
+        _user_override(uid)
+        created_id = None
+        try:
+            payload = {**PRODUCT_DATA, "commission_category_id": 42}
+            resp = await client.post("/api/products", json=payload)
+            assert resp.status_code == 201
+            data = resp.json()
+            assert data["commission_category_id"] == 42
+            created_id = data["id"]
+
+            get_resp = await client.get(f"/api/products/{created_id}")
+            assert get_resp.status_code == 200
+            assert get_resp.json()["commission_category_id"] == 42
+        finally:
+            _clear_overrides()
+            if created_id:
+                _user_override(uid)
+                await client.delete(f"/api/products/{created_id}")
+                created_id = None
+                _clear_overrides()
+
+    async def test_update_product_commission_category_id(self, client, test_user):
+        uid = test_user["id"]
+        _user_override(uid)
+        created_id = None
+        try:
+            resp = await client.post("/api/products", json=PRODUCT_DATA)
+            assert resp.status_code == 201
+            created_id = resp.json()["id"]
+
+            update_resp = await client.put(
+                f"/api/products/{created_id}",
+                json={"commission_category_id": 99},
+            )
+            assert update_resp.status_code == 200
+            assert update_resp.json()["commission_category_id"] == 99
+
+            get_resp = await client.get(f"/api/products/{created_id}")
+            assert get_resp.status_code == 200
+            assert get_resp.json()["commission_category_id"] == 99
+        finally:
+            _clear_overrides()
+            if created_id:
+                _user_override(uid)
+                await client.delete(f"/api/products/{created_id}")
+                created_id = None
+                _clear_overrides()
+
+    async def test_commission_category_id_round_trip(self, client, test_user):
+        uid = test_user["id"]
+        _user_override(uid)
+        created_id = None
+        try:
+            create_resp = await client.post(
+                "/api/products",
+                json={**PRODUCT_DATA, "commission_category_id": 10},
+            )
+            assert create_resp.status_code == 201
+            created_id = create_resp.json()["id"]
+
+            get_resp1 = await client.get(f"/api/products/{created_id}")
+            assert get_resp1.status_code == 200
+            assert get_resp1.json()["commission_category_id"] == 10
+
+            update_resp1 = await client.put(
+                f"/api/products/{created_id}",
+                json={"commission_category_id": 20},
+            )
+            assert update_resp1.status_code == 200
+            assert update_resp1.json()["commission_category_id"] == 20
+
+            get_resp2 = await client.get(f"/api/products/{created_id}")
+            assert get_resp2.status_code == 200
+            assert get_resp2.json()["commission_category_id"] == 20
+
+            update_resp2 = await client.put(
+                f"/api/products/{created_id}",
+                json={"commission_category_id": None},
+            )
+            assert update_resp2.status_code == 200
+            assert update_resp2.json()["commission_category_id"] is None
+
+            get_resp3 = await client.get(f"/api/products/{created_id}")
+            assert get_resp3.status_code == 200
+            assert get_resp3.json()["commission_category_id"] is None
+        finally:
+            _clear_overrides()
+            if created_id:
+                _user_override(uid)
+                await client.delete(f"/api/products/{created_id}")
+                created_id = None
+                _clear_overrides()

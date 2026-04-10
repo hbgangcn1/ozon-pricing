@@ -1,7 +1,10 @@
+# pyright: reportPrivateUsage=false, reportOptionalSubscript=false, reportUnusedVariable=false
+
 import pytest
 from models.logistics import Logistics
 from db.logistics_crud import (
     get_logistics_list,
+    get_logistics_by_filters,
     get_logistics_by_id,
     create_logistics,
     update_logistics,
@@ -167,13 +170,22 @@ class TestCreateLogistics:
         assert result["id"] == new_id
 
     async def test_fields_saved_correctly(self, db_session, test_user):
-        data = {"name": "Express", "type": "air", "min_days": 1, "max_days": 3}
+        data = {
+            "name": "Express",
+            "type": "air",
+            "min_days": 1,
+            "max_days": 3,
+            "price_limit_cny": 88.8,
+            "price_min_cny": 12.3,
+        }
         new_id = await create_logistics(db_session, test_user["id"], data)
         result = await get_logistics_by_id(db_session, new_id, test_user["id"])
         assert result["name"] == "Express"
         assert result["type"] == "air"
         assert result["min_days"] == 1
         assert result["max_days"] == 3
+        assert result["price_limit_cny"] == pytest.approx(88.8)
+        assert result["price_min_cny"] == pytest.approx(12.3)
 
     async def test_user_id_set_correctly(self, db_session, test_user):
         new_id = await create_logistics(db_session, test_user["id"], {})
@@ -264,6 +276,34 @@ class TestUpdateLogistics:
         assert result["name"] == "MultiNew"
         assert result["type"] == "air"
         assert result["min_days"] == 2
+
+    async def test_old_price_limit_fields_are_ignored(self, db_session, test_user):
+        new_id = await create_logistics(
+            db_session,
+            test_user["id"],
+            {
+                "name": "CNY only",
+                "price_limit": 999.0,
+                "price_limit_rub": 888.0,
+                "price_min": 777.0,
+                "price_min_rub": 666.0,
+                "price_limit_currency": "USD",
+                "price_min_currency": "RUB",
+                "price_limit_cny": 123.0,
+                "price_min_cny": 45.0,
+            },
+        )
+
+        result = await get_logistics_by_id(db_session, new_id, test_user["id"])
+
+        assert result["price_limit_cny"] == pytest.approx(123.0)
+        assert result["price_min_cny"] == pytest.approx(45.0)
+        assert result["price_limit"] is None
+        assert result["price_limit_rub"] is None
+        assert result["price_min"] == pytest.approx(0.0)
+        assert result["price_min_rub"] == pytest.approx(0.0)
+        assert result["price_limit_currency"] == "RUB"
+        assert result["price_min_currency"] == "RUB"
 
 
 class TestDeleteLogistics:
@@ -363,3 +403,82 @@ class TestBatchDeleteLogistics:
         )
         count = await batch_delete_logistics(db_session, [record.id], test_user["id"])
         assert count == 1
+
+
+class TestGetLogisticsByFilters:
+    async def test_filter_by_type_land(self, db_session, test_user):
+        await _insert(
+            db_session, _make_logistics(test_user["id"], name="Land1", type="land")
+        )
+        await _insert(
+            db_session, _make_logistics(test_user["id"], name="Air1", type="air")
+        )
+        items, total = await get_logistics_by_filters(
+            db_session, test_user["id"], type="land"
+        )
+        assert total == 1
+        assert all(i["type"] == "land" for i in items)
+
+    async def test_filter_by_type_air(self, db_session, test_user):
+        await _insert(
+            db_session, _make_logistics(test_user["id"], name="Land1", type="land")
+        )
+        await _insert(
+            db_session, _make_logistics(test_user["id"], name="Air1", type="air")
+        )
+        await _insert(
+            db_session, _make_logistics(test_user["id"], name="Air2", type="air")
+        )
+        items, total = await get_logistics_by_filters(
+            db_session, test_user["id"], type="air"
+        )
+        assert total == 2
+        assert all(i["type"] == "air" for i in items)
+
+    async def test_no_type_filter_returns_all(self, db_session, test_user):
+        await _insert(
+            db_session, _make_logistics(test_user["id"], name="L", type="land")
+        )
+        await _insert(
+            db_session, _make_logistics(test_user["id"], name="A", type="air")
+        )
+        items, total = await get_logistics_by_filters(db_session, test_user["id"])
+        assert total == 2
+        assert len(items) == 2
+
+    async def test_type_combined_with_fulfillment(self, db_session, test_user):
+        await _insert(
+            db_session,
+            _make_logistics(
+                test_user["id"], name="FBA-L", type="land", fulfillment_type="FBA"
+            ),
+        )
+        await _insert(
+            db_session,
+            _make_logistics(
+                test_user["id"], name="FBM-L", type="land", fulfillment_type="FBM"
+            ),
+        )
+        await _insert(
+            db_session,
+            _make_logistics(
+                test_user["id"], name="FBA-A", type="air", fulfillment_type="FBA"
+            ),
+        )
+        items, total = await get_logistics_by_filters(
+            db_session, test_user["id"], type="land", fulfillment_type="FBA"
+        )
+        assert total == 1
+        assert items[0]["name"] == "FBA-L"
+
+    async def test_type_filter_with_pagination(self, db_session, test_user):
+        for i in range(5):
+            await _insert(
+                db_session,
+                _make_logistics(test_user["id"], name=f"Land{i}", type="land"),
+            )
+        items, total = await get_logistics_by_filters(
+            db_session, test_user["id"], type="land", limit=2, offset=0
+        )
+        assert total == 5
+        assert len(items) == 2

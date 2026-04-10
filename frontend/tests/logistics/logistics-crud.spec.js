@@ -62,7 +62,9 @@ test.describe('物流规则 CRUD 流程', () => {
     const ruleCard = page.locator('.font-medium', { hasText: ruleName }).first()
     await expect(ruleCard).toBeVisible({ timeout: 8000 })
 
-    await ruleCard.locator('..').getByLabel('编辑').click()
+    const cardContainer = ruleCard.locator('xpath=ancestor::div[contains(@class,"p-4")]')
+    await cardContainer.getByLabel('操作菜单').click()
+    await page.getByLabel('编辑').click()
 
     const dialog = page.locator('[role="dialog"]')
     await expect(dialog).toBeVisible({ timeout: 5000 })
@@ -95,7 +97,9 @@ test.describe('物流规则 CRUD 流程', () => {
     const ruleCard = page.locator('.font-medium', { hasText: editedName }).first()
     await expect(ruleCard).toBeVisible({ timeout: 8000 })
 
-    await ruleCard.locator('..').getByLabel('删除').click()
+    const cardContainer = ruleCard.locator('xpath=ancestor::div[contains(@class,"p-4")]')
+    await cardContainer.getByLabel('操作菜单').click()
+    await page.getByLabel('删除').click()
 
     const alertDialog = page.locator('[role="alertdialog"]')
     await expect(alertDialog).toBeVisible({ timeout: 5000 })
@@ -151,11 +155,10 @@ test.describe('物流规则 CRUD — 备选方案', () => {
 
     await expect(page.getByText(ruleName2)).toBeVisible({ timeout: 8000 })
 
-    const allEditBtns = page.getByRole('button', { name: /编辑/ })
-    const editBtnCount = await allEditBtns.count()
-    expect(editBtnCount).toBeGreaterThan(0)
-
-    await allEditBtns.first().click()
+    const ruleCard2 = page.locator('.font-medium', { hasText: ruleName2 }).first()
+    const cardContainer2 = ruleCard2.locator('xpath=ancestor::div[contains(@class,"p-4")]')
+    await cardContainer2.getByLabel('操作菜单').click()
+    await page.getByLabel('编辑').click()
     const editDialog = page.locator('[role="dialog"]')
     await expect(editDialog).toBeVisible({ timeout: 5000 })
 
@@ -172,8 +175,10 @@ test.describe('物流规则 CRUD — 备选方案', () => {
 
     await expect(page.getByText(editedName2)).toBeVisible({ timeout: 8000 })
 
-    const allDeleteBtns = page.getByRole('button', { name: /删除/ })
-    await allDeleteBtns.first().click()
+    const editedCard2 = page.locator('.font-medium', { hasText: editedName2 }).first()
+    const editedContainer2 = editedCard2.locator('xpath=ancestor::div[contains(@class,"p-4")]')
+    await editedContainer2.getByLabel('操作菜单').click()
+    await page.getByLabel('删除').click()
 
     const alertDialog = page.locator('[role="alertdialog"]')
     await expect(alertDialog).toBeVisible({ timeout: 5000 })

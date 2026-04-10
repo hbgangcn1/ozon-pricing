@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -10,9 +10,10 @@ import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
 import { Checkbox } from '../components/ui/checkbox'
 import { Badge } from '../components/ui/badge'
 import { Switch } from '../components/ui/switch'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Zap, Droplets, HelpCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Zap, Droplets, HelpCircle, ArrowLeftRight, MoreHorizontal } from 'lucide-react'
 import { logisticsAPI } from '../services/api'
 import { useLogisticsStore } from '../stores/logisticsStore'
 
@@ -37,6 +38,11 @@ const getApiError = (error) => {
 
 const DEFAULT_FORM = {
   name: '',
+  fulfillment_type: 'rfbs',
+  destination: 'RU',
+  fbp_service_level: '',
+  fbp_company: '',
+  is_smart: 0,
   type: 'land',
   fee_mode: 'base_weight',
   delivery_method: 'pickup',
@@ -52,14 +58,16 @@ const DEFAULT_FORM = {
   min_longest_side: '',
   longest_side_threshold: '',
   second_longest_side_threshold: '',
+  max_third_side: '',
   volume_mode: 'none',
+  volume_coefficient: '',
+  sum_of_sides_threshold: '',
   min_cylinder_sum: '',
   max_cylinder_sum: '',
   min_cylinder_length: '',
   max_cylinder_length: '',
-  price_limit_currency: 'RUB',
-  price_limit: '',
-  price_min: '',
+  price_limit_cny: '',
+  price_min_cny: '',
   allow_battery: false,
   battery_wh_limit: '',
   allow_liquid: false,
@@ -145,22 +153,44 @@ export default function LogisticsPage() {
   const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
 
+  const [filterFulfillment, setFilterFulfillment] = useState('all')
+  const [filterDestination, setFilterDestination] = useState('all')
+  const [activeTab, setActiveTab] = useState('land')
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [total, setTotal] = useState(0)
+
+  const fetchLogistics = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = {
+        limit: pageSize,
+        offset: (currentPage - 1) * pageSize,
+        type: activeTab
+      }
+      if (filterFulfillment !== 'all') params.fulfillment_type = filterFulfillment
+      if (filterDestination !== 'all') params.destination = filterDestination
+      const response = await logisticsAPI.getAll(params)
+      setLogistics(response?.items || [])
+      setTotal(response?.total || 0)
+    } catch (error) {
+      toast.error(getApiError(error) || '获取物流规则列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [currentPage, pageSize, activeTab, filterFulfillment, filterDestination, setLogistics])
+
   useEffect(() => {
     let cancelled = false
     const doFetch = async () => {
-      setLoading(true)
-      try {
-        const response = await logisticsAPI.getAll()
-        if (!cancelled) setLogistics(response)
-      } catch (error) {
-        if (!cancelled) toast.error('获取物流规则列表失败')
-      } finally {
-        if (!cancelled) setLoading(false)
+      if (!cancelled) {
+        await fetchLogistics()
       }
     }
     doFetch()
     return () => { cancelled = true }
-  }, [setLogistics])
+  }, [fetchLogistics])
 
   const handleAdd = () => {
     setEditingItem(null)
@@ -172,6 +202,11 @@ export default function LogisticsPage() {
     setEditingItem(record)
     setForm({
       name: record.name ?? '',
+      fulfillment_type: record.fulfillment_type ?? 'rfbs',
+      destination: record.destination ?? 'RU',
+      fbp_service_level: record.fbp_service_level ?? '',
+      fbp_company: record.fbp_company ?? '',
+      is_smart: record.is_smart ?? 0,
       type: record.type ?? 'land',
       fee_mode: record.fee_mode ?? 'base_weight',
       delivery_method: record.delivery_method ?? 'pickup',
@@ -187,14 +222,16 @@ export default function LogisticsPage() {
       min_longest_side: record.min_longest_side ?? '',
       longest_side_threshold: record.longest_side_threshold ?? '',
       second_longest_side_threshold: record.second_longest_side_threshold ?? '',
+      max_third_side: record.max_third_side ?? '',
       volume_mode: record.volume_mode ?? 'none',
+      volume_coefficient: record.volume_coefficient ?? '',
+      sum_of_sides_threshold: record.sum_of_sides_threshold ?? '',
       min_cylinder_sum: record.min_cylinder_sum ?? '',
       max_cylinder_sum: record.max_cylinder_sum ?? '',
       min_cylinder_length: record.min_cylinder_length ?? '',
       max_cylinder_length: record.max_cylinder_length ?? '',
-      price_limit_currency: record.price_limit_currency ?? 'RUB',
-      price_limit: record.price_limit_rub ?? record.price_limit_usd ?? '',
-      price_min: record.price_min ?? '',
+      price_limit_cny: record.price_limit_cny != null ? Number(record.price_limit_cny).toFixed(2) : '',
+      price_min_cny: record.price_min_cny != null ? Number(record.price_min_cny).toFixed(2) : '',
       allow_battery: !!record.allow_battery,
       battery_wh_limit: record.battery_wh_limit ?? '',
       allow_liquid: !!record.allow_liquid,
@@ -207,8 +244,9 @@ export default function LogisticsPage() {
       await logisticsAPI.delete(id)
       removeLogistics(id)
       toast.success('删除成功')
+      await fetchLogistics()
     } catch (error) {
-      toast.error('删除失败')
+      toast.error(getApiError(error) || '删除失败')
     }
   }
 
@@ -235,21 +273,31 @@ export default function LogisticsPage() {
   const handleBatchDelete = async () => {
     try {
       await logisticsAPI.batchDelete(Array.from(selectedIds))
-      selectedIds.forEach(id => removeLogistics(id))
+      selectedIds.forEach(id => { removeLogistics(id) })
       setSelectedIds(new Set())
       setBatchDeleteDialogOpen(false)
       toast.success('批量删除成功')
+      await fetchLogistics()
     } catch (error) {
-      toast.error('批量删除失败')
+      toast.error(getApiError(error) || '批量删除失败')
     }
   }
 
+  const [togglingIds, setTogglingIds] = useState(new Set())
+
   const handleToggleActive = async (id, checked) => {
+    setTogglingIds(prev => new Set(prev).add(id))
     try {
       const response = await logisticsAPI.update(id, { is_active: checked })
       updateLogistics(id, response)
     } catch (error) {
-      toast.error('切换状态失败')
+      toast.error(getApiError(error) || '切换状态失败')
+    } finally {
+      setTogglingIds(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -259,18 +307,15 @@ export default function LogisticsPage() {
       return
     }
     try {
-      // 空字符串字段不发送（让 Pydantic 使用默认值），非空字段转为数字
-      // 注意：continue_unit/fee_mode/delivery_method/volume_mode/type 是字符串，不在此列表中
       const numericFields = [
         'base_fee', 'continue_fee', 'min_weight', 'max_weight',
         'min_days', 'max_days', 'max_sum_of_sides', 'max_longest_side',
         'min_longest_side', 'longest_side_threshold', 'second_longest_side_threshold',
+        'max_third_side',
         'max_cylinder_sum', 'min_cylinder_sum', 'max_cylinder_length',
-        'min_cylinder_length', 'price_limit', 'price_min',
-        'first_weight_g', 'volume_coefficient', 'priority_group',
-        'battery_capacity_limit_wh'
+        'min_cylinder_length', 'price_limit_cny', 'price_min_cny',
+        'first_weight_g', 'volume_coefficient', 'sum_of_sides_threshold', 'priority_group'
       ]
-      // continue_unit 是字符串（如 "50g", "1kg"），保持原样不转换
       const values = {}
       for (const [key, val] of Object.entries(form)) {
         if (numericFields.includes(key)) {
@@ -279,14 +324,6 @@ export default function LogisticsPage() {
           values[key] = val
         }
       }
-
-      if (values.price_limit_currency === 'RUB') {
-        values.price_limit_rub = values.price_limit ? Number(values.price_limit) : null
-      } else {
-        values.price_limit_usd = values.price_limit ? Number(values.price_limit) : null
-      }
-      delete values.price_limit
-      delete values.price_limit_currency
 
       if (editingItem) {
         const response = await logisticsAPI.update(editingItem.id, values)
@@ -298,6 +335,7 @@ export default function LogisticsPage() {
         toast.success('创建成功')
       }
       setDialogOpen(false)
+      await fetchLogistics()
     } catch (error) {
       toast.error(getApiError(error) || '操作失败')
     }
@@ -307,8 +345,29 @@ export default function LogisticsPage() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  const landLogistics = useMemo(() => logistics.filter(l => l.type === 'land'), [logistics])
-  const airLogistics = useMemo(() => logistics.filter(l => l.type === 'air'), [logistics])
+  const handleFulfillmentChange = (val) => {
+    setForm(prev => {
+      const next = { ...prev, fulfillment_type: val }
+      if (val === 'rfbs') {
+        next.destination = 'RU'
+      } else if (val === 'fbp') {
+        next.destination = 'RU'
+        if (!next.fbp_service_level) next.fbp_service_level = 'economy'
+      }
+      return next
+    })
+  }
+
+  const handleFulfillmentChangeFilter = (val) => {
+    setFilterFulfillment(val)
+    setCurrentPage(1)
+  }
+
+  const handleDestinationChangeFilter = (val) => {
+    setFilterDestination(val)
+    setCurrentPage(1)
+  }
+
 
   const renderLogisticsList = (items) => (
     <div className="space-y-2">
@@ -316,15 +375,22 @@ export default function LogisticsPage() {
         <div className="text-center text-text-muted py-8">暂无物流规则</div>
       ) : (
         items.map(item => (
-          <Card key={item.id} className={`bg-surface-container border-surface-high ${!item.is_active ? 'opacity-50' : ''}`}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4 items-center">
-                  <Checkbox
-                    checked={selectedIds.has(item.id)}
-                    onCheckedChange={() => toggleSelect(item.id)}
-                  />
-                  <div className="font-medium">{item.name}</div>
+          <Card key={item.id} className={`bg-surface-container border-surface-high transition-all hover:shadow-sm hover:border-surface-highest ${!item.is_active ? 'opacity-60 grayscale-[30%]' : ''}`}>
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-[auto_2fr_1fr_1fr_1fr_1fr_0.5fr_0.5fr_auto] gap-x-6 gap-y-4 items-center">
+                  <div className="flex items-center">
+                    <Checkbox
+                      checked={selectedIds.has(item.id)}
+                      onCheckedChange={() => toggleSelect(item.id)}
+                    />
+                  </div>
+                  <div className="font-medium flex flex-wrap gap-2 items-center min-w-0">
+                    <span className="truncate" title={item.name}>{item.name}</span>
+                    {item.is_smart === 1 && (
+                      <Badge className="bg-status-success/15 text-status-success hover:bg-status-success/25 border-transparent text-[10px] px-1.5 py-0 h-4 transition-colors">Smart</Badge>
+                    )}
+                  </div>
                   <div>
                     <Badge variant="outline" className="text-xs">
                       {item.delivery_method === 'pickup' ? '取货点' : item.delivery_method === 'door' ? '送货上门' : '未知'}
@@ -353,17 +419,50 @@ export default function LogisticsPage() {
                       <Droplets className="h-4 w-4 text-surface-highest" />
                     )}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex items-center gap-2 justify-end">
                     <Switch
                       checked={!!item.is_active}
+                      disabled={togglingIds.has(item.id)}
                       onCheckedChange={(checked) => handleToggleActive(item.id, checked)}
                     />
-                    <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} aria-label="编辑" className="transition-all duration-200">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(item.id)} aria-label="删除" className="text-status-error transition-all duration-200">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="操作菜单">
+                          <MoreHorizontal className="h-4 w-4 text-text-secondary" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-36">
+                        <DropdownMenuItem onClick={() => handleEdit(item)} className="cursor-pointer" aria-label="编辑">
+                          <Pencil className="h-4 w-4 mr-2 text-text-muted" />
+                          编辑
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          aria-label={item.type === 'land' ? '转空运' : '转陆运'}
+                          onClick={async () => {
+                            try {
+                              await logisticsAPI.toggleTransport(item.id)
+                              removeLogistics(item.id)
+                              setTotal(prev => Math.max(0, prev - 1))
+                              toast.success(item.type === 'land' ? '已转为空运' : '已转为陆运')
+                            } catch (error) {
+                              toast.error(getApiError(error) || '切换失败')
+                            }
+                          }}
+                        >
+                          <ArrowLeftRight className="h-4 w-4 mr-2 text-text-muted" />
+                          {item.type === 'land' ? '转空运' : '转陆运'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer text-status-error focus:text-status-error focus:bg-status-error/10"
+                          aria-label="删除"
+                          onClick={() => setDeleteConfirmId(item.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          删除
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </div>
@@ -391,6 +490,52 @@ export default function LogisticsPage() {
                   placeholder="请输入名称"
                 />
               </FormField>
+
+              <FormRow>
+                <FormField label="发货类型">
+                  <Select value={form.fulfillment_type} onValueChange={handleFulfillmentChange}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rfbs">rFBS</SelectItem>
+                      <SelectItem value="fbp">FBP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormField>
+                <FormField label="目的国">
+                  <Select value={form.destination} onValueChange={v => setFormField('destination', v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RU">俄罗斯(RU)</SelectItem>
+                      {(form.fulfillment_type === 'rfbs' || (form.fulfillment_type === 'fbp' && ['economy', 'standard'].includes(form.fbp_service_level))) && (
+                        <>
+                          <SelectItem value="KZ">哈萨克斯坦(KZ)</SelectItem>
+                          <SelectItem value="BY">白俄罗斯(BY)</SelectItem>
+                        </>
+                      )}
+                      {form.fulfillment_type === 'rfbs' && (
+                        <>
+                          <SelectItem value="KGZ">吉尔吉斯斯坦(KGZ)</SelectItem>
+                          <SelectItem value="UZ">乌兹别克斯坦(UZ)</SelectItem>
+                          <SelectItem value="GE">格鲁吉亚(GE)</SelectItem>
+                          <SelectItem value="AZ">阿塞拜疆(AZ)</SelectItem>
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </FormField>
+              </FormRow>
+
+              <FormRow>
+                <div className="flex items-center space-x-3 pt-2">
+                  <Label className="text-xs text-text-secondary">智能定价状态</Label>
+                  {form.is_smart === 1 ? (
+                    <Badge className="bg-status-success text-white border-transparent">Smart</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-text-muted">普通</Badge>
+                  )}
+                </div>
+              </FormRow>
+
               <FormField label="物流类型">
                 <RadioGroup
                   value={form.type}
@@ -520,11 +665,56 @@ export default function LogisticsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">不计算体积重量</SelectItem>
-                  <SelectItem value="max">取实际重量与体积重量较大者</SelectItem>
-                  <SelectItem value="threshold">最长边超过阈值时按体积重量计费</SelectItem>
+                  <SelectItem value="max_actual_vs_volume">取实际重量与体积重量较大者</SelectItem>
+                  <SelectItem value="longest_side">最长边超过阈值时按体积重量计费</SelectItem>
+                  <SelectItem value="sum_of_sides">三边和超过阈值时按体积重量计费</SelectItem>
                 </SelectContent>
               </Select>
             </FormField>
+            {(form.volume_mode === 'longest_side' || form.volume_mode === 'sum_of_sides' || form.volume_mode === 'max_actual_vs_volume') && (
+              <FormRow className="mt-3">
+                {(form.volume_mode === 'longest_side') && (
+                  <FormField
+                    label="最长边阈值(cm)"
+                    tooltip="当最长边超过此值时，按体积重量计费"
+                  >
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.longest_side_threshold}
+                      onChange={e => setFormField('longest_side_threshold', e.target.value)}
+                      placeholder="0"
+                    />
+                  </FormField>
+                )}
+                {(form.volume_mode === 'sum_of_sides') && (
+                  <FormField
+                    label="三边和阈值(cm)"
+                    tooltip="当长+宽+高超过此值时，按体积重量计费"
+                  >
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.sum_of_sides_threshold}
+                      onChange={e => setFormField('sum_of_sides_threshold', e.target.value)}
+                      placeholder="0"
+                    />
+                  </FormField>
+                )}
+                <FormField
+                  label="体积重量系数"
+                  tooltip="体积重量 = 长×宽×高 / 系数 × 1000 (g)"
+                >
+                  <Input
+                    type="number"
+                    min="0"
+                    value={form.volume_coefficient}
+                    onChange={e => setFormField('volume_coefficient', e.target.value)}
+                    placeholder="6000"
+                  />
+                </FormField>
+              </FormRow>
+            )}
           </div>
 
           <div>
@@ -595,6 +785,20 @@ export default function LogisticsPage() {
                 />
               </FormField>
             </FormRow>
+            <FormRow className="mt-3">
+              <FormField
+                label="第三边长上限(cm)"
+                tooltip="第三长边（最短边）的长度上限，0表示无上限"
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.max_third_side}
+                  onChange={e => setFormField('max_third_side', e.target.value)}
+                  placeholder="0"
+                />
+              </FormField>
+            </FormRow>
           </div>
 
           <div>
@@ -654,57 +858,39 @@ export default function LogisticsPage() {
           </div>
 
           <div>
-            <SectionTitle>送货方式</SectionTitle>
-            <RadioGroup
-              value={form.delivery_method}
-              onValueChange={v => setFormField('delivery_method', v)}
-              className="flex flex-wrap gap-4"
-            >
-              <RadioLabel label="送货到取货点" value="pickup" itemClassName="mt-0.5" />
-              <RadioLabel label="送货上门" value="door" itemClassName="mt-0.5" />
-              <RadioLabel label="未知" value="unknown" itemClassName="mt-0.5" />
-            </RadioGroup>
-          </div>
-
-          <div>
             <SectionTitle>价格限制</SectionTitle>
             <FormRow>
-              <FormField label="货币单位">
-                <Select value={form.price_limit_currency} onValueChange={v => setFormField('price_limit_currency', v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="RUB">RUB (卢布)</SelectItem>
-                    <SelectItem value="USD">USD (美元)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
               <FormField
-                label="价格上限"
+                label="价格上限（元）"
                 tooltip="订单价格上限"
               >
                 <Input
                   type="number"
                   step="0.01"
                   min="0"
-                  value={form.price_limit}
-                  onChange={e => setFormField('price_limit', e.target.value)}
+                  value={form.price_limit_cny}
+                  onChange={e => setFormField('price_limit_cny', e.target.value)}
+                  onBlur={e => {
+                    const v = e.target.value
+                    if (v !== '') setFormField('price_limit_cny', parseFloat(v).toFixed(2))
+                  }}
                   placeholder="0.00"
                 />
               </FormField>
-            </FormRow>
-            <FormRow className="mt-3">
               <FormField
-                label="价格下限"
+                label="价格下限（元）"
                 tooltip="订单价格下限"
               >
                 <Input
                   type="number"
                   step="0.01"
                   min="0"
-                  value={form.price_min}
-                  onChange={e => setFormField('price_min', e.target.value)}
+                  value={form.price_min_cny}
+                  onChange={e => setFormField('price_min_cny', e.target.value)}
+                  onBlur={e => {
+                    const v = e.target.value
+                    if (v !== '') setFormField('price_min_cny', parseFloat(v).toFixed(2))
+                  }}
                   placeholder="0.00"
                 />
               </FormField>
@@ -724,18 +910,6 @@ export default function LogisticsPage() {
                   允许电池
                 </Label>
               </div>
-              {form.allow_battery && (
-                <FormField label="电池容量限制(Wh)">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.battery_wh_limit}
-                    onChange={e => setFormField('battery_wh_limit', e.target.value)}
-                    placeholder="0"
-                  />
-                </FormField>
-              )}
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="allow_liquid"
@@ -757,6 +931,61 @@ export default function LogisticsPage() {
     </Dialog>
   )
 
+  const totalPages = Math.ceil(total / pageSize) || 1
+
+  const renderPageNumbers = () => {
+    const pages = []
+    const maxVisible = 7
+    
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i)
+      }
+    } else {
+      pages.push(1)
+      if (currentPage > 3) {
+        pages.push('...')
+      }
+      
+      let start = Math.max(2, currentPage - 1)
+      let end = Math.min(totalPages - 1, currentPage + 1)
+      
+      if (currentPage <= 3) {
+        end = 4
+      }
+      if (currentPage >= totalPages - 2) {
+        start = totalPages - 3
+      }
+      
+      for (let i = start; i <= end; i++) {
+        pages.push(i)
+      }
+      
+      if (currentPage < totalPages - 2) {
+        pages.push('...')
+      }
+      pages.push(totalPages)
+    }
+
+    return pages.map((page, index) => {
+      if (page === '...') {
+        const uniqueKey = `ellipsis-${index}-${Math.random()}`
+        return <span key={uniqueKey} className="px-2 text-text-muted">...</span>
+      }
+      return (
+        <Button
+          key={page}
+          variant={currentPage === page ? 'default' : 'ghost'}
+          size="sm"
+          className={`h-8 w-8 p-0 ${currentPage === page ? '' : 'text-text-secondary hover:text-text-primary'}`}
+          onClick={() => setCurrentPage(page)}
+        >
+          {page}
+        </Button>
+      )
+    })
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
@@ -767,6 +996,40 @@ export default function LogisticsPage() {
         </Button>
       </div>
 
+      <div className="flex flex-wrap gap-4 pt-2">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium">发货类型:</Label>
+          <Select value={filterFulfillment} onValueChange={handleFulfillmentChangeFilter}>
+            <SelectTrigger className="w-[140px] h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="rfbs">rFBS</SelectItem>
+              <SelectItem value="fbp">FBP</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium">目的国:</Label>
+          <Select value={filterDestination} onValueChange={handleDestinationChangeFilter}>
+            <SelectTrigger className="w-[140px] h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="RU">俄罗斯(RU)</SelectItem>
+              <SelectItem value="KZ">哈萨克斯坦(KZ)</SelectItem>
+              <SelectItem value="BY">白俄罗斯(BY)</SelectItem>
+              <SelectItem value="KGZ">吉尔吉斯斯坦(KGZ)</SelectItem>
+              <SelectItem value="UZ">乌兹别克斯坦(UZ)</SelectItem>
+              <SelectItem value="GE">格鲁吉亚(GE)</SelectItem>
+              <SelectItem value="AZ">阿塞拜疆(AZ)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {loading && (
         <div className="flex items-center justify-center py-8 text-text-secondary">
           <span className="animate-spin mr-2">⏳</span>
@@ -774,20 +1037,65 @@ export default function LogisticsPage() {
         </div>
       )}
 
-      <Tabs defaultValue="land">
+      <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); setCurrentPage(1) }}>
         <TabsList className="mb-4">
           <TabsTrigger value="land">陆运</TabsTrigger>
           <TabsTrigger value="air">空运</TabsTrigger>
         </TabsList>
         <TabsContent value="land">
-          {renderLogisticsList(landLogistics)}
+          {renderLogisticsList(logistics)}
         </TabsContent>
         <TabsContent value="air">
-          {renderLogisticsList(airLogistics)}
+          {renderLogisticsList(logistics)}
         </TabsContent>
       </Tabs>
 
       {renderForm()}
+
+      <div className="flex items-center justify-between border-t border-surface-high pt-4 mt-6">
+        <div className="flex items-center text-sm text-text-secondary">
+          共 {total} 条
+        </div>
+        <div className="flex items-center space-x-6">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-text-secondary">每页</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
+              <SelectTrigger className="h-8 w-[70px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="200">200</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-text-secondary">条</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            >
+              上一页
+            </Button>
+            <div className="flex items-center space-x-1">
+              {renderPageNumbers()}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3"
+              disabled={currentPage === totalPages || totalPages === 0}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            >
+              下一页
+            </Button>
+          </div>
+        </div>
+      </div>
 
       <AlertDialog open={deleteConfirmId !== null} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
         <AlertDialogContent>
