@@ -266,14 +266,32 @@ def test_cis_rfbs_individual_side_limits():
 def test_cis_rfbs_physical_weight_volume_mode():
     """CIS 'Physical weight' tarification → volume_mode='none', coeff=0."""
     result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
-    # Only check rows from Other CIS sheet (have sum_of_sides_threshold set
-    # by the volume-mode parsing block).  KZ&BY rows keep defaults and are
-    # not relevant to the Physical-weight tarification test.
-    phys_rows = [
-        r
-        for r in result["rows"]
-        if r.get("volume_mode") == "none" and "sum_of_sides_threshold" in r
-    ]
-    assert len(phys_rows) > 0, "Should find 'Physical weight' rows in Other CIS sheet"
+    phys_rows = [r for r in result["rows"] if r.get("volume_mode") == "none"]
+    assert len(phys_rows) > 0, "Should find 'Physical weight' rows"
     for row in phys_rows:
         assert row["volume_coefficient"] == 0.0
+
+
+def test_cis_rfbs_kz_by_cny_from_column_m():
+    """KZ & BY parser reads CNY prices from column M (idx 12)."""
+    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    by_row = _find_row(result["rows"], "Ural Belarus Standard Extra Small")
+    assert by_row["price_min_cny"] == 0.01
+    assert by_row["price_limit_cny"] == 135.0
+    assert round(by_row["price_min_cny"], 2) == by_row["price_min_cny"]
+    assert round(by_row["price_limit_cny"], 2) == by_row["price_limit_cny"]
+
+
+def test_cis_rfbs_kz_by_volume_mode():
+    """KZ & BY parser reads volume mode from P col and coeff from Q col."""
+    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    by_row = _find_row(result["rows"], "Ural Belarus Standard Extra Small")
+    # Physical weight → none / 0
+    assert by_row["volume_mode"] == "none"
+    assert by_row["volume_coefficient"] == 0.0
+    assert by_row["sum_of_sides_threshold"] == 0
+    # Big size rows use volumetric weight
+    big_row = _find_row(result["rows"], "Ural Belarus Standard Big")
+    assert big_row["volume_mode"] == "max_actual_vs_volume"
+    assert big_row["volume_coefficient"] == 12000.0
+    assert big_row["sum_of_sides_threshold"] == 0

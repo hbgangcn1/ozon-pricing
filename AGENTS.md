@@ -118,7 +118,19 @@ logistics/
 3. 如果任务涉及计划修改，同步更新 PLAN.md
 4. 完成后更新 PLAN.md 状态
 
-### Subagent 工作目录限制
+### Agent 环境限制
 - **subagent 打开的项目文件夹必须限制在**: `C:\Users\hbgan\OneDrive\Robert\learn\logistics`
 - 运行任务时，始终使用 `workdir` 参数指定正确的项目根目录
 - 避免 subagent 扫描错误的目录导致性能问题
+- **严禁在 opencode 的 bash/terminal 中启动后端进程（uvicorn、python server 等）**
+  - 原因：`Start-Process`、直接运行 `uvicorn` 等方式会阻塞 agent shell，导致 agent 完全失去响应
+  - 已踩坑 2 次，每次都需要用户手动终止 session
+  - 正确做法：请用户在独立终端中手动运行 `.\start_dev.ps1` 或 `uvicorn api.main:app --reload --port 8003`
+  - 如需验证后端是否运行，使用 `Invoke-WebRequest http://localhost:8003/docs -Method Head` 检查即可
+
+### 验证原则
+- **Agent 必须自己完成验证**：不要让用户手动操作来验证 agent 的修改结果
+- **API 验证**：通过 `Invoke-RestMethod` 调用 API 端点验证数据正确性
+- **浏览器验证**：通过 Playwright MCP 打开浏览器，登录并操作 UI 验证前端显示
+- **流程**：登录获取 token → API 操作（删除旧数据/导入等）→ API 查询验证 → Playwright 浏览器端到端验证
+- **截图留证**：关键验证步骤截图保存，作为验证通过的证据
