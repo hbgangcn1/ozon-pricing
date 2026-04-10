@@ -9,9 +9,9 @@ export const REGISTER_PAGE = {
   usernameInput: 'input[name="username"]',
   passwordInput: 'input[name="password"]',
   confirmPasswordInput: 'input[name="confirmPassword"]',
-  securityQuestionSelect: 'select[name="security_question"]',
+  securityQuestionSelect: '#security_question',
   securityAnswerInput: 'input[name="security_answer"]',
-  eulaCheckbox: '.ant-checkbox-input',
+  eulaCheckbox: 'button[role="checkbox"]',
   submitButton: 'button[type="submit"]',
 };
 
@@ -19,7 +19,7 @@ export const LOGISTICS_PAGE = {
   nameInput: '#modal-name',
   typeCombobox: '[role="combobox"]',
   dialog: '[role="dialog"]',
-  addButton: 'button:has-text("新增规则")',
+  addButton: 'button:has-text("添加物流规则")',
   table: 'table',
   tableRow: 'table tbody tr',
 };
@@ -33,6 +33,6 @@ export const ACCOUNT_PAGE = {
 };
 
 export const NAV = {
-  userMenu: '[data-testid="user-menu"], .ant-dropdown-trigger, button[aria-haspopup="menu"]',
+  userMenu: '[data-testid="user-menu"], button[aria-haspopup="menu"]',
   logoutButton: 'text=退出登录',
 };

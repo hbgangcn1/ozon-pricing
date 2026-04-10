@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test'
+import { TEST_ADMIN } from '../fixtures/test-data.js'
 
-const ADMIN_USER = 'admin'
-const ADMIN_PASS = '***REMOVED-PG-PWD***'
+const ADMIN_USER = TEST_ADMIN.username
+const ADMIN_PASS = TEST_ADMIN.password
 
 async function getToken(request, username, password) {
   const resp = await request.post('/api/auth/login', {

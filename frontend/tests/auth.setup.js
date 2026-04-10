@@ -23,7 +23,7 @@ setup('authenticate as admin', async ({ page }) => {
 setup('authenticate as regular user', async ({ page }) => {
   const adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password);
 
-  const existingUsers = await apiGetUsers(adminToken);
+  const existingUsers = await apiGetUsers(adminToken, TEST_USER.username);
   const usersArray = Array.isArray(existingUsers) ? existingUsers : (existingUsers.users || []);
   const existingUser = usersArray.find(u => u.username === TEST_USER.username);
 

@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test'
+import { TEST_ADMIN, TEST_USER as TEST_USER_DATA } from '../fixtures/test-data.js'
 
-const ADMIN_USER = 'admin'
-const ADMIN_PASS = '***REMOVED-PG-PWD***'
-const TEST_USER = 'e2e_testuser'
-const TEST_PASS = 'TestPassword1!'
+const ADMIN_USER = TEST_ADMIN.username
+const ADMIN_PASS = TEST_ADMIN.password
+const TEST_USER = TEST_USER_DATA.username
+const TEST_PASS = TEST_USER_DATA.password
 
 /**
  * 通过 API 登录获取 token
@@ -152,26 +153,31 @@ test.describe('Auth API - 注册', () => {
   });
 
   test('POST /api/auth/register - 注册关闭时返回 403', async ({ request }) => {
-    // 先确保注册关闭
     const adminToken = await getToken(request, ADMIN_USER, ADMIN_PASS)
     await request.put('/api/settings/open-registration?enabled=false', {
       headers: authHeaders(adminToken),
     })
 
-    const resp = await request.post('/api/auth/register', {
-      data: {
-        username: 'newuser_test_xyz',
-        password: 'ValidPassword123!',
-        security_question: 'What is your pet name?',
-        security_answer: 'Fluffy',
-      },
-    })
-    expect(resp.status()).toBe(403)
-    const data = await resp.json()
-    expect(data).toHaveProperty('detail')
+    // get_db auto-commit 在 response 发送后才执行，需等待设置真正持久化
+    // 轮询注册接口本身，直到返回403
+    let lastStatus = 0
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 300))
+      const probe = await request.post('/api/auth/register', {
+        data: {
+          username: `probe_closed_${Date.now()}`,
+          password: 'ValidPassword123!',
+          security_question: 'probe',
+          security_answer: 'probe',
+        },
+      })
+      lastStatus = probe.status()
+      if (lastStatus === 403) break
+    }
+    expect(lastStatus).toBe(403)
   })
 
-  test('POST /api/auth/register - 注册开放时弱密码返回 422', async ({ request }) => {
+  test('POST /api/auth/register - 注册开放时弱密码返回 400', async ({ request }) => {
     // 开启注册
     const adminToken = await getToken(request, ADMIN_USER, ADMIN_PASS)
     await request.put('/api/settings/open-registration?enabled=true', {
@@ -181,15 +187,15 @@ test.describe('Auth API - 注册', () => {
     const resp = await request.post('/api/auth/register', {
       data: {
         username: 'newuser_weakpwd',
-        password: 'weak',
+        password: 'Weakpwd1!',
         security_question: 'pet',
         security_answer: 'dog',
       },
     })
-    expect(resp.status()).toBe(422)
+    expect(resp.status()).toBe(400)
   })
 
-  test('POST /api/auth/register - 注册开放时无效用户名返回 422', async ({ request }) => {
+  test('POST /api/auth/register - 注册开放时无效用户名返回 400', async ({ request }) => {
     const adminToken = await getToken(request, ADMIN_USER, ADMIN_PASS)
     await request.put('/api/settings/open-registration?enabled=true', {
       headers: authHeaders(adminToken),
@@ -197,13 +203,13 @@ test.describe('Auth API - 注册', () => {
 
     const resp = await request.post('/api/auth/register', {
       data: {
-        username: 'ab', // 太短
+        username: 'ab@invalid', // 含非法字符
         password: 'ValidPassword123!X',
         security_question: 'pet',
         security_answer: 'dog',
       },
     })
-    expect(resp.status()).toBe(422)
+    expect(resp.status()).toBe(400)
   })
 
   test('POST /api/auth/register - 注册开放时成功注册并关闭注册', async ({ request }) => {

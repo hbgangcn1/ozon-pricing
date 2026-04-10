@@ -1,6 +1,6 @@
 export const TEST_ADMIN = {
   username: 'admin',
-  password: '***REMOVED-PG-PWD***',
+  password: 'q]j@tFp:q>EUC;9"',
 };
 
 export const TEST_USER = {

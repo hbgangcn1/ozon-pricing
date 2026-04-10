@@ -78,8 +78,11 @@ export async function apiGetSettings(token) {
   return resp.json();
 }
 
-export async function apiGetUsers(token) {
-  const resp = await fetch(`${API_BASE}/admin/users`, {
+export async function apiGetUsers(token, keyword) {
+  const url = keyword
+    ? `${API_BASE}/admin/users?keyword=${encodeURIComponent(keyword)}`
+    : `${API_BASE}/admin/users`;
+  const resp = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!resp.ok) {

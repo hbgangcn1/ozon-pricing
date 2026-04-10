@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { TEST_ADMIN } from '../fixtures/test-data.js';
 
 test.describe('核心冒烟测试', () => {
   // 测试1: 登录流程（在 chromium 项目中 storageState 已登录，访问 /login 会跳转）
@@ -13,7 +14,7 @@ test.describe('核心冒烟测试', () => {
       // 未登录状态：正常填写表单
       await expect(page.getByRole('heading', { name: '物流定价系统' })).toBeVisible();
       await page.fill('input[name="username"]', 'admin');
-      await page.fill('input[name="password"]', '***REMOVED-PG-PWD***');
+      await page.fill('input[name="password"]', TEST_ADMIN.password);
       await page.click('button[type="submit"]');
       await page.waitForURL(/\/(pricing|dashboard)/);
       await expect(page).toHaveURL(/\/(pricing|dashboard)/);
@@ -29,9 +30,10 @@ test.describe('核心冒烟测试', () => {
     await page.waitForLoadState('networkidle');
     await expect(page).toHaveURL('/pricing');
 
-    // 填写进货单价和重量（使用 placeholder 定位）
-    await page.locator('input[placeholder="30"]').fill('5');
-    await page.locator('input[placeholder="300"]').fill('100');
+    // 填写进货单价和重量（使用 nth 定位数字输入框）
+    const numInputs = page.locator('input[type="number"]');
+    await numInputs.nth(0).fill('5');
+    await numInputs.nth(1).fill('100');
 
     // 检查计算按钮状态
     const calcBtn = page.getByRole('button', { name: /开始计算/ });
@@ -93,7 +95,7 @@ test.describe('核心冒烟测试', () => {
     await expect(page.locator('input[name="confirm_password"]')).toBeVisible();
 
     // 填入数据，提交（验证表单能正常交互）
-    await page.fill('input[name="current_password"]', '***REMOVED-PG-PWD***');
+    await page.fill('input[name="current_password"]', TEST_ADMIN.password);
     await page.fill('input[name="new_password"]', 'newpassword123');
     await page.fill('input[name="confirm_password"]', 'newpassword123');
 

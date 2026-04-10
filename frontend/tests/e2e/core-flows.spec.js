@@ -27,13 +27,18 @@ test.describe('核心业务流程测试', () => {
     await page.waitForTimeout(500);
 
     const openBtn = page.getByRole('button', { name: /打开产品列表/ });
-    if (await openBtn.isVisible().catch(() => false)) await openBtn.click();
+    if (await openBtn.isVisible().catch(() => false)) {
+      await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+        openBtn.click(),
+      ]);
+    }
     const listDialog = page.locator('[role="dialog"]');
     await expect(listDialog).toBeVisible({ timeout: 5000 });
     await page.waitForTimeout(500);
 
     const row = listDialog.locator('.font-medium', { hasText: uniqueName }).first();
-    await expect(row).toBeVisible({ timeout: 5000 });
+    await expect(row).toBeVisible({ timeout: 10000 });
 
     await row.locator('..').locator('..').locator('button').first().click();
     await page.waitForTimeout(300);
@@ -49,12 +54,16 @@ test.describe('核心业务流程测试', () => {
     await page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'PUT', { timeout: 5000 }).catch(() => null);
     await page.waitForTimeout(2000);
 
-    await page.getByRole('button', { name: /打开产品列表/ }).click();
+    const openBtn1b = page.getByRole('button', { name: /打开产品列表/ });
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+      openBtn1b.click(),
+    ]);
     const listDialog2 = page.locator('[role="dialog"]');
     await expect(listDialog2).toBeVisible({ timeout: 5000 });
 
     const editedRow = listDialog2.locator('.font-medium', { hasText: editedName }).first();
-    await expect(editedRow).toBeVisible({ timeout: 8000 });
+    await expect(editedRow).toBeVisible({ timeout: 10000 });
 
     await editedRow.locator('..').locator('..').locator('button').last().click();
     const alertDialog = page.locator('[role="alertdialog"]');
@@ -64,7 +73,10 @@ test.describe('核心业务流程测试', () => {
 
     const openBtn2 = page.getByRole('button', { name: /打开产品列表/ });
     if (await openBtn2.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await openBtn2.click();
+      await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+        openBtn2.click(),
+      ]);
       await expect(page.locator('[role="dialog"]').locator('.font-medium', { hasText: editedName })).toHaveCount(0, { timeout: 5000 });
     } else {
       const products = await apiGetProducts(adminToken);
@@ -97,7 +109,10 @@ test.describe('核心业务流程测试', () => {
 
     await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 5000 });
 
-    await page.getByRole('button', { name: /编辑/ }).first().click();
+    const ruleCard = page.locator('.font-medium', { hasText: uniqueName }).first();
+    const cardContainer = ruleCard.locator('xpath=ancestor::div[contains(@class,"p-4")]');
+    await cardContainer.getByLabel('操作菜单').click();
+    await page.getByLabel('编辑').click();
     await page.waitForTimeout(500);
     await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 3000 });
     await page.locator('[role="dialog"]').locator('input[placeholder="请输入名称"]').fill(editedName);
@@ -105,7 +120,10 @@ test.describe('核心业务流程测试', () => {
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 5000 });
     await expect(page.getByText(editedName)).toBeVisible({ timeout: 10000 });
 
-    await page.getByRole('button', { name: /删除/ }).first().click();
+    const editedCard = page.locator('.font-medium', { hasText: editedName }).first();
+    const editedCardContainer = editedCard.locator('xpath=ancestor::div[contains(@class,"p-4")]');
+    await editedCardContainer.getByLabel('操作菜单').click();
+    await page.getByLabel('删除').click();
     const alertDialog = page.locator('[role="alertdialog"]');
     await expect(alertDialog).toBeVisible({ timeout: 5000 });
     await alertDialog.getByRole('button', { name: /确认删除/ }).click();

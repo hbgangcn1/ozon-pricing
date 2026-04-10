@@ -7,7 +7,6 @@ test.describe('退出登录流程', () => {
     await page.waitForURL(/\/(pricing|dashboard)/, { timeout: 15000 });
 
     const logoutCandidates = [
-      '.ant-dropdown-trigger',
       'button[aria-haspopup]',
       '[data-testid="user-menu"]',
       '.user-avatar',

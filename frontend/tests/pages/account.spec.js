@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { TEST_ADMIN } from '../fixtures/test-data.js'
 
 test.describe('账户管理页面 — /account', () => {
   test.beforeEach(async ({ page }) => {
@@ -36,7 +37,7 @@ test.describe('账户管理页面 — /account', () => {
   })
 
   test('密码不匹配时显示错误提示', async ({ page }) => {
-    await page.locator('input[name="current_password"]').fill('***REMOVED-PG-PWD***')
+    await page.locator('input[name="current_password"]').fill(TEST_ADMIN.password)
     await page.locator('input[name="new_password"]').fill('NewPassword@123456')
     await page.locator('input[name="confirm_password"]').fill('DifferentPassword@1')
     await page.getByRole('button', { name: /修改密码/ }).click()
@@ -44,7 +45,7 @@ test.describe('账户管理页面 — /account', () => {
   })
 
   test('新密码太短时HTML5验证阻止提交', async ({ page }) => {
-    await page.locator('input[name="current_password"]').fill('***REMOVED-PG-PWD***')
+    await page.locator('input[name="current_password"]').fill(TEST_ADMIN.password)
     await page.locator('input[name="new_password"]').fill('short')
     await page.locator('input[name="confirm_password"]').fill('short')
     await page.getByRole('button', { name: /修改密码/ }).click()
@@ -54,9 +55,9 @@ test.describe('账户管理页面 — /account', () => {
   })
 
   test('表单填写完整后可以提交(响应成功或错误)', async ({ page }) => {
-    await page.locator('input[name="current_password"]').fill('***REMOVED-PG-PWD***')
-    await page.locator('input[name="new_password"]').fill('***REMOVED-PG-PWD***')
-    await page.locator('input[name="confirm_password"]').fill('***REMOVED-PG-PWD***')
+    await page.locator('input[name="current_password"]').fill(TEST_ADMIN.password)
+    await page.locator('input[name="new_password"]').fill(TEST_ADMIN.password)
+    await page.locator('input[name="confirm_password"]').fill(TEST_ADMIN.password)
     await page.getByRole('button', { name: /修改密码/ }).click()
     await expect(async () => {
       const successToast = page.locator('[data-sonner-toast]').first()
