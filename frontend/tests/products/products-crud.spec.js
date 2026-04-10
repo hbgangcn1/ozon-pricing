@@ -55,22 +55,30 @@ test.describe('产品 CRUD 流程', () => {
 
     const listBtn = page.getByRole('button', { name: /打开产品列表/ })
     await expect(listBtn).toBeVisible({ timeout: 5000 })
-    await listBtn.click()
+
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+      listBtn.click(),
+    ])
 
     const dialog = page.locator('[role="dialog"]')
     await expect(dialog).toBeVisible({ timeout: 5000 })
-    await expect(dialog.getByText(productName)).toBeVisible({ timeout: 8000 })
+    await expect(dialog.getByText(productName)).toBeVisible({ timeout: 10000 })
   })
 
   test('编辑产品名称', async ({ page }) => {
     await goPrecise(page)
 
-    await page.getByRole('button', { name: /打开产品列表/ }).click()
+    const listBtn = page.getByRole('button', { name: /打开产品列表/ })
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+      listBtn.click(),
+    ])
     const dialog = page.locator('[role="dialog"]')
     await expect(dialog).toBeVisible({ timeout: 5000 })
 
     const productRow = dialog.locator('.font-medium', { hasText: productName }).locator('..').locator('..')
-    await expect(productRow).toBeVisible({ timeout: 8000 })
+    await expect(productRow).toBeVisible({ timeout: 10000 })
 
     await productRow.locator('button').first().click()
     await page.waitForTimeout(500)
@@ -95,23 +103,31 @@ test.describe('产品 CRUD 流程', () => {
   test('产品列表可见编辑后的名称', async ({ page }) => {
     await goPrecise(page)
 
-    await page.getByRole('button', { name: /打开产品列表/ }).click()
+    const listBtn = page.getByRole('button', { name: /打开产品列表/ })
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+      listBtn.click(),
+    ])
     const dialog = page.locator('[role="dialog"]')
     await expect(dialog).toBeVisible({ timeout: 5000 })
 
-    await expect(dialog.getByText(editedName)).toBeVisible({ timeout: 8000 })
+    await expect(dialog.getByText(editedName)).toBeVisible({ timeout: 10000 })
     await expect(dialog.getByText(productName, { exact: true })).not.toBeVisible()
   })
 
   test('删除产品', async ({ page }) => {
     await goPrecise(page)
 
-    await page.getByRole('button', { name: /打开产品列表/ }).click()
+    const listBtn = page.getByRole('button', { name: /打开产品列表/ })
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+      listBtn.click(),
+    ])
     const dialog = page.locator('[role="dialog"]')
     await expect(dialog).toBeVisible({ timeout: 5000 })
 
     const productRow = dialog.locator('.font-medium', { hasText: editedName }).locator('..').locator('..')
-    await expect(productRow).toBeVisible({ timeout: 8000 })
+    await expect(productRow).toBeVisible({ timeout: 10000 })
 
     await productRow.locator('button').last().click()
 
@@ -130,7 +146,11 @@ test.describe('产品 CRUD 流程', () => {
   test('删除后产品列表中不可见', async ({ page }) => {
     await goPrecise(page)
 
-    await page.getByRole('button', { name: /打开产品列表/ }).click()
+    const listBtn = page.getByRole('button', { name: /打开产品列表/ })
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
+      listBtn.click(),
+    ])
     const dialog = page.locator('[role="dialog"]')
     await expect(dialog).toBeVisible({ timeout: 5000 })
 

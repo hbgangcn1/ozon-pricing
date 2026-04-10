@@ -1,7 +1,7 @@
 import logging
-from typing import Optional
+from typing import Any, Optional, cast
 
-from sqlalchemy import delete as sa_delete, func, select, update
+from sqlalchemy import delete as sa_delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.logistics import Logistics
@@ -34,6 +34,7 @@ _ALLOWED_PRODUCT_FIELDS = {
     "promotion_cost_rate",
     "target_profit_margin",
     "commission_rate",
+    "commission_category_id",
     "withdrawal_fee_rate",
     "payment_processing_fee",
     "return_rate",
@@ -42,10 +43,46 @@ _ALLOWED_PRODUCT_FIELDS = {
 }
 
 _BOOL_FIELDS = {"is_cylinder", "has_battery", "has_msds", "has_liquid"}
+_INT_DEFAULT_FIELDS = {
+    "weight_g",
+    "length_cm",
+    "width_cm",
+    "height_cm",
+    "battery_capacity_mah",
+}
+_FLOAT_DEFAULT_FIELDS = {
+    "unit_price",
+    "cylinder_diameter",
+    "cylinder_length",
+    "battery_capacity_wh",
+    "battery_voltage",
+    "labeling_fee",
+    "shipping_fee",
+    "promotion_cost_rate",
+    "target_profit_margin",
+    "commission_rate",
+    "withdrawal_fee_rate",
+    "payment_processing_fee",
+    "return_rate",
+    "vat_rate",
+}
 
 
 def _product_to_dict(p: Product) -> dict:
-    return {c.name: getattr(p, c.name) for c in Product.__table__.columns}
+    data = {}
+    for column in Product.__table__.columns:
+        value = getattr(p, column.name)
+        if column.name in _BOOL_FIELDS:
+            data[column.name] = bool(value)
+            continue
+        if value is None and column.name in _INT_DEFAULT_FIELDS:
+            data[column.name] = 0
+            continue
+        if value is None and column.name in _FLOAT_DEFAULT_FIELDS:
+            data[column.name] = 0.0
+            continue
+        data[column.name] = value
+    return data
 
 
 async def add_product(
@@ -70,7 +107,7 @@ async def get_all_products_for_user(
     session: AsyncSession,
     user_id: int,
 ) -> list:
-    stmt = select(Product).where(Product.user_id == user_id)
+    stmt = select(Product).where(Product.user_id == user_id).order_by(Product.id.desc())
     result = await session.execute(stmt)
     rows = result.scalars().all()
     return [_product_to_dict(p) for p in rows]
@@ -86,6 +123,20 @@ async def get_product_by_id(
     stmt = select(Product).where(
         Product.id == product_id,
         Product.user_id == user_id,
+    )
+    result = await session.execute(stmt)
+    row = result.scalar_one_or_none()
+    return _product_to_dict(row) if row else None
+
+
+async def get_product_by_name(
+    session: AsyncSession,
+    user_id: int,
+    name: str,
+) -> Optional[dict]:
+    stmt = select(Product).where(
+        Product.user_id == user_id,
+        Product.name == name,
     )
     result = await session.execute(stmt)
     row = result.scalar_one_or_none()
@@ -121,7 +172,8 @@ async def batch_delete_products(
         Product.user_id == user_id,
     )
     result = await session.execute(stmt)
-    return result.rowcount
+    rowcount = cast(Any, result).rowcount
+    return rowcount or 0
 
 
 async def update_product(
@@ -171,7 +223,8 @@ async def batch_update_pricing_params(
         return 0
     stmt = update(Product).where(Product.user_id == user_id).values(**clean)
     result = await session.execute(stmt)
-    return result.rowcount
+    rowcount = cast(Any, result).rowcount
+    return rowcount or 0
 
 
 async def cleanup_test_products(
@@ -186,7 +239,8 @@ async def cleanup_test_products(
                 Product.user_id == user_id,
             )
         result = await session.execute(stmt)
-        return result.rowcount
+        rowcount = cast(Any, result).rowcount
+        return rowcount or 0
     except Exception as e:
         logger.warning("清理测试产品时出错: %s", e)
         return 0

@@ -164,9 +164,7 @@ async def test_batch_delete_valid_ids(db_session, test_user):
 
 async def test_batch_delete_partial_ids(db_session, test_user):
     p1 = await _add(db_session, test_user["id"])
-    result = await batch_delete_products(
-        db_session, [p1, 999999998], test_user["id"]
-    )
+    result = await batch_delete_products(db_session, [p1, 999999998], test_user["id"])
     assert result == 1
 
 
@@ -177,9 +175,7 @@ async def test_update_product_empty_data_returns_false(db_session, test_user):
 
 
 async def test_update_product_not_found_returns_false(db_session, test_user):
-    result = await update_product(
-        db_session, 999999999, test_user["id"], {"name": "x"}
-    )
+    result = await update_product(db_session, 999999999, test_user["id"], {"name": "x"})
     assert result is False
 
 
@@ -226,9 +222,7 @@ async def test_batch_update_pricing_params_only_invalid_fields_returns_0(
     assert result == 0
 
 
-async def test_batch_update_pricing_params_updates_all_products(
-    db_session, test_user
-):
+async def test_batch_update_pricing_params_updates_all_products(db_session, test_user):
     p1 = await _add(db_session, test_user["id"])
     p2 = await _add(db_session, test_user["id"])
     result = await batch_update_pricing_params(
@@ -353,12 +347,8 @@ async def test_calculate_and_update_priority_groups_with_logistics(
     land2 = Logistics(
         user_id=uid, name="Land Slow", type="land", min_days=6, max_days=10
     )
-    air1 = Logistics(
-        user_id=uid, name="Air Fast", type="air", min_days=1, max_days=2
-    )
-    air2 = Logistics(
-        user_id=uid, name="Air Slow", type="air", min_days=5, max_days=9
-    )
+    air1 = Logistics(user_id=uid, name="Air Fast", type="air", min_days=1, max_days=2)
+    air2 = Logistics(user_id=uid, name="Air Slow", type="air", min_days=5, max_days=9)
 
     db_session.add_all([land1, land2, air1, air2])
     await db_session.flush()
@@ -402,3 +392,36 @@ async def test_product_to_dict_has_all_columns(db_session, test_user):
 
     expected_keys = {c.name for c in Product.__table__.columns}
     assert expected_keys == set(row.keys())
+
+
+async def test_add_product_with_commission_category_id(db_session, test_user):
+    pid = await _add(
+        db_session,
+        test_user["id"],
+        name="CommissionCategoryProduct",
+        commission_category_id=42,
+    )
+    row = await get_product_by_id(db_session, pid, test_user["id"])
+    assert row is not None
+    assert row["commission_category_id"] == 42
+
+
+async def test_update_product_commission_category_id(db_session, test_user):
+    pid = await _add(db_session, test_user["id"], name="CommissionUpdate")
+    result = await update_product(
+        db_session,
+        pid,
+        test_user["id"],
+        {"commission_category_id": 99},
+    )
+    assert result is True
+    row = await get_product_by_id(db_session, pid, test_user["id"])
+    assert row is not None
+    assert row["commission_category_id"] == 99
+
+
+async def test_add_product_commission_category_id_defaults_none(db_session, test_user):
+    pid = await _add(db_session, test_user["id"], name="CommissionDefault")
+    row = await get_product_by_id(db_session, pid, test_user["id"])
+    assert row is not None
+    assert row["commission_category_id"] is None
