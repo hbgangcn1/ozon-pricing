@@ -22,6 +22,24 @@
 .\start_app.ps1
 ```
 
+### 开发环境联合启动脚本
+
+如果需要同时启动 FastAPI 后端和 Vite 前端开发服务，可直接使用：
+
+```powershell
+.\start_dev.ps1
+```
+
+或者在 CMD 中运行：
+
+```bat
+start_dev.bat
+```
+
+启动后访问地址：
+- 后端：`http://localhost:8003`
+- 前端：`http://localhost:3001`
+
 ### 方法三：手动启动
 
 1. **激活虚拟环境**：

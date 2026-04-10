@@ -48,6 +48,10 @@
 | B21 | ✅ | `frontend/tests/global-teardown.js`, `frontend/playwright.config.js`, `conftest.py`, `tests/conftest.py`, `scripts/purge_test_users.py` | e2e测试残留20个`e2e*`用户未清理：Playwright无globalTeardown、pytest清理不覆盖e2e模式 — 已修复: (1) 新建 `global-teardown.js` 在Playwright测试后通过API删除所有`/^e2e/`用户 (2) `playwright.config.js` 添加 `globalTeardown` 配置 (3) 扩展 `conftest.py` `pytest_sessionfinish` 和 `tests/conftest.py` `clean_db` 的所有SQL覆盖 `e2e%%` 模式 (4) 扩展 `purge_test_users.py` 覆盖 `e2e%%` (5) 执行清理脚本删除20个e2e用户，DB剩余0测试用户 |
 | B22 | ✅ | `frontend/src/pages/UserManagementPage.jsx`, `frontend/src/__tests__/UserManagementPage.test.jsx` | "批量物流规则同步"下拉菜单使用硬编码 `mockUsers` 数组（20条假数据，显示19个非admin用户），而用户列表使用真实API数据（3个用户）导致不一致 — 已修复: (1) 删除 `mockUsers` 硬编码数组 (2) 两个下拉菜单（主卡片+同步对话框）均改为 `users.filter(u => u.role !== 'admin')` 使用真实API数据 (3) 修复测试 `renders user list after loading` 中 `getByText('testuser')` 因下拉和表格同时包含testuser导致多元素匹配，改为 `getAllByText` + TD标签断言 |
 | B23 | ✅ | `frontend/vitest.config.js` | Vitest 运行时 23 个 Playwright e2e spec 文件被错误包含导致报告失败 — 已修复: `vitest.config.js` 的 `exclude` 数组添加 `'tests/**'` 排除 `frontend/tests/` 下所有 Playwright 文件 |
+| B24 | ✅ | `db/products.py`, `api/routes/products.py` | 产品导入允许大量可选字段留空，`GET /api/products` 返回时 `ProductResponse` 对 `None` 数值/布尔字段做响应校验失败，导致 PricingPage 精准模式产品列表显示为空 — 已修复: `db/products.py` 在产品序列化时把缺失数值字段归一化为 `0/0.0`、缺失布尔字段归一化为 `False`，保证历史导入数据和新导入数据都能被产品列表接口正常返回 |
+| B25 | ✅ | `api/models/schemas.py`, `frontend/src/pages/PricingPage.jsx` | 精准模式保存产品佣金类目后重新打开产品列表或重新选择产品时，佣金类目始终显示"选择佣金类目"而非已保存的值 — 根因：`commission_category_id` 字段在 Pydantic schemas (`ProductBase`/`ProductUpdate`) 中完全缺失，前端发送的值被静默丢弃 — 已修复: (1) `schemas.py` 的 `ProductBase` 和 `ProductUpdate` 添加 `commission_category_id: Optional[int] = None` (2) `PricingPage.jsx` 的 `productForm` 初始状态和 `handleOpenProductDialog` 添加 `commission_category_id` 初始化 — 测试: 后端单元测试3个 + 集成测试3个 + 前端单元测试2个 + E2E测试1个，全部通过 |
+| B26 | ✅ | `pricing/_result_helpers.py`, `pricing/calculate_pricing.py`, `api/routes/pricing.py` | 精准模式空运计算结果的利润率(profit_margin)始终显示0，陆运正确 — 根因：(1) `_phase2_profit_build` 用 `_` 丢弃了 `_compute_profits` 返回的 `air_profit_margin` (2) `_pick_suggested` 当 suggested=air 时硬编码 margin=0 (3) `format_result` 取统一的 `profit_margin` 而非按运输方式区分 — 已修复: (1) `_phase2_profit_build` 保留 `air_profit_margin` 并传递给 `_build_result` (2) `_pick_suggested` 新增 `air_profit_margin` 参数，不再硬编码 (3) `_build_result` 结果字典新增 `land_profit_margin`/`air_profit_margin` 键 (4) `format_result` 按 `is_land` 分别取对应的 margin 值 — 测试: 后端新增5个单元测试 + 更新1个已有测试，全量1375 passed + 前端201 passed + E2E 12/12 passed |
+| B27 | ✅ | `api/routes/pricing.py` | 精准模式空运卡片显示陆运价格（如"水卫士洗碗块"空运应显示¥65.04却显示¥53.57） — 根因：`format_result()` 使用统一的 `res.get("suggested_price")` 获取价格，`_pick_suggested()` 优先选 `land_price` 作为 `suggested_price`，导致 `is_land=False` 时仍返回陆运价格 — 已修复: `format_result()` 改为 `res.get("land_price") if is_land else res.get("air_price")`，availability 检查也按运输方式分别判断 — 测试: 后端 1375 passed (1 pre-existing failure) + 前端 201 passed + E2E 12/12 passed |
 
 ---
 
@@ -232,6 +236,7 @@ frontend/tests/
 | 9.3 | ✅ | 验证数据库完整性 — 25张表完整，数据无丢失（11,847用户、2条汇率记录） |
 | 9.4 | ✅ | 验证所有4个API端点通过前端代理正常响应 — exchange/rates返回数据, logistics/admin/settings返回401(需认证) |
 | 9.5 | ✅ | 回归测试 — pytest 984 passed, vitest 169 passed, flake8 0 errors |
+| 9.6 | ✅ | 修复物流池“Delete All”失败 — `db/logistics_pool.py` 改为禁用 ORM session synchronization 的批量删除，确保 `/api/logistics-pool/all` 可正常清空 |
 
 **根因分析**：`api/main.py` 底部 `uvicorn.run()` 默认端口为 8000，但 `frontend/vite.config.js` 代理和 `frontend/playwright.config.js` 均指向 8003。启动脚本使用 `--port 8000` 导致前端无法连接后端。
 
@@ -239,12 +244,12 @@ frontend/tests/
 
 ## 完成标准
 
-- [x] `python -m pytest --tb=short` — **1272 passed**, 0 failures, 0 errors, 0 warnings
+- [x] `python -m pytest --tb=short` — **1375 passed**, 1 pre-existing failure, 0 errors, 0 warnings
 - [x] `python -m coverage run + report` — **94%** 总覆盖率，23个核心模块均90%+
 - [x] `python -m flake8` — 0 errors, 0 warnings
-- [x] `npx vitest run` (frontend/) — **169 tests**, 0 failures (21 test files)
+- [x] `npx vitest run` (frontend/) — **201 tests**, 0 failures (24 test files)
 - [x] `npm run build` (frontend/) — 构建成功
-- [x] Playwright E2E — 278 passed, 0 failures (25 spec files, 全覆盖 49 endpoints + 14 pages)
+- [x] Playwright E2E — **287 passed**, 1 skipped, 0 failures (288 tests, 27 spec files)
 - [ ] 无硬编码密码或秘钥 (B08 conftest.py 密码仍硬编码，低优先级)
 - [x] 无 Streamlit 引用
 - [x] 无调试脚本在根目录
@@ -569,3 +574,58 @@ frontend/tests/
 
 - 前端: **169 passed**, 0 failed (21个测试文件)
 - Commit: `67c85099` — fix: 侧边栏固定展开 — 移除收起/展开功能，汇率直接内联显示
+
+### Phase 16: 物流限价人民币统一 🔄
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 16.1 | ✅ | 新增 Alembic 迁移 `eacc63642541_unify_price_limits_to_cny.py`：为 `logistics` / `logistics_pool` 增加 `price_limit_cny`、`price_min_cny`，并按 RUB×0.075 / USD×7.2 回填 |
+| 16.2 | ✅ | ORM + Schema + CRUD：`models/logistics*.py` 新增 CNY 字段；`api/models/schemas.py` 仅暴露 CNY 字段；`db/logistics_crud.py` 与 `api/routes/logistics.py` 允许字段切换到 CNY |
+| 16.3 | ✅ | 定价引擎：`pricing/filter.py`、`pricing/cost_filter.py` 改为直接比较 `price_limit_cny` / `price_min_cny`，错误信息统一为 CNY |
+| 16.4 | ✅ | Excel 导入：`xlsx_import/common.py` 新增 `parse_price_limit_cny()`；4 个 parser 全部提取 CNY 限价列 |
+| 16.5 | ✅ | 前端 `LogisticsPage.jsx` 编辑表单移除货币下拉，改为 `价格上限（元）` / `价格下限（元）`，提交字段切换为 CNY |
+| 16.6 | ✅ | 迁移执行与数据校验：`alembic upgrade head` 成功；校验结果 `logistics` 3033 条记录全部具备 `price_limit_cny` / `price_min_cny` |
+| 16.7 | ⚠️ | 验证：flake8 通过；后端定向 pytest 87 passed；前端 LogisticsPage vitest 16 passed；`tests/test_xlsx_import.py` 中 CIS 样例文件受 OneDrive reparse-point 权限影响，当前环境仍报 `PermissionError` |
+
+### Phase 16: Group 6 盈亏平衡线定价计算 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 16.1 | ✅ | `api/routes/pricing.py` — 精准模式 `/calculate` 与 `/calculate-grouped` 追加盈亏平衡线并行计算，使用 `dict(product)` 复制后强制 `target_profit_margin=0` |
+| 16.2 | ✅ | `api/models/schemas.py` — 为普通/分组定价响应新增 breakeven 字段，保持现有字段不变 |
+| 16.3 | ✅ | `frontend/src/pages/PricingPage.jsx` — 精准模式结果区新增“盈亏平衡线”开关，切换展示普通/盈亏平衡结果且不触发 API |
+| 16.4 | ✅ | `tests/test_routes_pricing.py` + `frontend/src/__tests__/PricingPage.test.jsx` — 新增后端返回结构与前端切换展示测试（先 RED 后 GREEN） |
+| 16.5 | ✅ | 验证 — `python -m flake8 api/`、`python -m pytest tests/test_routes_pricing.py --tb=short`、`npm run test -- PricingPage.test.jsx`、`npm run build` |
+
+**结果**：后端精准模式响应同时返回 normal + breakeven；前端精准模式可本地切换展示，开关在无结果时隐藏，切换不丢失结果也不重新计算。
+
+### Phase 17: 手动测试 Bug 修复 (第四轮 — 5项) ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 17.1 | ✅ | Issue 1: xlsx 导入健壮性 + Smart 物流检测 — `xlsx_import/__init__.py` 单次打开/重试逻辑, `xlsx_import/parsers/fbp.py` 合并单元格 Smart 标识检测, 所有 parser 接受可选 workbook 参数 |
+| 17.2 | ✅ | Issue 2: 透明菜单/面板修复 — `dropdown-menu.jsx` bg-popover→bg-card, `LogisticsPoolPage.jsx` bg-muted/50→bg-surface-container |
+| 17.3 | ✅ | Issue 3a: 产品导入成功面板 Audit+Polish — `ProductImportPage.jsx` 成功面板样式统一 |
+| 17.4 | ✅ | Issue 3b: 导入后产品列表为空 — `db/products.py` `_product_to_dict()` NULL 字段归一化 |
+| 17.5 | ✅ | Issue 4: 佣金百分比 Bug — `CommissionCategoriesPage.jsx` 表单输入/存储/显示的百分比转换修复 |
+| 17.6 | ✅ | Issue 5: 全量测试验证 |
+| 17.7 | ✅ | `api/main.py` 全局异常处理器添加日志记录（之前静默吞掉错误） |
+| 17.8 | ✅ | 修复 4 个预存在的 pytest 失败 (test_db_admin, test_db_config, test_db_logistics_pool, test_db_sessions_crud) |
+
+**新增测试文件**：
+- `tests/test_xlsx_import_locking.py` — xlsx 导入锁定/重试测试
+- `tests/test_logistics_pool_import.py` — 物流池导入集成测试
+- `tests/test_fbp_smart_detection.py` — FBP Smart 标识检测测试（扩展）
+- `tests/test_product_import_truncation.py` — 产品导入截断测试
+
+**修改文件**：
+- 后端: `api/main.py`, `api/routes/logistics_pool.py`, `db/products.py`, `xlsx_import/__init__.py`, `xlsx_import/detector.py`, `xlsx_import/parsers/fbp.py`, `xlsx_import/parsers/china_post.py`, `xlsx_import/parsers/scoring_rfbs.py`, `xlsx_import/parsers/cis_rfbs.py`, `xlsx_import/common.py`
+- 前端: `frontend/src/components/ui/dropdown-menu.jsx`, `frontend/src/pages/LogisticsPoolPage.jsx`, `frontend/src/pages/CommissionCategoriesPage.jsx`, `frontend/src/pages/ProductImportPage.jsx`
+- 测试: `tests/test_db_admin.py`, `tests/test_db_config.py`, `tests/test_db_logistics_pool.py`, `tests/test_db_sessions_crud.py`, `frontend/src/__tests__/CommissionCategoriesPage.test.jsx`
+
+**最终数据**：
+- 后端 pytest: **1365 passed**, 0 failed, 0 skipped
+- 前端 vitest: **199 passed**, 0 failed (24 test files)
+- E2E Playwright: **287 passed**, 1 skipped, 0 failed (288 tests, 3.8min)
+- flake8: 0 errors
+- 前端 build: ✅

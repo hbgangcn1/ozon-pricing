@@ -1,0 +1,143 @@
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = $PSScriptRoot
+if (-not $repoRoot) { $repoRoot = Get-Location }
+
+$venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$frontendDir = Join-Path $repoRoot 'frontend'
+$frontendNodeModules = Join-Path $frontendDir 'node_modules'
+
+# ── 前置检查 ──────────────────────────────────────────────
+if (-not (Test-Path $venvPython)) {
+    Write-Error "找不到虚拟环境 Python：$venvPython`n请先创建虚拟环境：python -m venv .venv && .venv\Scripts\pip install -r requirements.txt"
+    exit 1
+}
+
+if (-not (Test-Path $frontendNodeModules)) {
+    Write-Warning "未找到 frontend\node_modules，请先在 frontend 目录执行 npm install"
+}
+
+# ── 清理旧进程（按端口） ──────────────────────────────────────
+function Stop-PortProcess {
+    param([int]$Port)
+    $maxAttempts = 3
+    for ($attempt = 0; $attempt -lt $maxAttempts; $attempt++) {
+        $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        if (-not $connections) { return }
+
+        # 检查是否有活跃进程持有该端口
+        $procIds = $connections | Select-Object -ExpandProperty OwningProcess -Unique
+        $hasLiveProcess = $false
+        $killTargets = @()
+        foreach ($procId in $procIds) {
+            $live = Get-Process -Id $procId -ErrorAction SilentlyContinue
+            if (-not $live) { continue }
+            $hasLiveProcess = $true
+            $killTargets += $procId
+            # 向上追溯父进程（处理 uvicorn --reload 的父子结构）
+            try {
+                $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $procId" -ErrorAction Stop
+                if ($cim.ParentProcessId -and $cim.ParentProcessId -ne 0) {
+                    $parent = Get-Process -Id $cim.ParentProcessId -ErrorAction SilentlyContinue
+                    if ($parent -and $parent.ProcessName -in @('python', 'python3', 'node', 'cmd')) {
+                        $killTargets += $cim.ParentProcessId
+                    }
+                }
+            } catch {}
+        }
+
+        # 端口被已死进程的残留 socket 占用（Windows 内核延迟回收），不影响新服务绑定
+        if (-not $hasLiveProcess) {
+            Write-Host "[清理] 端口 $Port 有残留 socket（进程已退出），不影响启动。" -ForegroundColor DarkYellow
+            return
+        }
+
+        # 去重后逐个杀
+        $killTargets = $killTargets | Select-Object -Unique | Sort-Object
+        foreach ($target in $killTargets) {
+            try {
+                $proc = Get-Process -Id $target -ErrorAction Stop
+                Write-Host "[清理] 端口 $Port — 终止 $($proc.ProcessName) (PID: $target)..." -ForegroundColor Yellow
+                taskkill /PID $target /T /F 2>$null | Out-Null
+            } catch {}
+        }
+        # 等待端口释放
+        for ($wait = 0; $wait -lt 8; $wait++) {
+            Start-Sleep -Milliseconds 500
+            $still = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+            if (-not $still) {
+                Write-Host "[清理] 端口 $Port 已释放。" -ForegroundColor Green
+                return
+            }
+        }
+    }
+    Write-Warning "端口 $Port 可能仍有残留连接，将尝试继续启动。"
+}
+
+Stop-PortProcess -Port 8003
+Stop-PortProcess -Port 3001
+
+# ── 启动后端（uvicorn）──────────────────────────────────────
+Write-Host '[启动] FastAPI 后端...' -ForegroundColor Cyan
+$backendProcess = Start-Process `
+    -FilePath $venvPython `
+    -ArgumentList '-m', 'uvicorn', 'api.main:app', '--reload', '--host', '0.0.0.0', '--port', '8003' `
+    -WorkingDirectory $repoRoot `
+    -PassThru `
+    -WindowStyle Normal
+
+# ── 启动前端（npm run dev）─────────────────────────────────
+Write-Host '[启动] Vite 前端...' -ForegroundColor Cyan
+$frontendProcess = Start-Process `
+    -FilePath 'cmd.exe' `
+    -ArgumentList '/c', 'npm', 'run', 'dev' `
+    -WorkingDirectory $frontendDir `
+    -PassThru `
+    -WindowStyle Normal
+
+# ── 状态输出 ─────────────────────────────────────────────
+Write-Host ''
+Write-Host '==========================================' -ForegroundColor Green
+Write-Host '  开发环境已启动' -ForegroundColor Green
+Write-Host '==========================================' -ForegroundColor Green
+Write-Host "  Backend  : http://localhost:8003" -ForegroundColor Yellow
+Write-Host "  Frontend : http://localhost:3001" -ForegroundColor Yellow
+Write-Host '==========================================' -ForegroundColor Green
+Write-Host ''
+Write-Host '按 Ctrl+C 退出，脚本将自动关闭后端和前端进程。' -ForegroundColor Gray
+
+# ── 等待 + 清理 ──────────────────────────────────────────
+function Stop-ProcessTree {
+    param([int]$ParentId)
+    try {
+        # 先停子进程
+        Get-CimInstance Win32_Process |
+            Where-Object { $_.ParentProcessId -eq $ParentId } |
+            ForEach-Object { Stop-ProcessTree -ParentId $_.ProcessId }
+        # 再停父进程
+        Stop-Process -Id $ParentId -Force -ErrorAction SilentlyContinue
+    }
+    catch {
+        # 进程可能已退出，忽略
+    }
+}
+
+try {
+    # 轮询检测进程状态
+    while ($true) {
+        if ($backendProcess.HasExited -and $frontendProcess.HasExited) {
+            Write-Host '后端和前端进程均已退出。' -ForegroundColor Yellow
+            break
+        }
+        Start-Sleep -Seconds 1
+    }
+}
+finally {
+    Write-Host '正在关闭开发环境...' -ForegroundColor Yellow
+    foreach ($proc in @($backendProcess, $frontendProcess)) {
+        if ($proc -and -not $proc.HasExited) {
+            Stop-ProcessTree -ParentId $proc.Id
+        }
+    }
+    Write-Host '开发环境已关闭。' -ForegroundColor Green
+}
