@@ -138,13 +138,14 @@ def _pick_suggested(
     land_profit_margin,
     air_price,
     air_expected_profit,
+    air_profit_margin,
 ):
     suggested_price = land_price if land_price else air_price
     if suggested_price:
         if land_price and land_price == suggested_price:
             return suggested_price, land_expected_profit, land_profit_margin
         elif air_price and air_price == suggested_price:
-            return suggested_price, air_expected_profit, 0
+            return suggested_price, air_expected_profit, air_profit_margin
     return suggested_price, 0, 0
 
 
@@ -170,6 +171,7 @@ def _build_result(
     land_expected_profit,
     land_profit_margin,
     air_expected_profit,
+    air_profit_margin,
     product,
     all_costs_debug,
     filtered_logistics,
@@ -188,6 +190,7 @@ def _build_result(
         land_profit_margin,
         air_price,
         air_expected_profit,
+        air_profit_margin,
     )
     return {
         "land_price": land_price,
@@ -201,6 +204,8 @@ def _build_result(
         "land_expected_profit": land_expected_profit,
         "air_expected_profit": air_expected_profit,
         "profit_margin": calculated_profit_margin,
+        "land_profit_margin": land_profit_margin,
+        "air_profit_margin": air_profit_margin,
         "land_stats": land_stats,
         "air_stats": air_stats,
         "all_costs_debug": all_costs_debug,

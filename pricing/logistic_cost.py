@@ -107,6 +107,16 @@ def _check_size_constraints(logistic, sides, debug_info):
                 f"第二边长 {second_side}cm 超限 {max_second_side}cm，返回 None"
             )
             return False
+    max_third_side = logistic.get("max_third_side", 0)
+    if max_third_side > 0:
+        sorted_sides = sorted(sides, reverse=True)
+        third_side = sorted_sides[2] if len(sorted_sides) > 2 else 0
+        debug_info.append(f"第三边长: {third_side}cm, 限制: {max_third_side}cm")
+        if 0 < max_third_side < third_side:
+            debug_info.append(
+                f"第三边长 {third_side}cm 超限 {max_third_side}cm，返回 None"
+            )
+            return False
     min_second_side = logistic.get("min_second_side", 0)
     if min_second_side > 0:
         sorted_sides = sorted(sides, reverse=True)
@@ -194,6 +204,24 @@ def _calc_volume_weight(logistic, sides, actual_weight, debug_info):
         else:
             calculated_weight = actual_weight
             debug_info.append(f"最长边未超过阈值，使用实际重量: {calculated_weight}g")
+    elif volume_mode == "sum_of_sides":
+        sum_of_sides_threshold = float(logistic.get("sum_of_sides_threshold", 0))
+        sum_of_sides_val = sum(sides)
+        debug_info.append(
+            f"三边和: {sum_of_sides_val}cm, 阈值: {sum_of_sides_threshold}cm"
+        )
+        if sum_of_sides_val > sum_of_sides_threshold:
+            volume_weight = (sides[0] * sides[1] * sides[2]) / volume_coefficient
+            calculated_weight = volume_weight * 1000
+            debug_info.append(
+                f"三边和超过阈值，按体积重量计费: "
+                f"实际重量: {actual_weight:.2f}g, "
+                f"体积重量: {volume_weight * 1000:.2f}g, "
+                f"计费重量: {calculated_weight:.2f}g"
+            )
+        else:
+            calculated_weight = actual_weight
+            debug_info.append(f"三边和未超过阈值，使用实际重量: {calculated_weight}g")
     else:
         calculated_weight = actual_weight
         debug_info.append(f"实际重量: {calculated_weight}g（未启用体积重量）")

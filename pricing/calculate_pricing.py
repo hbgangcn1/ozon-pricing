@@ -1,8 +1,12 @@
+import logging
 from functools import lru_cache
 from .logistic_cost import calculate_logistic_cost
 from .cost_filter import cost_and_filter
 from .select_best import select_best_by_priority, add_unselected
-from ._result_helpers import _compute_prices, _compute_profits, _build_result
+
+logger = logging.getLogger(__name__)
+
+_RESULT_HELPERS = __import__(f"{__package__}._result_helpers", fromlist=["*"])
 
 
 def _empty_result(filtered_logistics=None):
@@ -39,6 +43,35 @@ def _is_empty(logistics):
     if hasattr(logistics, "empty"):
         return logistics.empty
     return not logistics
+
+
+def _collect_input_names(logistics):
+    if hasattr(logistics, "to_dict"):
+        logistics = logistics.to_dict("records")
+    names = set()
+    for item in logistics or []:
+        if hasattr(item, "to_dict"):
+            item = item.to_dict()
+        elif hasattr(item, "items"):
+            item = dict(item)
+        name = item.get("name") if hasattr(item, "get") else None
+        if name:
+            names.add(name)
+    return names
+
+
+def _sanitize_filtered_logistics(filtered_logistics, land_logistics, air_logistics):
+    allowed_names = {
+        "land": _collect_input_names(land_logistics),
+        "air": _collect_input_names(air_logistics),
+    }
+    sanitized = {"land": [], "air": []}
+    for kind in ("land", "air"):
+        for item in filtered_logistics.get(kind, []):
+            name = item.get("name") if hasattr(item, "get") else None
+            if name in allowed_names[kind]:
+                sanitized[kind].append(item)
+    return sanitized
 
 
 def _get_exchange_rates():
@@ -153,7 +186,6 @@ def _run_filters(
     labeling_fee,
     shipping_fee,
     rate,
-    usd_rate,
     filtered_logistics,
     priority,
     mode="fast",
@@ -170,7 +202,6 @@ def _run_filters(
         labeling_fee,
         shipping_fee,
         rate,
-        usd_rate,
         filtered_logistics,
         all_costs_debug,
     )
@@ -183,7 +214,6 @@ def _run_filters(
         labeling_fee,
         shipping_fee,
         rate,
-        usd_rate,
         filtered_logistics,
         all_costs_debug,
     )
@@ -191,6 +221,18 @@ def _run_filters(
     air_best = select_best_by_priority(air_candidates, priority)
     add_unselected(land_candidates, filtered_logistics["land"])
     add_unselected(air_candidates, filtered_logistics["air"])
+    if land_best is None and air_best is None:
+        logger.warning(
+            "所有物流方案被淘汰: 陆运输入 %d 条, 候选 %d 条; "
+            "空运输入 %d 条, 候选 %d 条; "
+            "被淘汰物流: 陆运 %s, 空运 %s",
+            len(land_logistics),
+            len(land_candidates),
+            len(air_logistics),
+            len(air_candidates),
+            [r.get("name", "?") for r in filtered_logistics["land"]],
+            [r.get("name", "?") for r in filtered_logistics["air"]],
+        )
     return land_candidates, air_candidates, land_best, air_best, all_costs_debug
 
 
@@ -228,7 +270,6 @@ def _phase1_filter_price(
     filtered_logistics,
     fees,
     rate,
-    usd_rate,
 ):
     (
         land_candidates,
@@ -240,14 +281,17 @@ def _phase1_filter_price(
         product,
         land_logistics,
         air_logistics,
-        *fees,
+        fees[0],
+        fees[1],
+        fees[2],
         rate,
-        usd_rate,
         filtered_logistics,
         priority,
         mode,
     )
-    prices_tuple = _compute_prices(land_best, air_best, product, *fees, rate)
+    prices_tuple = getattr(_RESULT_HELPERS, "_compute_prices")(
+        land_best, air_best, product, fees[0], fees[1], fees[2], rate
+    )
     (
         land_log,
         land_cost,
@@ -318,8 +362,8 @@ def _phase2_profit_build(
         land_expected_profit,
         land_profit_margin,
         air_expected_profit,
-        _,
-    ) = _compute_profits(
+        air_profit_margin,
+    ) = getattr(_RESULT_HELPERS, "_compute_profits")(
         land_price,
         land_cost,
         land_commission_info,
@@ -334,7 +378,9 @@ def _phase2_profit_build(
         air_payment_fixed,
         air_pricing_mode,
         air_debug,
-        *fees,
+        fees[0],
+        fees[1],
+        fees[2],
         rate,
         product,
     )
@@ -352,7 +398,7 @@ def _phase2_profit_build(
     ) = _compute_stats_savings(
         land_candidates, land_log, land_cost, air_candidates, air_log, air_cost
     )
-    return _build_result(
+    return getattr(_RESULT_HELPERS, "_build_result")(
         land_log,
         land_cost,
         land_price,
@@ -374,6 +420,7 @@ def _phase2_profit_build(
         land_expected_profit,
         land_profit_margin,
         air_expected_profit,
+        air_profit_margin,
         product,
         all_costs_debug,
         filtered_logistics,
@@ -395,7 +442,7 @@ def _run_calculation(
     labeling_fee = float(product.get("labeling_fee", 0))
     shipping_fee = float(product.get("shipping_fee", 0))
     fees = (unit_price, labeling_fee, shipping_fee)
-    rate, usd_rate = _get_exchange_rates()
+    rate, _ = _get_exchange_rates()
     phase1 = _phase1_filter_price(
         product,
         land_logistics,
@@ -405,7 +452,6 @@ def _run_calculation(
         filtered_logistics,
         fees,
         rate,
-        usd_rate,
     )
     return _phase2_profit_build(*phase1, fees, rate, product, filtered_logistics)
 
@@ -420,10 +466,16 @@ def calculate_pricing(
         if not hasattr(product, "get"):
             product.get("test")
         if _is_empty(land_logistics) and _is_empty(air_logistics):
-            return _empty_result()
-        return _run_calculation(
+            return _empty_result(filtered_logistics)
+        result = _run_calculation(
             product, land_logistics, air_logistics, mode, priority, filtered_logistics
         )
+        result["filtered_logistics"] = _sanitize_filtered_logistics(
+            result.get("filtered_logistics", filtered_logistics),
+            land_logistics,
+            air_logistics,
+        )
+        return result
     except ZeroDivisionError:
         raise
     except AttributeError:
@@ -431,3 +483,58 @@ def calculate_pricing(
     except (ValueError, TypeError, KeyError) as e:
         print(f"计算定价时发生错误: {e}")
         return _error_result(product)
+
+
+def calculate_pricing_grouped(product, all_logistics, mode="fast", priority="低价优先"):
+    from pricing.fbp_secondary_filter import fbp_secondary_filter
+
+    _CIS_DESTS = {"KZ", "BY", "KGZ", "UZ", "GE", "AZ"}
+
+    def _split(logistics_list):
+        land = [r for r in logistics_list if r.get("type") == "land"]
+        air = [r for r in logistics_list if r.get("type") == "air"]
+        return land, air
+
+    def _group(ft, dest_filter, apply_fbp_filter=False):
+        subset = [
+            r
+            for r in all_logistics
+            if r.get("fulfillment_type", "rfbs") == ft
+            and dest_filter(r.get("destination", "RU"))
+        ]
+        if apply_fbp_filter:
+            subset = fbp_secondary_filter(subset)
+        land, air = _split(subset)
+        return {
+            "price_priority": calculate_pricing(
+                product,
+                land,
+                air,
+                mode=mode,
+                priority="低价优先",
+            ),
+            "speed_priority": calculate_pricing(
+                product,
+                land,
+                air,
+                mode=mode,
+                priority="速度优先",
+            ),
+        }
+
+    result = {
+        "rfbs_ru": _group("rfbs", lambda d: d == "RU"),
+        "fbp_ru": _group(
+            "fbp",
+            lambda d: d == "RU",
+            apply_fbp_filter=True,
+        ),
+        "fbp_cis": _group(
+            "fbp",
+            lambda d: d in {"KZ", "BY"},
+            apply_fbp_filter=True,
+        ),
+    }
+    for dest in sorted(_CIS_DESTS):
+        result[f"rfbs_{dest}"] = _group("rfbs", lambda d, _d=dest: d == _d)
+    return result

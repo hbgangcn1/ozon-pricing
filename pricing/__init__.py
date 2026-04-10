@@ -1,10 +1,16 @@
-from .calculate_pricing import calculate_pricing
+from . import exchange_rate, filter as filter_module
+from .calculate_pricing import calculate_pricing, calculate_pricing_grouped
+from .commission import get_commission_rate
 from .logistic_cost import calculate_logistic_cost
-from .filter import _debug_filter_reason
-from .exchange_rate import ExchangeRateService, get_usd_rate
+
+_debug_filter_reason = getattr(filter_module, "_debug_filter_reason")
+ExchangeRateService = getattr(exchange_rate, "ExchangeRateService")
+get_usd_rate = getattr(exchange_rate, "get_usd_rate")
 
 __all__ = [
     "calculate_pricing",
+    "calculate_pricing_grouped",
+    "get_commission_rate",
     "calculate_logistic_cost",
     "_debug_filter_reason",
     "ExchangeRateService",

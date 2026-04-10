@@ -33,51 +33,22 @@ def _to_log_dict(log):
     return log
 
 
-def _check_price_upper(log_dict, rough, rate, usd_rate):
-    log_limit_currency = log_dict.get("price_limit_currency", "RUB")
-    if log_limit_currency == "RUB":
-        log_limit_value = float(log_dict.get("price_limit_rub") or 0)
-    else:
-        log_limit_value = float(log_dict.get("price_limit") or 0)
-    if log_limit_currency == "USD" and log_limit_value > 0:
-        rough_usd = rough / usd_rate
-        if rough_usd > log_limit_value:
-            return (
-                f"估算售价 {rough_usd:.2f} USD 超过价格上限 {log_limit_value:.2f} USD"
-            )
-    elif log_limit_currency == "RUB" and log_limit_value > 0:
-        rough_rub = rough / rate
-        if rough_rub > log_limit_value:
-            return (
-                f"估算售价 {rough_rub:.2f} RUB 超过价格上限 {log_limit_value:.2f} RUB"
-            )
+def _check_price_upper(log_dict, rough):
+    log_limit_value = float(log_dict.get("price_limit_cny") or 0)
+    if log_limit_value > 0 and rough > log_limit_value:
+        return f"估算售价 {rough:.2f} CNY 超过价格上限 {log_limit_value:.2f} CNY"
     return None
 
 
-def _check_price_lower(log_dict, rough, rate, usd_rate, debug_info):
-    log_min_currency = log_dict.get("price_min_currency", "RUB")
-    if log_min_currency == "RUB":
-        log_min_value = float(log_dict.get("price_min_rub") or 0)
-    else:
-        log_min_value = float(log_dict.get("price_min") or 0)
-    rough_rub_dbg = rough / rate
+def _check_price_lower(log_dict, rough, debug_info):
+    log_min_value = float(log_dict.get("price_min_cny") or 0)
     debug_info.append(
-        f"价格下限检查: currency={log_min_currency}, "
-        f"min_value={log_min_value}, "
-        f"rough={rough:.2f} CNY, "
-        f"rough_rub={rough_rub_dbg:.2f} RUB"
+        f"价格下限检查: min_value={log_min_value:.2f} CNY, rough={rough:.2f} CNY"
     )
-    if log_min_currency == "USD" and log_min_value > 0:
-        rough_usd = rough / usd_rate
-        debug_info.append(f"下限 {log_min_value:.2f} USD, 估算 {rough_usd:.2f} USD")
-        if rough_usd < log_min_value:
-            return f"估算售价 {rough_usd:.2f} USD 低于价格下限 {log_min_value:.2f} USD"
-        debug_info.append("通过价格下限检查")
-    elif log_min_currency == "RUB" and log_min_value > 0:
-        rough_rub = rough / rate
-        debug_info.append(f"下限 {log_min_value:.2f} RUB, 估算 {rough_rub:.2f} RUB")
-        if rough_rub < log_min_value:
-            return f"估算售价 {rough_rub:.2f} RUB 低于价格下限 {log_min_value:.2f} RUB"
+    if log_min_value > 0:
+        debug_info.append(f"下限 {log_min_value:.2f} CNY, 估算 {rough:.2f} CNY")
+        if rough < log_min_value:
+            return f"估算售价 {rough:.2f} CNY 低于价格下限 {log_min_value:.2f} CNY"
         debug_info.append("通过价格下限检查")
     else:
         debug_info.append(f"无价格下限 (min_value={log_min_value})")
@@ -100,7 +71,6 @@ def _process_one_logistic(
     labeling_fee,
     shipping_fee,
     rate,
-    usd_rate,
     is_land,
     filtered_logistics,
     all_costs_debug,
@@ -165,19 +135,17 @@ def _process_one_logistic(
     )
     debug_info.append(f"定价模式: {pricing_mode}")
     debug_info.append(f"估算价格: {rough:.2f} CNY")
-    log_limit_currency = log_dict.get("price_limit_currency", "RUB")
-    if log_limit_currency == "USD" and float(log_dict.get("price_limit") or 0) > 0:
-        rough_usd = rough / usd_rate
+    log_limit_value = float(log_dict.get("price_limit_cny") or 0)
+    if log_limit_value > 0:
         debug_info.append(
-            f"限价判断: 估算售价 {rough_usd:.2f} USD, "
-            f"上限 {float(log_dict.get('price_limit') or 0):.2f} USD"
+            f"限价判断: 估算售价 {rough:.2f} CNY, 上限 {log_limit_value:.2f} CNY"
         )
-    err = _check_price_upper(log_dict, rough, rate, usd_rate)
+    err = _check_price_upper(log_dict, rough)
     if err:
         debug_info.append("超价格上限，跳过")
         _append_filtered(filtered_logistics, is_land, log_dict, err)
         return None
-    err = _check_price_lower(log_dict, rough, rate, usd_rate, debug_info)
+    err = _check_price_lower(log_dict, rough, debug_info)
     if err:
         debug_info.append("低于价格下限，跳过")
         _append_filtered(filtered_logistics, is_land, log_dict, err)
@@ -194,7 +162,6 @@ def cost_and_filter(
     labeling_fee,
     shipping_fee,
     rate,
-    usd_rate,
     filtered_logistics,
     all_costs_debug,
 ):
@@ -211,7 +178,6 @@ def cost_and_filter(
             labeling_fee,
             shipping_fee,
             rate,
-            usd_rate,
             is_land,
             filtered_logistics,
             all_costs_debug,

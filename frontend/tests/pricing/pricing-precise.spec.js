@@ -208,4 +208,78 @@ test.describe('精准模式定价计算', () => {
 
     await expect(page.getByText('圆柱直径（厘米）')).toBeVisible({ timeout: 3000 })
   })
+
+  test('佣金类目保存后重新选择产品应正确回显', async ({ page }) => {
+    await goPrecise(page)
+
+    // 创建一个新产品
+    const suffix = Date.now() % 100000
+    const testName = `CommCat${suffix}`
+
+    const nameInput = page.locator('input[placeholder="必填"]')
+    await nameInput.fill(testName)
+
+    const numInputs = page.locator('input[type="number"]')
+    await numInputs.nth(0).fill('50')
+    await numInputs.nth(1).fill('400')
+    await numInputs.nth(2).fill('20')
+    await numInputs.nth(3).fill('15')
+    await numInputs.nth(4).fill('10')
+
+    // 选择佣金类目（如果有可选项）
+    const categorySelects = page.locator('text=佣金类目').locator('..').locator('[role="combobox"]')
+    const hasCategorySelect = await categorySelects.count()
+
+    if (hasCategorySelect > 0) {
+      await categorySelects.first().click()
+      await page.waitForTimeout(400)
+
+      const options = page.locator('[role="option"]')
+      const optCount = await options.count()
+
+      if (optCount > 1) {
+        // 选择第二个选项（跳过"不使用类目"）
+        const selectedText = await options.nth(1).textContent()
+        await options.nth(1).click()
+        await page.waitForTimeout(300)
+
+        // 保存产品
+        await page.getByRole('button', { name: /保存产品/ }).click()
+        await page.waitForResponse(
+          r => r.url().includes('/api/products') &&
+               (r.request().method() === 'POST' || r.request().method() === 'PUT'),
+          { timeout: 10000 }
+        ).catch(() => null)
+        await page.waitForTimeout(800)
+
+        // 重新选择产品下拉菜单，找到刚保存的产品
+        const productCombobox = page.locator('[role="combobox"]').first()
+        await productCombobox.click()
+        await page.waitForTimeout(400)
+
+        // 选择包含我们测试名称的产品
+        const productOptions = page.locator('[role="option"]')
+        const prodCount = await productOptions.count()
+        for (let i = 0; i < prodCount; i++) {
+          const text = await productOptions.nth(i).textContent()
+          if (text.includes(testName)) {
+            await productOptions.nth(i).click()
+            await page.waitForTimeout(500)
+            break
+          }
+        }
+
+        // 验证佣金类目是否正确回显（不再显示占位文字"选择佣金类目"）
+        const categoryTrigger = page.locator('text=佣金类目').locator('..').locator('[role="combobox"]')
+        if (await categoryTrigger.count() > 0) {
+          const displayedText = await categoryTrigger.first().textContent()
+          // 应该显示选中的类目名称，而不是"选择佣金类目"
+          expect(displayedText).not.toBe('选择佣金类目')
+        }
+      } else {
+        // 没有可选的佣金类目，跳过此测试的验证部分
+        await page.keyboard.press('Escape')
+      }
+    }
+  })
 })

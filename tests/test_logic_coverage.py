@@ -2,14 +2,13 @@
 import sys
 import os
 import pytest
+import pricing
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from logic import (  # noqa: E402
-    calculate_logistic_cost,
-    calculate_pricing,
-    _debug_filter_reason,
-)
+calculate_logistic_cost = pricing.calculate_logistic_cost
+calculate_pricing = pricing.calculate_pricing
+_debug_filter_reason = getattr(pricing, "_debug_filter_reason")
 
 
 def mk_log(**kw):
@@ -248,6 +247,27 @@ def test_min_2nd_fail():
     assert (
         cc(mk_log(min_second_side=9), mk_prod(length_cm=10, width_cm=8, height_cm=3))
         is None
+    )
+
+
+def test_max_3rd_fail():
+    assert (
+        cc(mk_log(max_third_side=2), mk_prod(length_cm=10, width_cm=8, height_cm=3))
+        is None
+    )
+
+
+def test_max_3rd_ok():
+    assert (
+        cc(mk_log(max_third_side=5), mk_prod(length_cm=10, width_cm=8, height_cm=3))
+        is not None
+    )
+
+
+def test_max_3rd_zero_means_no_limit():
+    assert (
+        cc(mk_log(max_third_side=0), mk_prod(length_cm=10, width_cm=8, height_cm=3))
+        is not None
     )
 
 
@@ -729,41 +749,38 @@ def test_dfr_msds_miss():
     )
 
 
-def test_dfr_rub_over():
-    assert "超价格上限" in _debug_filter_reason(
-        dfr_log(price_limit_rub=1), dfr_prod(unit_price=100.0)
+def test_dfr_cny_over():
+    reason = _debug_filter_reason(
+        dfr_log(price_limit_cny=1), dfr_prod(unit_price=100.0)
     )
+    assert "超" in reason and "价格上限" in reason
 
 
-def test_dfr_rub_ok():
-    assert _debug_filter_reason(dfr_log(price_limit_rub=10**9), dfr_prod()) == ""
+def test_dfr_cny_ok():
+    assert _debug_filter_reason(dfr_log(price_limit_cny=10**9), dfr_prod()) == ""
 
 
-def test_dfr_usd_over():
-    assert "超价格上限" in _debug_filter_reason(
-        dfr_log(price_limit_currency="USD", price_limit=0.01),
+def test_dfr_cny_over_low_limit():
+    reason = _debug_filter_reason(
+        dfr_log(price_limit_cny=0.01),
         dfr_prod(unit_price=100.0),
     )
+    assert "超" in reason and "价格上限" in reason
 
 
-def test_dfr_usd_ok():
-    assert (
-        _debug_filter_reason(
-            dfr_log(price_limit_currency="USD", price_limit=10**9), dfr_prod()
-        )
-        == ""
+def test_dfr_cny_ok_high_limit():
+    assert _debug_filter_reason(dfr_log(price_limit_cny=10**9), dfr_prod()) == ""
+
+
+def test_dfr_cny_min():
+    assert "低于价格下限" in _debug_filter_reason(
+        dfr_log(price_min_cny=10**9), dfr_prod()
     )
 
 
-def test_dfr_rub_min():
+def test_dfr_cny_min_high_threshold():
     assert "低于价格下限" in _debug_filter_reason(
-        dfr_log(price_min_rub=10**9), dfr_prod()
-    )
-
-
-def test_dfr_usd_min():
-    assert "低于价格下限" in _debug_filter_reason(
-        dfr_log(price_min_currency="USD", price_min=10**9), dfr_prod()
+        dfr_log(price_min_cny=10**9), dfr_prod()
     )
 
 
@@ -965,14 +982,13 @@ def test_pr_payment_rate():
     )
 
 
-def test_pr_filter_usd_over():
+def test_pr_filter_cny_over_tiny_limit():
     r = calculate_pricing(
         mk_prod(),
         [
             mk_log(
                 name="UsdOver",
-                price_limit_currency="USD",
-                price_limit=0.001,
+                price_limit_cny=0.001,
                 min_days=3,
                 max_days=7,
             )
@@ -982,14 +998,13 @@ def test_pr_filter_usd_over():
     assert "UsdOver" in [x["name"] for x in r["filtered_logistics"]["land"]]
 
 
-def test_pr_filter_rub_over():
+def test_pr_filter_cny_over():
     r = calculate_pricing(
         mk_prod(),
         [
             mk_log(
                 name="RubOver",
-                price_limit_currency="RUB",
-                price_limit_rub=1,
+                price_limit_cny=1,
                 min_days=3,
                 max_days=7,
             )
@@ -999,14 +1014,13 @@ def test_pr_filter_rub_over():
     assert "RubOver" in [x["name"] for x in r["filtered_logistics"]["land"]]
 
 
-def test_pr_filter_usd_min():
+def test_pr_filter_cny_min():
     r = calculate_pricing(
         mk_prod(),
         [
             mk_log(
                 name="UsdMin",
-                price_min_currency="USD",
-                price_min=999999,
+                price_min_cny=999999,
                 min_days=3,
                 max_days=7,
             )
@@ -1016,14 +1030,13 @@ def test_pr_filter_usd_min():
     assert "UsdMin" in [x["name"] for x in r["filtered_logistics"]["land"]]
 
 
-def test_pr_filter_rub_min():
+def test_pr_filter_cny_min_huge_threshold():
     r = calculate_pricing(
         mk_prod(),
         [
             mk_log(
                 name="RubMin",
-                price_min_currency="RUB",
-                price_min_rub=10**9,
+                price_min_cny=10**9,
                 min_days=3,
                 max_days=7,
             )
@@ -1033,15 +1046,14 @@ def test_pr_filter_rub_min():
     assert "RubMin" in [x["name"] for x in r["filtered_logistics"]["land"]]
 
 
-def test_pr_filter_usd_ok():
+def test_pr_filter_cny_ok():
     assert (
         calculate_pricing(
             mk_prod(),
             [
                 mk_log(
                     name="UsdOk",
-                    price_limit_currency="USD",
-                    price_limit=9999,
+                    price_limit_cny=9999,
                     min_days=3,
                     max_days=7,
                 )
@@ -1052,15 +1064,14 @@ def test_pr_filter_usd_ok():
     )
 
 
-def test_pr_filter_rub_ok():
+def test_pr_filter_cny_ok_high_limit():
     assert (
         calculate_pricing(
             mk_prod(),
             [
                 mk_log(
                     name="RubOk",
-                    price_limit_currency="RUB",
-                    price_limit_rub=10**9,
+                    price_limit_cny=10**9,
                     min_days=3,
                     max_days=7,
                 )
@@ -1071,15 +1082,14 @@ def test_pr_filter_rub_ok():
     )
 
 
-def test_pr_air_filtered_usd_over():
+def test_pr_air_filtered_cny_over():
     r = calculate_pricing(
         mk_prod(),
         [],
         [
             mk_log(
                 name="AirUsdOver",
-                price_limit_currency="USD",
-                price_limit=0.001,
+                price_limit_cny=0.001,
                 min_days=1,
                 max_days=3,
             )
@@ -1088,15 +1098,14 @@ def test_pr_air_filtered_usd_over():
     assert "AirUsdOver" in [x["name"] for x in r["filtered_logistics"]["air"]]
 
 
-def test_pr_air_filtered_rub_min():
+def test_pr_air_filtered_cny_min():
     r = calculate_pricing(
         mk_prod(),
         [],
         [
             mk_log(
                 name="AirRubMin",
-                price_min_currency="RUB",
-                price_min_rub=10**9,
+                price_min_cny=10**9,
                 min_days=1,
                 max_days=3,
             )

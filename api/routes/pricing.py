@@ -1,22 +1,30 @@
+import decimal
+import logging
+from typing import Any, cast
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-import decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
-from logic import calculate_pricing
-from models.logistics import Logistics
-from models.user import User
-from db.products import get_product_by_id
+from api.dependencies import get_current_user_id
 from api.models.schemas import (
+    BreakdownItem,
+    PricingComboResult,
+    PricingDualPriorityGroupResult,
+    PricingGroupedResponse,
+    PricingGroupResult,
     PricingRequest,
     PricingResponse,
-    PricingComboResult,
     PricingResultItem,
-    BreakdownItem,
 )
-from api.dependencies import get_current_user_id
+from database import get_db
+from db.products import get_product_by_id
+from models.logistics import Logistics
+from models.user import User
+from pricing.calculate_pricing import calculate_pricing, calculate_pricing_grouped
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pricing", tags=["定价"])
 
@@ -76,10 +84,12 @@ def build_breakdown(
     labeling_fee_cny = product.get("labeling_fee", 0)
     shipping_fee_cny = product.get("shipping_fee", 0)
 
-    agency_cny = round(commission_rub * rate, 2) if commission_rub else 0
+    agency_cny = round(commission_rub * rate, 2) if commission_rub is not None else 0
 
     def to_rate(val):
-        return val / 100 if (val is not None and val >= 1) else (val or 0)
+        return (
+            val / 100 if (val is not None and val >= 1) else (0 if val is None else val)
+        )
 
     promotion_rate = to_rate(product.get("promotion_cost_rate", 0))
     commission_rate = to_rate(product.get("commission_rate", 0))
@@ -130,33 +140,37 @@ def build_breakdown(
 
 
 def format_result(res, product, rate, is_land=True):
-    if not res or not res.get("suggested_price"):
-        return PricingResultItem(
-            is_available=False,
-            price_cny=0,
-            price_rub=0,
-            logistics_name="",
-            logistics_cost=0,
-            days_min=0,
-            days_max=0,
-            profit_cny=0,
-            profit_margin_pct=0,
-            priority_group="",
-            pricing_mode="",
-            avg_cost=0,
-            saved_cost=0,
-            avg_days=0,
-            saved_days=0,
-            breakdown=[],
-        )
+    _unavailable = PricingResultItem(
+        is_available=False,
+        price_cny=0,
+        price_rub=0,
+        logistics_name="",
+        logistics_cost=0,
+        days_min=0,
+        days_max=0,
+        profit_cny=0,
+        profit_margin_pct=0,
+        priority_group="",
+        pricing_mode="",
+        avg_cost=0,
+        saved_cost=0,
+        avg_days=0,
+        saved_days=0,
+        breakdown=[],
+    )
+    if not res:
+        return _unavailable
+
+    price = res.get("land_price") if is_land else res.get("air_price")
+    if price is None:
+        return _unavailable
 
     cost = res.get("land_cost") if is_land else res.get("air_cost")
     best_log = res.get("best_land") if is_land else res.get("best_air")
-    price = res.get("suggested_price", 0)
     expected_profit = res.get(
         "land_expected_profit" if is_land else "air_expected_profit", 0
     )
-    profit_margin = res.get("profit_margin", 0)
+    profit_margin = res.get("land_profit_margin" if is_land else "air_profit_margin", 0)
     pricing_mode = res.get("land_pricing_mode" if is_land else "air_pricing_mode", "")
     commission_rub = res.get(
         "land_commission_info" if is_land else "air_commission_info", 0
@@ -175,23 +189,23 @@ def format_result(res, product, rate, is_land=True):
         price_cny=price,
         price_rub=round(price / rate, 2) if rate else 0,
         logistics_name=best_log.get("name", "") if best_log else "",
-        logistics_cost=round(cost, 4) if cost else 0,
+        logistics_cost=round(cost, 4) if cost is not None else 0,
         days_min=best_log.get("min_days", 0) if best_log else 0,
         days_max=best_log.get("max_days", 0) if best_log else 0,
         priority_group=best_log.get("priority_group", "") if best_log else "",
         pricing_mode=pricing_mode,
         profit_cny=round(expected_profit, 2),
         profit_margin_pct=round(profit_margin, 2),
-        avg_cost=round(avg_cost, 4) if avg_cost else 0,
-        saved_cost=round(saved_cost, 4) if saved_cost else 0,
-        avg_days=round(avg_days, 2) if avg_days else 0,
-        saved_days=round(saved_days, 2) if saved_days else 0,
+        avg_cost=round(avg_cost, 4) if avg_cost is not None else 0,
+        saved_cost=round(saved_cost, 4) if saved_cost is not None else 0,
+        avg_days=round(avg_days, 2) if avg_days is not None else 0,
+        saved_days=round(saved_days, 2) if saved_days is not None else 0,
         breakdown=build_breakdown(
             product,
-            cost or 0,
+            0 if cost is None else cost,
             price,
-            commission_rub or 0,
-            payment_rub or 0,
+            0 if commission_rub is None else commission_rub,
+            0 if payment_rub is None else payment_rub,
             payment_fixed,
             expected_profit,
             profit_margin,
@@ -207,6 +221,29 @@ def format_combo(combo_results):
         air_pickup=combo_results.get("air_pickup", PricingResultItem()),
         air_home=combo_results.get("air_home", PricingResultItem()),
     )
+
+
+def calculate_combo_results(
+    product, mode, land_pickup, land_home, air_pickup, air_home, rate
+):
+    results = {}
+    for priority in ["低价优先", "速度优先"]:
+        combos = {
+            "land_pickup": (land_pickup, []),
+            "land_home": (land_home, []),
+            "air_pickup": ([], air_pickup),
+            "air_home": ([], air_home),
+        }
+        combo_results = {}
+        for combo_key, (land_list, air_list) in combos.items():
+            res = calculate_pricing(
+                product, land_list, air_list, mode=mode, priority=priority
+            )
+            combo_results[combo_key] = format_result(
+                res, product, rate, is_land=bool(land_list)
+            )
+        results[priority] = combo_results
+    return results
 
 
 @router.post("/calculate", response_model=PricingResponse)
@@ -239,9 +276,18 @@ async def calculate(
                 detail="请提供产品数据或选择已有产品",
             )
 
-    product = convert_decimals(product)
+    product = cast(dict[str, Any], convert_decimals(product))
 
-    all_logistics = convert_decimals(await get_user_logistics(session, user_id))
+    all_logistics = cast(
+        list[dict[str, Any]],
+        convert_decimals(await get_user_logistics(session, user_id)),
+    )
+    logger.info(
+        "用户 %s 加载了 %d 条物流: %s",
+        user_id,
+        len(all_logistics),
+        [r.get("name", "?") for r in all_logistics],
+    )
     land_rules = [r for r in all_logistics if r.get("type") == "land"]
     air_rules = [r for r in all_logistics if r.get("type") == "air"]
 
@@ -258,23 +304,29 @@ async def calculate(
 
     rate = get_fallback_exchange_rate()
 
-    results = {}
-    for priority in ["低价优先", "速度优先"]:
-        combos = {
-            "land_pickup": (land_pickup, []),
-            "land_home": (land_home, []),
-            "air_pickup": ([], air_pickup),
-            "air_home": ([], air_home),
-        }
-        combo_results = {}
-        for combo_key, (land_list, air_list) in combos.items():
-            res = calculate_pricing(
-                product, land_list, air_list, mode=mode, priority=priority
-            )
-            combo_results[combo_key] = format_result(
-                res, product, rate, is_land=bool(land_list)
-            )
-        results[priority] = combo_results
+    results = calculate_combo_results(
+        product,
+        mode,
+        land_pickup,
+        land_home,
+        air_pickup,
+        air_home,
+        rate,
+    )
+
+    breakeven_results = None
+    if mode == "precise":
+        breakeven_product = dict(product)
+        breakeven_product["target_profit_margin"] = 0
+        breakeven_results = calculate_combo_results(
+            breakeven_product,
+            mode,
+            land_pickup,
+            land_home,
+            air_pickup,
+            air_home,
+            rate,
+        )
 
     all_res = calculate_pricing(
         product, land_rules, air_rules, mode=mode, priority="低价优先"
@@ -285,13 +337,153 @@ async def calculate(
         calculation_mode=mode,
         price_priority=format_combo(results["低价优先"]),
         speed_priority=format_combo(results["速度优先"]),
+        breakeven_price_priority=(
+            format_combo(breakeven_results["低价优先"]) if breakeven_results else None
+        ),
+        breakeven_speed_priority=(
+            format_combo(breakeven_results["速度优先"]) if breakeven_results else None
+        ),
         exchange_rates={
             "rub_cny": rate,
             "usd_cny": get_fallback_usd_rate(),
         },
         filtered_logistics=filtered_logistics,
-        product=product if mode == "detailed" else None,
+        product=product if mode != "fast" else None,
     )
+
+
+@router.post("/calculate-grouped", response_model=PricingGroupedResponse)
+async def calculate_grouped(
+    request: PricingRequest,
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    mode = request.mode
+
+    if mode == "precise":
+        user = await session.get(User, user_id)
+        if user and user.user_type in ("free", "efficiency"):
+            raise HTTPException(
+                status_code=403, detail="免费版和效率版用户不能使用精准模式"
+            )
+
+    if mode == "fast":
+        product = request.product_data or {}
+    else:
+        if request.product_data:
+            product = request.product_data
+        elif request.product_id:
+            product = await get_product_by_id(session, request.product_id, user_id)
+            if not product:
+                raise HTTPException(status_code=404, detail="产品不存在")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="请提供产品数据或选择已有产品",
+            )
+
+    product = cast(dict[str, Any], convert_decimals(product))
+    all_logistics = cast(
+        list[dict[str, Any]],
+        convert_decimals(await get_user_logistics(session, user_id)),
+    )
+    logger.info(
+        "用户 %s (grouped) 加载了 %d 条物流: %s",
+        user_id,
+        len(all_logistics),
+        [r.get("name", "?") for r in all_logistics],
+    )
+    rate = get_fallback_exchange_rate()
+
+    priority = getattr(request, "priority", "低价优先") or "低价优先"
+    grouped = cast(
+        dict[str, Any],
+        convert_decimals(
+            calculate_pricing_grouped(
+                product,
+                all_logistics,
+                mode=mode,
+                priority=priority,
+            )
+        ),
+    )
+
+    breakeven_grouped: dict[str, Any] | None = None
+    if mode == "precise":
+        breakeven_product = dict(product)
+        breakeven_product["target_profit_margin"] = 0
+        breakeven_grouped = cast(
+            dict[str, Any],
+            convert_decimals(
+                calculate_pricing_grouped(
+                    breakeven_product,
+                    all_logistics,
+                    mode=mode,
+                    priority=priority,
+                )
+            ),
+        )
+
+    def _fmt_group(dual_res):
+        return PricingDualPriorityGroupResult(
+            price_priority=PricingGroupResult(
+                land=format_result(
+                    dual_res["price_priority"],
+                    product,
+                    rate,
+                    is_land=True,
+                ),
+                air=format_result(
+                    dual_res["price_priority"],
+                    product,
+                    rate,
+                    is_land=False,
+                ),
+            ),
+            speed_priority=PricingGroupResult(
+                land=format_result(
+                    dual_res["speed_priority"],
+                    product,
+                    rate,
+                    is_land=True,
+                ),
+                air=format_result(
+                    dual_res["speed_priority"],
+                    product,
+                    rate,
+                    is_land=False,
+                ),
+            ),
+        )
+
+    _CIS_CODES = ["AZ", "BY", "GE", "KGZ", "KZ", "UZ"]
+    resp_kwargs = {
+        "calculation_mode": mode,
+        "rfbs_ru": _fmt_group(grouped["rfbs_ru"]),
+        "fbp_ru": _fmt_group(grouped["fbp_ru"]),
+        "fbp_cis": _fmt_group(grouped["fbp_cis"]),
+        "breakeven_rfbs_ru": (
+            _fmt_group(breakeven_grouped["rfbs_ru"]) if breakeven_grouped else None
+        ),
+        "breakeven_fbp_ru": (
+            _fmt_group(breakeven_grouped["fbp_ru"]) if breakeven_grouped else None
+        ),
+        "breakeven_fbp_cis": (
+            _fmt_group(breakeven_grouped["fbp_cis"]) if breakeven_grouped else None
+        ),
+        "exchange_rates": {
+            "rub_cny": rate,
+            "usd_cny": get_fallback_usd_rate(),
+        },
+        "product": product if mode != "fast" else None,
+    }
+    for code in _CIS_CODES:
+        key = f"rfbs_{code}"
+        resp_kwargs[key] = _fmt_group(grouped[key])
+        resp_kwargs[f"breakeven_{key}"] = (
+            _fmt_group(breakeven_grouped[key]) if breakeven_grouped else None
+        )
+    return PricingGroupedResponse(**resp_kwargs)
 
 
 @router.get("/progress")

@@ -1,6 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional, List
-from datetime import datetime
 
 
 class UserBase(BaseModel):
@@ -49,6 +48,7 @@ class ProductBase(BaseModel):
     battery_capacity_mah: int = 0
     battery_voltage: float = 0
     commission_rate: float = Field(default=0, ge=0, le=100)
+    commission_category_id: Optional[int] = None
     target_profit_margin: float = Field(default=0, ge=0, le=100)
     promotion_cost_rate: float = Field(default=0, ge=0, le=100)
     withdrawal_fee_rate: float = Field(default=0, ge=0, le=100)
@@ -83,6 +83,7 @@ class ProductUpdate(BaseModel):
     battery_capacity_mah: Optional[int] = None
     battery_voltage: Optional[float] = None
     commission_rate: Optional[float] = None
+    commission_category_id: Optional[int] = None
     target_profit_margin: Optional[float] = None
     promotion_cost_rate: Optional[float] = None
     withdrawal_fee_rate: Optional[float] = None
@@ -103,16 +104,15 @@ class LogisticsBase(BaseModel):
     type: str = "land"
     min_days: int = 1
     max_days: int = 30
-    price_limit: float = 0
-    price_limit_rub: Optional[float] = 0
-    price_min: float = 0
-    price_min_rub: Optional[float] = 0
+    price_limit_cny: float = 0
+    price_min_cny: float = 0
     base_fee: float = 0
     min_weight: int = 0
     max_weight: int = 100000
     max_sum_of_sides: int = 0
     max_longest_side: int = 0
     max_second_side: int = 0
+    max_third_side: int = 0
     min_second_side: int = 0
     min_length: int = 0
     max_cylinder_sum: int = 0
@@ -121,6 +121,7 @@ class LogisticsBase(BaseModel):
     min_cylinder_length: int = 0
     volume_mode: str = "none"
     longest_side_threshold: int = 0
+    sum_of_sides_threshold: int = 0
     allow_battery: bool = False
     allow_liquid: bool = False
     battery_capacity_limit_wh: float = 0
@@ -131,11 +132,14 @@ class LogisticsBase(BaseModel):
     continue_fee: float = 0
     continue_unit: str = "g"
     volume_coefficient: float = 5000
-    delivery_method: str = "pickup"
+    delivery_method: Optional[str] = None
     priority_group: str = "D"
-    price_limit_currency: str = "RUB"
-    price_min_currency: str = "RUB"
     is_active: bool = True
+    fulfillment_type: str = "rfbs"
+    destination: str = "RU"
+    fbp_service_level: Optional[str] = None
+    fbp_company: Optional[str] = None
+    is_smart: int = 0
 
 
 class LogisticsCreate(LogisticsBase):
@@ -147,16 +151,15 @@ class LogisticsUpdate(BaseModel):
     type: Optional[str] = None
     min_days: Optional[int] = None
     max_days: Optional[int] = None
-    price_limit: Optional[float] = None
-    price_limit_rub: Optional[float] = None
-    price_min: Optional[float] = None
-    price_min_rub: Optional[float] = None
+    price_limit_cny: Optional[float] = None
+    price_min_cny: Optional[float] = None
     base_fee: Optional[float] = None
     min_weight: Optional[int] = None
     max_weight: Optional[int] = None
     max_sum_of_sides: Optional[int] = None
     max_longest_side: Optional[int] = None
     max_second_side: Optional[int] = None
+    max_third_side: Optional[int] = None
     min_second_side: Optional[int] = None
     min_length: Optional[int] = None
     max_cylinder_sum: Optional[int] = None
@@ -165,6 +168,7 @@ class LogisticsUpdate(BaseModel):
     min_cylinder_length: Optional[int] = None
     volume_mode: Optional[str] = None
     longest_side_threshold: Optional[int] = None
+    sum_of_sides_threshold: Optional[int] = None
     allow_battery: Optional[bool] = None
     allow_liquid: Optional[bool] = None
     battery_capacity_limit_wh: Optional[float] = None
@@ -177,16 +181,19 @@ class LogisticsUpdate(BaseModel):
     volume_coefficient: Optional[float] = None
     delivery_method: Optional[str] = None
     priority_group: Optional[str] = None
-    price_limit_currency: Optional[str] = None
-    price_min_currency: Optional[str] = None
     is_active: Optional[bool] = None
+    fulfillment_type: Optional[str] = None
+    destination: Optional[str] = None
+    fbp_service_level: Optional[str] = None
+    fbp_company: Optional[str] = None
+    is_smart: Optional[int] = None
 
 
 class LogisticsResponse(LogisticsBase):
     id: int
     user_id: int
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
 class BreakdownItem(BaseModel):
@@ -241,6 +248,8 @@ class PricingResponse(BaseModel):
     calculation_mode: str
     price_priority: PricingComboResult
     speed_priority: PricingComboResult
+    breakeven_price_priority: Optional[PricingComboResult] = None
+    breakeven_speed_priority: Optional[PricingComboResult] = None
     exchange_rates: dict
     filtered_logistics: dict = {}
     product: Optional[dict] = None
@@ -267,3 +276,126 @@ class ChangePassword(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+
+
+class CommissionCategoryCreate(BaseModel):
+    name: str
+    rfbs_tier1_rate: float
+    rfbs_tier2_rate: float
+    rfbs_tier3_rate: float
+
+
+class CommissionCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    rfbs_tier1_rate: Optional[float] = None
+    rfbs_tier2_rate: Optional[float] = None
+    rfbs_tier3_rate: Optional[float] = None
+    is_active: Optional[int] = None
+
+
+class CommissionCategoryResponse(BaseModel):
+    id: int
+    name: str
+    rfbs_tier1_rate: float
+    rfbs_tier2_rate: float
+    rfbs_tier3_rate: float
+    fbp_tier1_rate: float
+    fbp_tier2_rate: float
+    fbp_tier3_rate: float
+    is_active: int = 1
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LogisticsPoolItem(BaseModel):
+    id: int
+    name: Optional[str] = None
+    type: Optional[str] = None
+    min_days: Optional[int] = None
+    max_days: Optional[int] = None
+    price_limit_cny: Optional[float] = 0
+    price_min_cny: Optional[float] = 0
+    base_fee: Optional[float] = 0
+    min_weight: Optional[int] = None
+    max_weight: Optional[int] = None
+    max_sum_of_sides: Optional[int] = None
+    max_longest_side: Optional[int] = None
+    max_second_side: Optional[int] = 0
+    max_third_side: Optional[int] = 0
+    min_second_side: Optional[int] = 0
+    min_length: Optional[int] = 0
+    max_cylinder_sum: Optional[int] = 0
+    min_cylinder_sum: Optional[int] = 0
+    max_cylinder_length: Optional[int] = 0
+    min_cylinder_length: Optional[int] = 0
+    volume_mode: Optional[str] = "none"
+    longest_side_threshold: Optional[int] = 0
+    sum_of_sides_threshold: Optional[int] = 0
+    allow_battery: Optional[bool] = False
+    allow_liquid: Optional[bool] = False
+    battery_capacity_limit_wh: Optional[float] = 0
+    require_msds: Optional[bool] = False
+    fee_mode: Optional[str] = "base_weight"
+    first_fee: Optional[float] = 0
+    first_weight_g: Optional[int] = 0
+    continue_fee: Optional[float] = 0
+    continue_unit: Optional[str] = "g"
+    volume_coefficient: Optional[float] = 5000
+    delivery_method: Optional[str] = "pickup"
+    priority_group: Optional[str] = "D"
+    fulfillment_type: str = "rfbs"
+    destination: str = "RU"
+    fbp_service_level: Optional[str] = None
+    fbp_company: Optional[str] = None
+    is_smart: int = 0
+    source_file: Optional[str] = None
+    imported_at: Optional[int] = None
+    is_active: int = 1
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class ProductImportPreview(BaseModel):
+    columns: List[str]
+    preview_rows: List[dict]
+
+
+class ProductImportConfirm(BaseModel):
+    column_mapping: dict
+    rows: List[dict]
+    conflict_action: str = "skip"
+
+
+class PricingGroupResult(BaseModel):
+    land: PricingResultItem = PricingResultItem()
+    air: PricingResultItem = PricingResultItem()
+
+
+class PricingDualPriorityGroupResult(BaseModel):
+    price_priority: PricingGroupResult = PricingGroupResult()
+    speed_priority: PricingGroupResult = PricingGroupResult()
+
+
+class PricingGroupedResponse(BaseModel):
+    calculation_mode: str
+    rfbs_ru: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    rfbs_KZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    rfbs_BY: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    rfbs_KGZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    rfbs_UZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    rfbs_GE: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    rfbs_AZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    fbp_ru: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    fbp_cis: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    breakeven_rfbs_ru: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_rfbs_KZ: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_rfbs_BY: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_rfbs_KGZ: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_rfbs_UZ: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_rfbs_GE: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_rfbs_AZ: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_fbp_ru: Optional[PricingDualPriorityGroupResult] = None
+    breakeven_fbp_cis: Optional[PricingDualPriorityGroupResult] = None
+    exchange_rates: dict = {}
+    filtered_logistics: dict = {}
+    product: Optional[dict] = None

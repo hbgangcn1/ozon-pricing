@@ -323,6 +323,8 @@ class TestFormatResult:
         prefix = "land" if is_land else "air"
         return {
             "suggested_price": 100.0,
+            "land_price": 100.0,
+            "air_price": 100.0,
             f"{prefix}_cost": 5.0,
             f"best_{prefix}": {
                 "name": "顺丰",
@@ -332,6 +334,8 @@ class TestFormatResult:
             },
             f"{prefix}_expected_profit": 20.0,
             "profit_margin": 0.2,
+            "land_profit_margin": 0.2,
+            "air_profit_margin": 0.2,
             f"{prefix}_pricing_mode": "cost_plus",
             f"{prefix}_commission_info": 10.0,
             f"{prefix}_payment_info": 5.0,
@@ -775,6 +779,8 @@ class TestCalculateEndpointWithRichResult:
     def _rich_calc_return(self):
         return {
             "suggested_price": 150.0,
+            "land_price": 150.0,
+            "air_price": 150.0,
             "land_cost": 8.0,
             "air_cost": 12.0,
             "best_land": {
@@ -853,5 +859,179 @@ class TestCalculateEndpointWithRichResult:
             assert "speed_priority" in body
             assert "exchange_rates" in body
             assert body["exchange_rates"]["rub_cny"] == pytest.approx(0.085, abs=1e-4)
+        finally:
+            del app.dependency_overrides[get_db]
+
+
+class TestCalculateBreakevenResponses:
+    def _rich_calc_return(self, suggested_price, margin, logistics_name):
+        return {
+            "suggested_price": suggested_price,
+            "land_price": suggested_price,
+            "air_price": suggested_price,
+            "land_cost": 8.0,
+            "air_cost": 12.0,
+            "best_land": {
+                "name": f"{logistics_name}-陆运",
+                "min_days": 5,
+                "max_days": 10,
+                "priority_group": "B",
+            },
+            "best_air": {
+                "name": f"{logistics_name}-空运",
+                "min_days": 2,
+                "max_days": 4,
+                "priority_group": "A",
+            },
+            "land_expected_profit": 30.0,
+            "air_expected_profit": 25.0,
+            "profit_margin": margin,
+            "land_pricing_mode": "margin",
+            "air_pricing_mode": "margin",
+            "land_commission_info": 5.0,
+            "air_commission_info": 5.0,
+            "land_payment_info": 2.0,
+            "air_payment_info": 2.0,
+            "land_payment_fixed": False,
+            "air_payment_fixed": False,
+            "avg_land_cost": 9.0,
+            "avg_air_cost": 13.0,
+            "avg_land_days": 7.0,
+            "avg_air_days": 3.0,
+            "saved_land_cost": 1.0,
+            "saved_air_cost": 1.0,
+            "saved_land_days": 0.5,
+            "saved_air_days": 0.5,
+            "filtered_logistics": {
+                "land": [{"name": "L1", "reason": "未被选中"}],
+                "air": [],
+            },
+        }
+
+    @patch("api.routes.pricing.calculate_pricing")
+    @patch("api.routes.pricing.get_user_logistics", new_callable=AsyncMock)
+    @patch("api.routes.pricing.get_fallback_exchange_rate")
+    @patch("api.routes.pricing.get_fallback_usd_rate")
+    def test_calculate_returns_normal_and_breakeven_results(
+        self, mock_usd, mock_rate, mock_logistics, mock_calc
+    ):
+        mock_rate.return_value = 0.085
+        mock_usd.return_value = 7.2
+        mock_logistics.return_value = [
+            {"type": "land", "delivery_method": "pickup", "name": "陆运规则"},
+            {"type": "air", "delivery_method": "door", "name": "空运规则"},
+        ]
+        seen_margins = []
+
+        def side_effect(product, *_args, **_kwargs) -> dict[str, object]:
+            seen_margins.append(product.get("target_profit_margin"))
+            if product.get("target_profit_margin") == 0:
+                return self._rich_calc_return(88.0, 0.0, "盈亏平衡")
+            return self._rich_calc_return(120.0, 0.35, "常规定价")
+
+        mock_calc.side_effect = side_effect
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(
+            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+        )
+        mock_session.get.return_value = MagicMock(user_type="enterprise")
+
+        app.dependency_overrides[get_db] = _db_override(mock_session)
+        try:
+            payload = {
+                "mode": "precise",
+                "product_data": {
+                    "name": "rich",
+                    "weight_g": 500,
+                    "unit_price": 50.0,
+                    "target_profit_margin": 0.35,
+                    "commission_rate": 5,
+                    "vat_rate": 20,
+                },
+            }
+            response = client.post(
+                "/api/pricing/calculate",
+                json=payload,
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["price_priority"]["land_pickup"]["price_cny"] == 120.0
+            assert body["breakeven_price_priority"]["land_pickup"]["price_cny"] == 88.0
+            assert body["breakeven_speed_priority"]["air_home"]["price_cny"] == 88.0
+            assert body["product"]["target_profit_margin"] == 0.35
+            assert 0.35 in seen_margins
+            assert 0 in seen_margins
+        finally:
+            del app.dependency_overrides[get_db]
+
+    @patch("api.routes.pricing.calculate_pricing_grouped")
+    @patch("api.routes.pricing.get_user_logistics", new_callable=AsyncMock)
+    @patch("api.routes.pricing.get_fallback_exchange_rate")
+    @patch("api.routes.pricing.get_fallback_usd_rate")
+    def test_calculate_grouped_returns_normal_and_breakeven_results(
+        self, mock_usd, mock_rate, mock_logistics, mock_grouped
+    ):
+        mock_rate.return_value = 0.085
+        mock_usd.return_value = 7.2
+        mock_logistics.return_value = [{"type": "land", "delivery_method": "pickup"}]
+        seen_margins = []
+
+        def side_effect(product, *_args, **_kwargs):
+            seen_margins.append(product.get("target_profit_margin"))
+            if product.get("target_profit_margin") == 0:
+                group = self._rich_calc_return(90.0, 0.0, "分组盈亏平衡")
+            else:
+                group = self._rich_calc_return(130.0, 0.4, "分组常规")
+            dual = {
+                "price_priority": group,
+                "speed_priority": group,
+            }
+            return {
+                "rfbs_ru": dual,
+                "rfbs_AZ": dual,
+                "rfbs_BY": dual,
+                "rfbs_GE": dual,
+                "rfbs_KGZ": dual,
+                "rfbs_KZ": dual,
+                "rfbs_UZ": dual,
+                "fbp_ru": dual,
+                "fbp_cis": dual,
+            }
+
+        mock_grouped.side_effect = side_effect
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = MagicMock(user_type="enterprise")
+
+        app.dependency_overrides[get_db] = _db_override(mock_session)
+        try:
+            payload = {
+                "mode": "precise",
+                "product_data": {
+                    "name": "grouped",
+                    "weight_g": 500,
+                    "unit_price": 50.0,
+                    "target_profit_margin": 0.4,
+                },
+            }
+            response = client.post(
+                "/api/pricing/calculate-grouped",
+                json=payload,
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["rfbs_ru"]["price_priority"]["land"]["price_cny"] == 130.0
+            assert (
+                body["breakeven_rfbs_ru"]["price_priority"]["land"]["price_cny"] == 90.0
+            )
+            assert (
+                body["breakeven_fbp_cis"]["speed_priority"]["air"]["price_cny"] == 90.0
+            )
+            assert body["product"]["target_profit_margin"] == 0.4
+            assert 0.4 in seen_margins
+            assert 0 in seen_margins
         finally:
             del app.dependency_overrides[get_db]

@@ -1,18 +1,21 @@
-﻿import React, { useEffect, useState, useRef , Suspense, useMemo } from 'react'
+﻿import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { Switch } from '../components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Checkbox } from '../components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog'
+import { Badge } from '../components/ui/badge'
 import { toast } from 'sonner'
-import { pricingAPI, productsAPI } from '../services/api'
+import { pricingAPI, productsAPI, commissionCategoriesAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
+import { Settings2 } from 'lucide-react'
 const CostPieChart = React.lazy(() => import('../components/charts/CostPieChart'))
 
 // 安全提取 API 错误信息，避免将对象渲染到 React toast
@@ -59,12 +62,8 @@ const DEFAULT_PRECISE = {
   cylinder_diameter: '',
   cylinder_length: '',
   has_battery: false,
-  battery_capacity_wh: '',
-  battery_capacity_mah: '',
-  battery_voltage: '',
-  battery_capacity_type: 'wh',
-  has_msds: false,
   has_liquid: false,
+  commission_category_id: '',
   commission_rate: '0',
   target_profit_margin: '0',
   promotion_cost_rate: '0',
@@ -92,18 +91,14 @@ function RateInput({ label, value, onChange, defaultVal, step }) {
 
 function ResultCard({ title, item }) {
   if (!item?.is_available) {
-    const emptyTitleClass = title.includes('自提') && title.includes('陆运')
+    const emptyTitleClass = title.includes('陆')
       ? 'bg-cost-agent/30 text-cost-agent'
-      : title.includes('自提') && title.includes('空运')
-        ? 'bg-cost-withdraw/30 text-cost-withdraw'
-        : title.includes('送货上门') && title.includes('陆运')
-          ? 'bg-cost-commission/30 text-cost-commission'
-          : 'bg-cost-commission/60 text-cost-commission'
+      : 'bg-cost-withdraw/30 text-cost-withdraw'
     return (
       <Card className="border-dashed">
         <CardContent className="py-3 px-4">
           <div className={`flex justify-between items-center p-2 rounded ${emptyTitleClass}`}>
-            <span className="text-sm font-medium">{title}</span>
+            <span className="text-sm font-medium">{title.includes('陆') ? '陆运' : '空运'}</span>
             <span className="text-xs text-muted-foreground">无可用方案</span>
           </div>
         </CardContent>
@@ -121,17 +116,16 @@ function ResultCard({ title, item }) {
         {/* 标题栏 */}
         <div
           className={`flex justify-between items-center p-2 rounded ${
-            title.includes('自提') && title.includes('陆运')
-              ? 'bg-cost-agent/30 text-cost-agent'
-              : title.includes('自提') && title.includes('空运')
-                ? 'bg-cost-withdraw/30 text-cost-withdraw'
-                : title.includes('送货上门') && title.includes('陆运')
-                  ? 'bg-cost-commission/30 text-cost-commission'
-                  : 'bg-cost-commission/60 text-cost-commission'
+            title.includes('陆') ? 'bg-cost-agent/30 text-cost-agent' : 'bg-cost-withdraw/30 text-cost-withdraw'
           }`}
         >
-          <span className="text-sm font-medium">{title}</span>
-          <span className="text-xs">{item.logistics_name}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-medium">{item.logistics_name || '未知物流'}</span>
+            {(item?.is_smart || (item?.logistics_name && item.logistics_name.includes('Smart'))) && (
+              <Badge variant="outline" className="text-amber-500 border-amber-400 h-5 px-1 py-0 text-[10px]">Smart</Badge>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">{title.includes('陆') ? '陆运' : '空运'}</span>
         </div>
 
         {/* 售价行 */}
@@ -200,14 +194,26 @@ function ResultCard({ title, item }) {
   )
 }
 
+const CIS_COUNTRIES = [
+  { key: 'rfbs_KZ', label: '哈萨克斯坦' },
+  { key: 'rfbs_BY', label: '白俄罗斯' },
+  { key: 'rfbs_KGZ', label: '吉尔吉斯斯坦' },
+  { key: 'rfbs_UZ', label: '乌兹别克斯坦' },
+  { key: 'rfbs_GE', label: '格鲁吉亚' },
+  { key: 'rfbs_AZ', label: '阿塞拜疆' },
+]
+
 export default function PricingPage() {
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState('fast')
   const [loading, setLoading] = useState(false)
   const [fastResult, setFastResult] = useState(null)
   const [preciseResult, setPreciseResult] = useState(null)
+  const [groupedResult, setGroupedResult] = useState(null)
+  const [showBreakeven, setShowBreakeven] = useState(false)
   const [fastForm, setFastForm] = useState(DEFAULT_FAST)
   const [preciseForm, setPreciseForm] = useState(DEFAULT_PRECISE)
+  const [commissionCategories, setCommissionCategories] = useState([])
   const [products, setProducts] = useState([])
   const [productDialogOpen, setProductDialogOpen] = useState(false)
   const [productListDialogOpen, setProductListDialogOpen] = useState(false)
@@ -233,6 +239,7 @@ export default function PricingPage() {
     battery_capacity_type: 'wh',
     has_msds: false,
     has_liquid: false,
+    commission_category_id: '',
     commission_rate: '0',
     target_profit_margin: '0',
     promotion_cost_rate: '0',
@@ -247,19 +254,24 @@ export default function PricingPage() {
   const lastCalcToastRef = useRef(0)
   const calcToastShownRef = useRef(false)
 
-  useEffect(() => {
-    refreshProducts()
+  const refreshCommissionCategories = useCallback(() => {
+    commissionCategoriesAPI.getAll().then(data => setCommissionCategories(Array.isArray(data) ? data : [])).catch(err => { console.error(err) })
   }, [])
 
-  const refreshProducts = () => {
+  const refreshProducts = useCallback(() => {
     productsAPI.getAll().then(data => setProducts(Array.isArray(data) ? data : [])).catch(err => { console.error(err) })
-  }
+  }, [])
+
+  useEffect(() => {
+    refreshProducts()
+    refreshCommissionCategories()
+  }, [refreshCommissionCategories, refreshProducts])
 
   useEffect(() => {
     if (productListDialogOpen) {
       refreshProducts()
     }
-  }, [productListDialogOpen])
+  }, [productListDialogOpen, refreshProducts])
 
   const handleOpenProductDialog = () => {
     setEditingProduct(null)
@@ -276,12 +288,8 @@ export default function PricingPage() {
       cylinder_diameter: '',
       cylinder_length: '',
       has_battery: false,
-      battery_capacity_wh: '',
-      battery_capacity_mah: '',
-      battery_voltage: '',
-      battery_capacity_type: 'wh',
-      has_msds: false,
       has_liquid: false,
+      commission_category_id: '',
     })
     setProductDialogOpen(true)
   }
@@ -301,12 +309,8 @@ export default function PricingPage() {
       cylinder_diameter: String(product.cylinder_diameter || ''),
       cylinder_length: String(product.cylinder_length || ''),
       has_battery: !!product.has_battery,
-      battery_capacity_wh: String(product.battery_capacity_wh || ''),
-      battery_capacity_mah: String(product.battery_capacity_mah || ''),
-      battery_voltage: String(product.battery_voltage || ''),
-      battery_capacity_type: product.battery_capacity_type || 'wh',
-      has_msds: !!product.has_msds,
       has_liquid: !!product.has_liquid,
+      commission_category_id: product.commission_category_id ? String(product.commission_category_id) : '',
       commission_rate: String(Math.round((product.commission_rate || 0) * 100)),
       target_profit_margin: String(Math.round((product.target_profit_margin || 0) * 100)),
       promotion_cost_rate: String(Math.round((product.promotion_cost_rate || 0) * 100)),
@@ -378,12 +382,8 @@ export default function PricingPage() {
         cylinder_diameter: isCylinder ? (Number(productForm.cylinder_diameter) || 0) : 0,
         cylinder_length: isCylinder ? (Number(productForm.cylinder_length) || 0) : 0,
         has_battery: productForm.has_battery,
-        battery_capacity_wh: Number(productForm.battery_capacity_wh) || 0,
-        battery_capacity_mah: Number(productForm.battery_capacity_mah) || 0,
-        battery_voltage: Number(productForm.battery_voltage) || 0,
-        battery_capacity_type: productForm.battery_capacity_type || 'wh',
-        has_msds: productForm.has_msds,
         has_liquid: productForm.has_liquid,
+        commission_category_id: productForm.commission_category_id && productForm.commission_category_id !== 'none' ? Number(productForm.commission_category_id) : null,
         commission_rate: (Number(productForm.commission_rate) || 0) / 100,
         target_profit_margin: (Number(productForm.target_profit_margin) || 0) / 100,
         promotion_cost_rate: (Number(productForm.promotion_cost_rate) || 0) / 100,
@@ -459,12 +459,8 @@ export default function PricingPage() {
         cylinder_diameter: isCylinder ? (Number(preciseForm.cylinder_diameter) || 0) : 0,
         cylinder_length: isCylinder ? (Number(preciseForm.cylinder_length) || 0) : 0,
         has_battery: preciseForm.has_battery,
-        battery_capacity_wh: Number(preciseForm.battery_capacity_wh) || 0,
-        battery_capacity_mah: Number(preciseForm.battery_capacity_mah) || 0,
-        battery_voltage: Number(preciseForm.battery_voltage) || 0,
-        battery_capacity_type: preciseForm.battery_capacity_type || 'wh',
-        has_msds: preciseForm.has_msds,
         has_liquid: preciseForm.has_liquid,
+        commission_category_id: preciseForm.commission_category_id && preciseForm.commission_category_id !== 'none' ? Number(preciseForm.commission_category_id) : null,
         commission_rate: Number(preciseForm.commission_rate) / 100,
         target_profit_margin: Number(preciseForm.target_profit_margin) / 100,
         promotion_cost_rate: Number(preciseForm.promotion_cost_rate) / 100,
@@ -508,6 +504,7 @@ export default function PricingPage() {
       return
     }
     setLoading(true)
+    setShowBreakeven(false)
     setFastResult(null)
     try {
       const productData = {
@@ -577,7 +574,9 @@ export default function PricingPage() {
       return
     }
     setLoading(true)
+    setShowBreakeven(false)
     setPreciseResult(null)
+    setGroupedResult(null)
     try {
       const isCylinder = p.is_cylinder === 'cylinder'
       const productData = {
@@ -593,11 +592,8 @@ export default function PricingPage() {
         cylinder_diameter: isCylinder ? (Number(p.cylinder_diameter) || 0) : 0,
         cylinder_length: isCylinder ? (Number(p.cylinder_length) || 0) : 0,
         has_battery: p.has_battery,
-        battery_capacity_wh: Number(p.battery_capacity_wh) || 0,
-        battery_capacity_mah: Number(p.battery_capacity_mah) || 0,
-        battery_voltage: Number(p.battery_voltage) || 0,
-        has_msds: p.has_msds,
         has_liquid: p.has_liquid,
+        commission_category_id: p.commission_category_id && p.commission_category_id !== 'none' ? Number(p.commission_category_id) : null,
         commission_rate: Number(p.commission_rate) / 100,
         target_profit_margin: Number(p.target_profit_margin) / 100,
         promotion_cost_rate: Number(p.promotion_cost_rate) / 100,
@@ -609,10 +605,18 @@ export default function PricingPage() {
       // 始终发送 product_data（表单当前值），product_id 只做验证保留
       const response = await pricingAPI.calculate(
         p.product_id ? Number(p.product_id) : null,
-        'detailed',
+        'precise',
         productData
       )
+      
+      const groupedResponse = await pricingAPI.calculateGrouped(
+        p.product_id ? Number(p.product_id) : null,
+        'precise',
+        productData
+      )
+      
       setPreciseResult(response)
+      setGroupedResult(groupedResponse)
       toast.dismiss(); toast.success('计算完成')
     } catch (error) {
       toast.error(getApiError(error) || '计算失败')
@@ -650,6 +654,7 @@ export default function PricingPage() {
         battery_capacity_type: product.battery_capacity_type || 'wh',
         has_msds: !!product.has_msds,
         has_liquid: !!product.has_liquid,
+        commission_category_id: product.commission_category_id ? String(product.commission_category_id) : '',
         commission_rate: String(Math.round((product.commission_rate ?? 0) * 100)),
         target_profit_margin: String(Math.round((product.target_profit_margin ?? 0) * 100)),
         promotion_cost_rate: String(Math.round((product.promotion_cost_rate ?? 0) * 100)),
@@ -663,16 +668,169 @@ export default function PricingPage() {
 
   const renderResult = () => {
     const result = activeTab === 'fast' ? fastResult : preciseResult
-    if (!result) return null
-    const pp = result.price_priority
-    const sp = result.speed_priority
+    if (!result && !groupedResult) return null
+    const hasPreciseResults = activeTab === 'precise' && (preciseResult || groupedResult)
+    const pp = result?.price_priority
+    const sp = result?.speed_priority
     return (
       <div className="mt-6 space-y-6">
         <div className="text-sm text-muted-foreground">
-          汇率：1 RUB = {result.exchange_rates?.rub_cny} CNY | 1 USD = {result.exchange_rates?.usd_cny} CNY
+          汇率：1 RUB = {result?.exchange_rates?.rub_cny || groupedResult?.exchange_rates?.rub_cny} CNY | 1 USD = {result?.exchange_rates?.usd_cny || groupedResult?.exchange_rates?.usd_cny} CNY
         </div>
 
-        {/* 价格优先方案 */}
+        {hasPreciseResults && (
+          <div className="flex items-center justify-between bg-muted/40 p-4 rounded-xl border border-border/50 mb-6">
+            <div className="space-y-1">
+              <Label className="text-sm font-semibold cursor-pointer" onClick={() => setShowBreakeven(!showBreakeven)}>
+                盈亏平衡线模式
+              </Label>
+              <div className="text-xs text-muted-foreground">开启后将展示各项物流方案的盈亏平衡建议售价</div>
+            </div>
+            <Switch
+              aria-label="盈亏平衡线切换"
+              checked={showBreakeven}
+              onCheckedChange={setShowBreakeven}
+              disabled={!preciseResult && !groupedResult}
+            />
+          </div>
+        )}
+
+        {activeTab === 'precise' && groupedResult && (
+          <Card className="border-cost-profit/20 bg-card/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">分组计算结果</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="rfbs_ru">
+                <TabsList className="grid grid-cols-4 mb-4">
+                  <TabsTrigger value="rfbs_ru">rFBS-俄罗斯</TabsTrigger>
+                  <TabsTrigger value="rfbs_cis">rFBS-独联体</TabsTrigger>
+                  <TabsTrigger value="fbp_ru">FBP-仅俄罗斯</TabsTrigger>
+                  <TabsTrigger value="fbp_cis">FBP-俄+CIS</TabsTrigger>
+                </TabsList>
+                {/* rFBS-俄罗斯 */}
+                <TabsContent value="rfbs_ru" className="mt-0">
+                  {(() => {
+                    const dk = showBreakeven ? 'breakeven_rfbs_ru' : 'rfbs_ru'
+                    const gd = groupedResult[dk] || groupedResult['rfbs_ru']
+                    if (!gd) return <p className="text-sm text-muted-foreground py-4">无匹配物流规则</p>
+                    return (
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="text-sm font-semibold text-cost-logistics mb-2">💰 低价优先</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <ResultCard title="陆运方案" item={gd.price_priority?.land} />
+                            <ResultCard title="空运方案" item={gd.price_priority?.air} />
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-cost-profit mb-2">⚡ 速度优先</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <ResultCard title="陆运方案" item={gd.speed_priority?.land} />
+                            <ResultCard title="空运方案" item={gd.speed_priority?.air} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </TabsContent>
+                {/* rFBS-独联体 — 6 country sub-tabs */}
+                <TabsContent value="rfbs_cis" className="mt-0">
+                  <Tabs defaultValue="rfbs_KZ">
+                    <TabsList className="grid grid-cols-6 mb-4">
+                      {CIS_COUNTRIES.map(c => (
+                        <TabsTrigger key={c.key} value={c.key}>{c.label}</TabsTrigger>
+                      ))}
+                    </TabsList>
+                    {CIS_COUNTRIES.map(c => {
+                      const dk = showBreakeven ? `breakeven_${c.key}` : c.key
+                      const gd = groupedResult[dk] || groupedResult[c.key]
+                      return (
+                        <TabsContent key={c.key} value={c.key} className="mt-0">
+                          {gd && (gd.price_priority?.land?.is_available || gd.price_priority?.air?.is_available || gd.speed_priority?.land?.is_available || gd.speed_priority?.air?.is_available) ? (
+                            <div className="space-y-4">
+                              <div>
+                                <h4 className="text-sm font-semibold text-cost-logistics mb-2">💰 低价优先</h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <ResultCard title="陆运方案" item={gd.price_priority?.land} />
+                                  <ResultCard title="空运方案" item={gd.price_priority?.air} />
+                                </div>
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-semibold text-cost-profit mb-2">⚡ 速度优先</h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <ResultCard title="陆运方案" item={gd.speed_priority?.land} />
+                                  <ResultCard title="空运方案" item={gd.speed_priority?.air} />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground py-4">该国家无匹配物流规则</p>
+                          )}
+                        </TabsContent>
+                      )
+                    })}
+                  </Tabs>
+                </TabsContent>
+                {/* FBP-仅俄罗斯 */}
+                <TabsContent value="fbp_ru" className="mt-0">
+                  {(() => {
+                    const dk = showBreakeven ? 'breakeven_fbp_ru' : 'fbp_ru'
+                    const gd = groupedResult[dk] || groupedResult['fbp_ru']
+                    if (!gd) return <p className="text-sm text-muted-foreground py-4">无匹配物流规则</p>
+                    return (
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="text-sm font-semibold text-cost-logistics mb-2">💰 低价优先</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <ResultCard title="陆运方案" item={gd.price_priority?.land} />
+                            <ResultCard title="空运方案" item={gd.price_priority?.air} />
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-cost-profit mb-2">⚡ 速度优先</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <ResultCard title="陆运方案" item={gd.speed_priority?.land} />
+                            <ResultCard title="空运方案" item={gd.speed_priority?.air} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </TabsContent>
+                {/* FBP-俄+CIS */}
+                <TabsContent value="fbp_cis" className="mt-0">
+                  {(() => {
+                    const dk = showBreakeven ? 'breakeven_fbp_cis' : 'fbp_cis'
+                    const gd = groupedResult[dk] || groupedResult['fbp_cis']
+                    if (!gd) return <p className="text-sm text-muted-foreground py-4">无匹配物流规则</p>
+                    return (
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="text-sm font-semibold text-cost-logistics mb-2">💰 低价优先</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <ResultCard title="陆运方案" item={gd.price_priority?.land} />
+                            <ResultCard title="空运方案" item={gd.price_priority?.air} />
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-cost-profit mb-2">⚡ 速度优先</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <ResultCard title="陆运方案" item={gd.speed_priority?.land} />
+                            <ResultCard title="空运方案" item={gd.speed_priority?.air} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 价格优先方案 — 仅快速模式 */}
+        {activeTab === 'fast' && pp && (
         <div className="bg-cost-logistics/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">价格优先方案</h3>
           <div className="space-y-3">
@@ -686,8 +844,10 @@ export default function PricingPage() {
             </div>
           </div>
         </div>
+        )}
 
-        {/* 速度优先方案 */}
+        {/* 速度优先方案 — 仅快速模式 */}
+        {activeTab === 'fast' && sp && (
         <div className="bg-cost-profit/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">速度优先方案</h3>
           <div className="space-y-3">
@@ -701,9 +861,10 @@ export default function PricingPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* 被淘汰的物流 */}
-        {result.filtered_logistics && (
+        {result?.filtered_logistics && (
           <div className="bg-surface-highest/50 p-5 rounded-lg">
             <h3 className="text-lg font-semibold mb-4 text-gray-400">被淘汰的物流</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -803,8 +964,8 @@ export default function PricingPage() {
             <CardContent className="space-y-4">
 
               {/* 产品基本信息 */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">产品基本信息</Label>
+              <div className="space-y-4 p-4 rounded-lg bg-muted/20 border border-border/50">
+                <Label className="text-sm font-semibold text-foreground">产品基本信息</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">选择产品</Label>
@@ -837,8 +998,8 @@ export default function PricingPage() {
               </div>
 
               {/* 物流规格 */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">物流规格</Label>
+              <div className="space-y-4 p-4 rounded-lg bg-muted/20 border border-border/50">
+                <Label className="text-sm font-semibold text-foreground">物流规格</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <RateInput label="商品重量（克）" value={preciseForm.weight_g}
                     onChange={(v) => setPreciseForm({ ...preciseForm, weight_g: v })} defaultVal="0" />
@@ -880,60 +1041,27 @@ export default function PricingPage() {
               </div>
 
               {/* 电池和液体 */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">电池和液体</Label>
+              <div className="space-y-4 p-4 rounded-lg bg-muted/20 border border-border/50">
+                <Label className="text-sm font-semibold text-foreground">电池和液体</Label>
                 <div className="flex gap-4 flex-wrap">
-                  <label className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm">
                     <Checkbox checked={preciseForm.has_battery}
+                      aria-label="含电池"
                       onCheckedChange={(v) => setPreciseForm({ ...preciseForm, has_battery: !!v })} />
                     含电池
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
                     <Checkbox checked={preciseForm.has_liquid}
+                      aria-label="含液体"
                       onCheckedChange={(v) => setPreciseForm({ ...preciseForm, has_liquid: !!v })} />
                     含液体
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={preciseForm.has_msds}
-                      onCheckedChange={(v) => setPreciseForm({ ...preciseForm, has_msds: !!v })} />
-                    有 MSDS 证书
-                  </label>
-                </div>
-                {preciseForm.has_battery && (
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">电池容量填写方式</Label>
-                    <RadioGroup
-                      value={preciseForm.battery_capacity_type}
-                      onValueChange={(v) => setPreciseForm({ ...preciseForm, battery_capacity_type: v })}
-                      className="flex gap-4"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <RadioGroupItem value="wh" id="bat-wh" />
-                        <Label htmlFor="bat-wh" className="text-sm cursor-pointer">填写 Wh（瓦时）</Label>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <RadioGroupItem value="mah_v" id="bat-mahv" />
-                        <Label htmlFor="bat-mahv" className="text-sm cursor-pointer">填写 mAh + V</Label>
-                      </div>
-                    </RadioGroup>
-                    {preciseForm.battery_capacity_type === 'wh' ? (
-                      <RateInput label="电池容量（Wh）" value={preciseForm.battery_capacity_wh}
-                        onChange={(v) => setPreciseForm({ ...preciseForm, battery_capacity_wh: v })} defaultVal="0" />
-                    ) : (
-                      <div className="grid grid-cols-2 gap-3">
-                        <RateInput label="电池容量（mAh）" value={preciseForm.battery_capacity_mah}
-                          onChange={(v) => setPreciseForm({ ...preciseForm, battery_capacity_mah: v })} defaultVal="0" />
-                        <RateInput label="电池电压（V）" value={preciseForm.battery_voltage}
-                          onChange={(v) => setPreciseForm({ ...preciseForm, battery_voltage: v })} defaultVal="0" />
-                      </div>
-                    )}
                   </div>
-                )}
+                </div>
               </div>
 
               {/* 定价参数 */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">定价参数</Label>
+              <div className="space-y-4 p-4 rounded-lg bg-muted/20 border border-border/50">
+                <Label className="text-sm font-semibold text-foreground">定价参数</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <RateInput label="贴标费用（元）" value={preciseForm.labeling_fee}
                     onChange={(v) => setPreciseForm({ ...preciseForm, labeling_fee: v })} defaultVal="0" step="0.01" />
@@ -941,8 +1069,26 @@ export default function PricingPage() {
                     onChange={(v) => setPreciseForm({ ...preciseForm, shipping_fee: v })} defaultVal="0" step="0.01" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <RateInput label="佣金费率(%)" value={preciseForm.commission_rate}
-                    onChange={(v) => setPreciseForm({ ...preciseForm, commission_rate: v })} defaultVal="0" step="1" />
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">佣金类目</Label>
+                    <div className="flex items-center gap-2">
+                      <Select value={preciseForm.commission_category_id} onValueChange={(v) => setPreciseForm({ ...preciseForm, commission_category_id: v })}>
+                        <SelectTrigger className="h-8 flex-1">
+                          <SelectValue placeholder="选择佣金类目" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">不使用类目(0%)</SelectItem>
+                          {commissionCategories.map(cat => (
+                            <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button variant="outline" size="sm" className="h-8 px-3 text-xs bg-muted/50 hover:bg-muted transition-colors" onClick={() => window.open('/commission-categories', '_blank')}>
+                        <Settings2 className="w-3.5 h-3.5 mr-1" />
+                        管理
+                      </Button>
+                    </div>
+                  </div>
                   <RateInput label="运营利润率(%)" value={preciseForm.target_profit_margin}
                     onChange={(v) => setPreciseForm({ ...preciseForm, target_profit_margin: v })} defaultVal="0" step="1" />
                   <RateInput label="推广费率(%)" value={preciseForm.promotion_cost_rate}
@@ -1097,61 +1243,19 @@ export default function PricingPage() {
               </div>
             )}
             <div className="flex gap-4">
-              <label className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2 text-sm">
                 <Checkbox checked={productForm.has_battery}
+                  aria-label="产品含电池"
                   onCheckedChange={(v) => setProductForm({ ...productForm, has_battery: !!v })} />
                 含电池
-              </label>
-              <label className="flex items-center gap-2 text-sm">
+              </div>
+              <div className="flex items-center gap-2 text-sm">
                 <Checkbox checked={productForm.has_liquid}
+                  aria-label="产品含液体"
                   onCheckedChange={(v) => setProductForm({ ...productForm, has_liquid: !!v })} />
                 含液体
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={productForm.has_msds}
-                  onCheckedChange={(v) => setProductForm({ ...productForm, has_msds: !!v })} />
-                有 MSDS 证书
-              </label>
-            </div>
-            {productForm.has_battery && (
-              <div className="space-y-2">
-                <Label>电池容量填写方式</Label>
-                <RadioGroup
-                  value={productForm.battery_capacity_type}
-                  onValueChange={(v) => setProductForm({ ...productForm, battery_capacity_type: v })}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="wh" id="form-bat-wh" />
-                    <Label htmlFor="form-bat-wh" className="text-sm cursor-pointer">填写 Wh（瓦时）</Label>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="mah_v" id="form-bat-mahv" />
-                    <Label htmlFor="form-bat-mahv" className="text-sm cursor-pointer">填写 mAh + V</Label>
-                  </div>
-                </RadioGroup>
-                {productForm.battery_capacity_type === 'wh' ? (
-                  <div>
-                    <Label>电池容量（Wh）</Label>
-                    <Input type="number" value={productForm.battery_capacity_wh}
-                      onChange={(e) => setProductForm({ ...productForm, battery_capacity_wh: e.target.value })} />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>电池容量（mAh）</Label>
-                      <Input type="number" value={productForm.battery_capacity_mah}
-                        onChange={(e) => setProductForm({ ...productForm, battery_capacity_mah: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label>电池电压（V）</Label>
-                      <Input type="number" value={productForm.battery_voltage}
-                        onChange={(e) => setProductForm({ ...productForm, battery_voltage: e.target.value })} />
-                    </div>
-                  </div>
-                )}
               </div>
-            )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>贴标费用（元）</Label>
@@ -1165,8 +1269,20 @@ export default function PricingPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <RateInput label="佣金费率(%)" value={productForm.commission_rate}
-                onChange={(v) => setProductForm({ ...productForm, commission_rate: v })} defaultVal="0" step="1" />
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">佣金类目</Label>
+                <Select value={productForm.commission_category_id} onValueChange={(v) => setProductForm({ ...productForm, commission_category_id: v })}>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="选择佣金类目" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">不使用类目(0%)</SelectItem>
+                    {commissionCategories.map(cat => (
+                      <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <RateInput label="运营利润率(%)" value={productForm.target_profit_margin}
                 onChange={(v) => setProductForm({ ...productForm, target_profit_margin: v })} defaultVal="0" step="1" />
               <RateInput label="推广费率(%)" value={productForm.promotion_cost_rate}

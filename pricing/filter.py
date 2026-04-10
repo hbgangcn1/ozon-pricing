@@ -39,6 +39,14 @@ def _filter_check_weight(logistic, product):
             calculated_weight = volume_weight * 1000
         else:
             calculated_weight = product.get("weight_g", 0)
+    elif volume_mode == "sum_of_sides":
+        sum_of_sides_threshold = logistic.get("sum_of_sides_threshold", 0)
+        sum_of_sides_val = length_cm + width_cm + height_cm
+        if sum_of_sides_val > sum_of_sides_threshold:
+            volume_weight = (length_cm * width_cm * height_cm) / volume_coefficient
+            calculated_weight = volume_weight * 1000
+        else:
+            calculated_weight = product.get("weight_g", 0)
     else:
         calculated_weight = product.get("weight_g", 0)
     w = calculated_weight
@@ -104,6 +112,12 @@ def _filter_check_sides(logistic, sides):
         second_side = sorted_sides[1] if len(sorted_sides) > 1 else 0
         if 0 < max_second_side < second_side:
             return f"第二边长 {second_side} cm 超过限制 {max_second_side} cm"
+    max_third_side = logistic.get("max_third_side", 0)
+    if max_third_side > 0:
+        sorted_s = sorted(sides, reverse=True)
+        third_side = sorted_s[2] if len(sorted_s) > 2 else 0
+        if 0 < max_third_side < third_side:
+            return f"第三边长 {third_side} cm 超过限制 {max_third_side} cm"
     min_second_side = logistic.get("min_second_side", 0)
     if min_second_side > 0:
         sorted_sides = sorted(sides, reverse=True)
@@ -162,20 +176,13 @@ def _filter_calc_fee(logistic, w):
 def _filter_check_price_limits(logistic, product, w):
     try:
         try:
-            from exchange_service import (
-                get_fallback_exchange_rate,
-                get_fallback_usd_rate,
-            )
+            from exchange_service import get_fallback_exchange_rate
         except ImportError:
 
             def get_fallback_exchange_rate():
                 return 0.0904
 
-            def get_fallback_usd_rate():
-                return 7.2
-
         rate = get_fallback_exchange_rate()
-        usd_rate = get_fallback_usd_rate()
         unit_price = float(product.get("unit_price", 0))
         labeling_fee = float(product.get("labeling_fee", 0))
         shipping_fee = float(product.get("shipping_fee", 0))
@@ -192,31 +199,12 @@ def _filter_check_price_limits(logistic, product, w):
         if denominator == 0:
             return "费率参数异常导致除以 0"
         rough_cny = total_cny / denominator
-        rough_rub = rough_cny / rate
-        limit_currency = logistic.get("price_limit_currency", "RUB")
-        if limit_currency == "RUB":
-            limit_value = float(logistic.get("price_limit_rub", 0))
-        else:
-            limit_value = float(logistic.get("price_limit", 0))
-        min_currency = logistic.get("price_min_currency", "RUB")
-        if min_currency == "RUB":
-            min_value = float(logistic.get("price_min_rub", 0))
-        else:
-            min_value = float(logistic.get("price_min", 0))
-        if limit_currency == "USD" and limit_value > 0:
-            rough_usd = rough_cny / usd_rate
-            if rough_usd > limit_value:
-                return f"估算售价 {rough_usd:.2f} USD 超价格上限 {limit_value} USD"
-        elif limit_value > 0:
-            if rough_rub > limit_value:
-                return f"估算售价 {rough_rub:.2f} RUB 超价格上限 {limit_value} RUB"
-        if min_currency == "USD" and min_value > 0:
-            rough_usd = rough_cny / usd_rate
-            if rough_usd < min_value:
-                return f"估算售价 {rough_usd:.2f} USD 低于价格下限 {min_value} USD"
-        elif min_value > 0:
-            if rough_rub < min_value:
-                return f"估算售价 {rough_rub:.2f} RUB 低于价格下限 {min_value} RUB"
+        limit_value = float(logistic.get("price_limit_cny", 0) or 0)
+        min_value = float(logistic.get("price_min_cny", 0) or 0)
+        if limit_value > 0 and rough_cny > limit_value:
+            return f"估算售价 {rough_cny:.2f} CNY 超过价格上限 {limit_value:.2f} CNY"
+        if min_value > 0 and rough_cny < min_value:
+            return f"估算售价 {rough_cny:.2f} CNY 低于价格下限 {min_value:.2f} CNY"
     except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
         return f"限价判断异常: {e}"
     return None
