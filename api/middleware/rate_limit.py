@@ -29,8 +29,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             for key in oldest_keys[: len(self.requests) - MAX_TRACKED_KEYS + 1]:
                 del self.requests[key]
 
+    _LOCALHOST_IPS = {"127.0.0.1", "::1", "localhost"}
+
     async def dispatch(self, request: Request, call_next):
         client_ip = self._get_client_ip(request)
+
+        if client_ip in self._LOCALHOST_IPS:
+            return await call_next(request)
+
         current_time = time.time()
 
         self.requests[client_ip] = [

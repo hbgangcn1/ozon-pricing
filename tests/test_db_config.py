@@ -203,7 +203,7 @@ async def test_is_registration_open_key_missing_returns_true(db_session):
 
 async def test_is_registration_open_any_non_zero_returns_true(db_session):
     """Returns True for arbitrary non-'0' value like 'true'."""
-    key = "registration_open"
+    key = "open_registration"
     await set_system_config(db_session, key, "true")
     await db_session.flush()
 

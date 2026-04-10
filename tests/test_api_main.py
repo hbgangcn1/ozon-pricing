@@ -405,6 +405,18 @@ async def test_rate_limit_window_expiry():
 
 
 @pytest.mark.asyncio
+async def test_rate_limit_localhost_bypass():
+    """Localhost IPs bypass rate limiting entirely."""
+    middleware = RateLimitMiddleware(None, max_requests=2, window_seconds=60)
+
+    for ip in ("127.0.0.1", "::1", "localhost"):
+        assert ip in middleware._LOCALHOST_IPS
+
+    assert "192.168.1.1" not in middleware._LOCALHOST_IPS
+    assert "unknown" not in middleware._LOCALHOST_IPS
+
+
+@pytest.mark.asyncio
 async def test_rate_limit_unknown_client():
     """Test handling of unknown client (request.client is None)."""
     from fastapi import FastAPI

@@ -70,13 +70,15 @@ def parse_rate(value: Any) -> tuple[float, float, str]:
         return (0.0, 0.0, "100g")
     compact = text.replace(" ", "").replace(",", ".")
     match = re.search(
-        r"([0-9]+(?:\.[0-9]+)?)\+[^0-9]*([0-9]+(?:\.[0-9]+)?)/([0-9]+)(?:g|г|克)",
+        r"([0-9]+(?:\.[0-9]+)?)\+[^0-9]*([0-9]+(?:\.[0-9]+)?)/([0-9]*)(?:g|г|克)",
         compact,
         re.IGNORECASE,
     )
     if not match:
         return (0.0, 0.0, "100g")
-    return (float(match.group(1)), float(match.group(2)), f"{match.group(3)}g")
+    unit_num = match.group(3)
+    unit = f"{unit_num}g" if unit_num else "1g"
+    return (float(match.group(1)), float(match.group(2)), unit)
 
 
 def parse_volume_coeff(value: Any) -> float:
