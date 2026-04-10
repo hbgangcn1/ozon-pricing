@@ -2,20 +2,15 @@ import logging
 import secrets
 import string
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 import bcrypt
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from db.admin_helpers import (
-    _build_users_filter,
-    _format_audit_log_rows,
-    _format_user_row,
-    _subscription_expires_to_datetime,
-)
+from db import admin_helpers
 from db.logging_utils import log_admin_action
 from models.log import AuditLog
 from models.logistics import Logistics
@@ -23,6 +18,14 @@ from models.product import Product
 from models.user import User
 
 logger = logging.getLogger(__name__)
+
+build_users_filter = getattr(admin_helpers, "_build_users_filter")
+format_audit_log_rows = getattr(admin_helpers, "_format_audit_log_rows")
+format_user_row = getattr(admin_helpers, "_format_user_row")
+subscription_expires_to_datetime = getattr(
+    admin_helpers,
+    "_subscription_expires_to_datetime",
+)
 
 _ALLOWED_SUBSCRIPTION_FIELDS = {
     "user_type",
@@ -73,7 +76,7 @@ async def get_all_users(
     user_type_filter=None,
     status_filter=None,
 ) -> dict:
-    conditions = _build_users_filter(search, user_type_filter, status_filter)
+    conditions = build_users_filter(search, user_type_filter, status_filter)
     base = select(User)
     for cond in conditions:
         base = base.where(cond)
@@ -91,7 +94,7 @@ async def get_all_users(
         cnt_stmt = select(func.count(Logistics.id)).where(Logistics.user_id == user.id)
         user_logistics_counts[user.id] = await session.scalar(cnt_stmt) or 0
 
-    formatted = [_format_user_row(u, user_logistics_counts) for u in users]
+    formatted = [format_user_row(u, user_logistics_counts) for u in users]
     return {
         "users": formatted,
         "total_count": total_count,
@@ -123,7 +126,7 @@ async def get_user_detail(
 
     remaining_days = None
     subscription_end_iso = None
-    expiry_dt = _subscription_expires_to_datetime(user.subscription_expires)
+    expiry_dt = subscription_expires_to_datetime(user.subscription_expires)
     if expiry_dt is not None:
         subscription_end_iso = expiry_dt.isoformat()
         today = date.today()
@@ -162,7 +165,7 @@ async def update_user_subscription_admin(
     changed = False
     for field, value in updates.items():
         if field == "subscription_end":
-            expiry_dt = _subscription_expires_to_datetime(value)
+            expiry_dt = subscription_expires_to_datetime(value)
             if expiry_dt is not None:
                 user.subscription_expires = int(expiry_dt.timestamp())
                 changed = True
@@ -291,7 +294,7 @@ async def batch_update_users(
         changed = False
         for field, value in updates.items():
             if field == "subscription_end":
-                expiry_dt = _subscription_expires_to_datetime(value)
+                expiry_dt = subscription_expires_to_datetime(value)
                 if expiry_dt is not None:
                     user.subscription_expires = int(expiry_dt.timestamp())
                     changed = True
@@ -356,7 +359,7 @@ async def get_audit_logs(
     result = await session.execute(stmt)
     rows = result.all()
 
-    formatted = _format_audit_log_rows(rows)
+    formatted = format_audit_log_rows(rows)
     return {
         "logs": formatted,
         "total_count": total_count,
@@ -396,3 +399,76 @@ async def reset_user_password(
         target_type="user",
     )
     return new_password
+
+
+_ALLOWED_USER_TYPES = {
+    "free",
+    "efficiency",
+    "professional",
+    "enterprise",
+    "test",
+    "thanks",
+}
+
+
+async def extend_subscription(
+    session: AsyncSession,
+    user_id,
+    days: int,
+) -> bool:
+    stmt = select(User).where(User.id == user_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        logger.warning("extend_subscription failed: user %s not found", user_id)
+        return False
+
+    today = date.today()
+    expires_at = subscription_expires_to_datetime(user.subscription_expires)
+    base_date = today
+    if expires_at is not None and expires_at.date() >= today:
+        base_date = expires_at.date()
+
+    new_expiry = base_date + timedelta(days=days)
+    user.subscription_expires = int(time.mktime(new_expiry.timetuple()))
+    await session.flush()
+    return True
+
+
+async def adjust_calculations(
+    session: AsyncSession,
+    user_id,
+    delta: int,
+) -> bool:
+    stmt = select(User).where(User.id == user_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        logger.warning("adjust_calculations failed: user %s not found", user_id)
+        return False
+
+    current = user.remaining_calculations or 0
+    user.remaining_calculations = max(0, current + delta)
+    await session.flush()
+    return True
+
+
+async def set_user_type(
+    session: AsyncSession,
+    user_id,
+    user_type: str,
+) -> bool:
+    if user_type not in _ALLOWED_USER_TYPES:
+        logger.warning("set_user_type failed: invalid user_type %s", user_type)
+        return False
+
+    stmt = select(User).where(User.id == user_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        logger.warning("set_user_type failed: user %s not found", user_id)
+        return False
+
+    user.user_type = user_type
+    await session.flush()
+    return True

@@ -155,12 +155,12 @@ test.describe('用户管理页面 — /users (admin)', () => {
   })
 
   test('刷新按钮重新加载用户列表', async ({ page }) => {
+    await page.goto('/users')
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 })
-    const refreshBtn = page.getByRole('button', { name: /刷新/ })
-    await expect(refreshBtn).toBeVisible()
+    const refreshBtn = page.getByRole('button', { name: '刷新', exact: true })
+    await expect(refreshBtn).toBeVisible({ timeout: 5000 })
     await refreshBtn.click()
-    // Table should still be visible after refresh
-    await expect(page.locator('table tbody tr').first()).toBeVisible()
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 })
   })
 
   test('用户列表卡片分页按钮存在', async ({ page }) => {

@@ -16,6 +16,15 @@ function UserManagementPage() {
   const [addUserVisible, setAddUserVisible] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [syncDialogOpen, setSyncDialogOpen] = useState(false)
+  const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false)
+  const [subscriptionTarget, setSubscriptionTarget] = useState(null)
+  const [subscriptionDays, setSubscriptionDays] = useState('')
+  const [calculationDelta, setCalculationDelta] = useState('')
+  const [selectedUserType, setSelectedUserType] = useState('')
+  const [loadingDays, setLoadingDays] = useState(false)
+  const [loadingDelta, setLoadingDelta] = useState(false)
+  const [loadingType, setLoadingType] = useState(false)
+
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -92,6 +101,59 @@ function UserManagementPage() {
 
   const handleFormChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleExtendSubscription = async () => {
+    if (!subscriptionDays || isNaN(subscriptionDays)) {
+      toast.error('请输入有效的天数')
+      return
+    }
+    setLoadingDays(true)
+    try {
+      await adminAPI.extendSubscription(subscriptionTarget.id, parseInt(subscriptionDays, 10))
+      toast.success('到期时间调整成功')
+      setSubscriptionDays('')
+      fetchUsers(currentPage, pageSize, searchText)
+    } catch (error) {
+      toast.error(error.userMessage || error.response?.data?.detail || '到期时间调整失败')
+    } finally {
+      setLoadingDays(false)
+    }
+  }
+
+  const handleAdjustCalculations = async () => {
+    if (!calculationDelta || isNaN(calculationDelta)) {
+      toast.error('请输入有效的次数')
+      return
+    }
+    setLoadingDelta(true)
+    try {
+      await adminAPI.adjustCalculations(subscriptionTarget.id, parseInt(calculationDelta, 10))
+      toast.success('次数调整成功')
+      setCalculationDelta('')
+      fetchUsers(currentPage, pageSize, searchText)
+    } catch (error) {
+      toast.error(error.userMessage || error.response?.data?.detail || '次数调整失败')
+    } finally {
+      setLoadingDelta(false)
+    }
+  }
+
+  const handleSetUserType = async () => {
+    if (!selectedUserType) {
+      toast.error('请选择用户类型')
+      return
+    }
+    setLoadingType(true)
+    try {
+      await adminAPI.setUserType(subscriptionTarget.id, selectedUserType)
+      toast.success('用户类型调整成功')
+      fetchUsers(currentPage, pageSize, searchText)
+    } catch (error) {
+      toast.error(error.userMessage || error.response?.data?.detail || '用户类型调整失败')
+    } finally {
+      setLoadingType(false)
+    }
   }
 
   return (
@@ -258,6 +320,7 @@ function UserManagementPage() {
                 <TableHead className="w-24">角色</TableHead>
                 <TableHead className="w-24">订阅</TableHead>
                 <TableHead className="w-24">状态</TableHead>
+                <TableHead className="w-24">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -279,6 +342,20 @@ function UserManagementPage() {
                     <Badge variant="outline" className="border-status-success/30 text-status-success">
                       {user.status}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSubscriptionTarget(user)
+                        setSelectedUserType(user.user_type || 'free')
+                        setSubscriptionDialogOpen(true)
+                      }}
+                    >
+                      订阅
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -476,6 +553,70 @@ function UserManagementPage() {
               同步
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 订阅管理对话框 */}
+      <Dialog open={subscriptionDialogOpen} onOpenChange={setSubscriptionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>订阅管理 - {subscriptionTarget?.username}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            
+            <div className="space-y-3">
+              <Label>到期时间调整（天）</Label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  placeholder="正数延长，负数缩短" 
+                  value={subscriptionDays}
+                  onChange={(e) => setSubscriptionDays(e.target.value)}
+                />
+                <Button onClick={handleExtendSubscription} disabled={loadingDays}>
+                  {loadingDays ? '提交中...' : '调整'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label>当日次数调整</Label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  placeholder="正数增加，负数减少" 
+                  value={calculationDelta}
+                  onChange={(e) => setCalculationDelta(e.target.value)}
+                />
+                <Button onClick={handleAdjustCalculations} disabled={loadingDelta}>
+                  {loadingDelta ? '提交中...' : '调整'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label>用户类型修改</Label>
+              <div className="flex gap-2">
+                <Select value={selectedUserType} onValueChange={setSelectedUserType}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="选择类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="free">免费版</SelectItem>
+                    <SelectItem value="efficiency">效率版</SelectItem>
+                    <SelectItem value="professional">专业版</SelectItem>
+                    <SelectItem value="enterprise">企业版</SelectItem>
+                    <SelectItem value="test">测试版</SelectItem>
+                    <SelectItem value="thanks">感谢版</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleSetUserType} disabled={loadingType}>
+                  {loadingType ? '提交中...' : '修改'}
+                </Button>
+              </div>
+            </div>
+            
+          </div>
         </DialogContent>
       </Dialog>
     </div>

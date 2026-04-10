@@ -11,6 +11,9 @@ vi.mock('../services/api', () => ({
     updateUser: vi.fn(),
     deleteUser: vi.fn(),
     resetPassword: vi.fn(),
+    extendSubscription: vi.fn(),
+    adjustCalculations: vi.fn(),
+    setUserType: vi.fn(),
   },
 }));
 
@@ -203,6 +206,34 @@ describe('UserManagementPage', () => {
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('获取失败');
+    });
+  });
+
+  it('opens subscription dialog and extends subscription', async () => {
+    adminAPI.extendSubscription.mockResolvedValue({});
+    render(<UserManagementPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('订阅').length).toBeGreaterThan(0);
+    });
+
+    const subscribeButtons = screen.getAllByRole('button', { name: '订阅' });
+    fireEvent.click(subscribeButtons[0]);
+
+    await waitFor(() => {
+      const headings = screen.getAllByRole('heading');
+      expect(headings.some(h => h.textContent.includes('订阅管理 -'))).toBe(true);
+    });
+
+    const daysInput = screen.getByPlaceholderText('正数延长，负数缩短');
+    fireEvent.change(daysInput, { target: { value: '30' } });
+    
+    const extendBtn = screen.getAllByText('调整')[0];
+    fireEvent.click(extendBtn);
+
+    await waitFor(() => {
+      expect(adminAPI.extendSubscription).toHaveBeenCalledWith(1, 30);
+      expect(toast.success).toHaveBeenCalledWith('到期时间调整成功');
     });
   });
 });

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -32,6 +32,18 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     role: Optional[str] = None
     user_type: Optional[str] = None
+
+
+class SubscriptionExtendRequest(BaseModel):
+    days: int
+
+
+class CalculationsAdjustRequest(BaseModel):
+    delta: int
+
+
+class UserTypeUpdateRequest(BaseModel):
+    user_type: str
 
 
 def _format_to_user_response(user: dict) -> UserResponse:
@@ -145,3 +157,48 @@ async def delete_user(
     if not success:
         raise HTTPException(status_code=404, detail="用户不存在或删除失败")
     return MessageResponse(message="删除成功")
+
+
+@router.post(
+    "/users/{user_id}/subscription/extend",
+    response_model=MessageResponse,
+)
+async def extend_user_subscription(
+    user_id: int,
+    payload: SubscriptionExtendRequest,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    success = await db_admin.extend_subscription(session, user_id, payload.days)
+    if not success:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return MessageResponse(message="订阅时长调整成功", success=True)
+
+
+@router.post(
+    "/users/{user_id}/calculations/adjust",
+    response_model=MessageResponse,
+)
+async def adjust_user_calculations(
+    user_id: int,
+    payload: CalculationsAdjustRequest,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    success = await db_admin.adjust_calculations(session, user_id, payload.delta)
+    if not success:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return MessageResponse(message="计算次数调整成功", success=True)
+
+
+@router.post("/users/{user_id}/type", response_model=MessageResponse)
+async def update_user_type(
+    user_id: int,
+    payload: UserTypeUpdateRequest,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    success = await db_admin.set_user_type(session, user_id, payload.user_type)
+    if not success:
+        raise HTTPException(status_code=400, detail="用户不存在或用户类型无效")
+    return MessageResponse(message="用户类型更新成功", success=True)

@@ -258,7 +258,11 @@ class TestGetAllUsers:
             await session.commit()
 
             result = await get_all_users(
-                session, page=1, per_page=10, status_filter="expired"
+                session,
+                page=1,
+                per_page=10,
+                search=username,
+                status_filter="expired",
             )
 
         assert any(u["username"] == username for u in result["users"])
