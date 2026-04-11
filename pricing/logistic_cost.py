@@ -229,7 +229,7 @@ def _calc_volume_weight(logistic, sides, actual_weight, debug_info):
 
 
 def _calc_fee(logistic, w, debug_info):
-    fee_mode = logistic.get("fee_mode", "base_weight")
+    fee_mode = logistic.get("fee_mode", "base_plus_continue")
     continue_unit_raw = logistic.get("continue_unit", 100)
     continue_unit = _parse_continue_unit(continue_unit_raw)
     continue_fee = float(logistic.get("continue_fee", 0))
