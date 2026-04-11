@@ -134,7 +134,15 @@ def parse(
                 item["base_fee"], item["continue_fee"], item["continue_unit"] = (
                     parse_rate(values[2])
                 )
-                item["min_weight"] = as_int(values[8])
+                min_weight_val = as_int(values[8])
+                if min_weight_val != 0:
+                    item["fee_mode"] = "first_weight"
+                    item["first_fee"] = item["base_fee"]
+                    item["first_weight_g"] = min_weight_val
+                    item["base_fee"] = 0.0
+                    item["min_weight"] = 0
+                else:
+                    item["min_weight"] = min_weight_val
                 item["max_weight"] = as_int(values[9])
                 item["price_min_cny"] = _parse_cny_value(values[12])
                 item["price_limit_cny"] = _parse_cny_value(values[13])

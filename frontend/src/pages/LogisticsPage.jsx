@@ -47,6 +47,8 @@ const DEFAULT_FORM = {
   fee_mode: 'base_weight',
   delivery_method: 'pickup',
   base_fee: '',
+  first_fee: '',
+  first_weight_g: '',
   continue_fee: '',
   continue_unit: 'kg',
   min_weight: '',
@@ -211,6 +213,8 @@ export default function LogisticsPage() {
       fee_mode: record.fee_mode ?? 'base_weight',
       delivery_method: record.delivery_method ?? 'pickup',
       base_fee: record.base_fee != null ? Number(Number(record.base_fee).toFixed(2)) : '',
+      first_fee: record.first_fee != null ? Number(Number(record.first_fee).toFixed(2)) : '',
+      first_weight_g: record.first_weight_g ?? '',
       continue_fee: record.continue_fee != null ? Number(Number(record.continue_fee).toFixed(5)) : '',
       continue_unit: record.continue_unit ?? 'kg',
       min_weight: record.min_weight ?? '',
@@ -308,7 +312,7 @@ export default function LogisticsPage() {
     }
     try {
       const numericFields = [
-        'base_fee', 'continue_fee', 'min_weight', 'max_weight',
+        'base_fee', 'first_fee', 'continue_fee', 'min_weight', 'max_weight',
         'min_days', 'max_days', 'max_sum_of_sides', 'max_longest_side',
         'min_longest_side', 'longest_side_threshold', 'second_longest_side_threshold',
         'max_third_side',
@@ -583,16 +587,29 @@ export default function LogisticsPage() {
                 </RadioGroup>
               </FormField>
               <FormRow>
-                <FormField label={form.fee_mode === 'first_weight' ? '首重费用' : '基础费用'}>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.base_fee}
-                    onChange={e => setFormField('base_fee', e.target.value)}
-                    placeholder="0.00"
-                  />
-                </FormField>
+                {form.fee_mode === 'first_weight' ? (
+                  <FormField label="首重费用">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form.first_fee}
+                      onChange={e => setFormField('first_fee', e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </FormField>
+                ) : (
+                  <FormField label="基础费用">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form.base_fee}
+                      onChange={e => setFormField('base_fee', e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </FormField>
+                )}
                 <FormField label="续重费用">
                   <Input
                     type="number"
@@ -604,6 +621,20 @@ export default function LogisticsPage() {
                   />
                 </FormField>
               </FormRow>
+              {form.fee_mode === 'first_weight' && (
+                <FormRow className="mt-3">
+                  <FormField label="首重重量(克)" tooltip="首重范围内的重量上限，单位为克">
+                    <Input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={form.first_weight_g}
+                      onChange={e => setFormField('first_weight_g', e.target.value)}
+                      placeholder="0"
+                    />
+                  </FormField>
+                </FormRow>
+              )}
               <FormRow className="mt-3">
                 <FormField label="续重单位">
                   <Select value={form.continue_unit} onValueChange={v => setFormField('continue_unit', v)}>

@@ -502,3 +502,40 @@ def test_parse_size_fields_unit_eems():
     assert item["max_longest_side"] == 150
     assert item.get("max_cylinder_sum", 0) == 0
     assert item.get("min_length", 0) == 0
+
+
+def test_china_post_first_weight_mode_eparcel():
+    """eParcel Economy (I=500) → fee_mode=first_weight, first_fee, first_weight_g."""
+    rows = _china_post_rows()
+    row = _find_row(rows, "China Post eParcel Economy")
+    assert row["fee_mode"] == "first_weight"
+    assert row["first_fee"] == 52.5
+    assert row["first_weight_g"] == 500
+    assert row["base_fee"] == 0.0
+    assert row["continue_fee"] == 0.15
+    assert row["continue_unit"] == "500g"
+    assert row["min_weight"] == 0
+
+
+def test_china_post_first_weight_mode_eems():
+    """eEMS (I=50) → fee_mode=first_weight, first_fee, first_weight_g."""
+    rows = _china_post_rows()
+    row = _find_row(rows, "China Post eEMS")
+    assert row["fee_mode"] == "first_weight"
+    assert row["first_fee"] == 102.0
+    assert row["first_weight_g"] == 50
+    assert row["base_fee"] == 0.0
+    assert row["continue_fee"] == 2.55
+    assert row["continue_unit"] == "50g"
+    assert row["min_weight"] == 0
+
+
+def test_china_post_base_mode_when_i_column_zero():
+    """Standard (I=0) → fee_mode stays base_plus_continue."""
+    rows = _china_post_rows()
+    row = _find_row(rows, "China Post to PUDO Standard")
+    assert row["fee_mode"] == "base_plus_continue"
+    assert row["base_fee"] == 1.9
+    assert row["first_fee"] == 0.0
+    assert row["first_weight_g"] == 0
+    assert row["min_weight"] == 0
