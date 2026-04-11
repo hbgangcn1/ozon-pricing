@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Upload, Loader2, CheckCircle2, Eye, Trash2, Truck } from 'lucide-react'
+import { Plus, Upload, Loader2, CheckCircle2, Eye, Trash2, Truck, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
@@ -7,6 +7,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
+import { Checkbox } from '../components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog'
 import { logisticsPoolAPI } from '../services/api'
@@ -21,6 +22,8 @@ export default function LogisticsPoolPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [isBatchAdding, setIsBatchAdding] = useState(false)
   
   const { isAdmin } = useAuthStore()
   const fileInputRef = useRef(null)
@@ -124,6 +127,60 @@ export default function LogisticsPoolPage() {
     }
   }
 
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === logistics.length && logistics.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(logistics.map(item => item.id)))
+    }
+  }
+
+  const handleClearSelection = () => {
+    setSelectedIds(new Set())
+  }
+
+  const handleBatchAddToMyLogistics = async () => {
+    if (selectedIds.size === 0) return
+    setIsBatchAdding(true)
+    try {
+      const allIds = Array.from(selectedIds)
+      const BATCH_SIZE = 200
+      let totalAdded = 0
+      let totalNotFound = 0
+
+      for (let i = 0; i < allIds.length; i += BATCH_SIZE) {
+        const batch = allIds.slice(i, i + BATCH_SIZE)
+        const result = await logisticsPoolAPI.batchAddToMyLogistics(batch)
+        const data = result?.data || result
+        totalAdded += data?.added || 0
+        totalNotFound += data?.not_found?.length || 0
+      }
+
+      if (totalNotFound > 0) {
+        toast.success(`已添加 ${totalAdded} 条，${totalNotFound} 条未找到`)
+      } else {
+        toast.success(`已成功添加 ${totalAdded} 条到我的物流`)
+      }
+      setSelectedIds(new Set())
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || '批量添加失败')
+    } finally {
+      setIsBatchAdding(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -190,6 +247,13 @@ export default function LogisticsPoolPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[40px]">
+                  <Checkbox
+                    checked={logistics.length > 0 && selectedIds.size === logistics.length}
+                    onCheckedChange={handleSelectAll}
+                    aria-label="全选"
+                  />
+                </TableHead>
                 <TableHead>名称</TableHead>
                 <TableHead>履约类型</TableHead>
                 <TableHead>目的地</TableHead>
@@ -202,15 +266,22 @@ export default function LogisticsPoolPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">加载中...</TableCell>
+                  <TableCell colSpan={8} className="text-center py-8">加载中...</TableCell>
                 </TableRow>
               ) : logistics.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-text-muted">暂无物流数据</TableCell>
+                  <TableCell colSpan={8} className="text-center py-8 text-text-muted">暂无物流数据</TableCell>
                 </TableRow>
               ) : (
                 logistics.map((item) => (
-                  <TableRow key={item.id}>
+                  <TableRow key={item.id} className={selectedIds.has(item.id) ? 'bg-primary/5' : ''}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.has(item.id)}
+                        onCheckedChange={() => toggleSelect(item.id)}
+                        aria-label={`选择 ${item.name}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{item.fulfillment_type}</TableCell>
                     <TableCell>{item.destination}</TableCell>
@@ -260,6 +331,28 @@ export default function LogisticsPoolPage() {
         </CardContent>
       </Card>
 
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-surface-high border border-surface-highest rounded-lg px-6 py-3 shadow-lg">
+          <span className="text-sm text-text-primary font-medium">已选 {selectedIds.size} 项</span>
+          <Button
+            size="sm"
+            onClick={handleBatchAddToMyLogistics}
+            disabled={isBatchAdding}
+          >
+            {isBatchAdding ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4 mr-1" />
+            )}
+            全部添加到我的物流
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleClearSelection}>
+            <X className="w-4 h-4 mr-1" />
+            取消
+          </Button>
+        </div>
+      )}
+
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-4xl bg-surface-container p-0 border-surface-high shadow-lg">
           <DialogHeader className="px-6 py-5 bg-surface-container border-b border-surface-high flex flex-row items-center gap-4">
@@ -304,8 +397,8 @@ export default function LogisticsPoolPage() {
               { label: '最长边', value: detailItem?.max_longest_side ? `${detailItem.max_longest_side} cm` : null },
               { label: '第二长边', value: detailItem?.max_second_side ? `${detailItem.max_second_side} cm` : null },
               { label: '第三长边', value: detailItem?.max_third_side ? `${detailItem.max_third_side} cm` : null },
-              { label: '最小第二边', value: detailItem?.min_second_side ? `${detailItem.min_second_side} cm` : null },
-              { label: '最小长度', value: detailItem?.min_length ? `${detailItem.min_length} cm` : null },
+              { label: '第二边长下限(cm)', value: detailItem?.min_second_side ? `${detailItem.min_second_side} cm` : null },
+              { label: '最长边下限(cm)', value: detailItem?.min_length ? `${detailItem.min_length} cm` : null },
               { label: '最长边阈值', value: detailItem?.longest_side_threshold ? `${detailItem.longest_side_threshold} cm` : null }
             ]} />
 

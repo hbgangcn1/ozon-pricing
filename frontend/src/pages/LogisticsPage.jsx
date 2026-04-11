@@ -36,6 +36,13 @@ const getApiError = (error) => {
   }
 }
 
+const CONTINUE_UNIT_MAP = { '1': '1g', '50': '50g', '100': '100g', '500': '500g', '1000': '1kg' }
+function normalizeContinueUnit(raw) {
+  if (!raw) return '100g'
+  const s = String(raw).trim().toLowerCase()
+  return CONTINUE_UNIT_MAP[s] || (/^\d+$/.test(s) ? s + 'g' : s)
+}
+
 const DEFAULT_FORM = {
   name: '',
   fulfillment_type: 'rfbs',
@@ -44,22 +51,23 @@ const DEFAULT_FORM = {
   fbp_company: '',
   is_smart: 0,
   type: 'land',
-  fee_mode: 'base_weight',
+  fee_mode: 'base_plus_continue',
   delivery_method: 'pickup',
   base_fee: '',
   first_fee: '',
   first_weight_g: '',
   continue_fee: '',
-  continue_unit: 'kg',
+  continue_unit: '100g',
   min_weight: '',
   max_weight: '',
   min_days: '',
   max_days: '',
   max_sum_of_sides: '',
   max_longest_side: '',
-  min_longest_side: '',
+  min_length: '',
   longest_side_threshold: '',
-  second_longest_side_threshold: '',
+  max_second_side: '',
+  min_second_side: '',
   max_third_side: '',
   volume_mode: 'none',
   volume_coefficient: '',
@@ -210,22 +218,23 @@ export default function LogisticsPage() {
       fbp_company: record.fbp_company ?? '',
       is_smart: record.is_smart ?? 0,
       type: record.type ?? 'land',
-      fee_mode: record.fee_mode ?? 'base_weight',
+      fee_mode: record.fee_mode ?? 'base_plus_continue',
       delivery_method: record.delivery_method ?? 'pickup',
       base_fee: record.base_fee != null ? Number(Number(record.base_fee).toFixed(2)) : '',
       first_fee: record.first_fee != null ? Number(Number(record.first_fee).toFixed(2)) : '',
       first_weight_g: record.first_weight_g ?? '',
       continue_fee: record.continue_fee != null ? Number(Number(record.continue_fee).toFixed(5)) : '',
-      continue_unit: record.continue_unit ?? 'kg',
+      continue_unit: normalizeContinueUnit(record.continue_unit),
       min_weight: record.min_weight ?? '',
       max_weight: record.max_weight ?? '',
       min_days: record.min_days ?? '',
       max_days: record.max_days ?? '',
       max_sum_of_sides: record.max_sum_of_sides ?? '',
       max_longest_side: record.max_longest_side ?? '',
-      min_longest_side: record.min_longest_side ?? '',
+      min_length: record.min_length ?? '',
       longest_side_threshold: record.longest_side_threshold ?? '',
-      second_longest_side_threshold: record.second_longest_side_threshold ?? '',
+      max_second_side: record.max_second_side ?? '',
+      min_second_side: record.min_second_side ?? '',
       max_third_side: record.max_third_side ?? '',
       volume_mode: record.volume_mode ?? 'none',
       volume_coefficient: record.volume_coefficient ?? '',
@@ -314,7 +323,7 @@ export default function LogisticsPage() {
       const numericFields = [
         'base_fee', 'first_fee', 'continue_fee', 'min_weight', 'max_weight',
         'min_days', 'max_days', 'max_sum_of_sides', 'max_longest_side',
-        'min_longest_side', 'longest_side_threshold', 'second_longest_side_threshold',
+        'min_length', 'longest_side_threshold', 'max_second_side', 'min_second_side',
         'max_third_side',
         'max_cylinder_sum', 'min_cylinder_sum', 'max_cylinder_length',
         'min_cylinder_length', 'price_limit_cny', 'price_min_cny',
@@ -407,7 +416,7 @@ export default function LogisticsPage() {
                     {item.base_fee != null ? `¥${Number(item.base_fee).toFixed(2)}` : '-'}
                   </div>
                   <div className="text-sm">
-                    {item.continue_fee != null ? `¥${Number(item.continue_fee).toFixed(5)}/${item.continue_unit || 'kg'}` : '-'}
+                    {item.continue_fee != null ? `¥${Number(item.continue_fee).toFixed(5)}/${normalizeContinueUnit(item.continue_unit)}` : '-'}
                   </div>
                   <div className="flex items-center gap-1">
                     {item.allow_battery ? (
@@ -582,7 +591,7 @@ export default function LogisticsPage() {
                   onValueChange={v => setFormField('fee_mode', v)}
                   className="flex flex-wrap gap-4"
                 >
-                  <RadioLabel label="基础费用+续重费用" value="base_weight" itemClassName="mt-0.5" />
+                  <RadioLabel label="基础费用+续重费用" value="base_plus_continue" itemClassName="mt-0.5" />
                   <RadioLabel label="首重费用+续重费用" value="first_weight" itemClassName="mt-0.5" />
                 </RadioGroup>
               </FormField>
@@ -641,6 +650,7 @@ export default function LogisticsPage() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="g">克</SelectItem>
+                      <SelectItem value="1g">1克</SelectItem>
                       <SelectItem value="50g">50克</SelectItem>
                       <SelectItem value="100g">100克</SelectItem>
                       <SelectItem value="500g">500克</SelectItem>
@@ -784,8 +794,8 @@ export default function LogisticsPage() {
                 <Input
                   type="number"
                   min="0"
-                  value={form.min_longest_side}
-                  onChange={e => setFormField('min_longest_side', e.target.value)}
+                  value={form.min_length}
+                  onChange={e => setFormField('min_length', e.target.value)}
                   placeholder="0"
                 />
               </FormField>
@@ -798,8 +808,8 @@ export default function LogisticsPage() {
                 <Input
                   type="number"
                   min="0"
-                  value={form.second_longest_side_threshold}
-                  onChange={e => setFormField('second_longest_side_threshold', e.target.value)}
+                  value={form.max_second_side}
+                  onChange={e => setFormField('max_second_side', e.target.value)}
                   placeholder="0"
                 />
               </FormField>
@@ -810,8 +820,8 @@ export default function LogisticsPage() {
                 <Input
                   type="number"
                   min="0"
-                  value={form.second_longest_side_threshold}
-                  onChange={e => setFormField('second_longest_side_threshold', e.target.value)}
+                  value={form.min_second_side}
+                  onChange={e => setFormField('min_second_side', e.target.value)}
                   placeholder="0"
                 />
               </FormField>
@@ -1074,9 +1084,41 @@ export default function LogisticsPage() {
           <TabsTrigger value="air">空运</TabsTrigger>
         </TabsList>
         <TabsContent value="land">
+          {logistics.length > 0 && (
+            <div className="flex items-center gap-3 mb-3 px-1">
+              <Checkbox
+                checked={logistics.length > 0 && logistics.every(item => selectedIds.has(item.id))}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    handleSelectAll(logistics)
+                  } else {
+                    handleClearSelection()
+                  }
+                }}
+                aria-label="全选当前页"
+              />
+              <span className="text-sm text-text-secondary select-none">全选当前页</span>
+            </div>
+          )}
           {renderLogisticsList(logistics)}
         </TabsContent>
         <TabsContent value="air">
+          {logistics.length > 0 && (
+            <div className="flex items-center gap-3 mb-3 px-1">
+              <Checkbox
+                checked={logistics.length > 0 && logistics.every(item => selectedIds.has(item.id))}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    handleSelectAll(logistics)
+                  } else {
+                    handleClearSelection()
+                  }
+                }}
+                aria-label="全选当前页"
+              />
+              <span className="text-sm text-text-secondary select-none">全选当前页</span>
+            </div>
+          )}
           {renderLogisticsList(logistics)}
         </TabsContent>
       </Tabs>

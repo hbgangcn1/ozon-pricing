@@ -154,6 +154,7 @@ export const logisticsPoolAPI = {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
   addToMyLogistics: (id) => apiClient.post(`/logistics-pool/${id}/add-to-my-logistics`),
+  batchAddToMyLogistics: (ids) => apiClient.post('/logistics-pool/batch-add-to-my-logistics', { ids }),
   deleteAll: () => apiClient.delete('/logistics-pool/all'),
 }
 
