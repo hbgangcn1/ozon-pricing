@@ -579,7 +579,7 @@ def test_china_post_first_weight_mode_eparcel():
     assert row["first_fee"] == 52.5
     assert row["first_weight_g"] == 500
     assert row["base_fee"] == 0.0
-    assert row["continue_fee"] == 0.15
+    assert row["continue_fee"] == 15.0
     assert row["continue_unit"] == "500g"
     assert row["min_weight"] == 0
 
