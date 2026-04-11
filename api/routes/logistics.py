@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from db.logistics_crud import (
-    get_logistics_list,
     get_logistics_by_id,
     create_logistics,
     update_logistics,
@@ -19,6 +18,7 @@ from api.models.schemas import (
     MessageResponse,
 )
 from api.dependencies import get_current_user_id
+from db.priority_group import recalculate_priority_groups
 
 router = APIRouter(prefix="/api/logistics", tags=["物流"])
 
@@ -83,6 +83,7 @@ async def create_logistics_endpoint(
         if key in data and isinstance(data[key], bool):
             data[key] = 1 if data[key] else 0
     new_id = await create_logistics(session, user_id, data)
+    await recalculate_priority_groups(session, user_id)
     item = await get_logistics_by_id(session, new_id, user_id)
     if not item:
         raise HTTPException(status_code=500, detail="创建后查询失败")
@@ -181,6 +182,7 @@ async def update_logistics_endpoint(
     success = await update_logistics(session, logistics_id, user_id, sanitized)
     if not success:
         raise HTTPException(status_code=404, detail="物流规则不存在或更新失败")
+    await recalculate_priority_groups(session, user_id)
     item = await get_logistics_by_id(session, logistics_id, user_id)
     if not item:
         raise HTTPException(status_code=404, detail="更新后查询失败")
@@ -196,6 +198,7 @@ async def delete_logistics_endpoint(
     count = await delete_logistics(session, logistics_id, user_id)
     if count == 0:
         raise HTTPException(status_code=404, detail="物流规则不存在或删除失败")
+    await recalculate_priority_groups(session, user_id)
     return MessageResponse(message="删除成功")
 
 
@@ -217,6 +220,7 @@ async def toggle_transport(
     success = await update_logistics(session, logistics_id, user_id, {"type": new_type})
     if not success:
         raise HTTPException(status_code=400, detail="切换失败")
+    await recalculate_priority_groups(session, user_id)
     updated = await get_logistics_by_id(session, logistics_id, user_id)
     if not updated:
         raise HTTPException(status_code=404, detail="切换后查询失败")
@@ -232,4 +236,5 @@ async def batch_delete_logistics_endpoint(
     if not ids:
         raise HTTPException(status_code=400, detail="请提供要删除的ID列表")
     deleted_count = await batch_delete_logistics(session, ids, user_id)
+    await recalculate_priority_groups(session, user_id)
     return MessageResponse(message=f"成功删除 {deleted_count} 条规则")
