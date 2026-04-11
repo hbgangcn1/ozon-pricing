@@ -45,6 +45,16 @@ def test_parse_rate_parses_base_continue_and_unit():
     assert parse_rate("¥8 + ¥4,8/100g") == (8.0, 4.8, "100g")
 
 
+def test_parse_rate_precision_5_decimals():
+    """parse_rate returns continue_fee rounded to 5 decimal places."""
+    _, cont, _ = parse_rate("¥1.90 + ¥0.067/1 г")
+    assert cont == 0.067
+    assert cont == round(cont, 5)
+    _, cont2, _ = parse_rate("¥3 + ¥0,035/1g")
+    assert cont2 == 0.035
+    assert cont2 == round(cont2, 5)
+
+
 def test_parse_rate_invalid_returns_default_tuple():
     assert parse_rate("-") == (0.0, 0.0, "100g")
 
@@ -61,6 +71,12 @@ def test_parse_volume_coeff_parses_divisors_and_defaults():
 def test_parse_price_limit_cny_parses_range_text():
     assert parse_price_limit_cny("12 - 34") == (12.0, 34.0)
     assert parse_price_limit_cny("12.5-34.6") == (12.5, 34.6)
+
+
+def test_parse_price_limit_cny_precision_2_decimals():
+    mn, mx = parse_price_limit_cny("0,01 - 1 135")
+    assert mn == round(mn, 2)
+    assert mx == round(mx, 2)
 
 
 def test_parse_price_limit_cny_returns_zeroes_for_invalid_value():
@@ -295,3 +311,194 @@ def test_cis_rfbs_kz_by_volume_mode():
     assert big_row["volume_mode"] == "max_actual_vs_volume"
     assert big_row["volume_coefficient"] == 12000.0
     assert big_row["sum_of_sides_threshold"] == 0
+
+
+# --------------- Scoring RFBS specific tests ---------------
+
+
+def test_scoring_rfbs_continue_fee_precision():
+    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    for row in result["rows"]:
+        cf = row["continue_fee"]
+        assert cf == round(cf, 5), (
+            f"{row['name']}: continue_fee {cf} not 5-decimal precise"
+        )
+
+
+def test_scoring_rfbs_cny_from_column_n():
+    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    row = _find_row(result["rows"], "Ural Standard Extra Small")
+    assert row["price_min_cny"] > 0
+    assert row["price_limit_cny"] >= row["price_min_cny"]
+    assert row["price_min_cny"] == round(row["price_min_cny"], 2)
+    assert row["price_limit_cny"] == round(row["price_limit_cny"], 2)
+
+
+def test_scoring_rfbs_volume_mode_physical_weight():
+    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    phys_rows = [r for r in result["rows"] if r.get("volume_mode") == "none"]
+    assert len(phys_rows) > 0
+    for row in phys_rows:
+        assert row["volume_coefficient"] == 0.0
+
+
+def test_scoring_rfbs_volume_mode_exists():
+    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    for row in result["rows"]:
+        assert "volume_mode" in row, f"{row['name']}: missing volume_mode"
+        assert "volume_coefficient" in row, f"{row['name']}: missing volume_coefficient"
+
+
+# --------------- China Post specific tests ---------------
+
+
+CHINA_POST_FILE = _file("China_post_10_2_26_ENG_CN_1770625401.xlsx")
+
+
+def _china_post_rows():
+    result = parse_file(CHINA_POST_FILE)
+    assert result["rows"], f"No rows parsed. Errors: {result['errors']}"
+    return result["rows"]
+
+
+def test_china_post_cny_min_from_m_column():
+    """price_min_cny comes from M column (index 12)."""
+    rows = _china_post_rows()
+    row = _find_row(rows, "China Post to PUDO Standard")
+    assert row["price_min_cny"] >= 0.0
+    assert row["price_min_cny"] == round(row["price_min_cny"], 2)
+
+
+def test_china_post_cny_max_from_n_column():
+    """price_limit_cny comes from N column (index 13)."""
+    rows = _china_post_rows()
+    row = _find_row(rows, "China Post to PUDO Standard")
+    assert row["price_limit_cny"] >= 0.0
+    assert row["price_limit_cny"] == round(row["price_limit_cny"], 2)
+
+
+def test_china_post_cny_dash_means_zero():
+    """'-' in CNY column → 0.0."""
+    rows = _china_post_rows()
+    epacket_rows = [r for r in rows if "epacket" in r["name"].lower()]
+    assert epacket_rows, "Should find ePacket rows"
+    for row in epacket_rows:
+        assert row["price_limit_cny"] == 0.0, (
+            f"{row['name']}: price_limit_cny should be 0.0 for '-', got {row['price_limit_cny']}"
+        )
+
+
+def test_china_post_physical_weight_rows():
+    """Rows with 'Physical weight' S column → volume_mode='none', coeff=0."""
+    rows = _china_post_rows()
+    for row in rows:
+        if "ems" not in row["name"].lower():
+            assert row["volume_mode"] == "none", (
+                f"{row['name']}: expected volume_mode='none', got {row['volume_mode']!r}"
+            )
+            assert row["volume_coefficient"] == 0.0, (
+                f"{row['name']}: expected volume_coefficient=0.0, got {row['volume_coefficient']}"
+            )
+
+
+def test_china_post_conditional_volume_eems():
+    """eEMS row S column has conditional text → volume_mode='longest_side', threshold=40."""
+    rows = _china_post_rows()
+    ems_row = _find_row(rows, "eEMS")
+    assert ems_row["volume_mode"] == "longest_side", (
+        f"eEMS volume_mode: expected 'longest_side', got {ems_row['volume_mode']!r}"
+    )
+    assert ems_row["longest_side_threshold"] == 40, (
+        f"eEMS longest_side_threshold: expected 40, got {ems_row.get('longest_side_threshold')}"
+    )
+    assert ems_row["volume_coefficient"] == 6000.0, (
+        f"eEMS volume_coefficient: expected 6000.0, got {ems_row['volume_coefficient']}"
+    )
+
+
+def test_china_post_simple_size_limits():
+    """Simple format H column rows parse max_sum_of_sides and max_longest_side."""
+    rows = _china_post_rows()
+    row = _find_row(rows, "China Post to PUDO Standard")
+    assert row["max_sum_of_sides"] == 90, (
+        f"max_sum_of_sides: expected 90, got {row['max_sum_of_sides']}"
+    )
+    assert row["max_longest_side"] == 60, (
+        f"max_longest_side: expected 60, got {row['max_longest_side']}"
+    )
+
+
+def test_china_post_epacket_cylinder_limits():
+    """ePacket H column rows parse all 8 cylinder+min size fields."""
+    rows = _china_post_rows()
+    row = _find_row(rows, "ePacket Super Express")
+    assert row["max_sum_of_sides"] == 90
+    assert row["max_longest_side"] == 60
+    assert row["max_cylinder_sum"] == 104
+    assert row["max_cylinder_length"] == 90
+    assert row["min_length"] == 14
+    assert row["min_second_side"] == 11
+    assert row["min_cylinder_sum"] == 17
+    assert row["min_cylinder_length"] == 11
+
+
+def test_china_post_eems_size_standard1():
+    """eEMS H column → only max_longest_side=150, cylinder/min fields=0."""
+    rows = _china_post_rows()
+    ems_row = _find_row(rows, "eEMS")
+    assert ems_row["max_longest_side"] == 150, (
+        f"max_longest_side: expected 150, got {ems_row['max_longest_side']}"
+    )
+    for field in (
+        "max_cylinder_sum",
+        "max_cylinder_length",
+        "min_length",
+        "min_second_side",
+        "min_cylinder_sum",
+        "min_cylinder_length",
+    ):
+        assert ems_row.get(field, 0) == 0, (
+            f"eEMS {field}: expected 0, got {ems_row.get(field)}"
+        )
+
+
+def test_parse_size_fields_unit_epacket():
+    """Unit test for _parse_size_fields with hardcoded ePacket text."""
+    from xlsx_import.parsers import china_post
+
+    text = (
+        "Max parcel size:\n"
+        "Sum of sides<90, Length≤60;\n"
+        "for cylindrical packages: the sum of the double diameter and the length"
+        " of the package— up to 104 cm, Length — up to 90 cm\n"
+        "\n"
+        "Min parcel size:\n"
+        "Length — 14 cm, width — 11 cm;\n"
+        "for cylindrical packages: the sum of the double diameter and the length"
+        " of the package— 17 cm, Length — 11 cm"
+    )
+    item: dict = {}
+    getattr(china_post, "_parse_size_fields")(item, text)
+    assert item["max_sum_of_sides"] == 90
+    assert item["max_longest_side"] == 60
+    assert item["max_cylinder_sum"] == 104
+    assert item["max_cylinder_length"] == 90
+    assert item["min_length"] == 14
+    assert item["min_second_side"] == 11
+    assert item["min_cylinder_sum"] == 17
+    assert item["min_cylinder_length"] == 11
+
+
+def test_parse_size_fields_unit_eems():
+    """Unit test for _parse_size_fields with hardcoded eEMS text."""
+    from xlsx_import.parsers import china_post
+
+    text = (
+        "Standard 1:Any size: no more than1,5 m, sum of two longest sides — up to 3 m.\n"
+        "Standard 2:Any size: no more than1,05 m, sum of two longest sides — up to 2 m."
+    )
+    item: dict = {}
+    getattr(china_post, "_parse_size_fields")(item, text)
+    assert item["max_longest_side"] == 150
+    assert item.get("max_cylinder_sum", 0) == 0
+    assert item.get("min_length", 0) == 0

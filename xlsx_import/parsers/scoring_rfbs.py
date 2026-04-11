@@ -1,3 +1,4 @@
+import re
 from typing import cast
 
 from xlsx_import.common import (
@@ -11,6 +12,7 @@ from xlsx_import.common import (
     parse_price_limit_cny,
     parse_rate,
     parse_size_limits,
+    parse_volume_coeff,
     parse_yes_no,
     load_workbook_source,
 )
@@ -31,7 +33,7 @@ def parse(
         carry: dict[int, object] = {0: "", 1: "", 2: "", 3: ""}
         for row_num in range(HEADER_ROW + 1, ws.max_row + 1):
             values: list[object] = [
-                cast(object, ws.cell(row_num, col).value) for col in range(1, 17)
+                cast(object, ws.cell(row_num, col).value) for col in range(1, 19)
             ]
             if is_blank_row(values):
                 continue
@@ -57,13 +59,37 @@ def parse(
                 item["min_weight"] = as_int(values[10])
                 item["max_weight"] = as_int(values[11])
                 item["price_min_cny"], item["price_limit_cny"] = parse_price_limit_cny(
-                    values[12]
+                    values[13]
                 )
                 item["max_sum_of_sides"], item["max_longest_side"], _ = (
                     parse_size_limits(values[9])
                 )
                 item["allow_battery"] = parse_yes_no(values[7])
                 item["allow_liquid"] = parse_yes_no(values[8])
+                raw_volume = normalize_text(values[16]) or "none"
+                raw_lower = raw_volume.lower()
+                sum_vol_match = re.search(
+                    r"sum\s+of\s+sides\s*(?:≤|<=)\s*(\d+)",
+                    raw_lower,
+                )
+                if raw_lower == "physical weight":
+                    item["volume_mode"] = "none"
+                    item["volume_coefficient"] = 0.0
+                    item["sum_of_sides_threshold"] = 0
+                elif sum_vol_match:
+                    item["volume_mode"] = "sum_of_sides"
+                    item["sum_of_sides_threshold"] = int(sum_vol_match.group(1))
+                    item["volume_coefficient"] = parse_volume_coeff(values[17])
+                elif "max" in raw_lower and (
+                    "volume" in raw_lower or "volumetric" in raw_lower
+                ):
+                    item["volume_mode"] = "max_actual_vs_volume"
+                    item["volume_coefficient"] = parse_volume_coeff(values[17])
+                    item["sum_of_sides_threshold"] = 0
+                else:
+                    item["volume_mode"] = raw_volume
+                    item["volume_coefficient"] = parse_volume_coeff(values[17])
+                    item["sum_of_sides_threshold"] = 0
                 item["priority_group"] = normalize_text(values[0]) or "D"
                 result["rows"].append(item)
             except Exception as exc:

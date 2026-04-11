@@ -78,7 +78,7 @@ def parse_rate(value: Any) -> tuple[float, float, str]:
         return (0.0, 0.0, "100g")
     unit_num = match.group(3)
     unit = f"{unit_num}g" if unit_num else "1g"
-    return (float(match.group(1)), float(match.group(2)), unit)
+    return (round(float(match.group(1)), 5), round(float(match.group(2)), 5), unit)
 
 
 def parse_volume_coeff(value: Any) -> float:
@@ -96,7 +96,7 @@ def parse_price_limit_cny(value: Any) -> tuple[float, float]:
     match = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", text)
     if not match:
         return (0.0, 0.0)
-    return (float(match.group(1)), float(match.group(2)))
+    return (round(float(match.group(1)), 2), round(float(match.group(2)), 2))
 
 
 def parse_size_limits(value: Any) -> tuple[int, int, int]:
