@@ -2,12 +2,24 @@ import sys
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest  # noqa: E402
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi.testclient import TestClient  # noqa: E402
 from api.main import app  # noqa: E402
 from api import dependencies  # noqa: E402
 from database import get_db  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _patch_recalculate():
+    with patch(
+        "api.routes.logistics.recalculate_priority_groups",
+        new=AsyncMock(),
+    ):
+        yield
+
 
 MOCK_USER = {
     "id": 1,
