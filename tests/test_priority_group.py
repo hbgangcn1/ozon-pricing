@@ -129,3 +129,277 @@ class TestComputePriorityGroups:
         items = [{"id": 1, "min_days": 5, "max_days": 10}]
         result = compute_priority_groups(items)
         assert result[1] == "A"
+
+
+from db.priority_group import recalculate_priority_groups
+from db.logistics_crud import (
+    create_logistics,
+    get_logistics_by_id,
+    update_logistics,
+    delete_logistics,
+)
+
+
+class TestRecalculatePriorityGroups:
+    """Integration tests using real DB session."""
+
+    async def test_recalculate_with_no_logistics(self, db_session, test_user):
+        """No logistics -> no error, no changes."""
+        await recalculate_priority_groups(db_session, test_user["id"])
+
+    async def test_recalculate_sets_groups(self, db_session, test_user):
+        """Create logistics and verify groups are computed."""
+        uid = test_user["id"]
+        id1 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Fast",
+                "type": "land",
+                "min_days": 3,
+                "max_days": 5,
+            },
+        )
+        id2 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Slow",
+                "type": "land",
+                "min_days": 10,
+                "max_days": 15,
+            },
+        )
+        await db_session.flush()
+
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r1 = await get_logistics_by_id(db_session, id1, uid)
+        r2 = await get_logistics_by_id(db_session, id2, uid)
+        # Fast: min=3<=6.5, max=5<=10, avg=4<=8.25 -> A
+        assert r1["priority_group"] == "A"
+        # Slow: min=10>6.5, max=15>10, avg=12.5>8.25 -> D
+        assert r2["priority_group"] == "D"
+
+    async def test_recalculate_invalid_gets_e(self, db_session, test_user):
+        """Logistics with zero days gets E."""
+        uid = test_user["id"]
+        id1 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "NoDays",
+                "type": "air",
+                "min_days": 0,
+                "max_days": 0,
+            },
+        )
+        await db_session.flush()
+
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r1 = await get_logistics_by_id(db_session, id1, uid)
+        assert r1["priority_group"] == "E"
+
+    async def test_recalculate_does_not_affect_other_users(
+        self, db_session, test_user, test_admin
+    ):
+        """Recalculating for user A does not change user B."""
+        uid_a = test_user["id"]
+        uid_b = test_admin["id"]
+
+        await create_logistics(
+            db_session,
+            uid_a,
+            {
+                "name": "A-Fast",
+                "type": "land",
+                "min_days": 2,
+                "max_days": 3,
+            },
+        )
+        id_b = await create_logistics(
+            db_session,
+            uid_b,
+            {
+                "name": "B-Slow",
+                "type": "land",
+                "min_days": 20,
+                "max_days": 30,
+                "priority_group": "X",
+            },
+        )
+        await db_session.flush()
+
+        await recalculate_priority_groups(db_session, uid_a)
+        await db_session.flush()
+
+        r_b = await get_logistics_by_id(db_session, id_b, uid_b)
+        assert r_b["priority_group"] == "X"  # Unchanged
+
+    async def test_recalculate_splits_by_type(self, db_session, test_user):
+        """Land and air are computed independently."""
+        uid = test_user["id"]
+        id_land = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Land",
+                "type": "land",
+                "min_days": 10,
+                "max_days": 20,
+            },
+        )
+        id_air = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Air",
+                "type": "air",
+                "min_days": 2,
+                "max_days": 4,
+            },
+        )
+        await db_session.flush()
+
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r_land = await get_logistics_by_id(db_session, id_land, uid)
+        r_air = await get_logistics_by_id(db_session, id_air, uid)
+        # Each is sole item in type -> A
+        assert r_land["priority_group"] == "A"
+        assert r_air["priority_group"] == "A"
+
+
+class TestPriorityGroupRouteIntegration:
+    """Verify priority groups update after CRUD mutations,
+    simulating what happens in API endpoints."""
+
+    async def test_create_triggers_recalculation(self, db_session, test_user):
+        """After creating new logistics, groups shift."""
+        uid = test_user["id"]
+        id1 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Fast",
+                "type": "land",
+                "min_days": 3,
+                "max_days": 5,
+            },
+        )
+        await db_session.flush()
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r1 = await get_logistics_by_id(db_session, id1, uid)
+        assert r1["priority_group"] == "A"
+
+        # Create slower item -> averages shift
+        id2 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Slow",
+                "type": "land",
+                "min_days": 10,
+                "max_days": 15,
+            },
+        )
+        await db_session.flush()
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r1 = await get_logistics_by_id(db_session, id1, uid)
+        r2 = await get_logistics_by_id(db_session, id2, uid)
+        assert r1["priority_group"] == "A"
+        assert r2["priority_group"] == "D"
+
+    async def test_delete_triggers_recalculation(self, db_session, test_user):
+        """After deleting logistics, remaining recalculated."""
+        uid = test_user["id"]
+        id1 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Fast",
+                "type": "land",
+                "min_days": 3,
+                "max_days": 5,
+            },
+        )
+        id2 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "Slow",
+                "type": "land",
+                "min_days": 10,
+                "max_days": 15,
+            },
+        )
+        await db_session.flush()
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        # Delete fast -> slow becomes sole item -> A
+        await delete_logistics(db_session, id1, uid)
+        await db_session.flush()
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r2 = await get_logistics_by_id(db_session, id2, uid)
+        assert r2["priority_group"] == "A"
+
+    async def test_update_days_triggers_recalculation(self, db_session, test_user):
+        """Changing min/max_days causes recalculation."""
+        uid = test_user["id"]
+        id1 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "L1",
+                "type": "air",
+                "min_days": 3,
+                "max_days": 5,
+            },
+        )
+        id2 = await create_logistics(
+            db_session,
+            uid,
+            {
+                "name": "L2",
+                "type": "air",
+                "min_days": 10,
+                "max_days": 15,
+            },
+        )
+        await db_session.flush()
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r2 = await get_logistics_by_id(db_session, id2, uid)
+        assert r2["priority_group"] == "D"
+
+        # Make L2 faster than L1
+        await update_logistics(
+            db_session,
+            id2,
+            uid,
+            {
+                "min_days": 1,
+                "max_days": 2,
+            },
+        )
+        await db_session.flush()
+        await recalculate_priority_groups(db_session, uid)
+        await db_session.flush()
+
+        r1 = await get_logistics_by_id(db_session, id1, uid)
+        r2 = await get_logistics_by_id(db_session, id2, uid)
+        # Now L2 faster -> A, L1 slower -> D
+        assert r2["priority_group"] == "A"
+        assert r1["priority_group"] == "D"

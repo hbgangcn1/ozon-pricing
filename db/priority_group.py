@@ -10,6 +10,11 @@ Groups are computed per transport type (land/air) independently:
 
 from collections import defaultdict
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.logistics import Logistics
+
 
 def _is_valid(item: dict) -> bool:
     min_d = item.get("min_days")
@@ -36,9 +41,7 @@ def _compute_for_type(items: list[dict]) -> dict[int, str]:
     n = len(valid)
     avg_min = sum(it["min_days"] for it in valid) / n
     avg_max = sum(it["max_days"] for it in valid) / n
-    avg_avg = sum(
-        (it["min_days"] + it["max_days"]) / 2 for it in valid
-    ) / n
+    avg_avg = sum((it["min_days"] + it["max_days"]) / 2 for it in valid) / n
 
     for it in valid:
         count = 0
@@ -74,3 +77,39 @@ def compute_priority_groups(items: list[dict]) -> dict[int, str]:
     for _transport, group in by_type.items():
         result.update(_compute_for_type(group))
     return result
+
+
+async def recalculate_priority_groups(
+    session: AsyncSession,
+    user_id: int,
+) -> None:
+    """Query user's logistics, compute groups, batch-update.
+
+    Call after any mutation (create/update/delete/import)
+    to the user's logistics list.
+    """
+    stmt = select(Logistics).where(Logistics.user_id == user_id)
+    result = await session.execute(stmt)
+    records = result.scalars().all()
+
+    if not records:
+        return
+
+    items = [
+        {
+            "id": r.id,
+            "type": r.type,
+            "min_days": r.min_days,
+            "max_days": r.max_days,
+        }
+        for r in records
+    ]
+
+    groups = compute_priority_groups(items)
+
+    for record in records:
+        new_group = groups.get(record.id)
+        if new_group and record.priority_group != new_group:
+            record.priority_group = new_group
+
+    await session.flush()
