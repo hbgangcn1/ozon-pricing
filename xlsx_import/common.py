@@ -124,7 +124,7 @@ def parse_yes_no(value: Any) -> int:
 
 def infer_type(*values: Any) -> str:
     text = " ".join(normalize_text(value).lower() for value in values)
-    if any(word in text for word in ("air", "空运")):
+    if any(word in text for word in ("air", "空运", "express")):
         return "air"
     return "land"
 

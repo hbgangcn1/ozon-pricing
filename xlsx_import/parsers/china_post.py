@@ -5,7 +5,6 @@ from xlsx_import.common import (
     as_int,
     create_row,
     finalize_source_file,
-    infer_type,
     is_blank_row,
     load_workbook_source,
     normalize_text,
@@ -129,7 +128,7 @@ def parse(
                 continue
             try:
                 item = create_row(name_text, source_name)
-                item["type"] = infer_type(name_text)
+                item["type"] = "air" if "eems" in name_text.lower() else "land"
                 item["min_days"], item["max_days"] = parse_days(values[3])
                 item["base_fee"], item["continue_fee"], item["continue_unit"] = (
                     parse_rate(values[2])

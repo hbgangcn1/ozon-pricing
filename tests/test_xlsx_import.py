@@ -5,6 +5,7 @@ from openpyxl import Workbook
 
 from xlsx_import import parse_file
 from xlsx_import.common import (
+    infer_type,
     parse_days,
     parse_price_limit_cny,
     parse_rate,
@@ -82,6 +83,33 @@ def test_parse_price_limit_cny_precision_2_decimals():
 def test_parse_price_limit_cny_returns_zeroes_for_invalid_value():
     assert parse_price_limit_cny("-") == (0.0, 0.0)
     assert parse_price_limit_cny(None) == (0.0, 0.0)
+
+
+# --------------- infer_type unit tests ---------------
+
+
+def test_infer_type_air_keyword():
+    assert infer_type("air freight") == "air"
+    assert infer_type("空运专线") == "air"
+
+
+def test_infer_type_express_keyword():
+    """Express（含 Super Express）应推断为空运。"""
+    assert infer_type("UNI Express KZ") == "air"
+    assert infer_type("Ural FBP Super Express") == "air"
+    assert infer_type("CEL Express Extra Small") == "air"
+
+
+def test_infer_type_non_express_returns_land():
+    assert infer_type("Standard delivery") == "land"
+    assert infer_type("UNI FBP Standard Extra Small") == "land"
+    assert infer_type("China Post eParcel Economy") == "land"
+
+
+def test_infer_type_express_in_category_column():
+    """分类列包含 express 时也应识别为空运。"""
+    assert infer_type("Express", "Ural Standard") == "air"
+    assert infer_type("Standard", "some name") == "land"
 
 
 @pytest.mark.parametrize(
@@ -223,6 +251,45 @@ def test_parse_file_fbp_max_actual_vs_volume_mode():
     assert len(max_rows) > 0, "Should find 'max_actual_vs_volume' rows"
     for row in max_rows:
         assert row["volume_coefficient"] > 0
+
+
+# --------------- type inference integration tests ---------------
+
+
+def test_china_post_eems_is_air_and_others_are_land():
+    result = parse_file(_file("China_post_10_2_26_ENG_CN_1770625401.xlsx"))
+
+    eems = _find_row(result["rows"], "eEMS")
+    assert eems["type"] == "air"
+    economy = _find_row(result["rows"], "eParcel Economy")
+    assert economy["type"] == "land"
+
+
+def test_scoring_express_rows_are_air():
+    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+
+    express_row = _find_row(result["rows"], "Ural Express Extra Small")
+    assert express_row["type"] == "air"
+    standard_row = _find_row(result["rows"], "Ural Standard Extra Small")
+    assert standard_row["type"] == "land"
+
+
+def test_cis_express_rows_are_air():
+    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+
+    express_row = _find_row(result["rows"], "UNI Express KZ")
+    assert express_row["type"] == "air"
+    standard_row = _find_row(result["rows"], "Belarus Standard Extra Small")
+    assert standard_row["type"] == "land"
+
+
+def test_fbp_express_rows_are_air():
+    result = parse_file(_file("FBP_List_of_services_5_03_26_1772704547.xlsx"))
+
+    express_row = _find_row(result["rows"], "Ural FBP Super Express Extra Small")
+    assert express_row["type"] == "air"
+    standard_row = _find_row(result["rows"], "CEL FBP Standard Extra Small")
+    assert standard_row["type"] == "land"
 
 
 # --------------- parse_size_limits unit tests ---------------
