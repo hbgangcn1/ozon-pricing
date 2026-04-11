@@ -1,7 +1,7 @@
 import logging
 import os
 import tempfile
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.dependencies import get_current_user_id, require_admin
 from database import get_db
 from db.logistics_crud import create_logistics
+from db.priority_group import recalculate_priority_groups
 from db.logistics_pool import delete_all, get_all, get_by_id, insert_row, set_active
 from xlsx_import import parse_file
 
@@ -20,6 +21,10 @@ _COPY_EXCLUDE = {"id", "source_file", "imported_at", "is_active"}
 
 class ActiveBody(BaseModel):
     is_active: int
+
+
+class BatchAddBody(BaseModel):
+    ids: List[int]
 
 
 @router.get("")
@@ -121,7 +126,37 @@ async def add_to_my_logistics(
         raise HTTPException(status_code=404, detail="物流池条目不存在")
     data = {k: v for k, v in item.items() if k not in _COPY_EXCLUDE}
     new_id = await create_logistics(session, user_id, data)
+    await recalculate_priority_groups(session, user_id)
     return {"id": new_id}
+
+
+@router.post("/batch-add-to-my-logistics")
+async def batch_add_to_my_logistics(
+    body: BatchAddBody,
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+    if len(body.ids) > 200:
+        raise HTTPException(status_code=400, detail="单次最多添加 200 条")
+    added = []
+    not_found = []
+    for pool_id in body.ids:
+        item = await get_by_id(session, pool_id)
+        if not item:
+            not_found.append(pool_id)
+            continue
+        data = {k: v for k, v in item.items() if k not in _COPY_EXCLUDE}
+        new_id = await create_logistics(session, user_id, data)
+        added.append(new_id)
+    if added:
+        await recalculate_priority_groups(session, user_id)
+    return {
+        "added": len(added),
+        "not_found": not_found,
+        "new_ids": added,
+    }
 
 
 @router.patch("/{pool_id}")

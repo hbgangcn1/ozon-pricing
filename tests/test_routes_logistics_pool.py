@@ -15,6 +15,15 @@ from database import get_db  # noqa: E402
 client = TestClient(app, raise_server_exceptions=False)
 
 
+@pytest.fixture(autouse=True)
+def _patch_recalculate():
+    with patch(
+        "api.routes.logistics_pool.recalculate_priority_groups",
+        new=AsyncMock(),
+    ):
+        yield
+
+
 def _db_override(session):
     async def override():
         yield session
@@ -34,6 +43,11 @@ def _pool_row(pool_id=1):
         "fbp_service_level": "standard",
         "is_active": 1,
         "base_fee": 11.5,
+        "fee_mode": "first_weight",
+        "continue_unit": "500g",
+        "continue_fee": 15.0,
+        "first_fee": 52.5,
+        "first_weight_g": 1000,
     }
 
 
@@ -208,6 +222,11 @@ def test_add_to_my_logistics_success():
             "destination": "RU",
             "fbp_service_level": "standard",
             "base_fee": 11.5,
+            "fee_mode": "first_weight",
+            "continue_unit": "500g",
+            "continue_fee": 15.0,
+            "first_fee": 52.5,
+            "first_weight_g": 1000,
         },
     )
 
@@ -226,3 +245,100 @@ def test_add_to_my_logistics_returns_404_when_pool_item_missing():
     assert response.status_code == 404
     assert response.json()["detail"] == "物流池条目不存在"
     mock_get.assert_awaited_once_with(session, 404)
+
+
+def test_batch_add_to_my_logistics_success():
+    session = AsyncMock()
+    pool_items = {
+        10: _pool_row(pool_id=10),
+        11: _pool_row(pool_id=11),
+    }
+    app.dependency_overrides[dependencies.get_current_user_id] = lambda: 18
+    app.dependency_overrides[get_db] = _db_override(session)
+
+    call_count = 0
+
+    async def mock_get_by_id(sess, pid):
+        return pool_items.get(pid)
+
+    async def mock_create(sess, uid, data):
+        nonlocal call_count
+        call_count += 1
+        return 600 + call_count
+
+    with (
+        patch(
+            "api.routes.logistics_pool.get_by_id",
+            new=AsyncMock(side_effect=mock_get_by_id),
+        ),
+        patch(
+            "api.routes.logistics_pool.create_logistics",
+            new=AsyncMock(side_effect=mock_create),
+        ),
+    ):
+        response = client.post(
+            "/api/logistics-pool/batch-add-to-my-logistics",
+            json={"ids": [10, 11]},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["added"] == 2
+    assert body["not_found"] == []
+    assert len(body["new_ids"]) == 2
+
+
+def test_batch_add_to_my_logistics_partial_not_found():
+    session = AsyncMock()
+    pool_item = _pool_row(pool_id=20)
+    app.dependency_overrides[dependencies.get_current_user_id] = lambda: 18
+    app.dependency_overrides[get_db] = _db_override(session)
+
+    async def mock_get_by_id(sess, pid):
+        if pid == 20:
+            return pool_item
+        return None
+
+    with (
+        patch(
+            "api.routes.logistics_pool.get_by_id",
+            new=AsyncMock(side_effect=mock_get_by_id),
+        ),
+        patch(
+            "api.routes.logistics_pool.create_logistics",
+            new=AsyncMock(return_value=700),
+        ),
+    ):
+        response = client.post(
+            "/api/logistics-pool/batch-add-to-my-logistics",
+            json={"ids": [20, 999]},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["added"] == 1
+    assert body["not_found"] == [999]
+
+
+def test_batch_add_to_my_logistics_empty_ids():
+    session = AsyncMock()
+    app.dependency_overrides[dependencies.get_current_user_id] = lambda: 18
+    app.dependency_overrides[get_db] = _db_override(session)
+
+    response = client.post(
+        "/api/logistics-pool/batch-add-to-my-logistics",
+        json={"ids": []},
+    )
+
+    assert response.status_code == 400
+    assert "不能为空" in response.json()["detail"]
+
+
+def test_batch_add_to_my_logistics_requires_login():
+    response = client.post(
+        "/api/logistics-pool/batch-add-to-my-logistics",
+        json={"ids": [1, 2]},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Not authenticated"
