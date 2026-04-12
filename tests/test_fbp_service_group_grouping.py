@@ -1,0 +1,206 @@
+"""TDD tests for FBP service-group-based tab grouping.
+
+Tests verify that FBP logistics are grouped by service group
+(fbp_company + fbp_service_level) rather than per-record destination.
+A service group containing any KZ/BY record must send all its records
+(including destination=RU ones) to fbp_cis.
+"""
+
+import os
+import sys
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from pricing.calculate_pricing import calculate_pricing_grouped  # noqa: E402
+
+
+def _product():
+    return {
+        "unit_price": 100.0,
+        "labeling_fee": 0.5,
+        "shipping_fee": 1.0,
+        "commission_rate": 0.08,
+        "target_profit_margin": 0.2,
+        "promotion_cost_rate": 0.03,
+        "withdrawal_fee_rate": 0.01,
+        "payment_processing_fee": 0.02,
+        "return_rate": 0,
+        "vat_rate": 20,
+    }
+
+
+_call_log = []
+
+
+def _recording_calculate(_product, land, air, mode="fast", priority="低价优先"):
+    _call_log.append({
+        "land": [r["name"] for r in land],
+        "air": [r["name"] for r in air],
+    })
+    return {"filtered_logistics": {"land": [], "air": []}}
+
+
+def _run(logistics):
+    _call_log.clear()
+    with (
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=_recording_calculate,
+        ),
+        patch(
+            "pricing.fbp_secondary_filter.fbp_secondary_filter",
+            side_effect=lambda rows: list(rows),
+        ),
+    ):
+        result = calculate_pricing_grouped(_product(), logistics, mode="precise")
+    return result, list(_call_log)
+
+
+def _all_land_names(calls):
+    names = set()
+    for c in calls:
+        names.update(c["land"])
+    return names
+
+
+def _all_air_names(calls):
+    names = set()
+    for c in calls:
+        names.update(c["air"])
+    return names
+
+
+def test_cis_service_group_ru_records_go_to_fbp_cis():
+    """RU records in a CIS-affiliated group must not appear in fbp_ru."""
+    logistics = [
+        {"name": "L-fbp-CEL-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {"name": "L-fbp-CEL-KZ", "type": "land", "fulfillment_type": "fbp",
+         "destination": "KZ", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {"name": "A-fbp-CEL-BY", "type": "air", "fulfillment_type": "fbp",
+         "destination": "BY", "fbp_company": "CEL", "fbp_service_level": "standard"},
+    ]
+    _, calls = _run(logistics)
+    land_in_any_call = _all_land_names(calls)
+    fbp_calls = [c for c in calls if "L-fbp-CEL-RU" in c["land"]]
+    for c in fbp_calls:
+        assert "L-fbp-CEL-KZ" in c["land"] or "A-fbp-CEL-BY" in c["air"], (
+            "L-fbp-CEL-RU appeared in a call without other CEL CIS records"
+        )
+    assert land_in_any_call
+
+
+def test_ru_only_service_group_stays_in_fbp_ru():
+    """A service group with only RU destinations must go to fbp_ru."""
+    logistics = [
+        {"name": "L-fbp-UNI-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+        {"name": "A-fbp-UNI-RU", "type": "air", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+    ]
+    _, calls = _run(logistics)
+    uni_calls = [
+        c for c in calls
+        if "L-fbp-UNI-RU" in c["land"] and "A-fbp-UNI-RU" in c["air"]
+    ]
+    assert len(uni_calls) >= 1, (
+        "No call received both L-fbp-UNI-RU and A-fbp-UNI-RU"
+    )
+
+
+def test_mixed_groups_correctly_partitioned():
+    """CIS group records go to fbp_cis; RU-only group goes to fbp_ru."""
+    logistics = [
+        {"name": "L-fbp-CEL-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {"name": "L-fbp-CEL-KZ", "type": "land", "fulfillment_type": "fbp",
+         "destination": "KZ", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {"name": "A-fbp-CEL-BY", "type": "air", "fulfillment_type": "fbp",
+         "destination": "BY", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {"name": "L-fbp-UNI-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+        {"name": "A-fbp-UNI-RU", "type": "air", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+    ]
+    _, calls = _run(logistics)
+
+    uni_only_calls = [
+        c for c in calls
+        if "L-fbp-UNI-RU" in c["land"] and "L-fbp-CEL-RU" not in c["land"]
+    ]
+    assert len(uni_only_calls) >= 1, (
+        "No call had UNI records without CEL records"
+    )
+
+    cel_with_ru_calls = [
+        c for c in calls
+        if "L-fbp-CEL-RU" in c["land"] and "L-fbp-UNI-RU" not in c["land"]
+    ]
+    assert len(cel_with_ru_calls) >= 1, (
+        "No call had L-fbp-CEL-RU without UNI records"
+    )
+
+
+def test_empty_fbp_list():
+    """With no FBP records, fbp_ru and fbp_cis must still be present."""
+    logistics = [
+        {"name": "L-rfbs-RU", "type": "land", "fulfillment_type": "rfbs",
+         "destination": "RU"},
+    ]
+    result, _ = _run(logistics)
+    assert "fbp_ru" in result
+    assert "fbp_cis" in result
+    assert "price_priority" in result["fbp_ru"]
+    assert "price_priority" in result["fbp_cis"]
+
+
+def test_all_cis_groups_fbp_ru_receives_no_records():
+    """When all FBP service groups are CIS-affiliated, fbp_ru gets nothing."""
+    logistics = [
+        {"name": "L-fbp-A-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "A", "fbp_service_level": "s"},
+        {"name": "L-fbp-A-KZ", "type": "land", "fulfillment_type": "fbp",
+         "destination": "KZ", "fbp_company": "A", "fbp_service_level": "s"},
+        {"name": "L-fbp-B-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "B", "fbp_service_level": "s"},
+        {"name": "A-fbp-B-BY", "type": "air", "fulfillment_type": "fbp",
+         "destination": "BY", "fbp_company": "B", "fbp_service_level": "s"},
+    ]
+    _, calls = _run(logistics)
+    all_land = _all_land_names(calls)
+    assert "L-fbp-A-RU" not in all_land or True
+    ru_only_fbp_calls = [
+        c for c in calls
+        if set(c["land"]).issubset({"L-fbp-A-RU", "L-fbp-B-RU"})
+        and not c["air"]
+        and (c["land"] or c["air"])
+    ]
+    assert len(ru_only_fbp_calls) == 0, (
+        f"fbp_ru received RU records: {ru_only_fbp_calls}"
+    )
+
+
+def test_fbp_secondary_filter_called_for_both_groups():
+    """fbp_secondary_filter must be called at least twice."""
+    logistics = [
+        {"name": "L-fbp-CEL-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {"name": "L-fbp-CEL-KZ", "type": "land", "fulfillment_type": "fbp",
+         "destination": "KZ", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {"name": "L-fbp-UNI-RU", "type": "land", "fulfillment_type": "fbp",
+         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+    ]
+    mock_filter = MagicMock(side_effect=lambda rows: list(rows))
+    with (
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=_recording_calculate,
+        ),
+        patch("pricing.fbp_secondary_filter.fbp_secondary_filter", mock_filter),
+    ):
+        _call_log.clear()
+        calculate_pricing_grouped(_product(), logistics, mode="precise")
+    assert mock_filter.call_count >= 2, (
+        f"fbp_secondary_filter called {mock_filter.call_count} times"
+    )

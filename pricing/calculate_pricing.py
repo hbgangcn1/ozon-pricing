@@ -102,21 +102,26 @@ def _make_cached_cost(is_fast_mode):
 def _calc_stats(candidates, best_log, best_cost):
     if not candidates:
         return None
-    costs = [c for _, c in candidates]
-    times = []
-    for log_dict, _ in candidates:
-        mn = log_dict.get("min_days", 0)
-        mx = log_dict.get("max_days", 0)
-        times.append((mn + mx) / 2)
-    avg_cost = sum(costs) / len(costs)
-    avg_time = sum(times) / len(times)
-    cost_saving = (
-        ((avg_cost - best_cost) / avg_cost * 100) if best_cost and avg_cost > 0 else 0
+    # 将selected也纳入平均值计算: avg = (selected + all candidates) / (1 + N)
+    all_costs = (
+        [best_cost] + [c for _, c in candidates]
+        if best_cost
+        else [c for _, c in candidates]
     )
     best_avg_time = (
         ((best_log.get("min_days", 0) + best_log.get("max_days", 0)) / 2)
         if best_log
         else 0
+    )
+    all_times = [best_avg_time] if best_log else []
+    for log_dict, _ in candidates:
+        mn = log_dict.get("min_days", 0)
+        mx = log_dict.get("max_days", 0)
+        all_times.append((mn + mx) / 2)
+    avg_cost = sum(all_costs) / len(all_costs) if all_costs else 0
+    avg_time = sum(all_times) / len(all_times) if all_times else 0
+    cost_saving = (
+        ((avg_cost - best_cost) / avg_cost * 100) if best_cost and avg_cost > 0 else 0
     )
     return {
         "avg_cost": avg_cost,
@@ -219,8 +224,8 @@ def _run_filters(
     )
     land_best = select_best_by_priority(land_candidates, priority)
     air_best = select_best_by_priority(air_candidates, priority)
-    add_unselected(land_candidates, filtered_logistics["land"])
-    add_unselected(air_candidates, filtered_logistics["air"])
+    add_unselected(land_candidates, filtered_logistics["land"], land_best, priority)
+    add_unselected(air_candidates, filtered_logistics["air"], air_best, priority)
     if land_best is None and air_best is None:
         logger.warning(
             "所有物流方案被淘汰: 陆运输入 %d 条, 候选 %d 条; "
@@ -485,8 +490,39 @@ def calculate_pricing(
         return _error_result(product)
 
 
-def calculate_pricing_grouped(product, all_logistics, mode="fast", priority="低价优先"):
+def _estimate_price_rub(product):
+    rate, _ = _get_exchange_rates()
+    unit_price = float(product.get("unit_price", 0) or 0)
+    labeling_fee = float(product.get("labeling_fee", 0) or 0)
+    shipping_fee = float(product.get("shipping_fee", 0) or 0)
+    margin = float(product.get("target_profit_margin", 0.2) or 0)
+    if margin >= 1:
+        margin /= 100
+    total_cost = unit_price + labeling_fee + shipping_fee
+    denom = max(1 - margin - 0.1, 0.3)
+    price_cny = total_cost / denom if denom > 0 else total_cost * 2
+    return price_cny / rate if rate > 0 else 0
+
+
+def _estimate_and_select_rate(
+    product,
+    commission_category,
+    fulfillment_type,
+    select_fn,
+):
+    price_rub = _estimate_price_rub(product)
+    return select_fn(commission_category, fulfillment_type, price_rub)
+
+
+def calculate_pricing_grouped(
+    product,
+    all_logistics,
+    mode="fast",
+    priority="低价优先",
+    commission_category=None,
+):
     from pricing.fbp_secondary_filter import fbp_secondary_filter
+    from pricing.commission import select_commission_rate_from_category
 
     _CIS_DESTS = {"KZ", "BY", "KGZ", "UZ", "GE", "AZ"}
 
@@ -495,46 +531,114 @@ def calculate_pricing_grouped(product, all_logistics, mode="fast", priority="低
         air = [r for r in logistics_list if r.get("type") == "air"]
         return land, air
 
+    def _apply_commission(ft):
+        if commission_category is None or mode == "fast":
+            return product
+        prod_copy = dict(product)
+        rate_val = _estimate_and_select_rate(
+            prod_copy,
+            commission_category,
+            ft,
+            select_commission_rate_from_category,
+        )
+        if rate_val is not None:
+            prod_copy["commission_rate"] = rate_val
+        return prod_copy
+
     def _group(ft, dest_filter, apply_fbp_filter=False):
         subset = [
             r
             for r in all_logistics
-            if r.get("fulfillment_type", "rfbs") == ft
-            and dest_filter(r.get("destination", "RU"))
+            if r.get("fulfillment_type", "rfbs") == ft and dest_filter(r)
         ]
         if apply_fbp_filter:
             subset = fbp_secondary_filter(subset)
         land, air = _split(subset)
+        group_product = _apply_commission(ft)
+        pp = calculate_pricing(
+            group_product,
+            land,
+            air,
+            mode=mode,
+            priority="低价优先",
+        )
+        sp = calculate_pricing(
+            group_product,
+            land,
+            air,
+            mode=mode,
+            priority="速度优先",
+        )
+        pp_fl = pp.get("filtered_logistics", {"land": [], "air": []})
+        sp_fl = sp.get("filtered_logistics", {"land": [], "air": []})
+        selected_names = set()
+        for res in (pp, sp):
+            for bkey in ("best_land", "best_air"):
+                best = res.get(bkey)
+                if isinstance(best, dict):
+                    n = best.get("name")
+                    if n:
+                        selected_names.add(n)
+                elif isinstance(best, str) and best:
+                    selected_names.add(best)
+        seen = set()
+        merged = {"land": [], "air": []}
+        for kind in ("land", "air"):
+            for item in pp_fl.get(kind, []) + sp_fl.get(kind, []):
+                key = item.get("name", "")
+                if key in selected_names:
+                    continue
+                if key not in seen:
+                    seen.add(key)
+                    merged[kind].append(item)
         return {
-            "price_priority": calculate_pricing(
-                product,
-                land,
-                air,
-                mode=mode,
-                priority="低价优先",
-            ),
-            "speed_priority": calculate_pricing(
-                product,
-                land,
-                air,
-                mode=mode,
-                priority="速度优先",
-            ),
+            "price_priority": pp,
+            "speed_priority": sp,
+            "filtered_logistics": merged,
         }
 
+    fbp_all = [r for r in all_logistics if r.get("fulfillment_type", "rfbs") == "fbp"]
+    cis_service_groups = set()
+    for r in fbp_all:
+        if r.get("destination", "RU") in {"KZ", "BY"}:
+            cis_service_groups.add(
+                (
+                    r.get("fbp_company") or "unknown",
+                    r.get("fbp_service_level") or "unknown",
+                )
+            )
+
     result = {
-        "rfbs_ru": _group("rfbs", lambda d: d == "RU"),
+        "rfbs_ru": _group(
+            "rfbs",
+            lambda r: r.get("destination", "RU") == "RU",
+        ),
         "fbp_ru": _group(
             "fbp",
-            lambda d: d == "RU",
+            lambda r: (
+                (
+                    r.get("fbp_company") or "unknown",
+                    r.get("fbp_service_level") or "unknown",
+                )
+                not in cis_service_groups
+            ),
             apply_fbp_filter=True,
         ),
         "fbp_cis": _group(
             "fbp",
-            lambda d: d in {"KZ", "BY"},
+            lambda r: (
+                (
+                    r.get("fbp_company") or "unknown",
+                    r.get("fbp_service_level") or "unknown",
+                )
+                in cis_service_groups
+            ),
             apply_fbp_filter=True,
         ),
     }
     for dest in sorted(_CIS_DESTS):
-        result[f"rfbs_{dest}"] = _group("rfbs", lambda d, _d=dest: d == _d)
+        result[f"rfbs_{dest}"] = _group(
+            "rfbs",
+            lambda r, _d=dest: r.get("destination", "RU") == _d,
+        )
     return result
