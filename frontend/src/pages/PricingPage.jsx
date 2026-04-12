@@ -15,7 +15,8 @@ import { Badge } from '../components/ui/badge'
 import { toast } from 'sonner'
 import { pricingAPI, productsAPI, commissionCategoriesAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
-import { Settings2 } from 'lucide-react'
+import { Settings2, ChevronDown } from 'lucide-react'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../components/ui/collapsible'
 const CostPieChart = React.lazy(() => import('../components/charts/CostPieChart'))
 
 // 安全提取 API 错误信息，避免将对象渲染到 React toast
@@ -210,6 +211,8 @@ export default function PricingPage() {
   const [fastResult, setFastResult] = useState(null)
   const [preciseResult, setPreciseResult] = useState(null)
   const [groupedResult, setGroupedResult] = useState(null)
+  const [groupActiveTab, setGroupActiveTab] = useState('rfbs_ru')
+  const [cisActiveTab, setCisActiveTab] = useState('rfbs_KZ')
   const [showBreakeven, setShowBreakeven] = useState(false)
   const [fastForm, setFastForm] = useState(DEFAULT_FAST)
   const [preciseForm, setPreciseForm] = useState(DEFAULT_PRECISE)
@@ -701,7 +704,7 @@ export default function PricingPage() {
               <CardTitle className="text-lg">分组计算结果</CardTitle>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="rfbs_ru">
+              <Tabs value={groupActiveTab} onValueChange={setGroupActiveTab}>
                 <TabsList className="grid grid-cols-4 mb-4">
                   <TabsTrigger value="rfbs_ru">rFBS-俄罗斯</TabsTrigger>
                   <TabsTrigger value="rfbs_cis">rFBS-独联体</TabsTrigger>
@@ -736,7 +739,7 @@ export default function PricingPage() {
                 </TabsContent>
                 {/* rFBS-独联体 — 6 country sub-tabs */}
                 <TabsContent value="rfbs_cis" className="mt-0">
-                  <Tabs defaultValue="rfbs_KZ">
+                  <Tabs value={cisActiveTab} onValueChange={setCisActiveTab}>
                     <TabsList className="grid grid-cols-6 mb-4">
                       {CIS_COUNTRIES.map(c => (
                         <TabsTrigger key={c.key} value={c.key}>{c.label}</TabsTrigger>
@@ -864,46 +867,69 @@ export default function PricingPage() {
         )}
 
         {/* 被淘汰的物流 */}
-        {result?.filtered_logistics && (
-          <div className="bg-surface-highest/50 p-5 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4 text-gray-400">被淘汰的物流</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {['land', 'air'].map(type => (
-                <div key={type}>
-                  <h4 className="text-sm font-medium mb-2 text-gray-500">{type === 'land' ? '🚛 陆运' : '✈️ 空运'}</h4>
-                  {(result.filtered_logistics[type] || []).length > 0 ? (
-                    <div className="space-y-2">
-                      {result.filtered_logistics[type].map((item) => {
-                        const isUnselected = item.reason.includes('未被选中');
-                        return (
-                          <div key={`${type}-${item.name}`} className={`rounded px-3 py-2 text-sm border ${
-                            isUnselected
-                              ? 'bg-primary/10 border-primary/20'
-                              : 'bg-status-error/10 border-status-error/20'
-                          }`}>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-medium">{item.name}</span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+        {(() => {
+          const fl = activeTab === 'precise' && groupedResult
+            ? (groupActiveTab === 'rfbs_cis'
+              ? groupedResult[cisActiveTab]?.filtered_logistics
+              : groupedResult[groupActiveTab]?.filtered_logistics)
+            : result?.filtered_logistics
+          if (!fl) return null
+          const landCount = (fl.land || []).length
+          const airCount = (fl.air || []).length
+          if (landCount + airCount === 0) return null
+          return (
+          <Collapsible defaultOpen={false}>
+            <div className="bg-surface-highest/50 rounded-lg">
+              <CollapsibleTrigger className="group flex w-full items-center justify-between p-5 hover:bg-surface-highest/80 rounded-lg transition-colors cursor-pointer">
+                <h3 className="text-lg font-semibold text-gray-400">
+                  被淘汰的物流
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    ({landCount + airCount} 条)
+                  </span>
+                </h3>
+                <ChevronDown className="h-5 w-5 text-gray-400 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-5 pb-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {['land', 'air'].map(type => (
+                    <div key={type}>
+                      <h4 className="text-sm font-medium mb-2 text-gray-500">{type === 'land' ? '🚛 陆运' : '✈️ 空运'}</h4>
+                      {(fl[type] || []).length > 0 ? (
+                        <div className="space-y-2">
+                          {fl[type].map((item) => {
+                            const isUnselected = item.reason.includes('未被选中');
+                            return (
+                              <div key={`${type}-${item.name}`} className={`rounded px-3 py-2 text-sm border ${
                                 isUnselected
-                                  ? 'bg-primary/20 text-primary'
-                                  : 'bg-status-error/20 text-status-error'
+                                  ? 'bg-primary/10 border-primary/20'
+                                  : 'bg-status-error/10 border-status-error/20'
                               }`}>
-                                {isUnselected ? '备选' : '淘汰'}
-                              </span>
-                            </div>
-                            <div className="text-muted-foreground text-xs">{item.reason}</div>
-                          </div>
-                        );
-                      })}
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium">{item.name}</span>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    isUnselected
+                                      ? 'bg-primary/20 text-primary'
+                                      : 'bg-status-error/20 text-status-error'
+                                  }`}>
+                                    {isUnselected ? '备选' : '淘汰'}
+                                  </span>
+                                </div>
+                                <div className="text-muted-foreground text-xs">{item.reason}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground py-2">无</p>
+                      )}
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground py-2">无</p>
-                  )}
+                  ))}
                 </div>
-              ))}
+              </CollapsibleContent>
             </div>
-          </div>
-        )}
+          </Collapsible>
+          )
+        })()}
       </div>
     )
   }

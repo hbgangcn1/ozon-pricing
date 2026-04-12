@@ -150,6 +150,13 @@ vi.mock('../components/ui/alert-dialog', () => ({
 
 vi.mock('lucide-react', () => ({
   Settings2: () => <div data-testid="icon-settings" />,
+  ChevronDown: () => <div data-testid="icon-chevron-down" />,
+}));
+
+vi.mock('../components/ui/collapsible', () => ({
+  Collapsible: ({ children, defaultOpen }) => <div data-testid="collapsible" data-open={defaultOpen}>{children}</div>,
+  CollapsibleTrigger: ({ children, className }) => <button type="button" className={className}>{children}</button>,
+  CollapsibleContent: ({ children, className }) => <div className={className}>{children}</div>,
 }));
 
 vi.mock('recharts', () => ({
