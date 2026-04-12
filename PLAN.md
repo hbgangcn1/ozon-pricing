@@ -14,6 +14,8 @@
 
 - **目标**：修复所有功能缺陷，实现缺失模块，JWT认证替换，90%+ 测试覆盖率
 - **本地目录**：`C:\Users\hbgan\OneDrive\Robert\learn\logistics`
+- **后端端口**：`8003`（uvicorn，http://localhost:8003）
+- **前端端口**：`3001`（Vite dev server，http://localhost:3001）
 - **生产服务器**：`SERVER_IP` (`/var/www/ozon-pricing`)
 - **数据库**：PostgreSQL (logistics) - 36个真实用户，19张表
 - **部署方式**：git pull + systemd

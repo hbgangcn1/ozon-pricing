@@ -122,7 +122,30 @@ logistics/
 - **subagent 打开的项目文件夹必须限制在**: `C:\Users\hbgan\OneDrive\Robert\learn\logistics`
 - 运行任务时，始终使用 `workdir` 参数指定正确的项目根目录
 - 避免 subagent 扫描错误的目录导致性能问题
-- **严禁在 opencode 的 bash/terminal 中启动后端进程（uvicorn、python server 等）**
+
+### Windows 目录创建规则（必须遵守，防止 EEXIST 错误）
+
+> ⚠️ **这是本项目最常见的任务中断原因，必须严格执行以下规则。**
+
+#### 写文件时：直接用 Write 工具，无需提前创建目录
+- **opencode 的 Write 工具会自动创建父目录**，无需任何 `mkdir` 操作
+- 错误做法：先 `mkdir tests/`，再写文件 → 必然 EEXIST 崩溃
+- 正确做法：直接调用 Write 工具写 `tests/xxx.py`，Write 工具自己处理目录
+
+#### 在代码/脚本中创建目录时：必须用安全 API
+- **Python**：`os.makedirs(path, exist_ok=True)` ✅ &nbsp;&nbsp; `os.mkdir(path)` ❌
+- **Node.js**：`fs.mkdirSync(path, { recursive: true })` ✅ &nbsp;&nbsp; `fs.mkdirSync(path)` ❌
+- **PowerShell**：`New-Item -ItemType Directory -Force -Path $path` ✅ &nbsp;&nbsp; 裸 `mkdir path` ❌
+
+#### 任务开始前：先确认目标目录是否已存在
+```powershell
+# 在 Bash 工具中确认目录存在，不要尝试创建
+Test-Path "C:\Users\hbgan\OneDrive\Robert\learn\logistics\tests"  # 应返回 True
+```
+- 如果目录已存在 → 直接写文件，不执行任何 mkdir
+- 如果目录不存在 → 用安全 API 创建（`exist_ok=True` / `recursive: true`）
+
+### 严禁在 opencode 的 bash/terminal 中启动后端进程（uvicorn、python server 等）
   - 原因：`Start-Process`、直接运行 `uvicorn` 等方式会阻塞 agent shell，导致 agent 完全失去响应
   - 已踩坑 2 次，每次都需要用户手动终止 session
   - 正确做法：请用户在独立终端中手动运行 `.\start_dev.ps1` 或 `uvicorn api.main:app --reload --port 8003`

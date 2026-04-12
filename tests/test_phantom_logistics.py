@@ -54,8 +54,10 @@ def _filtered_names(result):
 def test_filtered_logistics_names_stay_within_input_names(monkeypatch):
     original_add_unselected = calc_module.add_unselected
 
-    def fake_add_unselected(candidates, filtered_list):
-        original_add_unselected(candidates, filtered_list)
+    def fake_add_unselected(
+        candidates, filtered_list, global_best=None, priority_type="低价优先"
+    ):
+        original_add_unselected(candidates, filtered_list, global_best, priority_type)
         filtered_list.append({"name": "Tanais Standard Small", "reason": "phantom"})
 
     monkeypatch.setattr(calc_module, "add_unselected", fake_add_unselected)
