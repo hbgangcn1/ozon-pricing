@@ -374,6 +374,7 @@ class PricingGroupResult(BaseModel):
 class PricingDualPriorityGroupResult(BaseModel):
     price_priority: PricingGroupResult = PricingGroupResult()
     speed_priority: PricingGroupResult = PricingGroupResult()
+    filtered_logistics: dict = {}
 
 
 class PricingGroupedResponse(BaseModel):

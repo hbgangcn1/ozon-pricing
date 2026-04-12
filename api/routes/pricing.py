@@ -23,6 +23,7 @@ from db.products import get_product_by_id
 from models.logistics import Logistics
 from models.user import User
 from pricing.calculate_pricing import calculate_pricing, calculate_pricing_grouped
+from pricing.commission import fetch_commission_category
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +397,16 @@ async def calculate_grouped(
     rate = get_fallback_exchange_rate()
 
     priority = getattr(request, "priority", "低价优先") or "低价优先"
+
+    commission_category = None
+    if mode == "precise":
+        cat_id = product.get("commission_category_id")
+        if cat_id:
+            commission_category = await fetch_commission_category(
+                int(cat_id),
+                session,
+            )
+
     grouped = cast(
         dict[str, Any],
         convert_decimals(
@@ -404,6 +415,7 @@ async def calculate_grouped(
                 all_logistics,
                 mode=mode,
                 priority=priority,
+                commission_category=commission_category,
             )
         ),
     )
@@ -420,6 +432,7 @@ async def calculate_grouped(
                     all_logistics,
                     mode=mode,
                     priority=priority,
+                    commission_category=commission_category,
                 )
             ),
         )
@@ -454,9 +467,25 @@ async def calculate_grouped(
                     is_land=False,
                 ),
             ),
+            filtered_logistics=dual_res.get("filtered_logistics", {}),
         )
 
     _CIS_CODES = ["AZ", "BY", "GE", "KGZ", "KZ", "UZ"]
+
+    all_group_keys = ["rfbs_ru", "fbp_ru", "fbp_cis"] + [
+        f"rfbs_{c}" for c in _CIS_CODES
+    ]
+    top_filtered = {"land": [], "air": []}
+    seen_names: set[str] = set()
+    for gk in all_group_keys:
+        gfl = grouped[gk].get("filtered_logistics", {})
+        for kind in ("land", "air"):
+            for item in gfl.get(kind, []):
+                name = item.get("name", "")
+                if name not in seen_names:
+                    seen_names.add(name)
+                    top_filtered[kind].append(item)
+
     resp_kwargs = {
         "calculation_mode": mode,
         "rfbs_ru": _fmt_group(grouped["rfbs_ru"]),
@@ -475,6 +504,7 @@ async def calculate_grouped(
             "rub_cny": rate,
             "usd_cny": get_fallback_usd_rate(),
         },
+        "filtered_logistics": top_filtered,
         "product": product if mode != "fast" else None,
     }
     for code in _CIS_CODES:
