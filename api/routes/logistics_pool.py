@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user_id, require_admin
@@ -17,6 +18,18 @@ from xlsx_import import parse_file
 router = APIRouter(prefix="/api/logistics-pool", tags=["物流池"])
 logger = logging.getLogger(__name__)
 _COPY_EXCLUDE = {"id", "source_file", "imported_at", "is_active"}
+_VALID_VOLUME_MODES = {"none", "max_actual_vs_volume", "longest_side", "sum_of_sides"}
+
+
+def _sanitize_pool_data(data: dict) -> dict:
+    vm = data.get("volume_mode")
+    if vm and vm not in _VALID_VOLUME_MODES:
+        data["volume_mode"] = "none"
+    if data.get("min_days") is None:
+        data["min_days"] = 0
+    if data.get("max_days") is None:
+        data["max_days"] = 0
+    return data
 
 
 class ActiveBody(BaseModel):
@@ -125,6 +138,7 @@ async def add_to_my_logistics(
     if not item:
         raise HTTPException(status_code=404, detail="物流池条目不存在")
     data = {k: v for k, v in item.items() if k not in _COPY_EXCLUDE}
+    _sanitize_pool_data(data)
     new_id = await create_logistics(session, user_id, data)
     await recalculate_priority_groups(session, user_id)
     return {"id": new_id}
@@ -142,20 +156,29 @@ async def batch_add_to_my_logistics(
         raise HTTPException(status_code=400, detail="单次最多添加 200 条")
     added = []
     not_found = []
+    errors: list[str] = []
     for pool_id in body.ids:
         item = await get_by_id(session, pool_id)
         if not item:
             not_found.append(pool_id)
             continue
         data = {k: v for k, v in item.items() if k not in _COPY_EXCLUDE}
-        new_id = await create_logistics(session, user_id, data)
-        added.append(new_id)
+        _sanitize_pool_data(data)
+        try:
+            new_id = await create_logistics(session, user_id, data)
+            added.append(new_id)
+        except IntegrityError as exc:
+            await session.rollback()
+            name = data.get("name", pool_id)
+            errors.append(f"{name}: {exc.orig}")
+            logger.warning("batch-add 跳过 pool_id=%s: %s", pool_id, exc.orig)
     if added:
         await recalculate_priority_groups(session, user_id)
     return {
         "added": len(added),
         "not_found": not_found,
         "new_ids": added,
+        "errors": errors,
     }
 
 
