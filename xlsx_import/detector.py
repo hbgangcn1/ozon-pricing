@@ -1,31 +1,74 @@
-from pathlib import Path
-
 import openpyxl
 from openpyxl.workbook.workbook import Workbook
 
-
 KEYWORDS = (
-    ("Russia-China CP", "china_post"),
-    ("CHINA rFBS", "scoring_rfbs"),
-    ("KZ & BY", "cis_rfbs"),
-    ("Other CIS", "cis_rfbs"),
-    ("CHINA FBP", "fbp"),
+    ("russia-china cp", "china_post"),
+    ("russia china", "china_post"),
+    ("china post", "china_post"),
+    ("china rfbs", "scoring_rfbs"),
+    ("rfbs", "scoring_rfbs"),
+    ("scoring", "scoring_rfbs"),
+    ("kz & by", "cis_rfbs"),
+    ("other cis", "cis_rfbs"),
+    ("cis delivery", "cis_rfbs"),
+    ("cis", "cis_rfbs"),
+    ("china fbp", "fbp"),
+    ("fbp", "fbp"),
 )
 
-FILENAME_PATTERNS = (
-    ("china_post", "china_post"),
-    ("china_scoring", "scoring_rfbs"),
-    ("cis_delivery_methods", "cis_rfbs"),
-    ("fbp_list_of_services", "fbp"),
-)
+
+def _detect_by_sheet_names(titles: list[str]) -> str | None:
+    lowered = [t.lower() for t in titles]
+    for needle, fmt in KEYWORDS:
+        if any(needle in title for title in lowered):
+            return fmt
+    return None
+
+
+def _cell_text(ws, row: int, col: int) -> str:
+    val = ws.cell(row, col).value
+    if val is None:
+        return ""
+    return str(val).replace("\u00a0", " ").strip().lower()
+
+
+def _detect_by_headers(wb: Workbook) -> str | None:
+    for ws in wb.worksheets:
+        if "\u4e2d\u6587" in (ws.title or ""):
+            continue
+
+        # china_post: row5 col2="delivery method", col3="pudo"
+        r5c2 = _cell_text(ws, 5, 2)
+        r5c3 = _cell_text(ws, 5, 3)
+        if "delivery method" in r5c2 and "pudo" in r5c3:
+            return "china_post"
+
+        # cis_rfbs: row5 col1="scoring group", col4="delivery method"
+        r5c1 = _cell_text(ws, 5, 1)
+        r5c4 = _cell_text(ws, 5, 4)
+        if "scoring" in r5c1 and "delivery" in r5c4:
+            return "cis_rfbs"
+
+        # scoring_rfbs: 18-col layout, row5 col1 has content, col19 empty
+        if "scoring" in r5c1 or "priority" in r5c1:
+            r5c19 = _cell_text(ws, 5, 19)
+            if not r5c19:
+                return "scoring_rfbs"
+
+        # fbp: data starts row8, "fbp" in row7/8 or "service" header row7
+        r7c1 = _cell_text(ws, 7, 1)
+        r8c1 = _cell_text(ws, 8, 1)
+        if "fbp" in r7c1 or "fbp" in r8c1:
+            return "fbp"
+        r7c3 = _cell_text(ws, 7, 3)
+        if ("service" in r7c3 or "\u670d\u52a1" in r7c3) and r8c1:
+            return "fbp"
+
+    return None
 
 
 def detect_format(source: str | Workbook) -> str:
     if isinstance(source, str):
-        filename = Path(source).name.lower()
-        for needle, fmt in FILENAME_PATTERNS:
-            if needle in filename:
-                return fmt
         wb = openpyxl.load_workbook(source, read_only=True)
         try:
             return detect_format(wb)
@@ -34,9 +77,16 @@ def detect_format(source: str | Workbook) -> str:
 
     wb = source
     titles = [ws.title for ws in wb.worksheets]
-    for keyword, fmt in KEYWORDS:
-        needle = keyword.lower()
-        if any(needle in title.lower() for title in titles):
-            return fmt
+
+    result = _detect_by_sheet_names(titles)
+    if result:
+        return result
+
+    result = _detect_by_headers(wb)
+    if result:
+        return result
+
     supported = [kw for kw, _ in KEYWORDS]
-    raise ValueError(f"无法识别xlsx格式。工作表: {titles}；支持的关键词: {supported}")
+    raise ValueError(
+        f"\u65e0\u6cd5\u8bc6\u522bxlsx\u683c\u5f0f\u3002\u5de5\u4f5c\u8868: {titles}\uff1b\u652f\u6301\u7684\u5173\u952e\u8bcd: {supported}"
+    )
