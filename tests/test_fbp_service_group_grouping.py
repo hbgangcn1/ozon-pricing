@@ -34,10 +34,12 @@ _call_log = []
 
 
 def _recording_calculate(_product, land, air, mode="fast", priority="低价优先"):
-    _call_log.append({
-        "land": [r["name"] for r in land],
-        "air": [r["name"] for r in air],
-    })
+    _call_log.append(
+        {
+            "land": [r["name"] for r in land],
+            "air": [r["name"] for r in air],
+        }
+    )
     return {"filtered_logistics": {"land": [], "air": []}}
 
 
@@ -50,7 +52,7 @@ def _run(logistics):
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         result = calculate_pricing_grouped(_product(), logistics, mode="precise")
@@ -74,12 +76,30 @@ def _all_air_names(calls):
 def test_cis_service_group_ru_records_go_to_fbp_cis():
     """RU records in a CIS-affiliated group must not appear in fbp_ru."""
     logistics = [
-        {"name": "L-fbp-CEL-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "CEL", "fbp_service_level": "standard"},
-        {"name": "L-fbp-CEL-KZ", "type": "land", "fulfillment_type": "fbp",
-         "destination": "KZ", "fbp_company": "CEL", "fbp_service_level": "standard"},
-        {"name": "A-fbp-CEL-BY", "type": "air", "fulfillment_type": "fbp",
-         "destination": "BY", "fbp_company": "CEL", "fbp_service_level": "standard"},
+        {
+            "name": "L-fbp-CEL-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "L-fbp-CEL-KZ",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "KZ",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "A-fbp-CEL-BY",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "BY",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
     ]
     _, calls = _run(logistics)
     land_in_any_call = _all_land_names(calls)
@@ -94,59 +114,100 @@ def test_cis_service_group_ru_records_go_to_fbp_cis():
 def test_ru_only_service_group_stays_in_fbp_ru():
     """A service group with only RU destinations must go to fbp_ru."""
     logistics = [
-        {"name": "L-fbp-UNI-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
-        {"name": "A-fbp-UNI-RU", "type": "air", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+        {
+            "name": "L-fbp-UNI-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "UNI",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "A-fbp-UNI-RU",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "UNI",
+            "fbp_service_level": "standard",
+        },
     ]
     _, calls = _run(logistics)
     uni_calls = [
-        c for c in calls
-        if "L-fbp-UNI-RU" in c["land"] and "A-fbp-UNI-RU" in c["air"]
+        c for c in calls if "L-fbp-UNI-RU" in c["land"] and "A-fbp-UNI-RU" in c["air"]
     ]
-    assert len(uni_calls) >= 1, (
-        "No call received both L-fbp-UNI-RU and A-fbp-UNI-RU"
-    )
+    assert len(uni_calls) >= 1, "No call received both L-fbp-UNI-RU and A-fbp-UNI-RU"
 
 
 def test_mixed_groups_correctly_partitioned():
     """CIS group records go to fbp_cis; RU-only group goes to fbp_ru."""
     logistics = [
-        {"name": "L-fbp-CEL-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "CEL", "fbp_service_level": "standard"},
-        {"name": "L-fbp-CEL-KZ", "type": "land", "fulfillment_type": "fbp",
-         "destination": "KZ", "fbp_company": "CEL", "fbp_service_level": "standard"},
-        {"name": "A-fbp-CEL-BY", "type": "air", "fulfillment_type": "fbp",
-         "destination": "BY", "fbp_company": "CEL", "fbp_service_level": "standard"},
-        {"name": "L-fbp-UNI-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
-        {"name": "A-fbp-UNI-RU", "type": "air", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+        {
+            "name": "L-fbp-CEL-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "L-fbp-CEL-KZ",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "KZ",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "A-fbp-CEL-BY",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "BY",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "L-fbp-UNI-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "UNI",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "A-fbp-UNI-RU",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "UNI",
+            "fbp_service_level": "standard",
+        },
     ]
     _, calls = _run(logistics)
 
     uni_only_calls = [
-        c for c in calls
+        c
+        for c in calls
         if "L-fbp-UNI-RU" in c["land"] and "L-fbp-CEL-RU" not in c["land"]
     ]
-    assert len(uni_only_calls) >= 1, (
-        "No call had UNI records without CEL records"
-    )
+    assert len(uni_only_calls) >= 1, "No call had UNI records without CEL records"
 
     cel_with_ru_calls = [
-        c for c in calls
+        c
+        for c in calls
         if "L-fbp-CEL-RU" in c["land"] and "L-fbp-UNI-RU" not in c["land"]
     ]
-    assert len(cel_with_ru_calls) >= 1, (
-        "No call had L-fbp-CEL-RU without UNI records"
-    )
+    assert len(cel_with_ru_calls) >= 1, "No call had L-fbp-CEL-RU without UNI records"
 
 
 def test_empty_fbp_list():
     """With no FBP records, fbp_ru and fbp_cis must still be present."""
     logistics = [
-        {"name": "L-rfbs-RU", "type": "land", "fulfillment_type": "rfbs",
-         "destination": "RU"},
+        {
+            "name": "L-rfbs-RU",
+            "type": "land",
+            "fulfillment_type": "rfbs",
+            "destination": "RU",
+        },
     ]
     result, _ = _run(logistics)
     assert "fbp_ru" in result
@@ -158,20 +219,45 @@ def test_empty_fbp_list():
 def test_all_cis_groups_fbp_ru_receives_no_records():
     """When all FBP service groups are CIS-affiliated, fbp_ru gets nothing."""
     logistics = [
-        {"name": "L-fbp-A-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "A", "fbp_service_level": "s"},
-        {"name": "L-fbp-A-KZ", "type": "land", "fulfillment_type": "fbp",
-         "destination": "KZ", "fbp_company": "A", "fbp_service_level": "s"},
-        {"name": "L-fbp-B-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "B", "fbp_service_level": "s"},
-        {"name": "A-fbp-B-BY", "type": "air", "fulfillment_type": "fbp",
-         "destination": "BY", "fbp_company": "B", "fbp_service_level": "s"},
+        {
+            "name": "L-fbp-A-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "A",
+            "fbp_service_level": "s",
+        },
+        {
+            "name": "L-fbp-A-KZ",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "KZ",
+            "fbp_company": "A",
+            "fbp_service_level": "s",
+        },
+        {
+            "name": "L-fbp-B-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "B",
+            "fbp_service_level": "s",
+        },
+        {
+            "name": "A-fbp-B-BY",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "BY",
+            "fbp_company": "B",
+            "fbp_service_level": "s",
+        },
     ]
     _, calls = _run(logistics)
     all_land = _all_land_names(calls)
     assert "L-fbp-A-RU" not in all_land or True
     ru_only_fbp_calls = [
-        c for c in calls
+        c
+        for c in calls
         if set(c["land"]).issubset({"L-fbp-A-RU", "L-fbp-B-RU"})
         and not c["air"]
         and (c["land"] or c["air"])
@@ -184,14 +270,32 @@ def test_all_cis_groups_fbp_ru_receives_no_records():
 def test_fbp_secondary_filter_called_for_both_groups():
     """fbp_secondary_filter must be called at least twice."""
     logistics = [
-        {"name": "L-fbp-CEL-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "CEL", "fbp_service_level": "standard"},
-        {"name": "L-fbp-CEL-KZ", "type": "land", "fulfillment_type": "fbp",
-         "destination": "KZ", "fbp_company": "CEL", "fbp_service_level": "standard"},
-        {"name": "L-fbp-UNI-RU", "type": "land", "fulfillment_type": "fbp",
-         "destination": "RU", "fbp_company": "UNI", "fbp_service_level": "standard"},
+        {
+            "name": "L-fbp-CEL-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "L-fbp-CEL-KZ",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "KZ",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "L-fbp-UNI-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "UNI",
+            "fbp_service_level": "standard",
+        },
     ]
-    mock_filter = MagicMock(side_effect=lambda rows: list(rows))
+    mock_filter = MagicMock(side_effect=lambda rows: (list(rows), []))
     with (
         patch(
             "pricing.calculate_pricing.calculate_pricing",
@@ -204,3 +308,49 @@ def test_fbp_secondary_filter_called_for_both_groups():
     assert mock_filter.call_count >= 2, (
         f"fbp_secondary_filter called {mock_filter.call_count} times"
     )
+
+
+def test_smart_level_not_merged_with_standard():
+    """Smart-level records must form their own group, separate from standard."""
+    logistics = [
+        {
+            "name": "L-fbp-CEL-smart-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "CEL",
+            "fbp_service_level": "smart",
+        },
+        {
+            "name": "L-fbp-CEL-std-RU",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "L-fbp-CEL-std-BY",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "BY",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+    ]
+    _, calls = _run(logistics)
+
+    smart_calls = [c for c in calls if "L-fbp-CEL-smart-RU" in c["land"]]
+    for c in smart_calls:
+        assert "L-fbp-CEL-std-RU" not in c["land"], (
+            "Smart record grouped with standard CIS records"
+        )
+        assert "L-fbp-CEL-std-BY" not in c["land"], (
+            "Smart record grouped with standard BY records"
+        )
+
+    std_calls = [c for c in calls if "L-fbp-CEL-std-RU" in c["land"]]
+    for c in std_calls:
+        assert "L-fbp-CEL-std-BY" in c["land"], (
+            "Standard RU must be in same CIS group as standard BY"
+        )

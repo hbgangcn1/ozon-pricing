@@ -227,6 +227,8 @@ def test_add_to_my_logistics_success():
             "continue_fee": 15.0,
             "first_fee": 52.5,
             "first_weight_g": 1000,
+            "min_days": 0,
+            "max_days": 0,
         },
     )
 

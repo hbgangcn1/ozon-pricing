@@ -7,6 +7,7 @@ from xlsx_import.common import (
     finalize_source_file,
     infer_type,
     is_blank_row,
+    is_transition_row,
     normalize_text,
     parse_days,
     parse_price_limit_cny,
@@ -85,7 +86,7 @@ def parse(
                 ]
                 if is_blank_row(values):
                     continue
-                if "переход" in normalize_text(values[0]).lower():
+                if is_transition_row(values):
                     continue
                 name = values[3]
                 name_text = normalize_text(name)

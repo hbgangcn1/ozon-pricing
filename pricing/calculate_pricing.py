@@ -521,7 +521,10 @@ def calculate_pricing_grouped(
     priority="低价优先",
     commission_category=None,
 ):
-    from pricing.fbp_secondary_filter import fbp_secondary_filter
+    from pricing.fbp_secondary_filter import (
+        fbp_secondary_filter,
+        _ELIMINATED_REASON,
+    )
     from pricing.commission import select_commission_rate_from_category
 
     _CIS_DESTS = {"KZ", "BY", "KGZ", "UZ", "GE", "AZ"}
@@ -551,8 +554,9 @@ def calculate_pricing_grouped(
             for r in all_logistics
             if r.get("fulfillment_type", "rfbs") == ft and dest_filter(r)
         ]
+        smart_eliminated = []
         if apply_fbp_filter:
-            subset = fbp_secondary_filter(subset)
+            subset, smart_eliminated = fbp_secondary_filter(subset)
         land, air = _split(subset)
         group_product = _apply_commission(ft)
         pp = calculate_pricing(
@@ -591,6 +595,14 @@ def calculate_pricing_grouped(
                 if key not in seen:
                     seen.add(key)
                     merged[kind].append(item)
+        for elim in smart_eliminated:
+            elim_kind = "air" if elim.get("type") == "air" else "land"
+            name = elim.get("name", "")
+            if name not in seen:
+                seen.add(name)
+                entry = dict(elim)
+                entry["reason"] = _ELIMINATED_REASON
+                merged[elim_kind].append(entry)
         return {
             "price_priority": pp,
             "speed_priority": sp,

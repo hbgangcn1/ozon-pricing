@@ -147,7 +147,7 @@ def _run_grouped():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
@@ -286,7 +286,7 @@ def test_commission_applied_per_group_fulfillment_type():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         calculate_pricing_grouped(

@@ -155,7 +155,7 @@ def test_returns_expected_group_keys_in_precise_mode():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
@@ -171,7 +171,7 @@ def test_each_group_contains_filtered_logistics_land_and_air_lists():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
@@ -211,7 +211,7 @@ def test_filtered_logistics_merges_both_priorities_without_duplicates():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
@@ -229,7 +229,7 @@ def test_filtered_logistics_stays_within_each_groups_input_logistics():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
@@ -255,7 +255,7 @@ def test_returns_empty_filtered_logistics_when_no_items_are_filtered():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
@@ -272,7 +272,7 @@ def test_fbp_secondary_filter_is_called_only_for_fbp_groups():
         ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ) as mock_filter,
     ):
         calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
@@ -292,7 +292,7 @@ def test_each_group_invokes_price_and_speed_priority_in_precise_mode():
         ) as mock_calculate,
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: list(rows),
+            side_effect=lambda rows: (list(rows), []),
         ),
     ):
         calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")

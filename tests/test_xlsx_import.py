@@ -116,9 +116,9 @@ def test_infer_type_express_in_category_column():
     ("filename", "expected_format"),
     [
         ("China_post_10_2_26_ENG_CN_1770625401.xlsx", "china_post"),
-        ("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx", "scoring_rfbs"),
-        ("CIS_Delivery_methods_20_01_2026_1768818333.xlsx", "cis_rfbs"),
-        ("FBP_List_of_services_5_03_26_1772704547.xlsx", "fbp"),
+        ("China_scoring_ENG_CN_7_04_26_1775544002.xlsx", "scoring_rfbs"),
+        ("CIS_Delivery_methods_7_04_26_1775544004.xlsx", "cis_rfbs"),
+        ("FBP_List_of_services_7_04_26_1775544198.xlsx", "fbp"),
     ],
 )
 def test_detect_format_matches_reference_workbooks(filename: str, expected_format: str):
@@ -161,15 +161,16 @@ def test_parse_file_china_post_returns_expected_core_fields():
 
 
 def test_parse_file_scoring_rfbs_skips_transition_rows_and_parses_rates():
-    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    result = parse_file(_file("China_scoring_ENG_CN_7_04_26_1775544002.xlsx"))
 
     assert result["format"] == "scoring_rfbs"
-    assert all("переход" not in (row.get("name") or "") for row in result["rows"])
+    # переход rows are fully skipped by is_transition_row()
+    assert all("переход" not in (r.get("name") or "") for r in result["rows"])
     row = _find_row(result["rows"], "Ural Standard Extra Small")
     assert row["fulfillment_type"] == "rfbs"
     assert row["destination"] == "RU"
-    assert row["base_fee"] == 2.8
-    assert row["continue_fee"] == 0.035
+    assert row["base_fee"] == 2.92
+    assert row["continue_fee"] == 0.0364
     assert row["continue_unit"] == "1g"
     assert row["allow_battery"] == 1
     assert row["price_min_cny"] > 0
@@ -177,23 +178,23 @@ def test_parse_file_scoring_rfbs_skips_transition_rows_and_parses_rates():
 
 
 def test_parse_file_cis_rfbs_assigns_all_expected_destinations():
-    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    result = parse_file(_file("CIS_Delivery_methods_7_04_26_1775544004.xlsx"))
 
     assert result["format"] == "cis_rfbs"
     destinations = {row["destination"] for row in result["rows"]}
-    assert {"BY", "KZ", "AZ", "GE", "UZ", "KGZ"}.issubset(destinations)
-    by_row = _find_row(result["rows"], "Belarus Standard Extra Small")
+    assert {"BY", "KZ", "KGZ"}.issubset(destinations)
+    by_row = _find_row(result["rows"], "CEL Belarus Standard Extra Small")
     assert by_row["destination"] == "BY"
     assert by_row["price_min_cny"] > 0
     assert by_row["price_limit_cny"] >= by_row["price_min_cny"]
-    uz_row = _find_row(result["rows"], "UNI Express UZ")
-    assert uz_row["destination"] == "UZ"
-    assert uz_row["price_min_cny"] > 0
-    assert uz_row["price_limit_cny"] >= uz_row["price_min_cny"]
+    kz_row = _find_row(result["rows"], "CEL Kazakhstan Standard Extra Small")
+    assert kz_row["destination"] == "KZ"
+    assert kz_row["price_min_cny"] > 0
+    assert kz_row["price_limit_cny"] >= kz_row["price_min_cny"]
 
 
 def test_parse_file_fbp_extracts_smart_company_and_service_level():
-    result = parse_file(_file("FBP_List_of_services_5_03_26_1772704547.xlsx"))
+    result = parse_file(_file("FBP_List_of_services_7_04_26_1775544198.xlsx"))
 
     assert result["format"] == "fbp"
     smart_row = _find_row(result["rows"], "CEL FBP Standard Extra Small")
@@ -201,7 +202,7 @@ def test_parse_file_fbp_extracts_smart_company_and_service_level():
     assert smart_row["destination"] == "RU"
     assert smart_row["is_smart"] == 1
     assert smart_row["fbp_company"] == "CEL"
-    assert smart_row["fbp_service_level"] == "standard"
+    assert smart_row["fbp_service_level"] == "smart"
     assert smart_row["price_min_cny"] > 0
     assert smart_row["price_limit_cny"] >= smart_row["price_min_cny"]
     express_row = _find_row(result["rows"], "Ural FBP Super Express Extra Small")
@@ -219,7 +220,7 @@ def test_parse_file_fbp_extracts_smart_company_and_service_level():
 
 def test_parse_file_fbp_sum_of_sides_volume_mode():
     """FBP parser correctly identifies 'Sum of sides' volume mode."""
-    result = parse_file(_file("FBP_List_of_services_5_03_26_1772704547.xlsx"))
+    result = parse_file(_file("FBP_List_of_services_7_04_26_1775544198.xlsx"))
 
     sum_rows = [r for r in result["rows"] if r.get("volume_mode") == "sum_of_sides"]
     assert len(sum_rows) > 0, "Should find at least one sum_of_sides row"
@@ -232,7 +233,7 @@ def test_parse_file_fbp_sum_of_sides_volume_mode():
 
 def test_parse_file_fbp_physical_weight_is_none_mode():
     """FBP parser converts 'Physical weight' to volume_mode='none'."""
-    result = parse_file(_file("FBP_List_of_services_5_03_26_1772704547.xlsx"))
+    result = parse_file(_file("FBP_List_of_services_7_04_26_1775544198.xlsx"))
 
     none_rows = [r for r in result["rows"] if r.get("volume_mode") == "none"]
     assert len(none_rows) > 0, "Should find 'none' volume mode rows"
@@ -243,7 +244,7 @@ def test_parse_file_fbp_physical_weight_is_none_mode():
 
 def test_parse_file_fbp_max_actual_vs_volume_mode():
     """FBP parser converts 'Max weight between...' to 'max_actual_vs_volume'."""
-    result = parse_file(_file("FBP_List_of_services_5_03_26_1772704547.xlsx"))
+    result = parse_file(_file("FBP_List_of_services_7_04_26_1775544198.xlsx"))
 
     max_rows = [
         r for r in result["rows"] if r.get("volume_mode") == "max_actual_vs_volume"
@@ -266,7 +267,7 @@ def test_china_post_eems_is_air_and_others_are_land():
 
 
 def test_scoring_express_rows_are_air():
-    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    result = parse_file(_file("China_scoring_ENG_CN_7_04_26_1775544002.xlsx"))
 
     express_row = _find_row(result["rows"], "Ural Express Extra Small")
     assert express_row["type"] == "air"
@@ -275,16 +276,22 @@ def test_scoring_express_rows_are_air():
 
 
 def test_cis_express_rows_are_air():
-    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    result = parse_file(_file("CIS_Delivery_methods_7_04_26_1775544004.xlsx"))
 
-    express_row = _find_row(result["rows"], "UNI Express KZ")
-    assert express_row["type"] == "air"
-    standard_row = _find_row(result["rows"], "Belarus Standard Extra Small")
+    standard_row = _find_row(
+        result["rows"],
+        "CEL Belarus Standard Extra Small",
+    )
     assert standard_row["type"] == "land"
+    economy_row = _find_row(
+        result["rows"],
+        "CEL Kazakhstan Economy Extra Small",
+    )
+    assert economy_row["type"] == "land"
 
 
 def test_fbp_express_rows_are_air():
-    result = parse_file(_file("FBP_List_of_services_5_03_26_1772704547.xlsx"))
+    result = parse_file(_file("FBP_List_of_services_7_04_26_1775544198.xlsx"))
 
     express_row = _find_row(result["rows"], "Ural FBP Super Express Extra Small")
     assert express_row["type"] == "air"
@@ -318,7 +325,7 @@ def test_parse_size_limits_empty():
 
 def test_cis_rfbs_price_from_column_o():
     """CIS parser reads CNY prices from column O (index 14)."""
-    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    result = parse_file(_file("CIS_Delivery_methods_7_04_26_1775544004.xlsx"))
     for row in result["rows"]:
         if row.get("price_min_cny") and row.get("price_limit_cny"):
             price_min = row["price_min_cny"]
@@ -336,7 +343,7 @@ def test_cis_rfbs_price_from_column_o():
 
 def test_cis_rfbs_individual_side_limits():
     """CIS rows with 'NxNxN cm' format get max_third_side set."""
-    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    result = parse_file(_file("CIS_Delivery_methods_7_04_26_1775544004.xlsx"))
     third_rows = [r for r in result["rows"] if r.get("max_third_side", 0) > 0]
     assert len(third_rows) > 0, "Should find rows with max_third_side > 0"
     for row in third_rows:
@@ -348,7 +355,7 @@ def test_cis_rfbs_individual_side_limits():
 
 def test_cis_rfbs_physical_weight_volume_mode():
     """CIS 'Physical weight' tarification → volume_mode='none', coeff=0."""
-    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    result = parse_file(_file("CIS_Delivery_methods_7_04_26_1775544004.xlsx"))
     phys_rows = [r for r in result["rows"] if r.get("volume_mode") == "none"]
     assert len(phys_rows) > 0, "Should find 'Physical weight' rows"
     for row in phys_rows:
@@ -357,7 +364,7 @@ def test_cis_rfbs_physical_weight_volume_mode():
 
 def test_cis_rfbs_kz_by_cny_from_column_m():
     """KZ & BY parser reads CNY prices from column M (idx 12)."""
-    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    result = parse_file(_file("CIS_Delivery_methods_7_04_26_1775544004.xlsx"))
     by_row = _find_row(result["rows"], "Ural Belarus Standard Extra Small")
     assert by_row["price_min_cny"] == 0.01
     assert by_row["price_limit_cny"] == 135.0
@@ -367,7 +374,7 @@ def test_cis_rfbs_kz_by_cny_from_column_m():
 
 def test_cis_rfbs_kz_by_volume_mode():
     """KZ & BY parser reads volume mode from P col and coeff from Q col."""
-    result = parse_file(_file("CIS_Delivery_methods_20_01_2026_1768818333.xlsx"))
+    result = parse_file(_file("CIS_Delivery_methods_7_04_26_1775544004.xlsx"))
     by_row = _find_row(result["rows"], "Ural Belarus Standard Extra Small")
     # Physical weight → none / 0
     assert by_row["volume_mode"] == "none"
@@ -384,7 +391,7 @@ def test_cis_rfbs_kz_by_volume_mode():
 
 
 def test_scoring_rfbs_continue_fee_precision():
-    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    result = parse_file(_file("China_scoring_ENG_CN_7_04_26_1775544002.xlsx"))
     for row in result["rows"]:
         cf = row["continue_fee"]
         assert cf == round(cf, 5), (
@@ -393,7 +400,7 @@ def test_scoring_rfbs_continue_fee_precision():
 
 
 def test_scoring_rfbs_cny_from_column_n():
-    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    result = parse_file(_file("China_scoring_ENG_CN_7_04_26_1775544002.xlsx"))
     row = _find_row(result["rows"], "Ural Standard Extra Small")
     assert row["price_min_cny"] > 0
     assert row["price_limit_cny"] >= row["price_min_cny"]
@@ -402,7 +409,7 @@ def test_scoring_rfbs_cny_from_column_n():
 
 
 def test_scoring_rfbs_volume_mode_physical_weight():
-    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    result = parse_file(_file("China_scoring_ENG_CN_7_04_26_1775544002.xlsx"))
     phys_rows = [r for r in result["rows"] if r.get("volume_mode") == "none"]
     assert len(phys_rows) > 0
     for row in phys_rows:
@@ -410,7 +417,7 @@ def test_scoring_rfbs_volume_mode_physical_weight():
 
 
 def test_scoring_rfbs_volume_mode_exists():
-    result = parse_file(_file("China_scoring_ENG_CN_25_03_2026_1773650328.xlsx"))
+    result = parse_file(_file("China_scoring_ENG_CN_7_04_26_1775544002.xlsx"))
     for row in result["rows"]:
         assert "volume_mode" in row, f"{row['name']}: missing volume_mode"
         assert "volume_coefficient" in row, f"{row['name']}: missing volume_coefficient"

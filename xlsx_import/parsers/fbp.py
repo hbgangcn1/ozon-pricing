@@ -7,6 +7,7 @@ from xlsx_import.common import (
     finalize_source_file,
     infer_type,
     is_blank_row,
+    is_transition_row,
     normalize_text,
     parse_days,
     parse_price_limit_cny,
@@ -21,6 +22,7 @@ from xlsx_import.common import (
 DEST_MAP = {"russia": "RU", "kazakhstan": "KZ", "belarus": "BY"}
 LEVEL_MAP = {
     "super express": "super_express",
+    "smart": "smart",
     "express": "express",
     "standard": "standard",
     "economy": "economy",
@@ -66,7 +68,7 @@ def parse(
             merged_service = merged_service_lookup.get(row_num)
             if merged_service is not None and not normalize_text(values[2]):
                 values[2] = merged_service
-            if "переход" in normalize_text(values[2]).lower():
+            if is_transition_row(values):
                 continue
             for idx in carry:
                 if normalize_text(values[idx]):

@@ -154,6 +154,10 @@ def is_blank_row(values: list[Any]) -> bool:
     return not any(normalize_text(value) for value in values)
 
 
+def is_transition_row(values: list[Any]) -> bool:
+    return any("переход" in normalize_text(v).lower() for v in values)
+
+
 def load_workbook_source(source: Any):
     if isinstance(source, str):
         return openpyxl.load_workbook(source, data_only=True), True
