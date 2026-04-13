@@ -39,6 +39,39 @@ def admin_token() -> str:
     raise AssertionError("admin login should return a token")
 
 
+@pytest.fixture(scope="module", autouse=True)
+def preserve_pool(admin_token: str):
+    """测试前备份物流池数据，测试后通过 xlsx 重新导入恢复。
+
+    防止 _clear_pool 调用导致生产数据永久丢失。
+    """
+    transport = _RateLimitTransport()
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    with httpx.Client(
+        base_url=BASE_URL,
+        timeout=TIMEOUT,
+        headers=headers,
+        transport=transport,
+    ) as client:
+        resp = client.get("/api/logistics-pool", params={"limit": 1000})
+        had_data = resp.status_code == 200 and resp.json().get("items")
+
+        yield
+
+        client.delete("/api/logistics-pool/all")
+        if had_data and XLSX_PATH.exists():
+            with XLSX_PATH.open("rb") as fh:
+                files = {
+                    "file": (
+                        XLSX_PATH.name,
+                        fh,
+                        "application/vnd.openxmlformats-"
+                        "officedocument.spreadsheetml.sheet",
+                    )
+                }
+                client.post("/api/logistics-pool/import", files=files)
+
+
 class _RateLimitTransport(httpx.HTTPTransport):
     def handle_request(self, request):
         response = super().handle_request(request)
