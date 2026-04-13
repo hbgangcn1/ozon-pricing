@@ -3,26 +3,26 @@ from collections import defaultdict
 _ELIMINATED_REASON = "该物流无法覆盖更高成本"
 
 
-def _is_smart(log):
-    return log.get("is_smart") == 1 or log.get("fbp_service_level") == "smart"
-
-
 def fbp_secondary_filter(logistics_list):
+    """按 (company, service_level) 分组，每组保留 base_rate 最高的1条。
+
+    Returns:
+        (kept, eliminated) — kept 参与定价计算，eliminated 显示为被淘汰物流。
+    """
     if not logistics_list:
         return [], []
 
-    non_smart = []
-    smart_groups = defaultdict(list)
+    groups = defaultdict(list)
     for log in logistics_list:
-        if _is_smart(log):
-            company = log.get("fbp_company", "unknown")
-            smart_groups[company].append(log)
-        else:
-            non_smart.append(log)
+        key = (
+            log.get("fbp_company") or "unknown",
+            log.get("fbp_service_level") or "unknown",
+        )
+        groups[key].append(log)
 
-    kept = list(non_smart)
+    kept = []
     eliminated = []
-    for _company, group in smart_groups.items():
+    for _key, group in groups.items():
         best = max(
             group,
             key=lambda x: float(x.get("base_rate", 0)),

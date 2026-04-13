@@ -148,15 +148,9 @@ def _echo_filtered(_product, land, air, mode="fast", priority="低价优先"):
 
 
 def test_returns_expected_group_keys_in_precise_mode():
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=_empty_filtered,
-        ),
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ),
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=_empty_filtered,
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
 
@@ -164,15 +158,9 @@ def test_returns_expected_group_keys_in_precise_mode():
 
 
 def test_each_group_contains_filtered_logistics_land_and_air_lists():
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            return_value={},
-        ),
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ),
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        return_value={},
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
 
@@ -204,15 +192,9 @@ def test_filtered_logistics_merges_both_priorities_without_duplicates():
             }
         }
 
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=side_effect,
-        ),
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ),
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=side_effect,
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
 
@@ -222,15 +204,9 @@ def test_filtered_logistics_merges_both_priorities_without_duplicates():
 
 
 def test_filtered_logistics_stays_within_each_groups_input_logistics():
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=_echo_filtered,
-        ),
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ),
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=_echo_filtered,
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
 
@@ -248,15 +224,9 @@ def test_filtered_logistics_stays_within_each_groups_input_logistics():
 
 
 def test_returns_empty_filtered_logistics_when_no_items_are_filtered():
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=_empty_filtered,
-        ),
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ),
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=_empty_filtered,
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
 
@@ -264,37 +234,63 @@ def test_returns_empty_filtered_logistics_when_no_items_are_filtered():
         assert group["filtered_logistics"] == {"land": [], "air": []}
 
 
-def test_fbp_secondary_filter_is_called_only_for_fbp_groups():
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=_empty_filtered,
-        ),
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ) as mock_filter,
-    ):
-        calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
+def test_post_pricing_fbp_filter_applied_only_for_fbp_cis():
+    """fbp_cis applies post-pricing secondary filter; fbp_ru does not.
 
-    assert mock_filter.call_count == 2
-    first_call_names = _names(mock_filter.call_args_list[0].args[0])
-    second_call_names = _names(mock_filter.call_args_list[1].args[0])
-    assert first_call_names == ["Land-FBP-RU", "Air-FBP-RU"]
-    assert second_call_names == ["Land-FBP-KZ", "Air-FBP-BY"]
+    The secondary filter marks unselected logistics within the same
+    (company, service_level) group as eliminated.  We need ≥2 logistics
+    sharing a group key so that one is selected (best) and the other is
+    eliminated.
+    """
+    from pricing.fbp_secondary_filter import _ELIMINATED_REASON
+
+    logistics_with_extra_cis = _all_logistics() + [
+        {
+            "name": "Land-FBP-KZ-Extra",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "KZ",
+            "fbp_company": "CEL",
+            "fbp_service_level": "standard",
+        },
+    ]
+
+    def _select_best_only(_product, land, air, mode="fast", priority="低价优先"):
+        result = {"filtered_logistics": {"land": [], "air": []}}
+        if land:
+            result["best_land"] = dict(land[0])
+        if air:
+            result["best_air"] = dict(air[0])
+        return result
+
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=_select_best_only,
+    ):
+        result = calculate_pricing_grouped(
+            _product(),
+            logistics_with_extra_cis,
+            mode="precise",
+        )
+
+    cis_filtered = result["fbp_cis"]["filtered_logistics"]
+    cis_reasons = [r.get("reason") for r in cis_filtered["land"] + cis_filtered["air"]]
+    assert any(r == _ELIMINATED_REASON for r in cis_reasons), (
+        f"fbp_cis should have secondary-filter eliminations, got: {cis_reasons}"
+    )
+
+    ru_filtered = result["fbp_ru"]["filtered_logistics"]
+    ru_reasons = [r.get("reason") for r in ru_filtered["land"] + ru_filtered["air"]]
+    assert not any(r == _ELIMINATED_REASON for r in ru_reasons), (
+        f"fbp_ru must NOT have secondary-filter eliminations, got: {ru_reasons}"
+    )
 
 
 def test_each_group_invokes_price_and_speed_priority_in_precise_mode():
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=_empty_filtered,
-        ) as mock_calculate,
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ),
-    ):
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=_empty_filtered,
+    ) as mock_calculate:
         calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
 
     assert mock_calculate.call_count == len(EXPECTED_GROUP_KEYS) * 2

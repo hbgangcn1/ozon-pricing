@@ -8,7 +8,7 @@ A service group containing any KZ/BY record must send all its records
 
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -45,15 +45,9 @@ def _recording_calculate(_product, land, air, mode="fast", priority="低价优�
 
 def _run(logistics):
     _call_log.clear()
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=_recording_calculate,
-        ),
-        patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda rows: (list(rows), []),
-        ),
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=_recording_calculate,
     ):
         result = calculate_pricing_grouped(_product(), logistics, mode="precise")
     return result, list(_call_log)
@@ -267,8 +261,14 @@ def test_all_cis_groups_fbp_ru_receives_no_records():
     )
 
 
-def test_fbp_secondary_filter_called_for_both_groups():
-    """fbp_secondary_filter must be called at least twice."""
+def test_post_pricing_fbp_filter_applied_only_for_cis():
+    """Post-pricing FBP filter must apply only to fbp_cis, not fbp_ru.
+
+    In fbp_cis, logistics that pass the first filter but are not selected
+    should get _ELIMINATED_REASON. In fbp_ru, no such filtering occurs.
+    """
+    from pricing.fbp_secondary_filter import _ELIMINATED_REASON
+
     logistics = [
         {
             "name": "L-fbp-CEL-RU",
@@ -277,6 +277,7 @@ def test_fbp_secondary_filter_called_for_both_groups():
             "destination": "RU",
             "fbp_company": "CEL",
             "fbp_service_level": "standard",
+            "base_rate": 100,
         },
         {
             "name": "L-fbp-CEL-KZ",
@@ -285,6 +286,7 @@ def test_fbp_secondary_filter_called_for_both_groups():
             "destination": "KZ",
             "fbp_company": "CEL",
             "fbp_service_level": "standard",
+            "base_rate": 200,
         },
         {
             "name": "L-fbp-UNI-RU",
@@ -293,20 +295,45 @@ def test_fbp_secondary_filter_called_for_both_groups():
             "destination": "RU",
             "fbp_company": "UNI",
             "fbp_service_level": "standard",
+            "base_rate": 150,
         },
     ]
-    mock_filter = MagicMock(side_effect=lambda rows: (list(rows), []))
-    with (
-        patch(
-            "pricing.calculate_pricing.calculate_pricing",
-            side_effect=_recording_calculate,
-        ),
-        patch("pricing.fbp_secondary_filter.fbp_secondary_filter", mock_filter),
+
+    def _select_best_only(_product, land, air, mode="fast", priority="低价优先"):
+        """Return best_land/best_air but NO filtered — simulates all passing."""
+        result = {"filtered_logistics": {"land": [], "air": []}}
+        if land:
+            result["best_land"] = dict(land[0])
+        if air:
+            result["best_air"] = dict(air[0])
+        return result
+
+    with patch(
+        "pricing.calculate_pricing.calculate_pricing",
+        side_effect=_select_best_only,
     ):
-        _call_log.clear()
-        calculate_pricing_grouped(_product(), logistics, mode="precise")
-    assert mock_filter.call_count >= 2, (
-        f"fbp_secondary_filter called {mock_filter.call_count} times"
+        result = calculate_pricing_grouped(_product(), logistics, mode="precise")
+
+    cis_filtered = result["fbp_cis"]["filtered_logistics"]
+    cis_reasons = [r.get("reason") for r in cis_filtered["land"] + cis_filtered["air"]]
+    has_secondary = any(r == _ELIMINATED_REASON for r in cis_reasons)
+    assert has_secondary, (
+        f"fbp_cis should contain secondary-filter eliminations, "
+        f"got reasons: {cis_reasons}"
+    )
+
+    ru_filtered = result["fbp_ru"]["filtered_logistics"]
+    ru_reasons = [r.get("reason") for r in ru_filtered["land"] + ru_filtered["air"]]
+    has_secondary_ru = any(r == _ELIMINATED_REASON for r in ru_reasons)
+    assert not has_secondary_ru, (
+        f"fbp_ru must NOT have secondary-filter eliminations, got reasons: {ru_reasons}"
+    )
+
+    ru_filtered = result["fbp_ru"]["filtered_logistics"]
+    ru_reasons = [r.get("reason") for r in ru_filtered["land"] + ru_filtered["air"]]
+    has_secondary_ru = any(r == _ELIMINATED_REASON for r in ru_reasons)
+    assert not has_secondary_ru, (
+        f"fbp_ru must NOT have secondary-filter eliminations, got reasons: {ru_reasons}"
     )
 
 
