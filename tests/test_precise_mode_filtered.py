@@ -509,9 +509,31 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
     filtered_air = group["filtered_logistics"]["air"]
     assert filtered_land == [
         {"name": "CIS-Land-Stage2-Elim", "reason": _FBP_ELIMINATED_REASON},
-        {"name": "CIS-Land-Other", "reason": "未被选中，物流成本 ¥12.00"},
+        {
+            "name": "CIS-Land-Speed",
+            "reason": "未被选中，物流成本 ¥15.00（已选更优方案：CIS-Land-Price ¥9.00）",
+        },
+        {
+            "name": "CIS-Land-Other",
+            "reason": "未被选中，物流成本 ¥12.00（已选更优方案：CIS-Land-Price ¥9.00）",
+        },
+        {
+            "name": "CIS-Land-Price",
+            "reason": "未被选中，时效 7-9天（已选更快方案：CIS-Land-Speed 2-3天）",
+        },
     ]
     assert filtered_air == [
         {"name": "CIS-Air-Stage2-Elim", "reason": _FBP_ELIMINATED_REASON},
-        {"name": "CIS-Air-Other", "reason": "未被选中，物流成本 ¥10.00"},
+        {
+            "name": "CIS-Air-Speed",
+            "reason": "未被选中，物流成本 ¥14.00（已选更优方案：CIS-Air-Price ¥8.00）",
+        },
+        {
+            "name": "CIS-Air-Other",
+            "reason": "未被选中，物流成本 ¥10.00（已选更优方案：CIS-Air-Price ¥8.00）",
+        },
+        {
+            "name": "CIS-Air-Price",
+            "reason": "未被选中，时效 8-10天（已选更快方案：CIS-Air-Speed 1-2天）",
+        },
     ]

@@ -188,7 +188,10 @@ def test_secondary_only_shows_secondary_reason():
     all_items = filtered["land"] + filtered["air"]
     low = [i for i in all_items if i.get("name") == "CEL-FBP-Eco-Low-KZ"]
     assert len(low) == 1, f"Expected 1 entry, got {low}"
-    assert low[0]["reason"] == "未被选中，物流成本 ¥2.00"
+    assert (
+        low[0]["reason"]
+        == "未被选中，物流成本 ¥2.00（已选更优方案：CEL-FBP-Eco-High-KZ ¥1.00）"
+    )
 
 
 def test_selected_logistics_not_in_eliminated():
@@ -254,7 +257,10 @@ def test_selected_logistics_not_in_eliminated():
     assert "RETS-FBP-Std-Best-BY" not in all_names
     other = [i for i in all_items if i.get("name") == "RETS-FBP-Std-Other-BY"]
     assert len(other) == 1
-    assert other[0]["reason"] == "未被选中，物流成本 ¥2.00"
+    assert (
+        other[0]["reason"]
+        == "未被选中，物流成本 ¥2.00（已选更优方案：RETS-FBP-Std-Best-BY ¥1.00）"
+    )
 
 
 def test_dimension_fail_shows_dimension_reason():

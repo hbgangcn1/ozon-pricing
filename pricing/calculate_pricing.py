@@ -115,7 +115,7 @@ def _calc_stats(candidates, best_log, best_cost):
         else 0
     )
     all_times = [best_avg_time] if best_log else []
-    for log_dict, _ in candidates:
+    for log_dict, _cost in candidates:
         mn = log_dict.get("min_days", 0)
         mx = log_dict.get("max_days", 0)
         all_times.append((mn + mx) / 2)
@@ -542,26 +542,38 @@ def _merge_filtered(pp_fl, sp_fl, selected_names, seen, merged):
                 merged[kind].append(item)
 
 
-def _collect_stage3_selected_names(price_best, speed_best):
-    selected = set()
-    for best in (price_best, speed_best):
-        if best and best[0]:
-            name = best[0].get("name", "")
-            if name:
-                selected.add(name)
-    return selected
-
-
-def _add_stage3_filtered(candidates, price_best, speed_best, filtered_list):
-    selected_names = _collect_stage3_selected_names(price_best, speed_best)
+def _add_stage3_price_filtered(candidates, price_best, filtered_list):
+    """低价优先路径：未被选中物流标注更优方案信息。"""
+    best_name = price_best[0].get("name", "") if price_best and price_best[0] else ""
+    best_cost = price_best[1] if price_best and price_best[1] is not None else 0.0
     existing = {item["name"] for item in filtered_list}
-    for log_dict, cost in candidates:
+    for log_dict, _cost in candidates:
         name = log_dict.get("name", "")
-        if not name or name in selected_names or name in existing:
+        if not name or name == best_name or name in existing:
             continue
-        filtered_list.append(
-            {"name": name, "reason": f"未被选中，物流成本 ¥{cost:.2f}"}
+        reason = f"未被选中，物流成本 ¥{_cost:.2f}（已选更优方案：{best_name} ¥{best_cost:.2f}）"
+        filtered_list.append({"name": name, "reason": reason})
+        existing.add(name)
+
+
+def _add_stage3_speed_filtered(candidates, speed_best, filtered_list):
+    """速度优先路径：未被选中物流标注更快方案信息。"""
+    best_log = speed_best[0] if speed_best and speed_best[0] else None
+    best_name = best_log.get("name", "") if best_log else ""
+    best_min = best_log.get("min_days", 0) if best_log else 0
+    best_max = best_log.get("max_days", 0) if best_log else 0
+    existing = {item["name"] for item in filtered_list}
+    for log_dict, _cost in candidates:
+        name = log_dict.get("name", "")
+        if not name or name == best_name or name in existing:
+            continue
+        min_d = log_dict.get("min_days", 0) or 0
+        max_d = log_dict.get("max_days", 0) or 0
+        reason = (
+            f"未被选中，时效 {min_d}-{max_d}天（已选更快方案：{best_name} "
+            f"{best_min}-{best_max}天）"
         )
+        filtered_list.append({"name": name, "reason": reason})
         existing.add(name)
 
 
@@ -631,18 +643,10 @@ def _group_fbp_cis(subset, group_product, mode, split_fn):
     seen = set()
     _merge_filtered(pp_fl, sp_fl, selected_names, seen, merged)
     _merge_stage2_eliminated(eliminated, merged, seen)
-    _add_stage3_filtered(
-        land_candidates,
-        price_best_land,
-        speed_best_land,
-        merged["land"],
-    )
-    _add_stage3_filtered(
-        air_candidates,
-        price_best_air,
-        speed_best_air,
-        merged["air"],
-    )
+    _add_stage3_price_filtered(land_candidates, price_best_land, merged["land"])
+    _add_stage3_price_filtered(air_candidates, price_best_air, merged["air"])
+    _add_stage3_speed_filtered(land_candidates, speed_best_land, merged["land"])
+    _add_stage3_speed_filtered(air_candidates, speed_best_air, merged["air"])
     return {
         "price_priority": pp,
         "speed_priority": sp,
