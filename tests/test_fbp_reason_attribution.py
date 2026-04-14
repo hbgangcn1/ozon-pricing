@@ -182,14 +182,26 @@ def test_secondary_only_shows_secondary_reason():
     def mock_calc(_product, land, air, mode="fast", priority="低价优先"):
         return _make_calc_result(best_land_name="CEL-FBP-Eco-High-KZ")
 
-    def mock_run_filters(*_args, **_kwargs):
-        return (
-            [(dict(logistics[0]), 1.0), (dict(logistics[1]), 2.0)],
-            [],
-            (None, None),
-            (None, None),
-            [],
-        )
+    def mock_cost_and_filter(
+        logistic_list,
+        product,
+        land_logistics,
+        cached_cost,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        filtered_logistics,
+        all_costs_debug,
+    ):
+        cost_map = {"CEL-FBP-Eco-High-KZ": 1.0, "CEL-FBP-Eco-Low-KZ": 2.0}
+        result = []
+        for lg in logistic_list:
+            d = lg if isinstance(lg, dict) else dict(lg)
+            name = d.get("name", "")
+            if name in cost_map:
+                result.append((dict(d), cost_map[name]))
+        return result
 
     with (
         patch(
@@ -197,8 +209,8 @@ def test_secondary_only_shows_secondary_reason():
             side_effect=lambda items: (list(items), []),
         ),
         patch(
-            "pricing.calculate_pricing._run_filters",
-            side_effect=mock_run_filters,
+            "pricing.calculate_pricing.cost_and_filter",
+            side_effect=mock_cost_and_filter,
         ),
         patch(
             "pricing.calculate_pricing._get_exchange_rates",
@@ -252,14 +264,26 @@ def test_selected_logistics_not_in_eliminated():
     def mock_calc(_product, land, air, mode="fast", priority="低价优先"):
         return _make_calc_result(best_air_name="RETS-FBP-Std-Best-BY")
 
-    def mock_run_filters(*_args, **_kwargs):
-        return (
-            [],
-            [(dict(logistics[0]), 1.0), (dict(logistics[1]), 2.0)],
-            (None, None),
-            (None, None),
-            [],
-        )
+    def mock_cost_and_filter(
+        logistic_list,
+        product,
+        land_logistics,
+        cached_cost,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        filtered_logistics,
+        all_costs_debug,
+    ):
+        cost_map = {"RETS-FBP-Std-Best-BY": 1.0, "RETS-FBP-Std-Other-BY": 2.0}
+        result = []
+        for lg in logistic_list:
+            d = lg if isinstance(lg, dict) else dict(lg)
+            name = d.get("name", "")
+            if name in cost_map:
+                result.append((dict(d), cost_map[name]))
+        return result
 
     with (
         patch(
@@ -267,8 +291,8 @@ def test_selected_logistics_not_in_eliminated():
             side_effect=lambda items: (list(items), []),
         ),
         patch(
-            "pricing.calculate_pricing._run_filters",
-            side_effect=mock_run_filters,
+            "pricing.calculate_pricing.cost_and_filter",
+            side_effect=mock_cost_and_filter,
         ),
         patch(
             "pricing.calculate_pricing._get_exchange_rates",

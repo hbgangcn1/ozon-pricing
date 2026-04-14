@@ -395,7 +395,7 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
     eliminated = [dict(logistics[2]), dict(logistics[5])]
     kept_names = {item["name"] for item in kept}
     cis_calls = []
-    run_filter_calls = []
+    cost_filter_calls = []
 
     def _mock_calculate(_product, land, air, mode="fast", priority="低价优先"):
         names = {item["name"] for item in land + air}
@@ -418,41 +418,44 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
             }
         return {"filtered_logistics": {"land": [], "air": []}}
 
-    def _mock_run_filters(
-        _product,
-        land,
-        air,
+    def _mock_cost_and_filter(
+        logistics_list,
+        product,
+        land_logistics,
+        cached_cost,
         unit_price,
         labeling_fee,
         shipping_fee,
         rate,
         filtered_logistics,
-        priority,
-        mode="fast",
+        all_costs_debug,
     ):
-        call_num = len(run_filter_calls)
-        run_filter_calls.append(call_num)
-        land_names = {item["name"] for item in land}
-        air_names = {item["name"] for item in air}
+        call_num = len(cost_filter_calls)
+        cost_filter_calls.append(call_num)
+        names = {item["name"] for item in logistics_list}
         if call_num == 0:
-            # Stage 1: all CIS items
-            assert land_names == {
+            # Stage 1 land: all CIS land items
+            assert names == {
                 "CIS-Land-Price",
                 "CIS-Land-Speed",
                 "CIS-Land-Stage2-Elim",
             }
-            assert air_names == {
+        elif call_num == 1:
+            # Stage 1 air: all CIS air items
+            assert names == {
                 "CIS-Air-Price",
                 "CIS-Air-Speed",
                 "CIS-Air-Stage2-Elim",
             }
+        elif call_num == 2:
+            # Stage 3 land: only kept land items
+            assert names == {"CIS-Land-Price", "CIS-Land-Speed"}
         else:
-            # Stage 3: only kept items after Stage 2
-            assert land_names == {"CIS-Land-Price", "CIS-Land-Speed"}
-            assert air_names == {"CIS-Air-Price", "CIS-Air-Speed"}
-        land_candidates = [(dict(l), 9.0 + i * 3.0) for i, l in enumerate(land)]
-        air_candidates = [(dict(a), 8.0 + i * 3.0) for i, a in enumerate(air)]
-        return land_candidates, air_candidates, (None, None), (None, None), []
+            # Stage 3 air: only kept air items
+            assert names == {"CIS-Air-Price", "CIS-Air-Speed"}
+        # Land calls (0, 2) use 9.0 base; Air calls (1, 3) use 8.0 base
+        base = 9.0 if call_num in (0, 2) else 8.0
+        return [(dict(lg), base + i * 3.0) for i, lg in enumerate(logistics_list)]
 
     with (
         patch(
@@ -464,9 +467,9 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
             side_effect=_mock_calculate,
         ),
         patch(
-            "pricing.calculate_pricing._run_filters",
-            side_effect=_mock_run_filters,
-        ) as mock_run_filters,
+            "pricing.calculate_pricing.cost_and_filter",
+            side_effect=_mock_cost_and_filter,
+        ) as mock_cost_filter,
         patch(
             "pricing.calculate_pricing._get_exchange_rates",
             return_value=(0.0904, 7.2),
@@ -485,8 +488,8 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
             "CIS-Air-Price",
             "CIS-Air-Speed",
         }
-    # _run_filters is called twice: once for Stage 1, once for Stage 3
-    assert mock_run_filters.call_count == 2
+    # cost_and_filter called 4x: Stage1 land, Stage1 air, Stage3 land, Stage3 air
+    assert mock_cost_filter.call_count == 4
 
     group = result["fbp_cis"]
     # Stage 3 picks best from kept items

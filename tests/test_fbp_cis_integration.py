@@ -68,15 +68,43 @@ def _pricing_result(
     }
 
 
-def _make_run_filters_from_logs(logs, cost=10.0):
-    land_cands = [_candidate(lg, cost) for lg in logs if lg.get("type") == "land"]
-    air_cands = [_candidate(lg, cost) for lg in logs if lg.get("type") != "land"]
-    return (land_cands, air_cands, None, None, [])
+def _make_cost_and_filter_side_effect(logs, costs=None):
+    # cost_and_filter called 4x: 2 from _stage1_filter + 2 from _group_fbp_cis
+    default_cost = 10.0
+    cost_map = {}
+    if costs is not None:
+        for lg, c in costs:
+            cost_map[lg["name"]] = c
+    else:
+        for lg in logs:
+            cost_map[lg["name"]] = default_cost
+
+    def side_effect(
+        logistics,
+        product,
+        land_logistics,
+        cached_cost,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        filtered_logistics,
+        all_costs_debug,
+    ):
+        result = []
+        for _, lg in enumerate(logistics):
+            d = lg if isinstance(lg, dict) else dict(lg)
+            name = d.get("name", "")
+            if name in cost_map:
+                result.append((dict(d), cost_map[name]))
+        return result
+
+    return side_effect
 
 
 def _run_grouped(
     logistics,
-    run_filters_result,
+    cost_side_effect=None,
     pricing_side_effect=None,
 ):
     if pricing_side_effect is None:
@@ -88,16 +116,21 @@ def _run_grouped(
 
         pricing_side_effect = _default_pricing_side_effect
 
+    if cost_side_effect is None:
+        cost_side_effect = _make_cost_and_filter_side_effect(logistics)
+
     with (
         patch(
             "pricing.calculate_pricing.calculate_pricing",
             side_effect=pricing_side_effect,
         ),
         patch(
-            "pricing.calculate_pricing._run_filters", return_value=run_filters_result
+            "pricing.calculate_pricing.cost_and_filter",
+            side_effect=cost_side_effect,
         ),
         patch(
-            "pricing.calculate_pricing._get_exchange_rates", return_value=(0.09, 7.2)
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(0.09, 7.2),
         ),
     ):
         return calculate_pricing_grouped(_product(), logistics, mode="precise")
@@ -119,8 +152,7 @@ def test_stage2_filters_by_group():
             assert land_logistics[0]["base_fee"] == 100
         return _pricing_result(land_logistics, air_logistics)
 
-    cands = _make_run_filters_from_logs(logs)
-    result = _run_grouped(logs, cands, pricing_side_effect=pricing_side_effect)
+    result = _run_grouped(logs, pricing_side_effect=pricing_side_effect)
 
     assert seen_non_empty["called"] is True
     assert result["fbp_cis"]["filtered_logistics"]["land"] == [
@@ -133,8 +165,7 @@ def test_stage2_eliminated_reason():
         _log("cel-100", company="CEL", base_fee=100, destination="KZ"),
         _log("cel-50", company="CEL", base_fee=50, destination="KZ"),
     ]
-    cands = _make_run_filters_from_logs(logs)
-    result = _run_grouped(logs, cands)
+    result = _run_grouped(logs)
 
     assert (
         result["fbp_cis"]["filtered_logistics"]["land"][0]["reason"]
@@ -152,13 +183,16 @@ def test_stage3_price_picks_lowest_cost():
             "c-12", company="C", base_fee=10, destination="KZ", min_days=3, max_days=6
         ),
     ]
-    candidates = [
-        _candidate(logs[0], 15),
-        _candidate(logs[1], 9),
-        _candidate(logs[2], 12),
-    ]
+    cost_se = _make_cost_and_filter_side_effect(
+        logs,
+        costs=[
+            _candidate(logs[0], 15),
+            _candidate(logs[1], 9),
+            _candidate(logs[2], 12),
+        ],
+    )
 
-    result = _run_grouped(logs, (candidates, [], None, None, []))
+    result = _run_grouped(logs, cost_side_effect=cost_se)
 
     assert result["fbp_cis"]["price_priority"]["best_land"]["name"] == "b-9"
     assert result["fbp_cis"]["price_priority"]["land_cost"] == 9
@@ -191,13 +225,16 @@ def test_stage3_speed_uses_temp_abcde():
             max_days=12,
         ),
     ]
-    candidates = [
-        _candidate(logs[0], 15),
-        _candidate(logs[1], 9),
-        _candidate(logs[2], 12),
-    ]
+    cost_se = _make_cost_and_filter_side_effect(
+        logs,
+        costs=[
+            _candidate(logs[0], 15),
+            _candidate(logs[1], 9),
+            _candidate(logs[2], 12),
+        ],
+    )
 
-    result = _run_grouped(logs, (candidates, [], None, None, []))
+    result = _run_grouped(logs, cost_side_effect=cost_se)
 
     assert result["fbp_cis"]["speed_priority"]["best_land"]["name"] == "speed-a"
     assert result["fbp_cis"]["speed_priority"]["land_cost"] == 15
@@ -233,13 +270,16 @@ def test_stage3_speed_ignores_priority_group_field():
             priority_group="E",
         ),
     ]
-    candidates = [
-        _candidate(logs[0], 20),
-        _candidate(logs[1], 5),
-        _candidate(logs[2], 12),
-    ]
+    cost_se = _make_cost_and_filter_side_effect(
+        logs,
+        costs=[
+            _candidate(logs[0], 20),
+            _candidate(logs[1], 5),
+            _candidate(logs[2], 12),
+        ],
+    )
 
-    result = _run_grouped(logs, (candidates, [], None, None, []))
+    result = _run_grouped(logs, cost_side_effect=cost_se)
 
     assert result["fbp_cis"]["speed_priority"]["best_land"]["name"] == "wrong-e-a"
 
@@ -256,7 +296,7 @@ def test_non_fbp_cis_unchanged():
         _log("fbp-cis", company="CEL", destination="KZ", kind="land"),
     ]
 
-    result = _run_grouped(logs, ([], [], None, None, []))
+    result = _run_grouped(logs)
 
     assert result["rfbs_ru"]["filtered_logistics"]["land"] == []
     assert all(
@@ -276,9 +316,9 @@ def test_fbp_cis_empty_after_stage2():
             max_days=3,
         ),
     ]
-    candidates = [_candidate(logs[0], 11)]
+    cost_se = _make_cost_and_filter_side_effect(logs, costs=[_candidate(logs[0], 11)])
 
-    result = _run_grouped(logs, (candidates, [], None, None, []))
+    result = _run_grouped(logs, cost_side_effect=cost_se)
 
     assert result["fbp_cis"]["filtered_logistics"]["land"] == []
     assert result["fbp_cis"]["price_priority"]["best_land"]["name"] == "solo-cis"
@@ -296,9 +336,9 @@ def test_single_logistics():
             max_days=2,
         ),
     ]
-    candidates = [_candidate(logs[0], 7)]
+    cost_se = _make_cost_and_filter_side_effect(logs, costs=[_candidate(logs[0], 7)])
 
-    result = _run_grouped(logs, (candidates, [], None, None, []))
+    result = _run_grouped(logs, cost_side_effect=cost_se)
 
     assert result["fbp_cis"]["price_priority"]["best_land"]["name"] == "single-cis"
     assert result["fbp_cis"]["speed_priority"]["best_land"]["name"] == "single-cis"
@@ -339,9 +379,7 @@ def test_filtered_logistics_has_all_eliminated():
             max_days=8,
         ),
     ]
-    all_cands = _make_run_filters_from_logs(logs)
-
-    result = _run_grouped(logs, all_cands)
+    result = _run_grouped(logs)
     filtered_names = {
         item["name"] for item in result["fbp_cis"]["filtered_logistics"]["land"]
     }
@@ -396,8 +434,7 @@ def test_stage2_groups_by_priority_group():
             kept_names["called"].add(lg["name"])
         return _pricing_result(land_logistics, air_logistics)
 
-    all_cands = _make_run_filters_from_logs(logs)
-    _run_grouped(logs, all_cands, pricing_side_effect=pricing_side_effect)
+    _run_grouped(logs, pricing_side_effect=pricing_side_effect)
 
     assert "xs-high" in kept_names["called"]
     assert "big-high" in kept_names["called"]
@@ -422,8 +459,28 @@ def test_stage1_runs_before_stage2():
     )
     logs = [stage1_fail, stage1_pass]
 
-    only_pass = [(stage1_pass, 5.0)]
-    run_result = (only_pass, [], None, None, [])
+    def cost_side_effect(
+        logistics,
+        product,
+        land_logistics,
+        cached_cost,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        filtered_logistics,
+        all_costs_debug,
+    ):
+        result = []
+        for lg in logistics:
+            d = lg if isinstance(lg, dict) else dict(lg)
+            if d.get("name") == "ok-small":
+                result.append((dict(d), 5.0))
+            else:
+                filtered_logistics["land"].append(
+                    {"name": d["name"], "reason": "重量超限"}
+                )
+        return result
 
     kept_names = {"called": set()}
 
@@ -436,7 +493,7 @@ def test_stage1_runs_before_stage2():
 
     result = _run_grouped(
         logs,
-        run_result,
+        cost_side_effect=cost_side_effect,
         pricing_side_effect=pricing_side_effect,
     )
 

@@ -622,22 +622,38 @@ def _override_stage3_best(result, land_best, air_best):
 
 
 def _stage1_filter(group_product, land_all, air_all, mode):
+    """Stage 1: 仅做物理约束筛选，不调用 add_unselected。"""
     unit_price = float(group_product.get("unit_price", 0))
     labeling_fee = float(group_product.get("labeling_fee", 0))
     shipping_fee = float(group_product.get("shipping_fee", 0))
     rate, _ = _get_exchange_rates()
     stage1_filtered = {"land": [], "air": []}
-    land_cands, air_cands, _, _, _ = _run_filters(
+    is_fast_mode = mode == "fast"
+    cached_cost = _make_cached_cost(is_fast_mode)
+    all_costs_debug = []
+    land_cands = cost_and_filter(
+        land_all,
         group_product,
         land_all,
-        air_all,
+        cached_cost,
         unit_price,
         labeling_fee,
         shipping_fee,
         rate,
         stage1_filtered,
-        "低价优先",
-        mode,
+        all_costs_debug,
+    )
+    air_cands = cost_and_filter(
+        air_all,
+        group_product,
+        land_all,
+        cached_cost,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        stage1_filtered,
+        all_costs_debug,
     )
     survivors = [ld for ld, _c in land_cands] + [ld for ld, _c in air_cands]
     return survivors, stage1_filtered
@@ -697,17 +713,32 @@ def _group_fbp_cis(subset, group_product, mode, split_fn):
     labeling_fee = float(group_product.get("labeling_fee", 0))
     shipping_fee = float(group_product.get("shipping_fee", 0))
     rate, _ = _get_exchange_rates()
-    land_cands, air_cands, _, _, _ = _run_filters(
+    is_fast_mode = mode == "fast"
+    cached_cost = _make_cached_cost(is_fast_mode)
+    _discard = []
+    land_cands = cost_and_filter(
+        kept_land,
         group_product,
         kept_land,
-        kept_air,
+        cached_cost,
         unit_price,
         labeling_fee,
         shipping_fee,
         rate,
         {"land": [], "air": []},
-        "低价优先",
-        mode,
+        _discard,
+    )
+    air_cands = cost_and_filter(
+        kept_air,
+        group_product,
+        kept_land,
+        cached_cost,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        {"land": [], "air": []},
+        _discard,
     )
 
     pb_land, pb_air, sb_land, sb_air = _stage3_select(land_cands, air_cands)
