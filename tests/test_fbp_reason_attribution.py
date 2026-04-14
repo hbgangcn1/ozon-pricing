@@ -17,7 +17,9 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pricing.calculate_pricing import calculate_pricing_grouped  # noqa: E402
-from pricing.fbp_secondary_filter import _ELIMINATED_REASON  # noqa: E402
+
+
+_FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
 
 
 def _product(weight_g=379):
@@ -99,9 +101,15 @@ def test_weight_fail_shows_weight_reason_not_secondary():
             filtered_land=filtered_land,
         )
 
-    with patch(
-        "pricing.calculate_pricing.calculate_pricing",
-        side_effect=mock_calc,
+    with (
+        patch(
+            "pricing.fbp_secondary_filter.fbp_secondary_filter",
+            side_effect=lambda items: (list(items), []),
+        ),
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=mock_calc,
+        ),
     ):
         result = calculate_pricing_grouped(
             _product(weight_g=379), logistics, mode="precise"
@@ -115,12 +123,12 @@ def test_weight_fail_shows_weight_reason_not_secondary():
     assert "低于下限" in reason, (
         f"Expected weight reason containing '低于下限', got: {reason}"
     )
-    assert reason != _ELIMINATED_REASON
+    assert reason != _FBP_ELIMINATED_REASON
 
 
 def test_secondary_only_shows_secondary_reason():
     """A logistic that passes the first filter but is in the same group
-    as a selected logistic shows the secondary reason."""
+    as a selected logistic is now shown as Stage 3 unselected."""
     logistics = [
         {
             "name": "CEL-FBP-Eco-High-KZ",
@@ -149,9 +157,28 @@ def test_secondary_only_shows_secondary_reason():
     def mock_calc(_product, land, air, mode="fast", priority="低价优先"):
         return _make_calc_result(best_land_name="CEL-FBP-Eco-High-KZ")
 
-    with patch(
-        "pricing.calculate_pricing.calculate_pricing",
-        side_effect=mock_calc,
+    def mock_run_filters(*_args, **_kwargs):
+        return (
+            [(dict(logistics[0]), 1.0), (dict(logistics[1]), 2.0)],
+            [],
+            (None, None),
+            (None, None),
+            [],
+        )
+
+    with (
+        patch(
+            "pricing.fbp_secondary_filter.fbp_secondary_filter",
+            side_effect=lambda items: (list(items), []),
+        ),
+        patch(
+            "pricing.calculate_pricing._run_filters",
+            side_effect=mock_run_filters,
+        ),
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=mock_calc,
+        ),
     ):
         result = calculate_pricing_grouped(
             _product(weight_g=500), logistics, mode="precise"
@@ -161,7 +188,7 @@ def test_secondary_only_shows_secondary_reason():
     all_items = filtered["land"] + filtered["air"]
     low = [i for i in all_items if i.get("name") == "CEL-FBP-Eco-Low-KZ"]
     assert len(low) == 1, f"Expected 1 entry, got {low}"
-    assert low[0]["reason"] == _ELIMINATED_REASON
+    assert low[0]["reason"] == "未被选中，物流成本 ¥2.00"
 
 
 def test_selected_logistics_not_in_eliminated():
@@ -194,9 +221,28 @@ def test_selected_logistics_not_in_eliminated():
     def mock_calc(_product, land, air, mode="fast", priority="低价优先"):
         return _make_calc_result(best_air_name="RETS-FBP-Std-Best-BY")
 
-    with patch(
-        "pricing.calculate_pricing.calculate_pricing",
-        side_effect=mock_calc,
+    def mock_run_filters(*_args, **_kwargs):
+        return (
+            [],
+            [(dict(logistics[0]), 1.0), (dict(logistics[1]), 2.0)],
+            (None, None),
+            (None, None),
+            [],
+        )
+
+    with (
+        patch(
+            "pricing.fbp_secondary_filter.fbp_secondary_filter",
+            side_effect=lambda items: (list(items), []),
+        ),
+        patch(
+            "pricing.calculate_pricing._run_filters",
+            side_effect=mock_run_filters,
+        ),
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=mock_calc,
+        ),
     ):
         result = calculate_pricing_grouped(
             _product(weight_g=500), logistics, mode="precise"
@@ -208,7 +254,7 @@ def test_selected_logistics_not_in_eliminated():
     assert "RETS-FBP-Std-Best-BY" not in all_names
     other = [i for i in all_items if i.get("name") == "RETS-FBP-Std-Other-BY"]
     assert len(other) == 1
-    assert other[0]["reason"] == _ELIMINATED_REASON
+    assert other[0]["reason"] == "未被选中，物流成本 ¥2.00"
 
 
 def test_dimension_fail_shows_dimension_reason():
@@ -256,9 +302,15 @@ def test_dimension_fail_shows_dimension_reason():
             filtered_air=filtered_air,
         )
 
-    with patch(
-        "pricing.calculate_pricing.calculate_pricing",
-        side_effect=mock_calc,
+    with (
+        patch(
+            "pricing.fbp_secondary_filter.fbp_secondary_filter",
+            side_effect=lambda items: (list(items), []),
+        ),
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=mock_calc,
+        ),
     ):
         result = calculate_pricing_grouped(
             _product(weight_g=500), logistics, mode="precise"
@@ -272,4 +324,4 @@ def test_dimension_fail_shows_dimension_reason():
     assert "超过限制" in reason, (
         f"Expected dimension reason containing '超过限制', got: {reason}"
     )
-    assert reason != _ELIMINATED_REASON
+    assert reason != _FBP_ELIMINATED_REASON

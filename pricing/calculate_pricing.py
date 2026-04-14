@@ -7,6 +7,7 @@ from .select_best import select_best_by_priority, add_unselected
 logger = logging.getLogger(__name__)
 
 _RESULT_HELPERS = __import__(f"{__package__}._result_helpers", fromlist=["*"])
+_FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
 
 
 def _empty_result(filtered_logistics=None):
@@ -541,68 +542,112 @@ def _merge_filtered(pp_fl, sp_fl, selected_names, seen, merged):
                 merged[kind].append(item)
 
 
-def _apply_post_pricing_fbp_filter(
-    all_subset,
-    selected_names,
-    pp_fl,
-    sp_fl,
-    seen,
-    merged,
-):
-    """FBP 二次筛选：在第一次筛选和定价完成后执行。
+def _collect_stage3_selected_names(price_best, speed_best):
+    selected = set()
+    for best in (price_best, speed_best):
+        if best and best[0]:
+            name = best[0].get("name", "")
+            if name:
+                selected.add(name)
+    return selected
 
-    流程：
-    1. 第一次筛选淘汰的物流（在 pp_fl/sp_fl 中）保留原始原因
-    2. 根据被选中物流的 (company, service_level) 分组，
-       找到同组中 base_rate 最高的物流作为代表
-    3. 同组中其他通过第一次筛选但未被选中的物流，
-       标记为"该物流无法覆盖更高成本"
-    """
-    from pricing.fbp_secondary_filter import _ELIMINATED_REASON
-    from collections import defaultdict
 
-    for kind in ("land", "air"):
-        for item in pp_fl.get(kind, []) + sp_fl.get(kind, []):
-            key = item.get("name", "")
-            if key in selected_names:
-                continue
-            if key not in seen:
-                seen.add(key)
-                merged[kind].append(item)
-
-    groups = defaultdict(list)
-    subset_by_name = {}
-    for r in all_subset:
-        name = r.get("name", "")
-        subset_by_name[name] = r
-        gkey = (
-            r.get("fbp_company") or "unknown",
-            r.get("fbp_service_level") or "unknown",
-        )
-        groups[gkey].append(r)
-
-    selected_group_keys = set()
-    for name in selected_names:
-        r = subset_by_name.get(name)
-        if r:
-            gkey = (
-                r.get("fbp_company") or "unknown",
-                r.get("fbp_service_level") or "unknown",
-            )
-            selected_group_keys.add(gkey)
-
-    for gkey, group in groups.items():
-        if gkey not in selected_group_keys:
+def _add_stage3_filtered(candidates, price_best, speed_best, filtered_list):
+    selected_names = _collect_stage3_selected_names(price_best, speed_best)
+    existing = {item["name"] for item in filtered_list}
+    for log_dict, cost in candidates:
+        name = log_dict.get("name", "")
+        if not name or name in selected_names or name in existing:
             continue
-        for r in group:
-            name = r.get("name", "")
-            if name in selected_names or name in seen:
-                continue
-            seen.add(name)
-            elim_kind = "air" if r.get("type") == "air" else "land"
-            entry = dict(r)
-            entry["reason"] = _ELIMINATED_REASON
-            merged[elim_kind].append(entry)
+        filtered_list.append(
+            {"name": name, "reason": f"未被选中，物流成本 ¥{cost:.2f}"}
+        )
+        existing.add(name)
+
+
+def _merge_stage2_eliminated(eliminated, merged, seen):
+    for log in eliminated:
+        name = log.get("name", "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        kind = "air" if log.get("type") == "air" else "land"
+        merged[kind].append({"name": name, "reason": _FBP_ELIMINATED_REASON})
+
+
+def _override_stage3_best(result, land_best, air_best):
+    if land_best and land_best[0]:
+        result["best_land"] = land_best[0]
+        result["land_cost"] = land_best[1]
+    if air_best and air_best[0]:
+        result["best_air"] = air_best[0]
+        result["air_cost"] = air_best[1]
+
+
+def _group_fbp_cis(subset, group_product, mode, split_fn):
+    from pricing.fbp_secondary_filter import fbp_secondary_filter
+    from pricing.fbp_stage3_select import (
+        compute_temp_abcde_groups,
+        select_best_price_stage3,
+        select_best_speed_stage3,
+    )
+
+    kept, eliminated = fbp_secondary_filter(subset)
+    land, air = split_fn(kept)
+    pp = calculate_pricing(group_product, land, air, mode=mode, priority="低价优先")
+    sp = calculate_pricing(group_product, land, air, mode=mode, priority="速度优先")
+    unit_price = float(group_product.get("unit_price", 0))
+    labeling_fee = float(group_product.get("labeling_fee", 0))
+    shipping_fee = float(group_product.get("shipping_fee", 0))
+    rate, _ = _get_exchange_rates()
+    land_candidates, air_candidates, _, _, _ = _run_filters(
+        group_product,
+        land,
+        air,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        {"land": [], "air": []},
+        "低价优先",
+        mode,
+    )
+    price_best_land = select_best_price_stage3(land_candidates)
+    price_best_air = select_best_price_stage3(air_candidates)
+    speed_best_land = select_best_speed_stage3(
+        land_candidates,
+        compute_temp_abcde_groups([candidate[0] for candidate in land_candidates]),
+    )
+    speed_best_air = select_best_speed_stage3(
+        air_candidates,
+        compute_temp_abcde_groups([candidate[0] for candidate in air_candidates]),
+    )
+    _override_stage3_best(pp, price_best_land, price_best_air)
+    _override_stage3_best(sp, speed_best_land, speed_best_air)
+    selected_names = _collect_selected_names(pp, sp)
+    pp_fl = pp.get("filtered_logistics", {"land": [], "air": []})
+    sp_fl = sp.get("filtered_logistics", {"land": [], "air": []})
+    merged = {"land": [], "air": []}
+    seen = set()
+    _merge_filtered(pp_fl, sp_fl, selected_names, seen, merged)
+    _merge_stage2_eliminated(eliminated, merged, seen)
+    _add_stage3_filtered(
+        land_candidates,
+        price_best_land,
+        speed_best_land,
+        merged["land"],
+    )
+    _add_stage3_filtered(
+        air_candidates,
+        price_best_air,
+        speed_best_air,
+        merged["air"],
+    )
+    return {
+        "price_priority": pp,
+        "speed_priority": sp,
+        "filtered_logistics": merged,
+    }
 
 
 def calculate_pricing_grouped(
@@ -641,8 +686,10 @@ def calculate_pricing_grouped(
             for r in all_logistics
             if r.get("fulfillment_type", "rfbs") == ft and dest_filter(r)
         ]
-        land, air = _split(subset)
         group_product = _apply_commission(ft)
+        if apply_fbp_filter:
+            return _group_fbp_cis(subset, group_product, mode, _split)
+        land, air = _split(subset)
         pp = calculate_pricing(
             group_product,
             land,
@@ -662,23 +709,13 @@ def calculate_pricing_grouped(
         sp_fl = sp.get("filtered_logistics", {"land": [], "air": []})
         seen = set()
         merged = {"land": [], "air": []}
-        if apply_fbp_filter:
-            _apply_post_pricing_fbp_filter(
-                subset,
-                selected_names,
-                pp_fl,
-                sp_fl,
-                seen,
-                merged,
-            )
-        else:
-            _merge_filtered(
-                pp_fl,
-                sp_fl,
-                selected_names,
-                seen,
-                merged,
-            )
+        _merge_filtered(
+            pp_fl,
+            sp_fl,
+            selected_names,
+            seen,
+            merged,
+        )
         return {
             "price_priority": pp,
             "speed_priority": sp,

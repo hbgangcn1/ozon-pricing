@@ -15,6 +15,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pricing.calculate_pricing import calculate_pricing_grouped  # noqa: E402
 
 
+_FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
+
+
 def _product():
     return {
         "unit_price": 100.0,
@@ -45,9 +48,15 @@ def _recording_calculate(_product, land, air, mode="fast", priority="低价优�
 
 def _run(logistics):
     _call_log.clear()
-    with patch(
-        "pricing.calculate_pricing.calculate_pricing",
-        side_effect=_recording_calculate,
+    with (
+        patch(
+            "pricing.fbp_secondary_filter.fbp_secondary_filter",
+            side_effect=lambda items: (list(items), []),
+        ),
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=_recording_calculate,
+        ),
     ):
         result = calculate_pricing_grouped(_product(), logistics, mode="precise")
     return result, list(_call_log)
@@ -57,13 +66,6 @@ def _all_land_names(calls):
     names = set()
     for c in calls:
         names.update(c["land"])
-    return names
-
-
-def _all_air_names(calls):
-    names = set()
-    for c in calls:
-        names.update(c["air"])
     return names
 
 
@@ -267,8 +269,6 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
     In fbp_cis, logistics that pass the first filter but are not selected
     should get _ELIMINATED_REASON. In fbp_ru, no such filtering occurs.
     """
-    from pricing.fbp_secondary_filter import _ELIMINATED_REASON
-
     logistics = [
         {
             "name": "L-fbp-CEL-RU",
@@ -316,7 +316,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
 
     cis_filtered = result["fbp_cis"]["filtered_logistics"]
     cis_reasons = [r.get("reason") for r in cis_filtered["land"] + cis_filtered["air"]]
-    has_secondary = any(r == _ELIMINATED_REASON for r in cis_reasons)
+    has_secondary = any(r == _FBP_ELIMINATED_REASON for r in cis_reasons)
     assert has_secondary, (
         f"fbp_cis should contain secondary-filter eliminations, "
         f"got reasons: {cis_reasons}"
@@ -324,14 +324,14 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
 
     ru_filtered = result["fbp_ru"]["filtered_logistics"]
     ru_reasons = [r.get("reason") for r in ru_filtered["land"] + ru_filtered["air"]]
-    has_secondary_ru = any(r == _ELIMINATED_REASON for r in ru_reasons)
+    has_secondary_ru = any(r == _FBP_ELIMINATED_REASON for r in ru_reasons)
     assert not has_secondary_ru, (
         f"fbp_ru must NOT have secondary-filter eliminations, got reasons: {ru_reasons}"
     )
 
     ru_filtered = result["fbp_ru"]["filtered_logistics"]
     ru_reasons = [r.get("reason") for r in ru_filtered["land"] + ru_filtered["air"]]
-    has_secondary_ru = any(r == _ELIMINATED_REASON for r in ru_reasons)
+    has_secondary_ru = any(r == _FBP_ELIMINATED_REASON for r in ru_reasons)
     assert not has_secondary_ru, (
         f"fbp_ru must NOT have secondary-filter eliminations, got reasons: {ru_reasons}"
     )

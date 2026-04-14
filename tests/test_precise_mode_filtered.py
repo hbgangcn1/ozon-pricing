@@ -7,6 +7,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pricing.calculate_pricing import calculate_pricing_grouped  # noqa: E402
 
 
+_FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
+
+
 EXPECTED_GROUP_KEYS = [
     "rfbs_ru",
     "fbp_ru",
@@ -217,8 +220,10 @@ def test_filtered_logistics_stays_within_each_groups_input_logistics():
     ]
     assert _names(result["fbp_ru"]["filtered_logistics"]["land"]) == ["Land-FBP-RU"]
     assert _names(result["fbp_ru"]["filtered_logistics"]["air"]) == ["Air-FBP-RU"]
-    assert _names(result["fbp_cis"]["filtered_logistics"]["land"]) == ["Land-FBP-KZ"]
-    assert _names(result["fbp_cis"]["filtered_logistics"]["air"]) == ["Air-FBP-BY"]
+    cis_land_names = _names(result["fbp_cis"]["filtered_logistics"]["land"])
+    cis_air_names = _names(result["fbp_cis"]["filtered_logistics"]["air"])
+    assert set(cis_land_names).issubset({"Land-FBP-KZ"})
+    assert set(cis_air_names).issubset({"Air-FBP-BY"})
     assert _names(result["rfbs_KZ"]["filtered_logistics"]["land"]) == ["Land-RFBS-KZ"]
     assert result["rfbs_KZ"]["filtered_logistics"]["air"] == []
 
@@ -230,7 +235,9 @@ def test_returns_empty_filtered_logistics_when_no_items_are_filtered():
     ):
         result = calculate_pricing_grouped(_product(), _all_logistics(), mode="precise")
 
-    for group in result.values():
+    for key, group in result.items():
+        if key == "fbp_cis":
+            continue
         assert group["filtered_logistics"] == {"land": [], "air": []}
 
 
@@ -242,8 +249,6 @@ def test_post_pricing_fbp_filter_applied_only_for_fbp_cis():
     sharing a group key so that one is selected (best) and the other is
     eliminated.
     """
-    from pricing.fbp_secondary_filter import _ELIMINATED_REASON
-
     logistics_with_extra_cis = _all_logistics() + [
         {
             "name": "Land-FBP-KZ-Extra",
@@ -275,13 +280,13 @@ def test_post_pricing_fbp_filter_applied_only_for_fbp_cis():
 
     cis_filtered = result["fbp_cis"]["filtered_logistics"]
     cis_reasons = [r.get("reason") for r in cis_filtered["land"] + cis_filtered["air"]]
-    assert any(r == _ELIMINATED_REASON for r in cis_reasons), (
+    assert any(r == _FBP_ELIMINATED_REASON for r in cis_reasons), (
         f"fbp_cis should have secondary-filter eliminations, got: {cis_reasons}"
     )
 
     ru_filtered = result["fbp_ru"]["filtered_logistics"]
     ru_reasons = [r.get("reason") for r in ru_filtered["land"] + ru_filtered["air"]]
-    assert not any(r == _ELIMINATED_REASON for r in ru_reasons), (
+    assert not any(r == _FBP_ELIMINATED_REASON for r in ru_reasons), (
         f"fbp_ru must NOT have secondary-filter eliminations, got: {ru_reasons}"
     )
 
@@ -299,3 +304,214 @@ def test_each_group_invokes_price_and_speed_priority_in_precise_mode():
     assert priorities.count("低价优先") == len(EXPECTED_GROUP_KEYS)
     assert priorities.count("速度优先") == len(EXPECTED_GROUP_KEYS)
     assert set(modes) == {"precise"}
+
+
+def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
+    logistics = [
+        {
+            "name": "CIS-Land-Price",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "KZ",
+            "fbp_company": "A",
+            "fbp_service_level": "standard",
+            "min_days": 7,
+            "max_days": 9,
+        },
+        {
+            "name": "CIS-Land-Speed",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "KZ",
+            "fbp_company": "B",
+            "fbp_service_level": "standard",
+            "min_days": 2,
+            "max_days": 3,
+        },
+        {
+            "name": "CIS-Land-Other",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "C",
+            "fbp_service_level": "standard",
+            "min_days": 9,
+            "max_days": 12,
+        },
+        {
+            "name": "CIS-Land-Stage2-Elim",
+            "type": "land",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "A",
+            "fbp_service_level": "standard",
+        },
+        {
+            "name": "CIS-Air-Price",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "BY",
+            "fbp_company": "D",
+            "fbp_service_level": "standard",
+            "min_days": 8,
+            "max_days": 10,
+        },
+        {
+            "name": "CIS-Air-Speed",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "BY",
+            "fbp_company": "E",
+            "fbp_service_level": "standard",
+            "min_days": 1,
+            "max_days": 2,
+        },
+        {
+            "name": "CIS-Air-Other",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "F",
+            "fbp_service_level": "standard",
+            "min_days": 10,
+            "max_days": 14,
+        },
+        {
+            "name": "CIS-Air-Stage2-Elim",
+            "type": "air",
+            "fulfillment_type": "fbp",
+            "destination": "RU",
+            "fbp_company": "D",
+            "fbp_service_level": "standard",
+        },
+    ]
+
+    kept = [
+        dict(logistics[0]),
+        dict(logistics[1]),
+        dict(logistics[2]),
+        dict(logistics[4]),
+        dict(logistics[5]),
+        dict(logistics[6]),
+    ]
+    eliminated = [dict(logistics[3]), dict(logistics[7])]
+    kept_names = {item["name"] for item in kept}
+    cis_calls = []
+
+    def _mock_calculate(_product, land, air, mode="fast", priority="低价优先"):
+        names = {item["name"] for item in land + air}
+        if names == kept_names:
+            cis_calls.append({"priority": priority, "land": land, "air": air})
+            if priority == "低价优先":
+                return {
+                    "best_land": {"name": "old-price-land"},
+                    "best_air": {"name": "old-price-air"},
+                    "land_cost": 999.0,
+                    "air_cost": 999.0,
+                    "filtered_logistics": {"land": [], "air": []},
+                }
+            return {
+                "best_land": {"name": "old-speed-land"},
+                "best_air": {"name": "old-speed-air"},
+                "land_cost": 888.0,
+                "air_cost": 888.0,
+                "filtered_logistics": {"land": [], "air": []},
+            }
+        return {"filtered_logistics": {"land": [], "air": []}}
+
+    def _mock_run_filters(
+        _product,
+        land,
+        air,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        filtered_logistics,
+        priority,
+        mode="fast",
+    ):
+        assert {item["name"] for item in land} == {
+            "CIS-Land-Price",
+            "CIS-Land-Speed",
+            "CIS-Land-Other",
+        }
+        assert {item["name"] for item in air} == {
+            "CIS-Air-Price",
+            "CIS-Air-Speed",
+            "CIS-Air-Other",
+        }
+        assert unit_price == 100.0
+        assert labeling_fee == 0.5
+        assert shipping_fee == 1.0
+        assert rate == 0.0904
+        assert filtered_logistics == {"land": [], "air": []}
+        assert priority == "低价优先"
+        assert mode == "precise"
+        land_candidates = [
+            (dict(logistics[0]), 9.0),
+            (dict(logistics[1]), 15.0),
+            (dict(logistics[2]), 12.0),
+        ]
+        air_candidates = [
+            (dict(logistics[4]), 8.0),
+            (dict(logistics[5]), 14.0),
+            (dict(logistics[6]), 10.0),
+        ]
+        return land_candidates, air_candidates, (None, None), (None, None), []
+
+    with (
+        patch(
+            "pricing.fbp_secondary_filter.fbp_secondary_filter",
+            return_value=(kept, eliminated),
+        ) as mock_stage2,
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=_mock_calculate,
+        ),
+        patch(
+            "pricing.calculate_pricing._run_filters",
+            side_effect=_mock_run_filters,
+        ) as mock_run_filters,
+        patch(
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(0.0904, 7.2),
+        ),
+    ):
+        result = calculate_pricing_grouped(_product(), logistics, mode="precise")
+
+    assert mock_stage2.call_count == 1
+    assert len(cis_calls) == 2
+    for call in cis_calls:
+        assert {item["name"] for item in call["land"]} == {
+            "CIS-Land-Price",
+            "CIS-Land-Speed",
+            "CIS-Land-Other",
+        }
+        assert {item["name"] for item in call["air"]} == {
+            "CIS-Air-Price",
+            "CIS-Air-Speed",
+            "CIS-Air-Other",
+        }
+    assert mock_run_filters.call_count == 1
+
+    group = result["fbp_cis"]
+    assert group["price_priority"]["best_land"]["name"] == "CIS-Land-Price"
+    assert group["price_priority"]["best_air"]["name"] == "CIS-Air-Price"
+    assert group["speed_priority"]["best_land"]["name"] == "CIS-Land-Speed"
+    assert group["speed_priority"]["best_air"]["name"] == "CIS-Air-Speed"
+    assert group["price_priority"]["land_cost"] == 9.0
+    assert group["price_priority"]["air_cost"] == 8.0
+    assert group["speed_priority"]["land_cost"] == 15.0
+    assert group["speed_priority"]["air_cost"] == 14.0
+
+    filtered_land = group["filtered_logistics"]["land"]
+    filtered_air = group["filtered_logistics"]["air"]
+    assert filtered_land == [
+        {"name": "CIS-Land-Stage2-Elim", "reason": _FBP_ELIMINATED_REASON},
+        {"name": "CIS-Land-Other", "reason": "未被选中，物流成本 ¥12.00"},
+    ]
+    assert filtered_air == [
+        {"name": "CIS-Air-Stage2-Elim", "reason": _FBP_ELIMINATED_REASON},
+        {"name": "CIS-Air-Other", "reason": "未被选中，物流成本 ¥10.00"},
+    ]
