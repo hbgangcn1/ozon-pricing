@@ -134,6 +134,7 @@ def parse(
                     item["volume_coefficient"] = parse_volume_coeff(values[19])
                     item["sum_of_sides_threshold"] = 0
                 item["priority_group"] = normalize_text(values[5]) or "D"
+                item["scoring_group"] = normalize_text(values[5]) or None
                 result["rows"].append(item)
             except Exception as exc:
                 result["skipped"] += 1

@@ -147,6 +147,7 @@ class Logistics(Base):
         Integer,
         server_default=text("0"),
     )
+    scoring_group: Mapped[Optional[str]] = mapped_column(String)
     is_active: Mapped[Optional[int]] = mapped_column(
         Integer,
         server_default=text("1"),

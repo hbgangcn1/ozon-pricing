@@ -43,6 +43,7 @@ _ALLOWED_FIELDS = {
     "volume_coefficient",
     "delivery_method",
     "priority_group",
+    "scoring_group",
     "fulfillment_type",
     "destination",
     "fbp_service_level",

@@ -146,6 +146,7 @@ class LogisticsPool(Base):
         Integer,
         server_default=text("0"),
     )
+    scoring_group: Mapped[Optional[str]] = mapped_column(String)
     source_file: Mapped[Optional[str]] = mapped_column(String)
     imported_at: Mapped[Optional[int]] = mapped_column(Integer)
     is_active: Mapped[Optional[int]] = mapped_column(
