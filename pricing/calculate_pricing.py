@@ -542,30 +542,45 @@ def _merge_filtered(pp_fl, sp_fl, selected_names, seen, merged):
                 merged[kind].append(item)
 
 
-def _add_stage3_price_filtered(candidates, price_best, filtered_list):
+def _add_stage3_price_filtered(
+    candidates,
+    price_best,
+    filtered_list,
+    skip_names=None,
+):
     """低价优先路径：未被选中物流标注更优方案信息。"""
     best_name = price_best[0].get("name", "") if price_best and price_best[0] else ""
     best_cost = price_best[1] if price_best and price_best[1] is not None else 0.0
     existing = {item["name"] for item in filtered_list}
+    skip = skip_names or set()
     for log_dict, _cost in candidates:
         name = log_dict.get("name", "")
-        if not name or name == best_name or name in existing:
+        if not name or name == best_name or name in existing or name in skip:
             continue
-        reason = f"未被选中，物流成本 ¥{_cost:.2f}（已选更优方案：{best_name} ¥{best_cost:.2f}）"
+        reason = (
+            f"未被选中，物流成本 ¥{_cost:.2f}"
+            f"（已选更优方案：{best_name} ¥{best_cost:.2f}）"
+        )
         filtered_list.append({"name": name, "reason": reason})
         existing.add(name)
 
 
-def _add_stage3_speed_filtered(candidates, speed_best, filtered_list):
+def _add_stage3_speed_filtered(
+    candidates,
+    speed_best,
+    filtered_list,
+    skip_names=None,
+):
     """速度优先路径：未被选中物流标注更快方案信息。"""
     best_log = speed_best[0] if speed_best and speed_best[0] else None
     best_name = best_log.get("name", "") if best_log else ""
     best_min = best_log.get("min_days", 0) if best_log else 0
     best_max = best_log.get("max_days", 0) if best_log else 0
     existing = {item["name"] for item in filtered_list}
+    skip = skip_names or set()
     for log_dict, _cost in candidates:
         name = log_dict.get("name", "")
-        if not name or name == best_name or name in existing:
+        if not name or name == best_name or name in existing or name in skip:
             continue
         min_d = log_dict.get("min_days", 0) or 0
         max_d = log_dict.get("max_days", 0) or 0
@@ -575,6 +590,16 @@ def _add_stage3_speed_filtered(candidates, speed_best, filtered_list):
         )
         filtered_list.append({"name": name, "reason": reason})
         existing.add(name)
+
+
+def _merge_stage1_filtered(stage1_filtered, merged, seen, selected_names=None):
+    skip = selected_names or set()
+    for kind in ("land", "air"):
+        for item in stage1_filtered.get(kind, []):
+            name = item.get("name", "")
+            if name and name not in seen and name not in skip:
+                seen.add(name)
+                merged[kind].append(item)
 
 
 def _merge_stage2_eliminated(eliminated, merged, seen):
@@ -596,26 +621,86 @@ def _override_stage3_best(result, land_best, air_best):
         result["air_cost"] = air_best[1]
 
 
-def _group_fbp_cis(subset, group_product, mode, split_fn):
-    from pricing.fbp_secondary_filter import fbp_secondary_filter
+def _stage1_filter(group_product, land_all, air_all, mode):
+    unit_price = float(group_product.get("unit_price", 0))
+    labeling_fee = float(group_product.get("labeling_fee", 0))
+    shipping_fee = float(group_product.get("shipping_fee", 0))
+    rate, _ = _get_exchange_rates()
+    stage1_filtered = {"land": [], "air": []}
+    land_cands, air_cands, _, _, _ = _run_filters(
+        group_product,
+        land_all,
+        air_all,
+        unit_price,
+        labeling_fee,
+        shipping_fee,
+        rate,
+        stage1_filtered,
+        "低价优先",
+        mode,
+    )
+    survivors = [ld for ld, _c in land_cands] + [ld for ld, _c in air_cands]
+    return survivors, stage1_filtered
+
+
+def _stage3_select(land_candidates, air_candidates):
     from pricing.fbp_stage3_select import (
         compute_temp_abcde_groups,
         select_best_price_stage3,
         select_best_speed_stage3,
     )
 
-    kept, eliminated = fbp_secondary_filter(subset)
-    land, air = split_fn(kept)
-    pp = calculate_pricing(group_product, land, air, mode=mode, priority="低价优先")
-    sp = calculate_pricing(group_product, land, air, mode=mode, priority="速度优先")
+    price_best_land = select_best_price_stage3(land_candidates)
+    price_best_air = select_best_price_stage3(air_candidates)
+    speed_best_land = select_best_speed_stage3(
+        land_candidates,
+        compute_temp_abcde_groups([c[0] for c in land_candidates]),
+    )
+    speed_best_air = select_best_speed_stage3(
+        air_candidates,
+        compute_temp_abcde_groups([c[0] for c in air_candidates]),
+    )
+    return price_best_land, price_best_air, speed_best_land, speed_best_air
+
+
+def _group_fbp_cis(subset, group_product, mode, split_fn):
+    from pricing.fbp_secondary_filter import fbp_secondary_filter
+
+    land_all, air_all = split_fn(subset)
+
+    survivors, stage1_filtered = _stage1_filter(
+        group_product,
+        land_all,
+        air_all,
+        mode,
+    )
+
+    kept, eliminated = fbp_secondary_filter(survivors)
+
+    kept_land, kept_air = split_fn(kept)
+    pp = calculate_pricing(
+        group_product,
+        kept_land,
+        kept_air,
+        mode=mode,
+        priority="低价优先",
+    )
+    sp = calculate_pricing(
+        group_product,
+        kept_land,
+        kept_air,
+        mode=mode,
+        priority="速度优先",
+    )
+
     unit_price = float(group_product.get("unit_price", 0))
     labeling_fee = float(group_product.get("labeling_fee", 0))
     shipping_fee = float(group_product.get("shipping_fee", 0))
     rate, _ = _get_exchange_rates()
-    land_candidates, air_candidates, _, _, _ = _run_filters(
+    land_cands, air_cands, _, _, _ = _run_filters(
         group_product,
-        land,
-        air,
+        kept_land,
+        kept_air,
         unit_price,
         labeling_fee,
         shipping_fee,
@@ -624,29 +709,43 @@ def _group_fbp_cis(subset, group_product, mode, split_fn):
         "低价优先",
         mode,
     )
-    price_best_land = select_best_price_stage3(land_candidates)
-    price_best_air = select_best_price_stage3(air_candidates)
-    speed_best_land = select_best_speed_stage3(
-        land_candidates,
-        compute_temp_abcde_groups([candidate[0] for candidate in land_candidates]),
-    )
-    speed_best_air = select_best_speed_stage3(
-        air_candidates,
-        compute_temp_abcde_groups([candidate[0] for candidate in air_candidates]),
-    )
-    _override_stage3_best(pp, price_best_land, price_best_air)
-    _override_stage3_best(sp, speed_best_land, speed_best_air)
+
+    pb_land, pb_air, sb_land, sb_air = _stage3_select(land_cands, air_cands)
+    _override_stage3_best(pp, pb_land, pb_air)
+    _override_stage3_best(sp, sb_land, sb_air)
+
     selected_names = _collect_selected_names(pp, sp)
     pp_fl = pp.get("filtered_logistics", {"land": [], "air": []})
     sp_fl = sp.get("filtered_logistics", {"land": [], "air": []})
     merged = {"land": [], "air": []}
     seen = set()
     _merge_filtered(pp_fl, sp_fl, selected_names, seen, merged)
+    _merge_stage1_filtered(stage1_filtered, merged, seen, selected_names)
     _merge_stage2_eliminated(eliminated, merged, seen)
-    _add_stage3_price_filtered(land_candidates, price_best_land, merged["land"])
-    _add_stage3_price_filtered(air_candidates, price_best_air, merged["air"])
-    _add_stage3_speed_filtered(land_candidates, speed_best_land, merged["land"])
-    _add_stage3_speed_filtered(air_candidates, speed_best_air, merged["air"])
+    _add_stage3_price_filtered(
+        land_cands,
+        pb_land,
+        merged["land"],
+        skip_names=selected_names,
+    )
+    _add_stage3_price_filtered(
+        air_cands,
+        pb_air,
+        merged["air"],
+        skip_names=selected_names,
+    )
+    _add_stage3_speed_filtered(
+        land_cands,
+        sb_land,
+        merged["land"],
+        skip_names=selected_names,
+    )
+    _add_stage3_speed_filtered(
+        air_cands,
+        sb_air,
+        merged["air"],
+        skip_names=selected_names,
+    )
     return {
         "price_priority": pp,
         "speed_priority": sp,

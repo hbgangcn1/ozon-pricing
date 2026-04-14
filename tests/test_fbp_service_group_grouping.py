@@ -46,9 +46,25 @@ def _recording_calculate(_product, land, air, mode="fast", priority="低价优�
     return {"filtered_logistics": {"land": [], "air": []}}
 
 
+def _passthrough_run_filters(
+    _prod, land, air, _up, _lf, _sf, _rate, _filt, _prio, _mode
+):
+    land_cands = [(r, 0.0) for r in land]
+    air_cands = [(r, 0.0) for r in air]
+    return land_cands, air_cands, [], [], []
+
+
 def _run(logistics):
     _call_log.clear()
     with (
+        patch(
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(1.0, None),
+        ),
+        patch(
+            "pricing.calculate_pricing._run_filters",
+            side_effect=_passthrough_run_filters,
+        ),
         patch(
             "pricing.fbp_secondary_filter.fbp_secondary_filter",
             side_effect=lambda items: (list(items), []),
@@ -277,7 +293,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
             "destination": "RU",
             "fbp_company": "CEL",
             "fbp_service_level": "standard",
-            "base_rate": 100,
+            "base_fee": 100,
         },
         {
             "name": "L-fbp-CEL-KZ",
@@ -286,7 +302,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
             "destination": "KZ",
             "fbp_company": "CEL",
             "fbp_service_level": "standard",
-            "base_rate": 200,
+            "base_fee": 200,
         },
         {
             "name": "L-fbp-UNI-RU",
@@ -295,7 +311,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
             "destination": "RU",
             "fbp_company": "UNI",
             "fbp_service_level": "standard",
-            "base_rate": 150,
+            "base_fee": 150,
         },
     ]
 
@@ -308,9 +324,19 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
             result["best_air"] = dict(air[0])
         return result
 
-    with patch(
-        "pricing.calculate_pricing.calculate_pricing",
-        side_effect=_select_best_only,
+    with (
+        patch(
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(1.0, None),
+        ),
+        patch(
+            "pricing.calculate_pricing._run_filters",
+            side_effect=_passthrough_run_filters,
+        ),
+        patch(
+            "pricing.calculate_pricing.calculate_pricing",
+            side_effect=_select_best_only,
+        ),
     ):
         result = calculate_pricing_grouped(_product(), logistics, mode="precise")
 

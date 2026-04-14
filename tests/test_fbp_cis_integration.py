@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from pricing.calculate_pricing import calculate_pricing_grouped
 
@@ -24,7 +24,7 @@ def _log(
     company,
     service_level="std",
     destination="KZ",
-    base_rate=100,
+    base_fee=100,
     min_days=1,
     max_days=3,
     fulfillment_type="fbp",
@@ -38,7 +38,7 @@ def _log(
         "destination": destination,
         "fbp_company": company,
         "fbp_service_level": service_level,
-        "base_rate": base_rate,
+        "base_fee": base_fee,
         "min_days": min_days,
         "max_days": max_days,
     }
@@ -68,7 +68,17 @@ def _pricing_result(
     }
 
 
-def _run_grouped(logistics, run_filters_result, pricing_side_effect=None):
+def _make_run_filters_from_logs(logs, cost=10.0):
+    land_cands = [_candidate(lg, cost) for lg in logs if lg.get("type") == "land"]
+    air_cands = [_candidate(lg, cost) for lg in logs if lg.get("type") != "land"]
+    return (land_cands, air_cands, None, None, [])
+
+
+def _run_grouped(
+    logistics,
+    run_filters_result,
+    pricing_side_effect=None,
+):
     if pricing_side_effect is None:
 
         def _default_pricing_side_effect(
@@ -95,8 +105,8 @@ def _run_grouped(logistics, run_filters_result, pricing_side_effect=None):
 
 def test_stage2_filters_by_group():
     logs = [
-        _log("cel-100", company="CEL", base_rate=100, destination="KZ"),
-        _log("cel-50", company="CEL", base_rate=50, destination="KZ"),
+        _log("cel-100", company="CEL", base_fee=100, destination="KZ"),
+        _log("cel-50", company="CEL", base_fee=50, destination="KZ"),
     ]
     seen_non_empty = {"called": False}
 
@@ -106,12 +116,11 @@ def test_stage2_filters_by_group():
         if land_logistics or air_logistics:
             seen_non_empty["called"] = True
             assert len(land_logistics) == 1
-            assert land_logistics[0]["base_rate"] == 100
+            assert land_logistics[0]["base_fee"] == 100
         return _pricing_result(land_logistics, air_logistics)
 
-    result = _run_grouped(
-        logs, ([], [], None, None, []), pricing_side_effect=pricing_side_effect
-    )
+    cands = _make_run_filters_from_logs(logs)
+    result = _run_grouped(logs, cands, pricing_side_effect=pricing_side_effect)
 
     assert seen_non_empty["called"] is True
     assert result["fbp_cis"]["filtered_logistics"]["land"] == [
@@ -121,11 +130,11 @@ def test_stage2_filters_by_group():
 
 def test_stage2_eliminated_reason():
     logs = [
-        _log("cel-100", company="CEL", base_rate=100, destination="KZ"),
-        _log("cel-50", company="CEL", base_rate=50, destination="KZ"),
+        _log("cel-100", company="CEL", base_fee=100, destination="KZ"),
+        _log("cel-50", company="CEL", base_fee=50, destination="KZ"),
     ]
-
-    result = _run_grouped(logs, ([], [], None, None, []))
+    cands = _make_run_filters_from_logs(logs)
+    result = _run_grouped(logs, cands)
 
     assert (
         result["fbp_cis"]["filtered_logistics"]["land"][0]["reason"]
@@ -136,13 +145,11 @@ def test_stage2_eliminated_reason():
 def test_stage3_price_picks_lowest_cost():
     logs = [
         _log(
-            "a-15", company="A", base_rate=10, destination="KZ", min_days=2, max_days=5
+            "a-15", company="A", base_fee=10, destination="KZ", min_days=2, max_days=5
         ),
+        _log("b-9", company="B", base_fee=10, destination="KZ", min_days=2, max_days=4),
         _log(
-            "b-9", company="B", base_rate=10, destination="KZ", min_days=2, max_days=4
-        ),
-        _log(
-            "c-12", company="C", base_rate=10, destination="KZ", min_days=3, max_days=6
+            "c-12", company="C", base_fee=10, destination="KZ", min_days=3, max_days=6
         ),
     ]
     candidates = [
@@ -162,7 +169,7 @@ def test_stage3_speed_uses_temp_abcde():
         _log(
             "speed-a",
             company="A",
-            base_rate=10,
+            base_fee=10,
             destination="KZ",
             min_days=1,
             max_days=1,
@@ -170,7 +177,7 @@ def test_stage3_speed_uses_temp_abcde():
         _log(
             "speed-b",
             company="B",
-            base_rate=10,
+            base_fee=10,
             destination="KZ",
             min_days=5,
             max_days=8,
@@ -178,7 +185,7 @@ def test_stage3_speed_uses_temp_abcde():
         _log(
             "speed-c",
             company="C",
-            base_rate=10,
+            base_fee=10,
             destination="KZ",
             min_days=9,
             max_days=12,
@@ -201,7 +208,7 @@ def test_stage3_speed_ignores_priority_group_field():
         _log(
             "wrong-e-a",
             company="A",
-            base_rate=10,
+            base_fee=10,
             destination="KZ",
             min_days=1,
             max_days=1,
@@ -210,7 +217,7 @@ def test_stage3_speed_ignores_priority_group_field():
         _log(
             "wrong-e-b",
             company="B",
-            base_rate=10,
+            base_fee=10,
             destination="KZ",
             min_days=4,
             max_days=6,
@@ -219,7 +226,7 @@ def test_stage3_speed_ignores_priority_group_field():
         _log(
             "wrong-e-c",
             company="C",
-            base_rate=10,
+            base_fee=10,
             destination="KZ",
             min_days=8,
             max_days=10,
@@ -264,7 +271,7 @@ def test_fbp_cis_empty_after_stage2():
             "solo-cis",
             company="CEL",
             destination="KZ",
-            base_rate=100,
+            base_fee=100,
             min_days=2,
             max_days=3,
         ),
@@ -284,7 +291,7 @@ def test_single_logistics():
             "single-cis",
             company="CEL",
             destination="KZ",
-            base_rate=100,
+            base_fee=100,
             min_days=1,
             max_days=2,
         ),
@@ -303,7 +310,7 @@ def test_filtered_logistics_has_all_eliminated():
             "keep-120",
             company="CEL",
             destination="KZ",
-            base_rate=120,
+            base_fee=120,
             min_days=1,
             max_days=1,
         ),
@@ -311,7 +318,7 @@ def test_filtered_logistics_has_all_eliminated():
             "drop-60",
             company="CEL",
             destination="KZ",
-            base_rate=60,
+            base_fee=60,
             min_days=1,
             max_days=1,
         ),
@@ -319,7 +326,7 @@ def test_filtered_logistics_has_all_eliminated():
             "stage3-a",
             company="A",
             destination="KZ",
-            base_rate=80,
+            base_fee=80,
             min_days=1,
             max_days=1,
         ),
@@ -327,18 +334,14 @@ def test_filtered_logistics_has_all_eliminated():
             "stage3-b",
             company="B",
             destination="KZ",
-            base_rate=90,
+            base_fee=90,
             min_days=6,
             max_days=8,
         ),
     ]
-    candidates = [
-        _candidate(logs[0], 1),
-        _candidate(logs[2], 9),
-        _candidate(logs[3], 15),
-    ]
+    all_cands = _make_run_filters_from_logs(logs)
 
-    result = _run_grouped(logs, (candidates, [], None, None, []))
+    result = _run_grouped(logs, all_cands)
     filtered_names = {
         item["name"] for item in result["fbp_cis"]["filtered_logistics"]["land"]
     }
@@ -351,3 +354,91 @@ def test_filtered_logistics_has_all_eliminated():
         item["reason"] == "该物流无法覆盖更高成本"
         for item in result["fbp_cis"]["filtered_logistics"]["land"]
     )
+
+
+def test_stage2_groups_by_priority_group():
+    logs = [
+        _log(
+            "xs-high",
+            company="CEL",
+            base_fee=50,
+            destination="KZ",
+            priority_group="Extra Small",
+        ),
+        _log(
+            "xs-low",
+            company="CEL",
+            base_fee=20,
+            destination="KZ",
+            priority_group="Extra Small",
+        ),
+        _log(
+            "big-high",
+            company="CEL",
+            base_fee=200,
+            destination="KZ",
+            priority_group="Big",
+        ),
+        _log(
+            "big-low",
+            company="CEL",
+            base_fee=80,
+            destination="KZ",
+            priority_group="Big",
+        ),
+    ]
+    kept_names = {"called": set()}
+
+    def pricing_side_effect(
+        product, land_logistics, air_logistics, mode="fast", priority="低价优先"
+    ):
+        for lg in land_logistics:
+            kept_names["called"].add(lg["name"])
+        return _pricing_result(land_logistics, air_logistics)
+
+    all_cands = _make_run_filters_from_logs(logs)
+    _run_grouped(logs, all_cands, pricing_side_effect=pricing_side_effect)
+
+    assert "xs-high" in kept_names["called"]
+    assert "big-high" in kept_names["called"]
+    assert "xs-low" not in kept_names["called"]
+    assert "big-low" not in kept_names["called"]
+
+
+def test_stage1_runs_before_stage2():
+    stage1_fail = _log(
+        "too-heavy",
+        company="CEL",
+        base_fee=999,
+        destination="KZ",
+        priority_group="Big",
+    )
+    stage1_pass = _log(
+        "ok-small",
+        company="CEL",
+        base_fee=10,
+        destination="KZ",
+        priority_group="Big",
+    )
+    logs = [stage1_fail, stage1_pass]
+
+    only_pass = [(stage1_pass, 5.0)]
+    run_result = (only_pass, [], None, None, [])
+
+    kept_names = {"called": set()}
+
+    def pricing_side_effect(
+        product, land_logistics, air_logistics, mode="fast", priority="低价优先"
+    ):
+        for lg in land_logistics:
+            kept_names["called"].add(lg["name"])
+        return _pricing_result(land_logistics, air_logistics)
+
+    result = _run_grouped(
+        logs,
+        run_result,
+        pricing_side_effect=pricing_side_effect,
+    )
+
+    assert "ok-small" in kept_names["called"]
+    assert "too-heavy" not in kept_names["called"]

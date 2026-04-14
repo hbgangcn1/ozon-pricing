@@ -1,11 +1,10 @@
 """Regression tests for FBP eliminated-logistics reason attribution.
 
-Verifies that when the post-pricing FBP filter runs:
-  - Logistics eliminated by the first filter (weight/dimension/price)
+Verifies that when the three-stage pipeline runs (Stage1→Stage2→Stage3):
+  - Logistics eliminated by Stage 1 (weight/dimension/price)
     keep their original first-filter reason.
-  - Logistics that pass the first filter but belong to the same
-    (company, service_level) group as a selected logistics
-    are tagged with the secondary reason "该物流无法覆盖更高成本".
+  - Logistics that pass Stage 1 but are eliminated by Stage 2
+    are tagged with the secondary reason.
   - Selected logistics (best_land/best_air) are never shown
     in the eliminated list.
 """
@@ -54,10 +53,34 @@ def _make_calc_result(
     }
 
 
+def _make_stage1_side_effect(
+    land_survivors,
+    air_survivors,
+    land_eliminated=None,
+    air_eliminated=None,
+):
+    def side_effect(
+        product,
+        land,
+        air,
+        up,
+        lf,
+        sf,
+        rate,
+        filtered,
+        priority,
+        mode,
+    ):
+        for item in land_eliminated or []:
+            filtered["land"].append(item)
+        for item in air_eliminated or []:
+            filtered["air"].append(item)
+        return (land_survivors, air_survivors, None, None, [])
+
+    return side_effect
+
+
 def test_weight_fail_shows_weight_reason_not_secondary():
-    """A logistic eliminated by the first filter (weight check) shows
-    weight reason, not the secondary reason, even if it's in the same
-    group as a selected logistic."""
     logistics = [
         {
             "name": "GUOO-FBP-Std-Small-KZ",
@@ -66,7 +89,7 @@ def test_weight_fail_shows_weight_reason_not_secondary():
             "destination": "KZ",
             "fbp_company": "GUOO",
             "fbp_service_level": "standard",
-            "base_rate": 100,
+            "base_fee": 100,
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -77,34 +100,38 @@ def test_weight_fail_shows_weight_reason_not_secondary():
             "destination": "KZ",
             "fbp_company": "GUOO",
             "fbp_service_level": "standard",
-            "base_rate": 50,
+            "base_fee": 50,
             "min_weight": 5001,
             "max_weight": 999999,
         },
     ]
 
+    small_only = [(dict(logistics[0]), 5.0)]
+    weight_fail = [
+        {"name": "GUOO-FBP-Std-Big-KZ", "reason": "重量 379 g 低于下限 5001 g"}
+    ]
+    stage1_se = _make_stage1_side_effect(
+        small_only,
+        [],
+        land_eliminated=weight_fail,
+    )
+
     def mock_calc(_product, land, air, mode="fast", priority="低价优先"):
-        land_names = {r.get("name") for r in (land or [])}
-        filtered_land = []
-        if "GUOO-FBP-Std-Big-KZ" in land_names:
-            filtered_land.append(
-                {
-                    "name": "GUOO-FBP-Std-Big-KZ",
-                    "reason": "重量 379 g 低于下限 5001 g",
-                }
-            )
         best = (
-            "GUOO-FBP-Std-Small-KZ" if "GUOO-FBP-Std-Small-KZ" in land_names else None
+            "GUOO-FBP-Std-Small-KZ"
+            if any(r.get("name") == "GUOO-FBP-Std-Small-KZ" for r in (land or []))
+            else None
         )
-        return _make_calc_result(
-            best_land_name=best,
-            filtered_land=filtered_land,
-        )
+        return _make_calc_result(best_land_name=best)
 
     with (
         patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda items: (list(items), []),
+            "pricing.calculate_pricing._run_filters",
+            side_effect=stage1_se,
+        ),
+        patch(
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(0.09, 7.2),
         ),
         patch(
             "pricing.calculate_pricing.calculate_pricing",
@@ -127,8 +154,6 @@ def test_weight_fail_shows_weight_reason_not_secondary():
 
 
 def test_secondary_only_shows_secondary_reason():
-    """A logistic that passes the first filter but is in the same group
-    as a selected logistic is now shown as Stage 3 unselected."""
     logistics = [
         {
             "name": "CEL-FBP-Eco-High-KZ",
@@ -137,7 +162,7 @@ def test_secondary_only_shows_secondary_reason():
             "destination": "KZ",
             "fbp_company": "CEL",
             "fbp_service_level": "economy",
-            "base_rate": 100,
+            "base_fee": 100,
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -148,7 +173,7 @@ def test_secondary_only_shows_secondary_reason():
             "destination": "KZ",
             "fbp_company": "CEL",
             "fbp_service_level": "economy",
-            "base_rate": 30,
+            "base_fee": 30,
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -176,6 +201,10 @@ def test_secondary_only_shows_secondary_reason():
             side_effect=mock_run_filters,
         ),
         patch(
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(0.09, 7.2),
+        ),
+        patch(
             "pricing.calculate_pricing.calculate_pricing",
             side_effect=mock_calc,
         ),
@@ -195,7 +224,6 @@ def test_secondary_only_shows_secondary_reason():
 
 
 def test_selected_logistics_not_in_eliminated():
-    """Selected logistics must NOT appear in the eliminated list."""
     logistics = [
         {
             "name": "RETS-FBP-Std-Best-BY",
@@ -204,7 +232,7 @@ def test_selected_logistics_not_in_eliminated():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_rate": 100,
+            "base_fee": 100,
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -215,7 +243,7 @@ def test_selected_logistics_not_in_eliminated():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_rate": 50,
+            "base_fee": 50,
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -243,6 +271,10 @@ def test_selected_logistics_not_in_eliminated():
             side_effect=mock_run_filters,
         ),
         patch(
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(0.09, 7.2),
+        ),
+        patch(
             "pricing.calculate_pricing.calculate_pricing",
             side_effect=mock_calc,
         ),
@@ -264,8 +296,6 @@ def test_selected_logistics_not_in_eliminated():
 
 
 def test_dimension_fail_shows_dimension_reason():
-    """A logistic eliminated by dimension check shows the dimension
-    reason, not the secondary reason."""
     logistics = [
         {
             "name": "RETS-FBP-Std-Wide-BY",
@@ -274,7 +304,7 @@ def test_dimension_fail_shows_dimension_reason():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_rate": 100,
+            "base_fee": 100,
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -285,33 +315,39 @@ def test_dimension_fail_shows_dimension_reason():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_rate": 40,
+            "base_fee": 40,
             "min_weight": 0,
             "max_weight": 999999,
             "max_longest_side": 5,
         },
     ]
 
+    wide_only = [(dict(logistics[0]), 3.0)]
+    dim_fail = [
+        {"name": "RETS-FBP-Std-Narrow-BY", "reason": "最长边 10 cm 超过限制 5 cm"}
+    ]
+    stage1_se = _make_stage1_side_effect(
+        [],
+        wide_only,
+        air_eliminated=dim_fail,
+    )
+
     def mock_calc(_product, land, air, mode="fast", priority="低价优先"):
-        air_names = {r.get("name") for r in (air or [])}
-        filtered_air = []
-        if "RETS-FBP-Std-Narrow-BY" in air_names:
-            filtered_air.append(
-                {
-                    "name": "RETS-FBP-Std-Narrow-BY",
-                    "reason": "最长边 10 cm 超过限制 5 cm",
-                }
-            )
-        best = "RETS-FBP-Std-Wide-BY" if "RETS-FBP-Std-Wide-BY" in air_names else None
-        return _make_calc_result(
-            best_air_name=best,
-            filtered_air=filtered_air,
+        best = (
+            "RETS-FBP-Std-Wide-BY"
+            if any(r.get("name") == "RETS-FBP-Std-Wide-BY" for r in (air or []))
+            else None
         )
+        return _make_calc_result(best_air_name=best)
 
     with (
         patch(
-            "pricing.fbp_secondary_filter.fbp_secondary_filter",
-            side_effect=lambda items: (list(items), []),
+            "pricing.calculate_pricing._run_filters",
+            side_effect=stage1_se,
+        ),
+        patch(
+            "pricing.calculate_pricing._get_exchange_rates",
+            return_value=(0.09, 7.2),
         ),
         patch(
             "pricing.calculate_pricing.calculate_pricing",
