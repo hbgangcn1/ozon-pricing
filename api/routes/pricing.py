@@ -217,32 +217,21 @@ def format_result(res, product, rate, is_land=True):
 
 def format_combo(combo_results):
     return PricingComboResult(
-        land_pickup=combo_results.get("land_pickup", PricingResultItem()),
-        land_home=combo_results.get("land_home", PricingResultItem()),
-        air_pickup=combo_results.get("air_pickup", PricingResultItem()),
-        air_home=combo_results.get("air_home", PricingResultItem()),
+        land=combo_results.get("land", PricingResultItem()),
+        air=combo_results.get("air", PricingResultItem()),
     )
 
 
-def calculate_combo_results(
-    product, mode, land_pickup, land_home, air_pickup, air_home, rate
-):
+def calculate_combo_results(product, mode, land_rules, air_rules, rate):
     results = {}
     for priority in ["低价优先", "速度优先"]:
-        combos = {
-            "land_pickup": (land_pickup, []),
-            "land_home": (land_home, []),
-            "air_pickup": ([], air_pickup),
-            "air_home": ([], air_home),
+        res = calculate_pricing(
+            product, land_rules, air_rules, mode=mode, priority=priority
+        )
+        combo_results = {
+            "land": format_result(res, product, rate, is_land=True),
+            "air": format_result(res, product, rate, is_land=False),
         }
-        combo_results = {}
-        for combo_key, (land_list, air_list) in combos.items():
-            res = calculate_pricing(
-                product, land_list, air_list, mode=mode, priority=priority
-            )
-            combo_results[combo_key] = format_result(
-                res, product, rate, is_land=bool(land_list)
-            )
         results[priority] = combo_results
     return results
 
@@ -292,26 +281,13 @@ async def calculate(
     land_rules = [r for r in all_logistics if r.get("type") == "land"]
     air_rules = [r for r in all_logistics if r.get("type") == "air"]
 
-    def is_pickup(r):
-        return r.get("delivery_method") in ("pickup", "pickup_point")
-
-    def is_home(r):
-        return r.get("delivery_method") == "door"
-
-    land_pickup = [r for r in land_rules if is_pickup(r)]
-    land_home = [r for r in land_rules if is_home(r)]
-    air_pickup = [r for r in air_rules if is_pickup(r)]
-    air_home = [r for r in air_rules if is_home(r)]
-
     rate = get_fallback_exchange_rate()
 
     results = calculate_combo_results(
         product,
         mode,
-        land_pickup,
-        land_home,
-        air_pickup,
-        air_home,
+        land_rules,
+        air_rules,
         rate,
     )
 
@@ -322,10 +298,8 @@ async def calculate(
         breakeven_results = calculate_combo_results(
             breakeven_product,
             mode,
-            land_pickup,
-            land_home,
-            air_pickup,
-            air_home,
+            land_rules,
+            air_rules,
             rate,
         )
 

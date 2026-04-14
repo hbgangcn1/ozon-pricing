@@ -836,15 +836,9 @@ export default function PricingPage() {
         {activeTab === 'fast' && pp && (
         <div className="bg-cost-logistics/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">价格优先方案</h3>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <ResultCard title="自提·陆运" item={pp?.land_pickup} />
-              <ResultCard title="自提·空运" item={pp?.air_pickup} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <ResultCard title="送货上门·陆运" item={pp?.land_home} />
-              <ResultCard title="送货上门·空运" item={pp?.air_home} />
-            </div>
+          <div className="grid grid-cols-2 gap-3">
+            <ResultCard title="🚛 陆运" item={pp?.land} />
+            <ResultCard title="✈️ 空运" item={pp?.air} />
           </div>
         </div>
         )}
@@ -853,15 +847,9 @@ export default function PricingPage() {
         {activeTab === 'fast' && sp && (
         <div className="bg-cost-profit/5 p-4 rounded">
           <h3 className="text-lg font-semibold mb-3">速度优先方案</h3>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <ResultCard title="自提·陆运" item={sp?.land_pickup} />
-              <ResultCard title="自提·空运" item={sp?.air_pickup} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <ResultCard title="送货上门·陆运" item={sp?.land_home} />
-              <ResultCard title="送货上门·空运" item={sp?.air_home} />
-            </div>
+          <div className="grid grid-cols-2 gap-3">
+            <ResultCard title="🚛 陆运" item={sp?.land} />
+            <ResultCard title="✈️ 空运" item={sp?.air} />
           </div>
         </div>
         )}

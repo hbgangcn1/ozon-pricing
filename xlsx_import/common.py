@@ -138,7 +138,6 @@ def create_row(
     row.update(
         {
             "name": normalize_text(name),
-            "delivery_method": normalize_text(name),
             "source_file": source_file,
             "imported_at": imported_at or int(time.time()),
         }

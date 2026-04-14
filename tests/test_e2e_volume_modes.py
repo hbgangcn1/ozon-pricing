@@ -297,8 +297,8 @@ def test_pricing_calculation_uses_sum_of_sides_threshold(api_client: httpx.Clien
             },
         )
 
-        exceed_item = exceed_result["price_priority"]["land_home"]
-        below_item = below_result["price_priority"]["land_home"]
+        exceed_item = exceed_result["price_priority"]["land"]
+        below_item = below_result["price_priority"]["land"]
 
         assert exceed_item["is_available"] is True
         assert below_item["is_available"] is True
@@ -372,8 +372,8 @@ def test_pricing_calculation_uses_longest_side_threshold(api_client: httpx.Clien
             },
         )
 
-        exceed_item = exceed_result["price_priority"]["land_home"]
-        below_item = below_result["price_priority"]["land_home"]
+        exceed_item = exceed_result["price_priority"]["land"]
+        below_item = below_result["price_priority"]["land"]
 
         assert exceed_item["is_available"] is True
         assert below_item["is_available"] is True

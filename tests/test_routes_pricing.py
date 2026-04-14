@@ -421,19 +421,17 @@ class TestFormatCombo:
     def test_builds_combo_result(self):
         empty = PricingResultItem()
         combo_results = {
-            "land_pickup": empty,
-            "land_home": empty,
-            "air_pickup": empty,
-            "air_home": empty,
+            "land": empty,
+            "air": empty,
         }
         result = format_combo(combo_results)
-        assert result.land_pickup is empty
-        assert result.air_home is empty
+        assert result.land is empty
+        assert result.air is empty
 
     def test_missing_keys_use_default_pricingresultitem(self):
         result = format_combo({})
         # PricingComboResult fields have default PricingResultItem() via get()
-        assert result.land_pickup is not None
+        assert result.land is not None
 
 
 # ===========================================================================
@@ -957,9 +955,9 @@ class TestCalculateBreakevenResponses:
             )
             assert response.status_code == 200
             body = response.json()
-            assert body["price_priority"]["land_pickup"]["price_cny"] == 120.0
-            assert body["breakeven_price_priority"]["land_pickup"]["price_cny"] == 88.0
-            assert body["breakeven_speed_priority"]["air_home"]["price_cny"] == 88.0
+            assert body["price_priority"]["land"]["price_cny"] == 120.0
+            assert body["breakeven_price_priority"]["land"]["price_cny"] == 88.0
+            assert body["breakeven_speed_priority"]["air"]["price_cny"] == 88.0
             assert body["product"]["target_profit_margin"] == 0.35
             assert 0.35 in seen_margins
             assert 0 in seen_margins

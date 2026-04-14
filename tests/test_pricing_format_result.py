@@ -143,9 +143,9 @@ def test_precise_calculate_endpoint_keeps_zero_price_result_available(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["price_priority"]["land_pickup"]["price_cny"] == 0
-    assert body["price_priority"]["land_pickup"]["is_available"] is True
-    assert body["breakeven_price_priority"]["land_pickup"]["is_available"] is True
+    assert body["price_priority"]["land"]["price_cny"] == 0
+    assert body["price_priority"]["land"]["is_available"] is True
+    assert body["breakeven_price_priority"]["land"]["is_available"] is True
 
 
 def test_format_result_air_uses_air_profit_margin():

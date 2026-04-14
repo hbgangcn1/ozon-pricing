@@ -226,12 +226,10 @@ class PricingResultItem(BaseModel):
 
 
 class PricingComboResult(BaseModel):
-    """4种运输方式组合结果"""
+    """陆运/空运组合结果"""
 
-    land_pickup: PricingResultItem
-    land_home: PricingResultItem
-    air_pickup: PricingResultItem
-    air_home: PricingResultItem
+    land: PricingResultItem
+    air: PricingResultItem
 
 
 class PricingRequest(BaseModel):
