@@ -4,7 +4,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, cast
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -255,8 +255,10 @@ async def get_backup_stats(admin: int = Depends(require_admin)):
         )
 
     return BackupStatsResponse(
-        count=stats.get("count", 0),
-        total_size_mb=stats.get("total_size_mb", 0.0),
+        count=int(cast(int | float | str | None, stats.get("count", 0)) or 0),
+        total_size_mb=float(
+            cast(int | float | str | None, stats.get("total_size_mb", 0.0)) or 0.0
+        ),
         files=files,
     )
 

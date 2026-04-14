@@ -59,13 +59,13 @@ async def clear_expired_cache(session: AsyncSession) -> int:
         StatisticsCache.expires_at <= now,
     )
     result = await session.execute(stmt)
-    return result.rowcount
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def clear_all_statistics_cache(session: AsyncSession) -> int:
     stmt = sa_delete(StatisticsCache)
     result = await session.execute(stmt)
-    return result.rowcount
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def _get_user_stats_orm(

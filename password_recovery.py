@@ -356,8 +356,12 @@ async def get_password_recovery_logs(
                     "success": bool(row.success),
                     "attempt_count": row.attempt_count,
                     "admin_name": row.admin_name,
-                    "created_at": datetime.fromtimestamp(row.created_at).strftime(
-                        "%Y-%m-%d %H:%M:%S"
+                    "created_at": (
+                        datetime.fromtimestamp(row.created_at).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                        if row.created_at is not None
+                        else ""
                     ),
                 }
             )

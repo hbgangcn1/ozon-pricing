@@ -151,7 +151,7 @@ async def get_login_attempts(
         LoginAttempt.timestamp > since,
     )
     result = await session.execute(stmt)
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 async def add_login_attempt(

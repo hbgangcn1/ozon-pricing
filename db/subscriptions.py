@@ -136,7 +136,7 @@ async def reset_free_users_daily_calculations(
             .where(User.user_type == "free")
             .values(remaining_calculations=10)
         )
-        return result.rowcount
+        return int(getattr(result, "rowcount", 0) or 0)
     except Exception:
         return 0
 

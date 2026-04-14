@@ -2,7 +2,7 @@ import time
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import List
-from sqlalchemy import select, func, text
+from sqlalchemy import DateTime, select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -205,7 +205,7 @@ async def get_user_groups(
         active = (
             await session.scalar(
                 select(func.count(User.id)).where(
-                    func.nullif(func.trim(User.last_login), "").cast(text("timestamp"))
+                    func.nullif(func.trim(User.last_login), "").cast(DateTime)
                     > func.now() - text("INTERVAL '30 days'"),
                 )
             )
@@ -274,7 +274,7 @@ async def get_active_users(
         daily = (
             await session.scalar(
                 select(func.count(User.id)).where(
-                    func.nullif(func.trim(User.last_login), "").cast(text("timestamp"))
+                    func.nullif(func.trim(User.last_login), "").cast(DateTime)
                     > func.now() - text("INTERVAL '1 day'"),
                 )
             )
@@ -287,7 +287,7 @@ async def get_active_users(
         weekly = (
             await session.scalar(
                 select(func.count(User.id)).where(
-                    func.nullif(func.trim(User.last_login), "").cast(text("timestamp"))
+                    func.nullif(func.trim(User.last_login), "").cast(DateTime)
                     > func.now() - text("INTERVAL '7 days'"),
                 )
             )

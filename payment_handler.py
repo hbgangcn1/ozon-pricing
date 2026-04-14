@@ -101,7 +101,6 @@ class PaymentHandler:
                     user.subscription_type = plan_code
                     user.subscription_expires = expiry
                     user.remaining_calculations = -1
-                    user.updated_at = str(current_time)
                 await session.commit()
                 logger.info(f"支付成功处理完成: 订单{order_id}, 用户{order.user_id}")
             except ValueError:
