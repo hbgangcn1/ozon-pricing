@@ -10,8 +10,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { commissionCategoriesAPI } from '../services/api'
+import { useAuthStore } from '../stores/authStore'
+
+
+function UpgradePrompt({ title, description }) {
+  return (
+    <Card className="border-amber-200 bg-amber-50/80 shadow-sm">
+      <CardContent className="pt-6">
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-amber-900">{title}</p>
+          <p className="text-sm text-amber-800">{description}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function CommissionCategoriesPage() {
+  const { user, hasProfessionalAccess } = useAuthStore()
   const [categories, setCategories] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -22,6 +38,8 @@ export default function CommissionCategoriesPage() {
     rfbs_tier2_rate: 0,
     rfbs_tier3_rate: 0
   })
+  const canManage = hasProfessionalAccess()
+  const subscriptionType = user?.subscription_type || user?.user_type || 'free'
 
   const fetchCategories = useCallback(async () => {
     setIsLoading(true)
@@ -97,11 +115,20 @@ export default function CommissionCategoriesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-text-primary tracking-tight">佣金类目管理</h1>
-        <Button onClick={() => handleOpenDialog()}>
-          <Plus className="w-4 h-4 mr-2" />
-          新增类目
-        </Button>
+        {canManage ? (
+          <Button onClick={() => handleOpenDialog()}>
+            <Plus className="w-4 h-4 mr-2" />
+            新增类目
+          </Button>
+        ) : null}
       </div>
+
+      {!canManage && (
+        <UpgradePrompt
+          title="升级到专业版，解锁佣金类目管理"
+          description={`当前订阅为 ${subscriptionType}，升级后即可新增、编辑和删除佣金类目。`}
+        />
+      )}
 
       <Card>
         <CardContent className="pt-6">
@@ -137,10 +164,10 @@ export default function CommissionCategoriesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(cat)}>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(cat)} disabled={!canManage} title={!canManage ? '此功能需要专业版或更高订阅等级' : undefined}>
                           <Edit2 className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)} className="text-error hover:text-error-hover">
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)} disabled={!canManage} title={!canManage ? '此功能需要专业版或更高订阅等级' : undefined} className="text-error hover:text-error-hover">
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>

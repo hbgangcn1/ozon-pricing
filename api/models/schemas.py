@@ -21,6 +21,7 @@ class UserResponse(UserBase):
     id: int
     role: str
     user_type: str = "free"
+    subscription_type: str = "free"
     remaining_calculations: int = -1
 
     model_config = ConfigDict(from_attributes=True)
@@ -222,6 +223,7 @@ class PricingResultItem(BaseModel):
     saved_cost: float = 0
     avg_days: float = 0
     saved_days: float = 0
+    is_smart: int = 0
     breakdown: List[BreakdownItem] = []
 
 

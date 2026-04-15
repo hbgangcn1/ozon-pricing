@@ -2,7 +2,7 @@ from io import BytesIO
 
 import openpyxl
 
-from api.dependencies import get_current_user_id
+from api.dependencies import get_current_user_id, get_user_with_subscription
 from api.main import app
 from database import AsyncSessionLocal
 from db.products import get_product_by_name
@@ -14,6 +14,17 @@ def _user_override(user_id):
 
 def _clear_overrides():
     app.dependency_overrides.clear()
+
+
+def _subscription_override(user_id, subscription_type):
+    app.dependency_overrides[get_user_with_subscription] = lambda: {
+        "id": user_id,
+        "username": "tester",
+        "role": "user",
+        "user_type": "permanent",
+        "subscription_type": subscription_type,
+        "remaining_calculations": -1,
+    }
 
 
 def _build_product_workbook(row_count):
@@ -40,11 +51,35 @@ def _build_product_workbook(row_count):
 
 
 class TestProductImportTruncation:
+    async def test_preview_rejects_professional_tier(self, client, test_user):
+        user_id = test_user["id"]
+        _subscription_override(user_id, "professional")
+        try:
+            workbook = _build_product_workbook(1)
+
+            response = await client.post(
+                "/api/products/import/preview",
+                files={
+                    "file": (
+                        "products.xlsx",
+                        workbook.getvalue(),
+                        "application/vnd.openxmlformats-officedocument"
+                        ".spreadsheetml.sheet",
+                    )
+                },
+            )
+
+            assert response.status_code == 403
+            assert response.json()["detail"] == "此功能需要企业版或更高订阅等级"
+        finally:
+            _clear_overrides()
+
     async def test_preview_returns_all_rows_from_uploaded_excel(
         self, client, test_user
     ):
         user_id = test_user["id"]
         _user_override(user_id)
+        _subscription_override(user_id, "enterprise")
         try:
             workbook = _build_product_workbook(12)
 
@@ -73,6 +108,7 @@ class TestProductImportTruncation:
     ):
         user_id = test_user["id"]
         _user_override(user_id)
+        _subscription_override(user_id, "enterprise")
         try:
             workbook = _build_product_workbook(12)
             preview_response = await client.post(
@@ -117,5 +153,23 @@ class TestProductImportTruncation:
                         session, user_id, f"Imported Product {index}"
                     )
                     assert product is not None
+        finally:
+            _clear_overrides()
+
+    async def test_confirm_import_rejects_professional_tier(self, client, test_user):
+        user_id = test_user["id"]
+        _subscription_override(user_id, "professional")
+        try:
+            response = await client.post(
+                "/api/products/import/confirm",
+                json={
+                    "rows": [{"name": "Product 1"}],
+                    "column_mapping": {"name": "name"},
+                    "conflict_action": "skip",
+                },
+            )
+
+            assert response.status_code == 403
+            assert response.json()["detail"] == "此功能需要企业版或更高订阅等级"
         finally:
             _clear_overrides()

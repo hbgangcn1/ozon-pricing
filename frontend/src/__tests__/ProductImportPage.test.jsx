@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ProductImportPage from '../pages/ProductImportPage';
 import { productImportAPI } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 import { toast } from 'sonner';
 
 vi.mock('../services/api', () => ({
@@ -9,6 +10,10 @@ vi.mock('../services/api', () => ({
     preview: vi.fn(),
     confirm: vi.fn(),
   },
+}));
+
+vi.mock('../stores/authStore', () => ({
+  useAuthStore: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({
@@ -88,8 +93,14 @@ const mockLargePreviewData = {
 };
 
 describe('ProductImportPage', () => {
+  const makeStore = (subscriptionType = 'enterprise') => ({
+    user: { subscription_type: subscriptionType },
+    hasEnterpriseAccess: () => ['enterprise', 'gratitude', 'test'].includes(subscriptionType),
+  })
+
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.mockReturnValue(makeStore('enterprise'));
   });
 
   it('renders step 1 correctly', () => {
@@ -280,5 +291,15 @@ describe('ProductImportPage', () => {
     fireEvent.click(screen.getByText('继续导入'));
     
     expect(screen.getByText('上传产品数据表')).toBeInTheDocument();
+  });
+
+  it('shows upgrade prompt for non-enterprise tiers', () => {
+    useAuthStore.mockReturnValue(makeStore('professional'));
+
+    render(<ProductImportPage />);
+
+    expect(screen.getByText('升级到企业版，解锁 Excel 产品导入')).toBeInTheDocument();
+    expect(screen.queryByText('上传产品数据表')).not.toBeInTheDocument();
+    expect(productImportAPI.preview).not.toHaveBeenCalled();
   });
 });

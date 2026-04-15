@@ -1,3 +1,6 @@
+# pyright: reportPrivateUsage=false
+
+from typing import Optional, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,6 +18,7 @@ def _make_user(
     username="alice",
     role="user",
     user_type="free",
+    subscription_type: Optional[str] = "free",
     remaining_calculations=10,
     is_frozen=0,
 ):
@@ -23,6 +27,7 @@ def _make_user(
     user.username = username
     user.role = role
     user.user_type = user_type
+    user.subscription_type = subscription_type
     user.remaining_calculations = remaining_calculations
     user.is_frozen = is_frozen
     return user
@@ -62,9 +67,9 @@ class TestResolveUserId:
 
 
 class TestGetCurrentUserId:
-    @patch("api.dependencies._resolve_user_id")
-    async def test_valid_user_returns_id(self, mock_resolve):
-        mock_resolve.return_value = 42
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_valid_user_returns_id(self, mock_get_user_id):
+        mock_get_user_id.return_value = 42
         session = AsyncMock()
         session.get.return_value = _make_user(user_id=42)
         api_key = _make_api_key("token")
@@ -75,9 +80,9 @@ class TestGetCurrentUserId:
         assert result == 42
         session.get.assert_awaited_once()
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_user_not_found_raises_401(self, mock_resolve):
-        mock_resolve.return_value = 999
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_user_not_found_raises_401(self, mock_get_user_id):
+        mock_get_user_id.return_value = 999
         session = AsyncMock()
         session.get.return_value = None
         api_key = _make_api_key("token")
@@ -89,9 +94,9 @@ class TestGetCurrentUserId:
         assert exc_info.value.status_code == 401
         assert "用户不存在" in exc_info.value.detail
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_frozen_user_raises_403(self, mock_resolve):
-        mock_resolve.return_value = 42
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_frozen_user_raises_403(self, mock_get_user_id):
+        mock_get_user_id.return_value = 42
         session = AsyncMock()
         session.get.return_value = _make_user(user_id=42, is_frozen=1)
         api_key = _make_api_key("token")
@@ -102,11 +107,11 @@ class TestGetCurrentUserId:
             await get_current_user_id(api_key, session)
         assert exc_info.value.status_code == 403
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_jwt_failure_propagates_401(self, mock_resolve):
-        mock_resolve.side_effect = HTTPException(
-            status_code=401, detail="无效的认证凭证"
-        )
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_jwt_failure_propagates_401(self, mock_get_user_id):
+        from security.tokens import TokenInvalidError
+
+        mock_get_user_id.side_effect = TokenInvalidError("bad-token")
         session = AsyncMock()
         api_key = _make_api_key("bad-token")
 
@@ -118,9 +123,9 @@ class TestGetCurrentUserId:
 
 
 class TestGetCurrentUser:
-    @patch("api.dependencies._resolve_user_id")
-    async def test_returns_user_dict(self, mock_resolve):
-        mock_resolve.return_value = 10
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_returns_user_dict(self, mock_get_user_id):
+        mock_get_user_id.return_value = 10
         session = AsyncMock()
         session.get.return_value = _make_user(
             user_id=10,
@@ -139,12 +144,13 @@ class TestGetCurrentUser:
             "username": "alice",
             "role": "admin",
             "user_type": "enterprise",
+            "subscription_type": "free",
             "remaining_calculations": 500,
         }
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_user_not_found_raises_401(self, mock_resolve):
-        mock_resolve.return_value = 999
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_user_not_found_raises_401(self, mock_get_user_id):
+        mock_get_user_id.return_value = 999
         session = AsyncMock()
         session.get.return_value = None
         api_key = _make_api_key("jwt-token")
@@ -156,11 +162,11 @@ class TestGetCurrentUser:
         assert exc_info.value.status_code == 401
         assert "用户不存在" in exc_info.value.detail
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_jwt_failure_propagates_401(self, mock_resolve):
-        mock_resolve.side_effect = HTTPException(
-            status_code=401, detail="无效的认证凭证"
-        )
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_jwt_failure_propagates_401(self, mock_get_user_id):
+        from security.tokens import TokenInvalidError
+
+        mock_get_user_id.side_effect = TokenInvalidError("bad-token")
         session = AsyncMock()
         api_key = _make_api_key("bad-token")
 
@@ -171,10 +177,65 @@ class TestGetCurrentUser:
         assert exc_info.value.status_code == 401
 
 
+class TestGetUserWithSubscription:
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_returns_user_dict_with_subscription_type(self, mock_get_user_id):
+        mock_get_user_id.return_value = 10
+        session = AsyncMock()
+        session.get.return_value = _make_user(
+            user_id=10,
+            username="alice",
+            role="admin",
+            user_type="permanent",
+            subscription_type="enterprise",
+            remaining_calculations=500,
+        )
+        api_key = _make_api_key("jwt-token")
+
+        from api.dependencies import get_user_with_subscription
+
+        result = await get_user_with_subscription(api_key, session)
+        assert result == {
+            "id": 10,
+            "username": "alice",
+            "role": "admin",
+            "user_type": "permanent",
+            "subscription_type": "enterprise",
+            "remaining_calculations": 500,
+        }
+
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_missing_subscription_type_defaults_to_free(self, mock_get_user_id):
+        mock_get_user_id.return_value = 5
+        session = AsyncMock()
+        session.get.return_value = _make_user(
+            subscription_type=cast(Optional[str], None)
+        )
+        api_key = _make_api_key("jwt-token")
+
+        from api.dependencies import get_user_with_subscription
+
+        result = await get_user_with_subscription(api_key, session)
+        assert result["subscription_type"] == "free"
+
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_frozen_user_raises_403(self, mock_get_user_id):
+        mock_get_user_id.return_value = 42
+        session = AsyncMock()
+        session.get.return_value = _make_user(user_id=42, is_frozen=1)
+        api_key = _make_api_key("token")
+
+        from api.dependencies import get_user_with_subscription
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_user_with_subscription(api_key, session)
+        assert exc_info.value.status_code == 403
+
+
 class TestRequireAdmin:
-    @patch("api.dependencies._resolve_user_id")
-    async def test_admin_user_returns_id(self, mock_resolve):
-        mock_resolve.return_value = 1
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_admin_user_returns_id(self, mock_get_user_id):
+        mock_get_user_id.return_value = 1
         session = AsyncMock()
         session.get.return_value = _make_user(user_id=1, role="admin")
         api_key = _make_api_key("jwt-token")
@@ -184,9 +245,9 @@ class TestRequireAdmin:
         result = await require_admin(api_key, session)
         assert result == 1
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_non_admin_raises_403(self, mock_resolve):
-        mock_resolve.return_value = 2
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_non_admin_raises_403(self, mock_get_user_id):
+        mock_get_user_id.return_value = 2
         session = AsyncMock()
         session.get.return_value = _make_user(user_id=2, role="user")
         api_key = _make_api_key("jwt-token")
@@ -197,9 +258,9 @@ class TestRequireAdmin:
             await require_admin(api_key, session)
         assert exc_info.value.status_code == 403
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_user_not_found_raises_401(self, mock_resolve):
-        mock_resolve.return_value = 999
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_user_not_found_raises_401(self, mock_get_user_id):
+        mock_get_user_id.return_value = 999
         session = AsyncMock()
         session.get.return_value = None
         api_key = _make_api_key("jwt-token")
@@ -210,11 +271,11 @@ class TestRequireAdmin:
             await require_admin(api_key, session)
         assert exc_info.value.status_code == 401
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_jwt_failure_propagates_401(self, mock_resolve):
-        mock_resolve.side_effect = HTTPException(
-            status_code=401, detail="无效的认证凭证"
-        )
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_jwt_failure_propagates_401(self, mock_get_user_id):
+        from security.tokens import TokenInvalidError
+
+        mock_get_user_id.side_effect = TokenInvalidError("bad-token")
         session = AsyncMock()
         api_key = _make_api_key("bad-token")
 
@@ -224,9 +285,9 @@ class TestRequireAdmin:
             await require_admin(api_key, session)
         assert exc_info.value.status_code == 401
 
-    @patch("api.dependencies._resolve_user_id")
-    async def test_jwt_valid_but_user_deleted_raises_401(self, mock_resolve):
-        mock_resolve.return_value = 888
+    @patch("api.dependencies.get_user_id_from_token")
+    async def test_jwt_valid_but_user_deleted_raises_401(self, mock_get_user_id):
+        mock_get_user_id.return_value = 888
         session = AsyncMock()
         session.get.return_value = None
         api_key = _make_api_key("jwt-for-deleted-user")

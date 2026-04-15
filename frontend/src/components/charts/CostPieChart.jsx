@@ -54,7 +54,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
 
     paths.push(
       <path key={item.name} d={d} fill={item.color} stroke="#ffffff" strokeWidth={1.5}>
-        <title>{item.name}: ¥{item.value.toFixed(2)} ({item.percentage}%)</title>
+        <title>{item.name || '成本项'}: ¥{item.value.toFixed(2)} ({item.percentage}%)</title>
       </path>
     )
     cumAngle -= angle
@@ -62,6 +62,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <title>成本构成饼图</title>
       {paths}
     </svg>
   )
@@ -81,7 +82,7 @@ function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingC
     name: item.label,
     value: item.value || 0,
     color: COST_COLORS[item.label] || DEFAULT_COLOR,
-    percentage: totalCost > 0 ? ((item.value || 0) / totalCost * 100).toFixed(1) : 0,
+    percentage: totalPrice > 0 ? ((item.value || 0) / totalPrice * 100).toFixed(1) : 0,
   }))
 
   return (

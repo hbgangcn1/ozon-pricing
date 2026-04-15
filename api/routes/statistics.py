@@ -1,16 +1,22 @@
-import time
-from fastapi import APIRouter, Depends, Query
+from datetime import datetime, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import List
-from sqlalchemy import DateTime, select, func, text
+from sqlalchemy import DateTime, and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.user import User
-from models.order import PaymentOrder
 from models.log import UserLoginLog, AdminActionLog
-from db.statistics import count_total_users, count_users_by_type
-from db.statistics import count_paid_orders, get_revenue_stats
+from db.statistics import (
+    count_paid_orders,
+    count_total_users,
+    count_users_by_type,
+    get_monthly_retention,
+    get_monthly_revenue,
+    get_revenue_stats,
+)
 from api.dependencies import require_admin
 
 router = APIRouter(prefix="/api/statistics", tags=["统计"])
@@ -53,9 +59,52 @@ class AdminLog(BaseModel):
     time: str
 
 
-class FeatureUsage(BaseModel):
-    feature: str
-    count: int
+class LoginLogPage(BaseModel):
+    items: List[LoginLog]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminLogPage(BaseModel):
+    items: List[AdminLog]
+    total: int
+    page: int
+    page_size: int
+
+
+def _last_login_expr():
+    return func.nullif(func.trim(User.last_login), "").cast(DateTime)
+
+
+def _format_trend(current: int, previous: int) -> str:
+    delta = current - previous
+    return f"+{delta}" if delta > 0 else str(delta)
+
+
+def _format_unix_timestamp(timestamp: Optional[int]) -> str:
+    if not timestamp:
+        return ""
+    try:
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    except (OSError, OverflowError, TypeError, ValueError):
+        return ""
+
+
+def _parse_date_filter(
+    value: Optional[str], *, end_of_day: bool = False
+) -> Optional[int]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="日期格式必须为 YYYY-MM-DD"
+        ) from exc
+    if end_of_day:
+        parsed = parsed + timedelta(days=1) - timedelta(seconds=1)
+    return int(parsed.timestamp())
 
 
 @router.get("/overview", response_model=OverviewStats)
@@ -86,9 +135,21 @@ async def get_overview(
     except Exception:
         new_users_today = 0
 
+    try:
+        active_users = (
+            await session.scalar(
+                select(func.count(User.id)).where(
+                    _last_login_expr() > func.now() - text("INTERVAL '30 days'"),
+                )
+            )
+            or 0
+        )
+    except Exception:
+        active_users = 0
+
     return OverviewStats(
         total_users=total_users,
-        active_users=total_users,
+        active_users=active_users,
         new_users_today=new_users_today,
         total_orders=total_orders,
         total_revenue=total_revenue,
@@ -99,170 +160,139 @@ async def get_overview(
 
 
 @router.get("/retention", response_model=List[RetentionData])
-async def get_retention(admin: int = Depends(require_admin)):
-    return [
-        RetentionData(month="1月", retention=95),
-        RetentionData(month="2月", retention=88),
-        RetentionData(month="3月", retention=82),
-    ]
+async def get_retention(
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    months: int = Query(6, ge=1, le=24),
+):
+    data = await get_monthly_retention(session, months=months)
+    return [RetentionData(**item) for item in data]
 
 
 @router.get("/revenue", response_model=List[RevenueData])
 async def get_revenue(
     admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
     months: int = Query(12, ge=1, le=24),
 ):
-    return [
-        RevenueData(month="1月", revenue=3800),
-        RevenueData(month="2月", revenue=5200),
-        RevenueData(month="3月", revenue=3850),
-    ]
+    data = await get_monthly_revenue(session, months=months)
+    return [RevenueData(**item) for item in data]
 
 
-@router.get("/login-logs", response_model=List[LoginLog])
+@router.get("/login-logs", response_model=LoginLogPage)
 async def get_login_logs(
     admin: int = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search: str = Query("", max_length=100),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
 ):
     offset = (page - 1) * page_size
+    start_ts = _parse_date_filter(date_from)
+    end_ts = _parse_date_filter(date_to, end_of_day=True)
+
+    filters = []
+    if search:
+        filters.append(func.coalesce(User.username, "").ilike(f"%{search.strip()}%"))
+    if start_ts is not None:
+        filters.append(UserLoginLog.created_at >= start_ts)
+    if end_ts is not None:
+        filters.append(UserLoginLog.created_at <= end_ts)
+
     stmt = (
-        select(UserLoginLog)
+        select(UserLoginLog, User.username)
+        .select_from(UserLoginLog)
+        .outerjoin(User, User.id == UserLoginLog.user_id)
+        .where(and_(*filters) if filters else text("TRUE"))
         .order_by(UserLoginLog.created_at.desc())
         .limit(page_size)
         .offset(offset)
     )
     result = await session.execute(stmt)
-    rows = result.scalars().all()
-    return [
+    rows = result.all()
+
+    count_stmt = (
+        select(func.count())
+        .select_from(UserLoginLog)
+        .outerjoin(User, User.id == UserLoginLog.user_id)
+        .where(and_(*filters) if filters else text("TRUE"))
+    )
+    total = await session.scalar(count_stmt) or 0
+
+    items = [
         LoginLog(
-            id=r.id,
-            username=str(r.user_id) if r.user_id else "",
-            action=r.user_agent or "",
-            ip=r.ip_address or "",
-            time=str(r.created_at) if r.created_at else "",
-            status="success",
+            id=log.id,
+            username=username or "",
+            action="登录",
+            ip=log.ip_address or "",
+            time=_format_unix_timestamp(log.created_at or log.login_time),
+            status="成功",
         )
-        for r in rows
+        for log, username in rows
     ]
+    return LoginLogPage(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.get("/admin-logs", response_model=List[AdminLog])
+@router.get("/admin-logs", response_model=AdminLogPage)
 async def get_admin_logs(
     admin: int = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search: str = Query("", max_length=100),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
 ):
     offset = (page - 1) * page_size
+    start_ts = _parse_date_filter(date_from)
+    end_ts = _parse_date_filter(date_to, end_of_day=True)
+
+    filters = []
+    if search:
+        keyword = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                func.coalesce(User.username, "").ilike(keyword),
+                func.coalesce(AdminActionLog.action_type, "").ilike(keyword),
+            )
+        )
+    if start_ts is not None:
+        filters.append(AdminActionLog.created_at >= start_ts)
+    if end_ts is not None:
+        filters.append(AdminActionLog.created_at <= end_ts)
+
     stmt = (
-        select(AdminActionLog)
+        select(AdminActionLog, User.username)
+        .select_from(AdminActionLog)
+        .outerjoin(User, User.id == AdminActionLog.admin_id)
+        .where(and_(*filters) if filters else text("TRUE"))
         .order_by(AdminActionLog.created_at.desc())
         .limit(page_size)
         .offset(offset)
     )
     result = await session.execute(stmt)
-    rows = result.scalars().all()
-    return [
+    rows = result.all()
+
+    count_stmt = (
+        select(func.count())
+        .select_from(AdminActionLog)
+        .outerjoin(User, User.id == AdminActionLog.admin_id)
+        .where(and_(*filters) if filters else text("TRUE"))
+    )
+    total = await session.scalar(count_stmt) or 0
+
+    items = [
         AdminLog(
-            id=r.id,
-            admin=str(r.admin_id) if r.admin_id else "",
-            action=r.action_type or "",
-            time=str(r.created_at) if r.created_at else "",
+            id=log.id,
+            admin=username or "",
+            action=log.action_type or "",
+            time=_format_unix_timestamp(log.created_at),
         )
-        for r in rows
+        for log, username in rows
     ]
-
-
-@router.get("/feature-usage", response_model=List[FeatureUsage])
-async def get_feature_usage(admin: int = Depends(require_admin)):
-    return [
-        FeatureUsage(feature="定价计算", count=1560),
-        FeatureUsage(feature="物流管理", count=420),
-        FeatureUsage(feature="订阅管理", count=180),
-        FeatureUsage(feature="支付中心", count=95),
-    ]
-
-
-@router.get("/user-groups", response_model=dict)
-async def get_user_groups(
-    admin: int = Depends(require_admin),
-    session: AsyncSession = Depends(get_db),
-):
-    current_ts = int(time.time())
-    high_value = (
-        await session.scalar(
-            select(func.count(User.id)).where(
-                User.user_type.in_(["professional", "enterprise"]),
-                User.subscription_expires > current_ts,
-            )
-        )
-        or 0
-    )
-
-    try:
-        active = (
-            await session.scalar(
-                select(func.count(User.id)).where(
-                    func.nullif(func.trim(User.last_login), "").cast(DateTime)
-                    > func.now() - text("INTERVAL '30 days'"),
-                )
-            )
-            or 0
-        )
-    except Exception:
-        active = 0
-
-    total = max(1, high_value + active)
-    return {
-        "high_value_users": high_value,
-        "active_users": active,
-        "silent_users": max(0, total - active),
-    }
-
-
-@router.get("/funnel", response_model=dict)
-async def get_funnel(
-    admin: int = Depends(require_admin),
-    session: AsyncSession = Depends(get_db),
-):
-    total_users = await session.scalar(select(func.count(User.id))) or 0
-    paid_users = (
-        await session.scalar(
-            select(func.count(User.id)).where(User.user_type != "free")
-        )
-        or 0
-    )
-    trial_users = total_users - paid_users
-    return {
-        "registered": total_users,
-        "trial": trial_users,
-        "paid": paid_users,
-        "conversion_trial": round(trial_users / total_users * 100, 1)
-        if total_users > 0
-        else 0,
-        "conversion_paid": round(paid_users / trial_users * 100, 1)
-        if trial_users > 0
-        else 0,
-    }
-
-
-@router.get("/plan-analysis", response_model=dict)
-async def get_plan_analysis(
-    admin: int = Depends(require_admin),
-    session: AsyncSession = Depends(get_db),
-):
-    result = {}
-    for plan in ["free", "efficiency", "professional", "enterprise"]:
-        count = (
-            await session.scalar(
-                select(func.count(User.id)).where(User.user_type == plan)
-            )
-            or 0
-        )
-        result[f"{plan}_users"] = count
-    return result
+    return AdminLogPage(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/active-users", response_model=dict)
@@ -274,8 +304,7 @@ async def get_active_users(
         daily = (
             await session.scalar(
                 select(func.count(User.id)).where(
-                    func.nullif(func.trim(User.last_login), "").cast(DateTime)
-                    > func.now() - text("INTERVAL '1 day'"),
+                    _last_login_expr() > func.now() - text("INTERVAL '1 day'"),
                 )
             )
             or 0
@@ -287,8 +316,7 @@ async def get_active_users(
         weekly = (
             await session.scalar(
                 select(func.count(User.id)).where(
-                    func.nullif(func.trim(User.last_login), "").cast(DateTime)
-                    > func.now() - text("INTERVAL '7 days'"),
+                    _last_login_expr() > func.now() - text("INTERVAL '7 days'"),
                 )
             )
             or 0
@@ -296,19 +324,35 @@ async def get_active_users(
     except Exception:
         weekly = 0
 
+    try:
+        yesterday_daily = (
+            await session.scalar(
+                select(func.count(User.id)).where(
+                    _last_login_expr() <= func.now() - text("INTERVAL '1 day'"),
+                    _last_login_expr() > func.now() - text("INTERVAL '2 days'"),
+                )
+            )
+            or 0
+        )
+    except Exception:
+        yesterday_daily = 0
+
+    try:
+        last_week_weekly = (
+            await session.scalar(
+                select(func.count(User.id)).where(
+                    _last_login_expr() <= func.now() - text("INTERVAL '7 days'"),
+                    _last_login_expr() > func.now() - text("INTERVAL '14 days'"),
+                )
+            )
+            or 0
+        )
+    except Exception:
+        last_week_weekly = 0
+
     return {
         "daily": daily,
         "weekly": weekly,
-        "trend_daily": "+5",
-        "trend_weekly": "+3",
-    }
-
-
-@router.get("/growth", response_model=dict)
-async def get_growth(admin: int = Depends(require_admin)):
-    return {
-        "current_month": 3850,
-        "average": 4275,
-        "predicted": 4500,
-        "trend": "-26%",
+        "trend_daily": _format_trend(daily, yesterday_daily),
+        "trend_weekly": _format_trend(weekly, last_week_weekly),
     }

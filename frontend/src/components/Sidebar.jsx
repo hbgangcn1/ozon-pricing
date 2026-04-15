@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   DollarSign, 
@@ -29,7 +29,7 @@ function ExchangeRatePanel() {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const fetchRates = async () => {
+  const fetchRates = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiClient.get('/exchange/rates');
@@ -40,13 +40,13 @@ function ExchangeRatePanel() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchRates();
     const interval = setInterval(fetchRates, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchRates]);
 
   return (
     <div className="border-t border-surface-high pt-3">
@@ -56,6 +56,7 @@ function ExchangeRatePanel() {
           <span className="ml-2 text-xs font-medium text-text-secondary">实时汇率</span>
         </div>
         <button
+          type="button"
           onClick={fetchRates}
           disabled={loading}
           className="flex items-center text-xs text-text-muted hover:text-text-secondary transition-colors"
@@ -90,7 +91,7 @@ const menuItems = [
   { path: '/subscription', icon: Crown, label: '订阅管理', adminOnly: false },
   { path: '/payment', icon: CreditCard, label: '支付设置', adminOnly: false },
   { path: '/settings', icon: Settings, label: '系统设置', adminOnly: true },
-  { path: '/commission-categories', icon: DollarSign, label: '佣金类目', adminOnly: true },
+  { path: '/commission-categories', icon: DollarSign, label: '佣金类目', adminOnly: false },
   { path: '/users', icon: Users, label: '用户管理', adminOnly: true },
   { path: '/plans', icon: Gift, label: '方案管理', adminOnly: true },
   { path: '/statistics', icon: BarChart3, label: '数据统计', adminOnly: true },

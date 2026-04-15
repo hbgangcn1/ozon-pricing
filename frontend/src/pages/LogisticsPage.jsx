@@ -49,6 +49,7 @@ const DEFAULT_FORM = {
   destination: 'RU',
   fbp_service_level: '',
   fbp_company: '',
+  scoring_group: '',
   is_smart: 0,
   type: 'land',
   fee_mode: 'base_plus_continue',
@@ -216,6 +217,7 @@ export default function LogisticsPage() {
       destination: record.destination ?? 'RU',
       fbp_service_level: record.fbp_service_level ?? '',
       fbp_company: record.fbp_company ?? '',
+      scoring_group: record.scoring_group ?? '',
       is_smart: record.is_smart ?? 0,
       type: record.type ?? 'land',
       fee_mode: record.fee_mode ?? 'base_plus_continue',
@@ -363,6 +365,7 @@ export default function LogisticsPage() {
       const next = { ...prev, fulfillment_type: val }
       if (val === 'rfbs') {
         next.destination = 'RU'
+        next.is_smart = 0
       } else if (val === 'fbp') {
         next.destination = 'RU'
         if (!next.fbp_service_level) next.fbp_service_level = 'economy'
@@ -538,15 +541,73 @@ export default function LogisticsPage() {
                 </FormField>
               </FormRow>
 
+              {form.fulfillment_type === 'fbp' && (
+                <>
+                  <FormRow>
+                    <FormField label="FBP 服务等级" tooltip="FBP 仓库服务等级">
+                      <Select value={form.fbp_service_level} onValueChange={v => setFormField('fbp_service_level', v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="economy">Economy</SelectItem>
+                          <SelectItem value="standard">Standard</SelectItem>
+                          <SelectItem value="express">Express</SelectItem>
+                          <SelectItem value="super_express">Super Express</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                    <FormField label="FBP 公司" tooltip="FBP 仓储服务公司代码">
+                      <Select value={form.fbp_company} onValueChange={v => setFormField('fbp_company', v)}>
+                        <SelectTrigger><SelectValue placeholder="选择 FBP 公司" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Ural">Ural</SelectItem>
+                          <SelectItem value="CEL">CEL</SelectItem>
+                          <SelectItem value="GUOO">GUOO</SelectItem>
+                          <SelectItem value="RETS">RETS</SelectItem>
+                          <SelectItem value="Ural HK">Ural HK</SelectItem>
+                          <SelectItem value="ZTO">ZTO</SelectItem>
+                          <SelectItem value="XY">XY</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                  </FormRow>
+                  <FormRow>
+                    <FormField label="评分组 (Scoring Group)" tooltip="FBP 评分分组，影响定价分组逻辑">
+                      <Select value={form.scoring_group} onValueChange={v => setFormField('scoring_group', v)}>
+                        <SelectTrigger><SelectValue placeholder="选择评分组" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Extra Small">Extra Small</SelectItem>
+                          <SelectItem value="Small">Small</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                          <SelectItem value="Budget">Budget</SelectItem>
+                          <SelectItem value="Big">Big</SelectItem>
+                          <SelectItem value="Premium Small">Premium Small</SelectItem>
+                          <SelectItem value="Premium Big">Premium Big</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                    <FormField label="FBP Smart物流方式" tooltip="启用后该物流将属于Smart物流方式">
+                      <div className="flex items-center space-x-3">
+                        <Switch
+                          checked={form.is_smart === 1}
+                          onCheckedChange={v => setFormField('is_smart', v ? 1 : 0)}
+                        />
+                        <span className="text-sm text-text-secondary">{form.is_smart === 1 ? 'Smart' : '普通'}</span>
+                      </div>
+                    </FormField>
+                  </FormRow>
+                </>
+              )}
+
               <FormRow>
-                <div className="flex items-center space-x-3 pt-2">
-                  <Label className="text-xs text-text-secondary">智能定价状态</Label>
-                  {form.is_smart === 1 ? (
-                    <Badge className="bg-status-success text-white border-transparent">Smart</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-text-muted">普通</Badge>
-                  )}
-                </div>
+                <FormField label="配送方式" tooltip="取货点或送货上门">
+                  <Select value={form.delivery_method} onValueChange={v => setFormField('delivery_method', v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pickup">取货点</SelectItem>
+                      <SelectItem value="door">送货上门</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormField>
               </FormRow>
 
               <FormField label="物流类型">

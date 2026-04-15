@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# pyright: reportUnusedFunction=false
+
 import sys
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -168,7 +170,7 @@ class TestGlobalExceptionHandlerRealApp:
             app.routes[:] = [
                 r
                 for r in app.routes
-                if not (hasattr(r, "path") and r.path == "/_test_error_misc_500")
+                if getattr(r, "path", None) != "/_test_error_misc_500"
             ]
 
     def test_http_exception_preserves_status(self):
@@ -186,7 +188,7 @@ class TestGlobalExceptionHandlerRealApp:
             app.routes[:] = [
                 r
                 for r in app.routes
-                if not (hasattr(r, "path") and r.path == "/_test_http_403_misc")
+                if getattr(r, "path", None) != "/_test_http_403_misc"
             ]
 
 
@@ -281,3 +283,118 @@ class TestAdminErrorPaths:
         )
         assert resp.status_code == 404
         assert resp.json()["detail"] == "用户不存在或删除失败"
+
+
+class TestCommissionCategorySubscriptionGating:
+    @staticmethod
+    def _with_subscription(subscription_type):
+        return {
+            "id": 1,
+            "username": "tester",
+            "role": "user",
+            "user_type": "permanent",
+            "subscription_type": subscription_type,
+            "remaining_calculations": -1,
+        }
+
+    def test_get_list_allows_free_tier(self):
+        saved = dict(app.dependency_overrides)
+        app.dependency_overrides.clear()
+        app.dependency_overrides[dependencies.get_current_user_id] = lambda: 1
+        try:
+            with patch(
+                "api.routes.commission_categories.get_all",
+                new=AsyncMock(return_value=[]),
+            ):
+                response = client.get(
+                    "/api/commission-categories",
+                    headers={"Authorization": "Bearer faketoken"},
+                )
+        finally:
+            app.dependency_overrides.clear()
+            app.dependency_overrides.update(saved)
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_create_blocks_free_tier(self):
+        saved = dict(app.dependency_overrides)
+        app.dependency_overrides.clear()
+        app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+            self._with_subscription("free")
+        )
+        try:
+            with patch(
+                "api.routes.commission_categories.create",
+                new=AsyncMock(),
+            ) as mock_create:
+                response = client.post(
+                    "/api/commission-categories",
+                    json={
+                        "name": "服装",
+                        "rfbs_tier1_rate": 0.1,
+                        "rfbs_tier2_rate": 0.08,
+                        "rfbs_tier3_rate": 0.06,
+                    },
+                    headers={"Authorization": "Bearer faketoken"},
+                )
+        finally:
+            app.dependency_overrides.clear()
+            app.dependency_overrides.update(saved)
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "此功能需要专业版或更高订阅等级"
+        mock_create.assert_not_awaited()
+
+    def test_update_blocks_efficiency_tier(self):
+        saved = dict(app.dependency_overrides)
+        app.dependency_overrides.clear()
+        app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+            self._with_subscription("efficiency")
+        )
+        try:
+            with (
+                patch(
+                    "api.routes.commission_categories.get_by_id",
+                    new=AsyncMock(return_value={"id": 1}),
+                ),
+                patch(
+                    "api.routes.commission_categories.update",
+                    new=AsyncMock(),
+                ) as mock_update,
+            ):
+                response = client.patch(
+                    "/api/commission-categories/1",
+                    json={"name": "新名称"},
+                    headers={"Authorization": "Bearer faketoken"},
+                )
+        finally:
+            app.dependency_overrides.clear()
+            app.dependency_overrides.update(saved)
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "此功能需要专业版或更高订阅等级"
+        mock_update.assert_not_awaited()
+
+    def test_delete_blocks_free_tier(self):
+        saved = dict(app.dependency_overrides)
+        app.dependency_overrides.clear()
+        app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+            self._with_subscription("free")
+        )
+        try:
+            with patch(
+                "api.routes.commission_categories.soft_delete",
+                new=AsyncMock(return_value=True),
+            ) as mock_delete:
+                response = client.delete(
+                    "/api/commission-categories/1",
+                    headers={"Authorization": "Bearer faketoken"},
+                )
+        finally:
+            app.dependency_overrides.clear()
+            app.dependency_overrides.update(saved)
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "此功能需要专业版或更高订阅等级"
+        mock_delete.assert_not_awaited()

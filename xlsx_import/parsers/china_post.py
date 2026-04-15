@@ -128,7 +128,12 @@ def parse(
                 continue
             try:
                 item = create_row(name_text, source_name)
-                item["type"] = "air" if "eems" in name_text.lower() else "land"
+                item["type"] = (
+                    "air"
+                    if "eems" in name_text.lower()
+                    or "air delivery" in name_text.lower()
+                    else "land"
+                )
                 item["min_days"], item["max_days"] = parse_days(values[3])
                 item["base_fee"], item["continue_fee"], item["continue_unit"] = (
                     parse_rate(values[2])

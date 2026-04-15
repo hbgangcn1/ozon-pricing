@@ -92,8 +92,21 @@ export const subscriptionsAPI = {
   getCurrent: () => apiClient.get('/subscriptions/current'),
 }
 
+export const plansAPI = {
+  getAll: (activeOnly = false) => apiClient.get('/subscriptions/plans', { params: { active_only: activeOnly } }),
+  create: (data) => apiClient.post('/subscriptions/plans', data),
+  update: (id, data) => apiClient.put(`/subscriptions/plans/${id}`, data),
+  delete: (id) => apiClient.delete(`/subscriptions/plans/${id}`),
+  toggleActive: (id) => apiClient.patch(`/subscriptions/plans/${id}/toggle`),
+}
+
 export const ordersAPI = {
-  getAll: () => apiClient.get('/orders'),
+  getAll: (params = {}) => apiClient.get('/orders', { params }),
+}
+
+export const paymentAPI = {
+  createOrder: (data) => apiClient.post('/payments/create', data),
+  getStatus: (orderId) => apiClient.get(`/payments/${orderId}/status`),
 }
 
 export const adminAPI = {
@@ -129,16 +142,27 @@ export const statisticsAPI = {
   getOverview: () => apiClient.get('/statistics/overview'),
   getRetention: () => apiClient.get('/statistics/retention'),
   getRevenue: (months = 12) => apiClient.get('/statistics/revenue', { params: { months } }),
-  getLoginLogs: (page = 1, pageSize = 20) =>
-    apiClient.get('/statistics/login-logs', { params: { page, page_size: pageSize } }),
-  getAdminLogs: (page = 1, pageSize = 20) =>
-    apiClient.get('/statistics/admin-logs', { params: { page, page_size: pageSize } }),
-  getFeatureUsage: () => apiClient.get('/statistics/feature-usage'),
-  getUserGroups: () => apiClient.get('/statistics/user-groups'),
-  getFunnel: () => apiClient.get('/statistics/funnel'),
-  getPlanAnalysis: () => apiClient.get('/statistics/plan-analysis'),
+  getLoginLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '') =>
+    apiClient.get('/statistics/login-logs', {
+      params: {
+        page,
+        page_size: pageSize,
+        search: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+      },
+    }),
+  getAdminLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '') =>
+    apiClient.get('/statistics/admin-logs', {
+      params: {
+        page,
+        page_size: pageSize,
+        search: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+      },
+    }),
   getActiveUsers: () => apiClient.get('/statistics/active-users'),
-  getGrowth: () => apiClient.get('/statistics/growth'),
 }
 
 export const commissionCategoriesAPI = {

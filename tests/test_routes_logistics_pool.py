@@ -106,6 +106,14 @@ def test_import_logistics_pool_success():
         {"delivery_method": "door", "destination": "BY", "source_file": "pool.xlsx"},
     ]
     app.dependency_overrides[dependencies.require_admin] = lambda: 1
+    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: {
+        "id": 1,
+        "username": "admin",
+        "role": "admin",
+        "user_type": "permanent",
+        "subscription_type": "enterprise",
+        "remaining_calculations": -1,
+    }
     app.dependency_overrides[get_db] = _db_override(session)
 
     with (

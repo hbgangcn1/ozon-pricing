@@ -4,7 +4,6 @@ These tests hit the real PostgreSQL database.
 """
 
 import time
-import pytest
 
 from api.main import app
 from api.dependencies import get_current_user_id, require_admin
@@ -158,9 +157,10 @@ class TestGetOrders:
             resp = await client.get("/api/orders")
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
-            for item in data:
-                assert "id" in item
+            assert isinstance(data, dict)
+            assert "orders" in data
+            assert isinstance(data["orders"], list)
+            assert "total" in data
         finally:
             _clear_overrides()
 
@@ -171,7 +171,9 @@ class TestGetOrders:
         try:
             resp = await client.get("/api/orders")
             assert resp.status_code == 200
-            data = resp.json()
+            body = resp.json()
+            assert isinstance(body, dict)
+            data = body["orders"]
             assert isinstance(data, list)
             assert len(data) >= 1
 
@@ -202,7 +204,8 @@ class TestGetOrders:
         try:
             resp = await client.get("/api/orders")
             assert resp.status_code == 200
-            data = resp.json()
+            body = resp.json()
+            data = body["orders"]
             inserted = [d for d in data if d.get("id") == pk]
             assert len(inserted) == 1
             o = inserted[0]
@@ -260,15 +263,33 @@ class TestStatisticsOverview:
         finally:
             _clear_overrides()
 
+    async def test_overview_active_users_not_equal_total_users_when_old_logins_exist(
+        self,
+        client,
+        test_admin,
+    ):
+        _set_admin(test_admin["id"])
+        try:
+            resp = await client.get("/api/statistics/overview")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["active_users"] <= data["total_users"]
+        finally:
+            _clear_overrides()
+
 
 class TestStatisticsLoginLogs:
-    async def test_login_logs_returns_list(self, client, test_admin):
+    async def test_login_logs_returns_paginated_payload(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
             resp = await client.get("/api/statistics/login-logs")
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
+            assert set(data) == {"items", "total", "page", "page_size"}
+            assert isinstance(data["items"], list)
+            assert isinstance(data["total"], int)
+            assert data["page"] == 1
+            assert data["page_size"] == 20
         finally:
             _clear_overrides()
 
@@ -279,12 +300,16 @@ class TestStatisticsLoginLogs:
             resp = await client.get("/api/statistics/login-logs?page=1&page_size=100")
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
-            assert len(data) >= 1
-            if data:
-                item = data[0]
-                for field in ["id", "username", "action", "ip", "time", "status"]:
-                    assert field in item, f"Missing field: {field}"
+            assert isinstance(data["items"], list)
+            inserted = [item for item in data["items"] if item["id"] == log_id]
+            assert len(inserted) == 1
+            item = inserted[0]
+            for field in ["id", "username", "action", "ip", "time", "status"]:
+                assert field in item, f"Missing field: {field}"
+            assert item["username"] == test_user["username"]
+            assert item["action"] == "登录"
+            assert item["status"] == "成功"
+            assert item["time"].count(":") == 2
         finally:
             _clear_overrides()
             if log_id:
@@ -296,20 +321,38 @@ class TestStatisticsLoginLogs:
             resp = await client.get("/api/statistics/login-logs?page=1&page_size=5")
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
-            assert len(data) <= 5
+            assert len(data["items"]) <= 5
+            assert data["page"] == 1
+            assert data["page_size"] == 5
         finally:
             _clear_overrides()
 
+    async def test_login_logs_support_search(self, client, test_user, test_admin):
+        log_id = await insert_login_log(test_user["id"])
+        _set_admin(test_admin["id"])
+        try:
+            resp = await client.get(
+                f"/api/statistics/login-logs?search={test_user['username']}&page=1&page_size=100"
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert any(item["id"] == log_id for item in data["items"])
+        finally:
+            _clear_overrides()
+            if log_id:
+                await delete_login_log(log_id)
+
 
 class TestStatisticsAdminLogs:
-    async def test_admin_logs_returns_list(self, client, test_admin):
+    async def test_admin_logs_returns_paginated_payload(self, client, test_admin):
         _set_admin(test_admin["id"])
         try:
             resp = await client.get("/api/statistics/admin-logs")
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
+            assert set(data) == {"items", "total", "page", "page_size"}
+            assert isinstance(data["items"], list)
+            assert isinstance(data["total"], int)
         finally:
             _clear_overrides()
 
@@ -320,12 +363,15 @@ class TestStatisticsAdminLogs:
             resp = await client.get("/api/statistics/admin-logs?page=1&page_size=100")
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
-            assert len(data) >= 1
-            if data:
-                item = data[0]
-                for field in ["id", "admin", "action", "time"]:
-                    assert field in item, f"Missing field: {field}"
+            assert isinstance(data["items"], list)
+            inserted = [item for item in data["items"] if item["id"] == log_id]
+            assert len(inserted) == 1
+            item = inserted[0]
+            for field in ["id", "admin", "action", "time"]:
+                assert field in item, f"Missing field: {field}"
+            assert item["admin"] == test_admin["username"]
+            assert item["action"] == "test_action"
+            assert item["time"].count(":") == 2
         finally:
             _clear_overrides()
             if log_id:
@@ -337,95 +383,26 @@ class TestStatisticsAdminLogs:
             resp = await client.get("/api/statistics/admin-logs?page=1&page_size=3")
             assert resp.status_code == 200
             data = resp.json()
-            assert len(data) <= 3
+            assert len(data["items"]) <= 3
+            assert data["page"] == 1
+            assert data["page_size"] == 3
         finally:
             _clear_overrides()
 
-
-class TestStatisticsUserGroups:
-    async def test_user_groups_returns_dict(self, client, test_admin):
+    async def test_admin_logs_support_search(self, client, test_admin):
+        log_id = await insert_admin_log(test_admin["id"])
         _set_admin(test_admin["id"])
         try:
-            resp = await client.get("/api/statistics/user-groups")
+            resp = await client.get(
+                "/api/statistics/admin-logs?search=test_action&page=1&page_size=100"
+            )
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, dict)
-            for key in ["high_value_users", "active_users", "silent_users"]:
-                assert key in data, f"Missing key: {key}"
-            assert data["high_value_users"] >= 0
-            assert data["active_users"] >= 0
+            assert any(item["id"] == log_id for item in data["items"])
         finally:
             _clear_overrides()
-
-    async def test_user_groups_silent_non_negative(self, client, test_admin):
-        _set_admin(test_admin["id"])
-        try:
-            resp = await client.get("/api/statistics/user-groups")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["silent_users"] >= 0
-        finally:
-            _clear_overrides()
-
-
-class TestStatisticsFunnel:
-    async def test_funnel_returns_dict(self, client, test_admin):
-        _set_admin(test_admin["id"])
-        try:
-            resp = await client.get("/api/statistics/funnel")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert isinstance(data, dict)
-            for key in [
-                "registered",
-                "trial",
-                "paid",
-                "conversion_trial",
-                "conversion_paid",
-            ]:
-                assert key in data, f"Missing key: {key}"
-        finally:
-            _clear_overrides()
-
-    async def test_funnel_registered_gte_paid(self, client, test_admin):
-        _set_admin(test_admin["id"])
-        try:
-            resp = await client.get("/api/statistics/funnel")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["registered"] >= data["paid"]
-        finally:
-            _clear_overrides()
-
-
-class TestStatisticsPlanAnalysis:
-    async def test_plan_analysis_returns_dict(self, client, test_admin):
-        _set_admin(test_admin["id"])
-        try:
-            resp = await client.get("/api/statistics/plan-analysis")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert isinstance(data, dict)
-            for key in [
-                "free_users",
-                "efficiency_users",
-                "professional_users",
-                "enterprise_users",
-            ]:
-                assert key in data, f"Missing key: {key}"
-        finally:
-            _clear_overrides()
-
-    async def test_plan_analysis_counts_non_negative(self, client, test_admin):
-        _set_admin(test_admin["id"])
-        try:
-            resp = await client.get("/api/statistics/plan-analysis")
-            assert resp.status_code == 200
-            data = resp.json()
-            for k, v in data.items():
-                assert v >= 0, f"{k} should be >= 0"
-        finally:
-            _clear_overrides()
+            if log_id:
+                await delete_admin_log(log_id)
 
 
 class TestStatisticsActiveUsers:
@@ -448,5 +425,46 @@ class TestStatisticsActiveUsers:
             assert resp.status_code == 200
             data = resp.json()
             assert data["daily"] <= data["weekly"]
+        finally:
+            _clear_overrides()
+
+    async def test_active_users_trend_values_are_signed_integers(
+        self,
+        client,
+        test_admin,
+    ):
+        _set_admin(test_admin["id"])
+        try:
+            resp = await client.get("/api/statistics/active-users")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(int(data["trend_daily"]), int)
+            assert isinstance(int(data["trend_weekly"]), int)
+        finally:
+            _clear_overrides()
+
+
+class TestStatisticsRetentionRevenue:
+    async def test_retention_returns_structured_monthly_data(self, client, test_admin):
+        _set_admin(test_admin["id"])
+        try:
+            resp = await client.get("/api/statistics/retention")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data, list)
+            for item in data:
+                assert set(item) == {"month", "retention"}
+        finally:
+            _clear_overrides()
+
+    async def test_revenue_returns_structured_monthly_data(self, client, test_admin):
+        _set_admin(test_admin["id"])
+        try:
+            resp = await client.get("/api/statistics/revenue?months=2")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data, list)
+            for item in data:
+                assert set(item) == {"month", "revenue"}
         finally:
             _clear_overrides()

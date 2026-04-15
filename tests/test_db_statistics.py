@@ -6,14 +6,18 @@ Comprehensive tests for db/statistics.py — targeting 100% branch coverage.
 import json
 import time
 import uuid
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import db.statistics as statistics_db
 from db.statistics import (
     clear_all_statistics_cache,
     clear_expired_cache,
     count_paid_orders,
+    get_monthly_retention,
+    get_monthly_revenue,
     count_total_products,
     count_total_users,
     count_users_by_type,
@@ -21,14 +25,15 @@ from db.statistics import (
     get_revenue_stats,
     get_statistics_cache,
     set_statistics_cache,
-    _get_revenue_stats_orm,
-    _get_user_stats_orm,
 )
 from models.cache import StatisticsCache
 from models.log import UserLoginLog
 from models.order import PaymentOrder
 from models.product import Product
 from models.user import User
+
+_get_user_stats_orm = getattr(statistics_db, "_get_user_stats_orm")
+_get_revenue_stats_orm = getattr(statistics_db, "_get_revenue_stats_orm")
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +48,13 @@ def _unique_key(prefix: str = "test") -> str:
 
 def _now() -> int:
     return int(time.time())
+
+
+def _shift_month(dt: datetime, months: int) -> datetime:
+    month_index = (dt.year * 12 + (dt.month - 1)) + months
+    year = month_index // 12
+    month = month_index % 12 + 1
+    return dt.replace(year=year, month=month, day=1)
 
 
 # ===========================================================================
@@ -223,9 +235,6 @@ class TestGetUserStatsOrm:
 
         from unittest.mock import patch, AsyncMock
 
-        async def _fake_scalar(stmt, **kw):
-            return 0
-
         with patch.object(db_session, "scalar", new=AsyncMock(return_value=0)):
             result = await _get_user_stats_orm(db_session, today_start, current_time)
 
@@ -289,6 +298,14 @@ class TestGetRevenueStatsOrm:
         yesterday_start = today_start - 86400
         month_start = current_time - (current_time % (30 * 86400))
 
+        # Capture baseline before inserting test data
+        baseline = await _get_revenue_stats_orm(
+            db_session, today_start, yesterday_start, month_start
+        )
+        base_today = baseline["revenue_today"]
+        base_yesterday = baseline["revenue_yesterday"]
+        base_total = baseline["total_revenue"]
+
         user_id = test_user["id"]
 
         # Today order (SUCCESS)
@@ -327,9 +344,12 @@ class TestGetRevenueStatsOrm:
             db_session, today_start, yesterday_start, month_start
         )
 
-        assert result["revenue_today"] == pytest.approx(50.0, abs=0.01)
-        assert result["revenue_yesterday"] == pytest.approx(30.0, abs=0.01)
-        assert result["total_revenue"] >= 80.0
+        # Assert delta from baseline (DB may have pre-existing data)
+        delta_today = result["revenue_today"] - base_today
+        delta_yesterday = result["revenue_yesterday"] - base_yesterday
+        assert delta_today == pytest.approx(50.0, abs=0.01)
+        assert delta_yesterday == pytest.approx(30.0, abs=0.01)
+        assert result["total_revenue"] >= base_total + 80.0
 
     async def test_rounding(self, db_session, test_user):
         """Amounts that produce floating point should be rounded to 2dp."""
@@ -650,6 +670,138 @@ class TestGetRevenueStats:
         # total_revenue should NOT include the pending amount (99999)
         # We can only verify the result is a dict and contains key
         assert "total_revenue" in result
+
+
+# ===========================================================================
+# get_monthly_retention
+# ===========================================================================
+
+
+class TestGetMonthlyRetention:
+    async def test_returns_empty_list_when_no_data(self, db_session):
+        result = await get_monthly_retention(db_session, months=2)
+        assert isinstance(result, list)
+
+    async def test_calculates_monthly_retention_from_login_logs(
+        self,
+        db_session,
+    ):
+        from db.password import hash_password
+
+        previous_month = _shift_month(datetime.now().replace(day=1), -1)
+        current_month = datetime.now().replace(day=1)
+
+        retained_user = User(
+            username=f"test_retained_{uuid.uuid4().hex[:8]}",
+            password=hash_password("TestP@ss123456"),
+            role="user",
+            user_type="permanent",
+            subscription_type="free",
+            remaining_calculations=-1,
+            created_at=previous_month.replace(day=5, hour=9).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            is_test_user=1,
+        )
+        churned_user = User(
+            username=f"test_churned_{uuid.uuid4().hex[:8]}",
+            password=hash_password("TestP@ss123456"),
+            role="user",
+            user_type="permanent",
+            subscription_type="free",
+            remaining_calculations=-1,
+            created_at=previous_month.replace(day=12, hour=10).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            is_test_user=1,
+        )
+        db_session.add(retained_user)
+        db_session.add(churned_user)
+        await db_session.flush()
+
+        db_session.add(
+            UserLoginLog(
+                user_id=retained_user.id,
+                login_time=int(current_month.replace(day=3, hour=8).timestamp()),
+                ip_address="127.0.0.1",
+                user_agent="pytest",
+                device_type="desktop",
+                created_at=_now(),
+            )
+        )
+        await db_session.commit()
+
+        result = await get_monthly_retention(db_session, months=2)
+
+        matched = [
+            item for item in result if item["month"] == previous_month.strftime("%Y-%m")
+        ]
+        assert matched
+        assert matched[0]["retention"] == 50
+
+
+# ===========================================================================
+# get_monthly_revenue
+# ===========================================================================
+
+
+class TestGetMonthlyRevenue:
+    async def test_returns_empty_list_when_no_success_orders(self, db_session):
+        result = await get_monthly_revenue(db_session, months=1)
+        assert isinstance(result, list)
+
+    async def test_groups_success_orders_by_month_in_yuan(self, db_session, test_user):
+        now = datetime.now().replace(microsecond=0)
+        previous_month = _shift_month(now.replace(day=1), -1)
+        user_id = test_user["id"]
+
+        db_session.add(
+            PaymentOrder(
+                order_id=f"month_rev_now_{uuid.uuid4().hex[:8]}",
+                user_id=user_id,
+                amount=12345,
+                description="current month",
+                status="SUCCESS",
+                created_at=int(now.timestamp()),
+                duration="30",
+            )
+        )
+        db_session.add(
+            PaymentOrder(
+                order_id=f"month_rev_prev_{uuid.uuid4().hex[:8]}",
+                user_id=user_id,
+                amount=5000,
+                description="previous month",
+                status="SUCCESS",
+                created_at=int(previous_month.replace(day=6, hour=12).timestamp()),
+                duration="30",
+            )
+        )
+        db_session.add(
+            PaymentOrder(
+                order_id=f"month_rev_failed_{uuid.uuid4().hex[:8]}",
+                user_id=user_id,
+                amount=99999,
+                description="failed order",
+                status="FAILED",
+                created_at=int(now.timestamp()),
+                duration="30",
+            )
+        )
+        await db_session.commit()
+
+        result = await get_monthly_revenue(db_session, months=2)
+
+        current_match = [
+            item for item in result if item["month"] == now.strftime("%Y-%m")
+        ]
+        previous_match = [
+            item for item in result if item["month"] == previous_month.strftime("%Y-%m")
+        ]
+        assert current_match
+        assert previous_match
+        assert current_match[0]["revenue"] >= 123.45
+        assert previous_match[0]["revenue"] >= 50.0
 
 
 # ===========================================================================

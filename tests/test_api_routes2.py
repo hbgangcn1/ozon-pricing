@@ -149,50 +149,64 @@ class TestStatistics:
         finally:
             del app.dependency_overrides[get_db]
 
-    def test_retention(self):
-        r = client.get(
-            "/api/statistics/retention",
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
-        assert len(r.json()) > 0
+    @patch("api.routes.statistics.get_monthly_retention", new_callable=AsyncMock)
+    def test_retention(self, mock_retention):
+        mock_retention.return_value = [
+            {"month": "2025-01", "retention": 50},
+        ]
+        mock_session = AsyncMock()
 
-    def test_revenue(self):
-        r = client.get(
-            "/api/statistics/revenue",
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
+        async def override():
+            yield mock_session
 
-    def test_feature_usage(self):
-        r = client.get(
-            "/api/statistics/feature-usage",
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
+        app.dependency_overrides[get_db] = override
+        try:
+            r = client.get(
+                "/api/statistics/retention",
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert r.status_code == 200
+            assert isinstance(r.json(), list)
+        finally:
+            del app.dependency_overrides[get_db]
 
-    def test_growth(self):
-        r = client.get(
-            "/api/statistics/growth",
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
+    @patch("api.routes.statistics.get_monthly_revenue", new_callable=AsyncMock)
+    def test_revenue(self, mock_revenue):
+        mock_revenue.return_value = [
+            {"month": "2025-01", "revenue": 1000.0},
+        ]
+        mock_session = AsyncMock()
+
+        async def override():
+            yield mock_session
+
+        app.dependency_overrides[get_db] = override
+        try:
+            r = client.get(
+                "/api/statistics/revenue",
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert r.status_code == 200
+            assert isinstance(r.json(), list)
+        finally:
+            del app.dependency_overrides[get_db]
 
     def test_login_logs(self):
+        mock_row = MagicMock()
         mock_log = MagicMock()
+        mock_user = MagicMock()
         mock_log.id = 1
-        mock_log.user_id = 2
         mock_log.ip_address = "127.0.0.1"
-        mock_log.user_agent = "Mozilla/5.0"
         mock_log.created_at = 1704067200
+        mock_user.username = "testuser"
+        mock_row = (mock_log, "testuser")
 
         mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = [mock_log]
-        mock_result.scalars.return_value = mock_scalars
+        mock_result.all.return_value = [mock_row]
 
         mock_session = AsyncMock()
         mock_session.execute.return_value = mock_result
+        mock_session.scalar.return_value = 1
 
         async def override():
             yield mock_session
@@ -204,23 +218,27 @@ class TestStatistics:
                 headers={"Authorization": "Bearer faketoken"},
             )
             assert r.status_code == 200
+            body = r.json()
+            assert body["items"][0]["username"] == "testuser"
+            assert body["items"][0]["action"] == "登录"
+            assert body["items"][0]["status"] == "成功"
+            assert body["total"] == 1
         finally:
             del app.dependency_overrides[get_db]
 
     def test_admin_logs(self):
         mock_log = MagicMock()
         mock_log.id = 1
-        mock_log.admin_id = 1
         mock_log.action_type = "create_user"
         mock_log.created_at = 1704067200
+        mock_row = (mock_log, "admin")
 
         mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = [mock_log]
-        mock_result.scalars.return_value = mock_scalars
+        mock_result.all.return_value = [mock_row]
 
         mock_session = AsyncMock()
         mock_session.execute.return_value = mock_result
+        mock_session.scalar.return_value = 1
 
         async def override():
             yield mock_session
@@ -232,57 +250,10 @@ class TestStatistics:
                 headers={"Authorization": "Bearer faketoken"},
             )
             assert r.status_code == 200
-        finally:
-            del app.dependency_overrides[get_db]
-
-    def test_user_groups(self):
-        mock_session = AsyncMock()
-        mock_session.scalar.side_effect = [3, 7]
-
-        async def override():
-            yield mock_session
-
-        app.dependency_overrides[get_db] = override
-        try:
-            r = client.get(
-                "/api/statistics/user-groups",
-                headers={"Authorization": "Bearer faketoken"},
-            )
-            assert r.status_code == 200
-        finally:
-            del app.dependency_overrides[get_db]
-
-    def test_funnel(self):
-        mock_session = AsyncMock()
-        mock_session.scalar.side_effect = [100, 20]
-
-        async def override():
-            yield mock_session
-
-        app.dependency_overrides[get_db] = override
-        try:
-            r = client.get(
-                "/api/statistics/funnel",
-                headers={"Authorization": "Bearer faketoken"},
-            )
-            assert r.status_code == 200
-        finally:
-            del app.dependency_overrides[get_db]
-
-    def test_plan_analysis(self):
-        mock_session = AsyncMock()
-        mock_session.scalar.side_effect = [10, 5, 3, 2]
-
-        async def override():
-            yield mock_session
-
-        app.dependency_overrides[get_db] = override
-        try:
-            r = client.get(
-                "/api/statistics/plan-analysis",
-                headers={"Authorization": "Bearer faketoken"},
-            )
-            assert r.status_code == 200
+            body = r.json()
+            assert body["items"][0]["admin"] == "admin"
+            assert body["items"][0]["action"] == "create_user"
+            assert body["total"] == 1
         finally:
             del app.dependency_overrides[get_db]
 

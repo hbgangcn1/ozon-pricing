@@ -25,9 +25,25 @@ from api.models.schemas import (
     ProductImportPreview,
     ProductImportConfirm,
 )
-from api.dependencies import get_current_user_id
+from api.dependencies import (
+    EXCEL_ALLOWED_TIERS,
+    get_current_user_id,
+    get_user_with_subscription,
+)
 
 router = APIRouter(prefix="/api/products", tags=["产品"])
+
+
+def _ensure_excel_access(user: dict) -> int:
+    if user.get("role") == "admin":
+        return user["id"]
+    subscription_type = user.get("subscription_type") or "free"
+    if subscription_type not in EXCEL_ALLOWED_TIERS:
+        raise HTTPException(
+            status_code=403,
+            detail="此功能需要企业版或更高订阅等级",
+        )
+    return user["id"]
 
 
 def _safe_value(v):
@@ -128,9 +144,10 @@ async def delete_product_endpoint(
 @router.post("/import/preview", response_model=ProductImportPreview)
 async def preview_product_import(
     file: UploadFile,
-    user_id: int = Depends(get_current_user_id),
+    user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
+    _ensure_excel_access(user)
     suffix = os.path.splitext(file.filename or "")[1].lower()
     if suffix != ".xlsx":
         raise HTTPException(status_code=400, detail="仅支持 xlsx 文件")
@@ -172,9 +189,10 @@ async def preview_product_import(
 @router.post("/import/confirm")
 async def confirm_product_import(
     payload: ProductImportConfirm,
-    user_id: int = Depends(get_current_user_id),
+    user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
+    user_id = _ensure_excel_access(user)
     if payload.conflict_action not in {"skip", "overwrite"}:
         raise HTTPException(status_code=400, detail="conflict_action 无效")
 

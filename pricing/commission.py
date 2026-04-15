@@ -9,18 +9,21 @@ async def get_commission_rate(
     category_id: Optional[int],
     fulfillment_type: str,
     db_session: AsyncSession,
+    user_id: Optional[int] = None,
 ) -> Optional[float]:
     if category_id is None:
         return None
 
     from models.commission_category import CommissionCategory
 
-    result = await db_session.execute(
-        select(CommissionCategory).where(
-            CommissionCategory.id == category_id,
-            CommissionCategory.is_active == 1,
-        )
-    )
+    conditions = [
+        CommissionCategory.id == category_id,
+        CommissionCategory.is_active == 1,
+    ]
+    if user_id is not None:
+        conditions.append(CommissionCategory.user_id == user_id)
+
+    result = await db_session.execute(select(CommissionCategory).where(*conditions))
     category = result.scalar_one_or_none()
     if category is None:
         return None
@@ -44,6 +47,7 @@ async def get_commission_rate(
 async def fetch_commission_category(
     category_id: Optional[int],
     db_session: AsyncSession,
+    user_id: Optional[int] = None,
 ) -> Optional[dict]:
     """从DB查出commission_category记录，返回dict或None。"""
     if category_id is None:
@@ -51,12 +55,14 @@ async def fetch_commission_category(
 
     from models.commission_category import CommissionCategory
 
-    result = await db_session.execute(
-        select(CommissionCategory).where(
-            CommissionCategory.id == category_id,
-            CommissionCategory.is_active == 1,
-        )
-    )
+    conditions = [
+        CommissionCategory.id == category_id,
+        CommissionCategory.is_active == 1,
+    ]
+    if user_id is not None:
+        conditions.append(CommissionCategory.user_id == user_id)
+
+    result = await db_session.execute(select(CommissionCategory).where(*conditions))
     row = result.scalar_one_or_none()
     if row is None:
         return None

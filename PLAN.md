@@ -98,6 +98,18 @@
 
 **PaymentHandler 结果**：928 passed, 1 skipped, 0 failed; flake8 clean
 
+#### 微信支付后端接口集成（wechat-payment-integration）
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 1.1 | ✅ | 新建 `api/routes/payment.py`，补齐创建支付、回调通知、状态查询接口与 Pydantic 模型 |
+| 1.2 | ✅ | `POST /api/payments/create`：校验套餐金额、创建 `PaymentOrder`、调用微信 Native 下单、失败回写 `FAILED` |
+| 1.3 | ✅ | `POST /api/payments/notify`：免认证回调、签名失败返回 400、幂等处理、成功后 `asyncio.create_task()` 异步触发 `PaymentHandler.handle_payment_success` |
+| 1.4 | ✅ | `GET /api/payments/{order_id}/status`：用户隔离校验、PENDING 时同步查询微信订单状态并处理成功单 |
+| 1.5 | ✅ | `api/main.py` 注册 payment router |
+| 2.1 | ✅ | `db/orders.py` 增强：支持 `status` 过滤、`page/page_size` 分页与 `total` 总数，同时保留 `limit/offset` 兼容参数 |
+| 2.2 | ✅ | `api/routes/orders.py` 增强：新增分页/状态查询参数，返回 `{orders,total,page,page_size}` |
+
 ### Phase 3: 前端 Bug 修复 ✅
 
 | 任务 | 状态 | 描述 |
@@ -631,3 +643,25 @@ frontend/tests/
 - E2E Playwright: **287 passed**, 1 skipped, 0 failed (288 tests, 3.8min)
 - flake8: 0 errors
 - 前端 build: ✅
+
+### Phase 18: Group 6 统计模块后端 API 修复 🔄
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 18.1 | ✅ | `api/routes/statistics.py` — overview 的 `active_users` 改为真实 30 天内登录用户统计 |
+| 18.2 | ✅ | `db/statistics.py` + `api/routes/statistics.py` — retention 改为基于 `users.created_at` + `user_login_log.login_time` 的真实月度留存 |
+| 18.3 | ✅ | `api/routes/statistics.py` — active-users 趋势改为今日 vs 昨日、近7日 vs 上7日真实差值 |
+| 18.4 | ✅ | `db/statistics.py` + `api/routes/statistics.py` — revenue 改为基于 `payment_orders` 成功订单的真实月度收入（元） |
+| 18.5 | ✅ | `tests/test_db_statistics.py`, `tests/test_integration_orders_stats.py` — 补充 Group 6 后端统计测试 |
+| 18.6 | 🔄 | 验证 — 定向 pytest + changed files LSP diagnostics |
+
+### Phase 18: Group 4 订阅等级门控 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 18.1 | ✅ | `api/dependencies.py` 新增 `get_user_with_subscription`，统一返回 `subscription_type`；`api/routes/auth.py`、`db/users.py`、`api/models/schemas.py` 同步将 `subscription_type` 暴露到登录/当前用户响应 |
+| 18.2 | ✅ | `api/routes/commission_categories.py` 对 POST/PATCH/DELETE 增加专业版+订阅门控，GET 保持所有等级可读，403 文案为“此功能需要专业版或更高订阅等级” |
+| 18.3 | ✅ | `api/routes/products.py` 的 `/import/preview`、`/import/confirm` 与 `api/routes/logistics_pool.py` 的 `/import` 增加企业版+门控，并保留原有 `get_current_user_id` / `require_admin` 认证语义 |
+| 18.4 | ✅ | `frontend/src/stores/authStore.js` 增加 `subscription_type` 归一化与 `hasProfessionalAccess` / `hasEnterpriseAccess` helper |
+| 18.5 | ✅ | `frontend/src/pages/CommissionCategoriesPage.jsx`、`ProductImportPage.jsx`、`LogisticsPoolPage.jsx` 增加升级提示、条件渲染与导入按钮禁用提示 |
+| 18.6 | ✅ | 新增/更新后端与前端测试：后端 45 条定向测试通过，前端 47 条定向测试通过 |

@@ -528,26 +528,32 @@ class TestAdmin:
 class TestOrders:
     @patch("api.routes.orders.get_user_orders", new_callable=AsyncMock)
     def test_get_orders_empty(self, mock_get):
-        mock_get.return_value = []
-        r = client.get("/api/orders", headers={"Authorization": "Bearer faketoken"})
-        assert r.status_code == 200
-        assert r.json() == []
-
-    @patch("api.routes.orders.get_user_orders", new_callable=AsyncMock)
-    def test_get_orders_with_data(self, mock_get):
-        mock_get.return_value = [
-            {
-                "id": 1,
-                "order_id": "ORD001",
-                "order_type": "efficiency",
-                "amount": 99.0,
-                "status": "paid",
-                "created_at": "2024-01-01",
-                "updated_at": None,
-            }
-        ]
+        mock_get.return_value = {"orders": [], "total": 0}
         r = client.get("/api/orders", headers={"Authorization": "Bearer faketoken"})
         assert r.status_code == 200
         data = r.json()
-        assert len(data) == 1
-        assert data[0]["order_id"] == "ORD001"
+        assert data["orders"] == []
+        assert data["total"] == 0
+
+    @patch("api.routes.orders.get_user_orders", new_callable=AsyncMock)
+    def test_get_orders_with_data(self, mock_get):
+        mock_get.return_value = {
+            "orders": [
+                {
+                    "id": 1,
+                    "order_id": "ORD001",
+                    "order_type": "efficiency",
+                    "amount": 99.0,
+                    "status": "paid",
+                    "created_at": "2024-01-01",
+                    "updated_at": None,
+                }
+            ],
+            "total": 1,
+        }
+        r = client.get("/api/orders", headers={"Authorization": "Bearer faketoken"})
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["orders"]) == 1
+        assert data["orders"][0]["order_id"] == "ORD001"
+        assert data["total"] == 1

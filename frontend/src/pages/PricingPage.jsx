@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react'
+import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Button } from '../components/ui/button'
@@ -13,10 +13,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog'
 import { Badge } from '../components/ui/badge'
 import { toast } from 'sonner'
-import { pricingAPI, productsAPI, commissionCategoriesAPI } from '../services/api'
+import { pricingAPI, productsAPI, commissionCategoriesAPI, logisticsAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { Settings2, ChevronDown } from 'lucide-react'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../components/ui/collapsible'
+import { Link } from 'react-router-dom'
 const CostPieChart = React.lazy(() => import('../components/charts/CostPieChart'))
 
 // 安全提取 API 错误信息，避免将对象渲染到 React toast
@@ -223,6 +224,9 @@ export default function PricingPage() {
   const [editingProduct, setEditingProduct] = useState(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingDeleteProduct, setPendingDeleteProduct] = useState(null)
+  const [hasLogisticsRules, setHasLogisticsRules] = useState(null)
+  const [selectedProductIds, setSelectedProductIds] = useState(new Set())
+  const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false)
   const [productForm, setProductForm] = useState({
     name: '',
     unit_price: '',
@@ -275,6 +279,20 @@ export default function PricingPage() {
       refreshProducts()
     }
   }, [productListDialogOpen, refreshProducts])
+
+  useEffect(() => {
+    const checkLogistics = async () => {
+      try {
+        const rules = await logisticsAPI.getAll()
+        const list = Array.isArray(rules) ? rules : (rules?.items || [])
+        setHasLogisticsRules(list.length > 0)
+      } catch {
+        // fail-open: don't show alert on API failure
+        setHasLogisticsRules(true)
+      }
+    }
+    checkLogistics()
+  }, [])
 
   const handleOpenProductDialog = () => {
     setEditingProduct(null)
@@ -499,6 +517,48 @@ export default function PricingPage() {
       setDeleteConfirmOpen(false)
       setPendingDeleteProduct(null)
     }
+  }
+
+  const allSelected = products.length > 0 && selectedProductIds.size === products.length
+  const someSelected = selectedProductIds.size > 0 && selectedProductIds.size < products.length
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedProductIds(new Set())
+    } else {
+      setSelectedProductIds(new Set(products.map(p => p.id)))
+    }
+  }
+
+  const handleSelectProduct = (id) => {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const handleBatchDelete = async () => {
+    const ids = Array.from(selectedProductIds)
+    const results = await Promise.allSettled(
+      ids.map(id => productsAPI.delete(id))
+    )
+    const succeeded = results.filter(r => r.status === 'fulfilled').length
+    const failed = results.filter(r => r.status === 'rejected').length
+
+    if (failed === 0) {
+      toast.success(`成功删除 ${succeeded} 个产品`)
+    } else {
+      toast.warning(`删除完成：${succeeded} 个成功，${failed} 个失败`)
+    }
+
+    setSelectedProductIds(new Set())
+    setBatchDeleteConfirmOpen(false)
+    refreshProducts()
   }
 
   const handleFastCalculate = async () => {
@@ -926,6 +986,19 @@ export default function PricingPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold font-headline tracking-tight mb-6">物流定价计算</h1>
 
+      {hasLogisticsRules === false && (
+        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 flex items-center gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <title>警告</title>
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+          <span className="text-amber-200 text-sm font-medium">请先添加物流规则</span>
+          <Link to="/logistics" className="ml-auto text-sm text-indigo-400 hover:text-indigo-300 underline">
+            前往物流管理
+          </Link>
+        </div>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4 grid grid-cols-2 w-full">
           <TabsTrigger value="fast">快速模式</TabsTrigger>
@@ -1132,7 +1205,7 @@ export default function PricingPage() {
       {renderResult()}
 
       {/* 产品列表弹窗 */}
-      <Dialog open={productListDialogOpen} onOpenChange={setProductListDialogOpen}>
+      <Dialog open={productListDialogOpen} onOpenChange={(open) => { setProductListDialogOpen(open); if (!open) setSelectedProductIds(new Set()); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>产品列表</DialogTitle>
@@ -1141,27 +1214,50 @@ export default function PricingPage() {
             {products.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">暂无产品，请先创建</p>
             ) : (
-              products.map(product => (
-                <div key={product.id} className="flex items-center justify-between p-3 border rounded bg-card">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{product.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      ¥{Number(product.unit_price).toFixed(2)} / {product.weight_g}g
-                      {product.is_cylinder ? ' / 圆柱' : ' / 常规'}
+              <>
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 mb-2">
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    onCheckedChange={handleSelectAll}
+                  />
+                  <span className="text-sm text-zinc-400">全选</span>
+                </div>
+                {products.map(product => (
+                  <div key={product.id} className="flex items-center justify-between p-3 border rounded bg-card">
+                    <Checkbox
+                      checked={selectedProductIds.has(product.id)}
+                      onCheckedChange={() => handleSelectProduct(product.id)}
+                      className="mr-3"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{product.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        ¥{Number(product.unit_price).toFixed(2)} / {product.weight_g}g
+                        {product.is_cylinder ? ' / 圆柱' : ' / 常规'}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 ml-2">
+                      <Button variant="ghost" size="sm" className="h-7 px-2 transition-all duration-200" onClick={() => {
+                        setProductListDialogOpen(false)
+                        handleEditProduct(product)
+                      }}>✏️</Button>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 transition-all duration-200" onClick={() => handleDeleteProduct(product)}>🗑️</Button>
                     </div>
                   </div>
-                  <div className="flex gap-1 ml-2">
-                    <Button variant="ghost" size="sm" className="h-7 px-2 transition-all duration-200" onClick={() => {
-                      setProductListDialogOpen(false)
-                      handleEditProduct(product)
-                    }}>✏️</Button>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 transition-all duration-200" onClick={() => handleDeleteProduct(product)}>🗑️</Button>
-                  </div>
-                </div>
-              ))
+                ))}
+              </>
             )}
           </div>
           <DialogFooter>
+            {selectedProductIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setBatchDeleteConfirmOpen(true)}
+                className="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors mr-auto"
+              >
+                删除选中 ({selectedProductIds.size})
+              </button>
+            )}
             <Button variant="outline" onClick={() => setProductListDialogOpen(false)} className="transition-all duration-200">关闭</Button>
           </DialogFooter>
         </DialogContent>
@@ -1179,6 +1275,21 @@ export default function PricingPage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => { setDeleteConfirmOpen(false); setPendingDeleteProduct(null) }}>取消</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDeleteProduct} className="bg-status-error hover:bg-status-error/85">确认删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={batchDeleteConfirmOpen} onOpenChange={setBatchDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认批量删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除选中的 {selectedProductIds.size} 个产品吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBatchDelete} className="bg-status-error hover:bg-status-error/85">确认删除</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

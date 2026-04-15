@@ -8,7 +8,12 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_current_user_id, require_admin
+from api.dependencies import (
+    EXCEL_ALLOWED_TIERS,
+    get_current_user_id,
+    get_user_with_subscription,
+    require_admin,
+)
 from database import get_db
 from db.logistics_crud import create_logistics
 from db.priority_group import recalculate_priority_groups
@@ -19,6 +24,17 @@ router = APIRouter(prefix="/api/logistics-pool", tags=["物流池"])
 logger = logging.getLogger(__name__)
 _COPY_EXCLUDE = {"id", "source_file", "imported_at", "is_active"}
 _VALID_VOLUME_MODES = {"none", "max_actual_vs_volume", "longest_side", "sum_of_sides"}
+
+
+def _ensure_enterprise_excel_access(user: dict) -> None:
+    if user.get("role") == "admin":
+        return
+    subscription_type = user.get("subscription_type") or "free"
+    if subscription_type not in EXCEL_ALLOWED_TIERS:
+        raise HTTPException(
+            status_code=403,
+            detail="此功能需要企业版或更高订阅等级",
+        )
 
 
 def _sanitize_pool_data(data: dict) -> dict:
@@ -65,8 +81,10 @@ async def list_logistics_pool(
 async def import_logistics_pool(
     file: UploadFile = File(...),
     admin: int = Depends(require_admin),
+    user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
+    _ensure_enterprise_excel_access(user)
     temp_path = ""
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:

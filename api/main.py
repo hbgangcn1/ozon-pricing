@@ -14,6 +14,7 @@ from api.routes import (
     pricing,
     subscriptions,
     orders,
+    payment,
     admin,
     settings,
     statistics,
@@ -80,6 +81,7 @@ app.include_router(logistics.router)
 app.include_router(pricing.router)
 app.include_router(subscriptions.router)
 app.include_router(orders.router)
+app.include_router(payment.router)
 app.include_router(admin.router)
 app.include_router(settings.router)
 app.include_router(statistics.router)

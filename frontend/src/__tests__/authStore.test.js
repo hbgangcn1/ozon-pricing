@@ -30,7 +30,7 @@ describe('authStore.js', () => {
       useAuthStore.getState().initAuth()
 
       const state = useAuthStore.getState()
-      expect(state.user).toEqual(mockUser)
+      expect(state.user).toEqual({ ...mockUser, subscription_type: 'free' })
       expect(state.token).toBe('valid-token')
       expect(state.isAuthenticated).toBe(true)
       expect(state.isLoading).toBe(false)
@@ -76,12 +76,32 @@ describe('authStore.js', () => {
       useAuthStore.getState().setAuth(mockUser, mockToken)
 
       const state = useAuthStore.getState()
-      expect(state.user).toEqual(mockUser)
+      expect(state.user).toEqual({ ...mockUser, subscription_type: 'free' })
       expect(state.token).toBe(mockToken)
       expect(state.isAuthenticated).toBe(true)
 
       expect(localStorage.getItem('api_token')).toBe(mockToken)
-      expect(localStorage.getItem('api_user')).toBe(JSON.stringify(mockUser))
+      expect(localStorage.getItem('api_user')).toBe(
+        JSON.stringify({ ...mockUser, subscription_type: 'free' })
+      )
+    })
+
+    it('normalizes subscription_type from user_type during login', () => {
+      const mockUser = { id: 3, user_type: 'professional' }
+
+      useAuthStore.getState().setAuth(mockUser, 'tier-token')
+
+      const state = useAuthStore.getState()
+      expect(state.user).toEqual({
+        id: 3,
+        user_type: 'professional',
+        subscription_type: 'professional',
+      })
+      expect(JSON.parse(localStorage.getItem('api_user'))).toEqual({
+        id: 3,
+        user_type: 'professional',
+        subscription_type: 'professional',
+      })
     })
   })
 
@@ -118,7 +138,10 @@ describe('authStore.js', () => {
     it('updates user', () => {
       const mockUser = { name: 'Test' }
       useAuthStore.getState().setUser(mockUser)
-      expect(useAuthStore.getState().user).toEqual(mockUser)
+      expect(useAuthStore.getState().user).toEqual({
+        ...mockUser,
+        subscription_type: 'free',
+      })
     })
   })
 
@@ -161,6 +184,20 @@ describe('authStore.js', () => {
     it('returns false if user is null', () => {
       useAuthStore.setState({ user: null })
       expect(useAuthStore.getState().isAdmin()).toBe(false)
+    })
+  })
+
+  describe('subscription helpers', () => {
+    it('getSubscriptionType returns normalized subscription tier', () => {
+      useAuthStore.getState().setUser({ id: 8, user_type: 'enterprise' })
+
+      expect(useAuthStore.getState().getSubscriptionType()).toBe('enterprise')
+    })
+
+    it('getSubscriptionType falls back to free when user is missing', () => {
+      useAuthStore.setState({ user: null })
+
+      expect(useAuthStore.getState().getSubscriptionType()).toBe('free')
     })
   })
 })

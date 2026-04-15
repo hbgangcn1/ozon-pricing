@@ -3,66 +3,27 @@ import { Crown, CheckCircle, ArrowUp, Info } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog'
+import PaymentQRDialog from '../components/PaymentQRDialog'
 import { toast } from 'sonner'
 import { useAuthStore } from '../stores/authStore'
-
-const mockPlans = [
-  {
-    code: 'free',
-    name: '免费版',
-    display_price_month: 0,
-    display_price_year: 0,
-    calc_limit: 10,
-    logistics_limit: 1,
-    features: ['极速模式', '基础物流模板'],
-    is_current: true,
-  },
-  {
-    code: 'efficiency',
-    name: '效率版',
-    display_price_month: 9.9,
-    display_price_year: 99,
-    calc_limit: -1,
-    logistics_limit: 3,
-    features: ['无限极速模式', '3个物流模板'],
-    is_current: false,
-  },
-  {
-    code: 'professional',
-    name: '专业版',
-    display_price_month: 149,
-    display_price_year: 1499,
-    calc_limit: -1,
-    logistics_limit: -1,
-    features: ['极速+精准模式', '无限物流模板', '多物流比价'],
-    is_current: false,
-  },
-  {
-    code: 'enterprise',
-    name: '企业版',
-    display_price_month: 999,
-    display_price_year: 9999,
-    calc_limit: -1,
-    logistics_limit: -1,
-    features: ['专业版所有功能', 'API级活动监控', '专属客服'],
-    is_current: false,
-    developing: true,
-  },
-]
+import { subscriptionsAPI } from '../services/api'
 
 function SubscriptionPage() {
   const { user } = useAuthStore()
   const [currentPlan, setCurrentPlan] = useState(null)
-  const [plans, setPlans] = useState(mockPlans)
+  const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
-  useEffect(() => {
-    fetchSubscription()
-  }, [])
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState(null)
+  const [billingCycle, setBillingCycle] = useState('month')
+  const [qrDialogOpen, setQrDialogOpen] = useState(false)
 
-  const fetchSubscription = async () => {
+  const fetchSubscription = useCallback(async () => {
     try {
-      const response = await subscriptionAPI.getCurrent()
+      const response = await subscriptionsAPI.getCurrent()
       setCurrentPlan(response)
     } catch (error) {
       // Use mock data
@@ -72,11 +33,51 @@ function SubscriptionPage() {
         logistics_limit: 1,
       })
     }
-  }
+  }, [user])
 
-  const handleUpgrade = useCallback((planCode) => {
-    toast.info(`升级到${planCode}功能开发中，请联系客服`)
+  const fetchPlans = useCallback(async () => {
+    try {
+      setLoading(true)
+      const data = await subscriptionsAPI.getPlans()
+      const list = Array.isArray(data) ? data : []
+      setPlans(list)
+    } catch (err) {
+      setError('获取套餐列表失败')
+      toast.error('获取套餐列表失败')
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    fetchSubscription()
+    fetchPlans()
+  }, [fetchSubscription, fetchPlans])
+
+  const handleUpgrade = useCallback((plan) => {
+    setSelectedPlan(plan)
+    setBillingCycle('month')
+    setConfirmOpen(true)
+  }, [])
+
+  const getSelectedPrice = useCallback(() => {
+    if (!selectedPlan) return 0
+    if (billingCycle === 'month') {
+      return Number(selectedPlan.actual_price_month || selectedPlan.display_price_month || 0)
+    }
+    return Number(selectedPlan.actual_price_year || selectedPlan.display_price_year || 0)
+  }, [selectedPlan, billingCycle])
+
+  const handleConfirmPayment = useCallback(() => {
+    setConfirmOpen(false)
+    setQrDialogOpen(true)
+  }, [])
+
+  const handlePaymentSuccess = useCallback(async () => {
+    toast.success('支付成功，正在刷新订阅信息...')
+    await fetchSubscription()
+    await fetchPlans()
+  }, [fetchSubscription, fetchPlans])
 
   const getCurrentPlanName = useCallback(() => {
     if (user?.user_type === 'enterprise') return '企业版'
@@ -140,8 +141,19 @@ function SubscriptionPage() {
 
       {/* 套餐对比 */}
       <h2 className="text-lg font-medium text-text-primary mt-8">📊 套餐对比</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-        {plans.map((plan) => {
+      
+      {loading && plans.length === 0 ? (
+        <div className="flex justify-center items-center py-12 text-text-secondary">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-3"></div>
+          加载中...
+        </div>
+      ) : error ? (
+        <div className="text-center py-12 text-status-error bg-status-error/10 rounded-lg mt-4 border border-status-error/20">
+          {error}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          {plans.map((plan) => {
           const isCurrentPlan = user?.user_type === plan.code || (user?.role === 'admin' && plan.code === 'free')
           return (
             <Card 
@@ -166,8 +178,8 @@ function SubscriptionPage() {
                     <span className="text-lg font-semibold text-text-primary">免费</span>
                   ) : (
                     <div>
-                      <div className="text-2xl font-bold text-text-primary">¥{plan.display_price_month}<span className="text-sm font-normal text-text-secondary">/月</span></div>
-                      <div className="text-sm text-text-secondary">¥{plan.display_price_year}/年</div>
+                      <div className="text-2xl font-bold text-text-primary">¥{Number(plan.display_price_month).toFixed(2)}<span className="text-sm font-normal text-text-secondary">/月</span></div>
+                      <div className="text-sm text-text-secondary">¥{Number(plan.display_price_year).toFixed(2)}/年</div>
                     </div>
                   )}
                 </div>
@@ -178,8 +190,8 @@ function SubscriptionPage() {
                 </div>
 
                 <div className="mb-4 flex-1">
-                  {plan.features.map((f, i) => (
-                    <div key={i} className="flex items-start text-sm text-text-secondary mb-2">
+                  {plan.features.map((f) => (
+                    <div key={f} className="flex items-start text-sm text-text-secondary mb-2">
                       <CheckCircle className="w-4 h-4 text-status-success mr-2 mt-0.5 shrink-0" />
                       <span>{f}</span>
                     </div>
@@ -200,10 +212,10 @@ function SubscriptionPage() {
                   <Button variant="outline" className="w-full" disabled>
                     当前套餐
                   </Button>
-                ) : (
+                ) : plan.display_price_month === 0 ? null : (
                   <Button 
                     className="w-full"
-                    onClick={() => handleUpgrade(plan.code)}
+                    onClick={() => handleUpgrade(plan)}
                   >
                     升级到{plan.name}
                   </Button>
@@ -212,10 +224,64 @@ function SubscriptionPage() {
             </Card>
           )
         })}
-      </div>
+        </div>
+      )}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-md bg-surface-container border-surface-high">
+          <DialogHeader>
+            <DialogTitle className="font-headline">确认升级</DialogTitle>
+            <DialogDescription>选择计费周期并确认支付</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="text-center">
+              <p className="text-lg font-semibold text-text-primary">升级到 {selectedPlan?.name}</p>
+            </div>
+
+            <div className="flex gap-2 justify-center">
+              <Button
+                variant={billingCycle === 'month' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setBillingCycle('month')}
+              >
+                按月
+              </Button>
+              <Button
+                variant={billingCycle === 'year' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setBillingCycle('year')}
+              >
+                按年
+              </Button>
+            </div>
+
+            <div className="text-center space-y-1">
+              <p className="text-3xl font-bold text-primary">
+                ¥{getSelectedPrice().toFixed(2)}
+              </p>
+              <p className="text-sm text-text-muted">
+                {billingCycle === 'month' ? '每月' : '每年'}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>取消</Button>
+            <Button onClick={handleConfirmPayment}>确认支付</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <PaymentQRDialog
+        open={qrDialogOpen}
+        onOpenChange={setQrDialogOpen}
+        planCode={selectedPlan?.code || ''}
+        planName={selectedPlan?.name || ''}
+        billingCycle={billingCycle}
+        amount={getSelectedPrice()}
+        onSuccess={handlePaymentSuccess}
+      />
     </div>
   )
 }
 
 export default SubscriptionPage
-

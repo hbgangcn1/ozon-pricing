@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import CommissionCategoriesPage from '../pages/CommissionCategoriesPage';
 import { commissionCategoriesAPI } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 import { toast } from 'sonner';
 
 vi.mock('../services/api', () => ({
@@ -11,6 +12,10 @@ vi.mock('../services/api', () => ({
     update: vi.fn(),
     delete: vi.fn(),
   },
+}));
+
+vi.mock('../stores/authStore', () => ({
+  useAuthStore: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({
@@ -38,8 +43,8 @@ vi.mock('../components/ui/table', () => ({
 }));
 
 vi.mock('../components/ui/button', () => ({
-  Button: ({ children, onClick, variant, size, className }) => (
-    <button onClick={onClick} className={className} data-variant={variant}>{children}</button>
+  Button: ({ children, onClick, variant, size, className, disabled, title }) => (
+    <button type="button" onClick={onClick} className={className} data-variant={variant} disabled={disabled} title={title}>{children}</button>
   ),
 }));
 
@@ -87,9 +92,15 @@ const mockCategories = [
 ];
 
 describe('CommissionCategoriesPage', () => {
+  const makeStore = (subscriptionType = 'enterprise') => ({
+    user: { subscription_type: subscriptionType },
+    hasProfessionalAccess: () => ['professional', 'enterprise', 'gratitude', 'test'].includes(subscriptionType),
+  })
+
   beforeEach(() => {
     vi.clearAllMocks();
     commissionCategoriesAPI.getAll.mockResolvedValue(mockCategories);
+    useAuthStore.mockReturnValue(makeStore('enterprise'));
     
     // Mock window.confirm
     vi.spyOn(window, 'confirm').mockImplementation(() => true);
@@ -225,5 +236,40 @@ describe('CommissionCategoriesPage', () => {
       expect(toast.success).toHaveBeenCalledWith('删除成功');
       expect(commissionCategoriesAPI.getAll).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('shows upgrade prompt and hides create button for free tier', async () => {
+    useAuthStore.mockReturnValue(makeStore('free'));
+
+    render(<CommissionCategoriesPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('服装')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('升级到专业版，解锁佣金类目管理')).toBeInTheDocument();
+    expect(screen.queryByText('新增类目')).not.toBeInTheDocument();
+    const actionButtons = screen.getAllByRole('button');
+    expect(actionButtons).toHaveLength(4);
+    actionButtons.forEach((button) => {
+      expect(button).toBeDisabled();
+    });
+  });
+
+  it('shows normal management UI for professional tier', async () => {
+    useAuthStore.mockReturnValue(makeStore('professional'));
+
+    render(<CommissionCategoriesPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('服装')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('升级到专业版，解锁佣金类目管理')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新增类目' })).toBeInTheDocument();
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons[1]).not.toBeDisabled();
+    expect(buttons[2]).not.toBeDisabled();
   });
 });

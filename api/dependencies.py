@@ -11,6 +11,8 @@ from security.tokens import (
 )
 
 security = HTTPBearer()
+COMMISSION_ALLOWED_TIERS = {"professional", "enterprise", "gratitude", "test"}
+EXCEL_ALLOWED_TIERS = {"enterprise", "gratitude", "test"}
 
 
 def _resolve_user_id(token: str) -> int:
@@ -60,6 +62,34 @@ async def get_current_user(
         "username": user.username,
         "role": user.role,
         "user_type": user.user_type,
+        "subscription_type": user.subscription_type or "free",
+        "remaining_calculations": user.remaining_calculations,
+    }
+
+
+async def get_user_with_subscription(
+    api_key=Depends(security),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    token = api_key.credentials
+    user_id = _resolve_user_id(token)
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在",
+        )
+    if user.is_frozen == 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被冻结",
+        )
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "user_type": user.user_type,
+        "subscription_type": user.subscription_type or "free",
         "remaining_calculations": user.remaining_calculations,
     }
 

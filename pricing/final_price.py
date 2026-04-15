@@ -363,7 +363,7 @@ def compute_final_price(
             rate,
         )
     return (
-        round(final_price, 2),
+        final_price,
         final_actual_commission,
         pricing_mode,
         final_actual_payment_rub,

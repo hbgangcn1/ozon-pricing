@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
+import pytest  # noqa: F401, E402
 from fastapi.testclient import TestClient
 
 from api import dependencies  # noqa: E402
@@ -13,6 +13,8 @@ from api.main import app  # noqa: E402
 from database import get_db  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
+
+_ADMIN_USER_ID = 1
 
 
 def _db_override(session):
@@ -22,9 +24,21 @@ def _db_override(session):
     return override
 
 
-def _category_row(category_id=1, name="默认类目"):
+def _admin_user(user_id=_ADMIN_USER_ID):
+    return {
+        "id": user_id,
+        "username": "admin",
+        "role": "admin",
+        "user_type": "permanent",
+        "subscription_type": "enterprise",
+        "remaining_calculations": -1,
+    }
+
+
+def _category_row(category_id=1, name="默认类目", user_id=_ADMIN_USER_ID):
     return {
         "id": category_id,
+        "user_id": user_id,
         "name": name,
         "rfbs_tier1_rate": 0.06,
         "rfbs_tier2_rate": 0.07,
@@ -58,7 +72,11 @@ def test_list_categories_success():
 
     assert response.status_code == 200
     assert response.json() == [_category_row()]
-    mock_get_all.assert_awaited_once_with(session, include_inactive=False)
+    mock_get_all.assert_awaited_once_with(
+        session,
+        include_inactive=False,
+        user_id=7,
+    )
 
 
 def test_list_categories_requires_login():
@@ -78,6 +96,7 @@ def test_create_category_success():
     }
     created = {
         "name": "服饰",
+        "user_id": _ADMIN_USER_ID,
         "rfbs_tier1_rate": 0.06,
         "rfbs_tier2_rate": 0.07,
         "rfbs_tier3_rate": 0.08,
@@ -87,7 +106,9 @@ def test_create_category_success():
         "id": 11,
         "is_active": 1,
     }
-    app.dependency_overrides[dependencies.require_admin] = lambda: 1
+    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+        _admin_user()
+    )
     app.dependency_overrides[get_db] = _db_override(session)
 
     with (
@@ -114,15 +135,18 @@ def test_create_category_success():
             "fbp_tier2_rate": round(0.07 - 0.01, 4),
             "fbp_tier3_rate": round(0.08 - 0.01, 4),
             "name": "服饰",
+            "user_id": _ADMIN_USER_ID,
             "is_active": 1,
         },
     )
-    mock_get.assert_awaited_once_with(session, 11)
+    mock_get.assert_awaited_once_with(session, 11, _ADMIN_USER_ID)
 
 
 def test_create_category_rejects_duplicate_name():
     session = AsyncMock()
-    app.dependency_overrides[dependencies.require_admin] = lambda: 1
+    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+        _admin_user()
+    )
     app.dependency_overrides[get_db] = _db_override(session)
 
     with patch(
@@ -148,7 +172,9 @@ def test_update_category_success():
     session = AsyncMock()
     current = _category_row(category_id=3, name="旧名称")
     updated = _category_row(category_id=3, name="新名称")
-    app.dependency_overrides[dependencies.require_admin] = lambda: 1
+    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+        _admin_user()
+    )
     app.dependency_overrides[get_db] = _db_override(session)
 
     with (
@@ -176,13 +202,16 @@ def test_update_category_success():
             "rfbs_tier2_rate": 0.08,
             "fbp_tier2_rate": round(0.08 - 0.01, 4),
         },
+        _ADMIN_USER_ID,
     )
     assert mock_get.await_count == 2
 
 
 def test_update_category_returns_404_when_missing():
     session = AsyncMock()
-    app.dependency_overrides[dependencies.require_admin] = lambda: 1
+    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+        _admin_user()
+    )
     app.dependency_overrides[get_db] = _db_override(session)
 
     with patch(
@@ -196,12 +225,14 @@ def test_update_category_returns_404_when_missing():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "佣金类目不存在"
-    mock_get.assert_awaited_once_with(session, 999)
+    mock_get.assert_awaited_once_with(session, 999, _ADMIN_USER_ID)
 
 
 def test_delete_category_success():
     session = AsyncMock()
-    app.dependency_overrides[dependencies.require_admin] = lambda: 1
+    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+        _admin_user()
+    )
     app.dependency_overrides[get_db] = _db_override(session)
 
     with patch(
@@ -212,12 +243,14 @@ def test_delete_category_success():
 
     assert response.status_code == 200
     assert response.json() == {"message": "删除成功", "success": True}
-    mock_delete.assert_awaited_once_with(session, 5)
+    mock_delete.assert_awaited_once_with(session, 5, _ADMIN_USER_ID)
 
 
 def test_delete_category_returns_404_when_missing():
     session = AsyncMock()
-    app.dependency_overrides[dependencies.require_admin] = lambda: 1
+    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+        _admin_user()
+    )
     app.dependency_overrides[get_db] = _db_override(session)
 
     with patch(
@@ -228,4 +261,4 @@ def test_delete_category_returns_404_when_missing():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "佣金类目不存在"
-    mock_delete.assert_awaited_once_with(session, 404)
+    mock_delete.assert_awaited_once_with(session, 404, _ADMIN_USER_ID)

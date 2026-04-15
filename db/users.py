@@ -102,6 +102,8 @@ async def verify_user(
         "role": user.role,
         "email": user.email,
         "user_type": user.user_type or "free",
+        "subscription_type": user.subscription_type or "free",
+        "remaining_calculations": user.remaining_calculations,
     }
 
 

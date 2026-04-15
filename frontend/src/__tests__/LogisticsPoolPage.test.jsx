@@ -41,7 +41,7 @@ vi.mock('../components/ui/table', () => ({
 
 vi.mock('../components/ui/button', () => ({
   Button: ({ children, onClick, disabled, className }) => (
-    <button onClick={onClick} disabled={disabled} className={className}>{children}</button>
+    <button type="button" onClick={onClick} disabled={disabled} className={className}>{children}</button>
   ),
 }));
 
@@ -71,10 +71,16 @@ const mockLogistics = [
 ];
 
 describe('LogisticsPoolPage', () => {
+  const makeStore = ({ isAdmin = false, subscriptionType = 'free' } = {}) => ({
+    isAdmin: () => isAdmin,
+    user: { subscription_type: subscriptionType },
+    hasEnterpriseAccess: () => ['enterprise', 'gratitude', 'test'].includes(subscriptionType),
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     logisticsPoolAPI.getAll.mockResolvedValue(mockLogistics);
-    useAuthStore.mockReturnValue({ isAdmin: () => false });
+    useAuthStore.mockReturnValue(makeStore());
   });
 
   it('renders correctly and fetches logistics on mount', async () => {
@@ -119,15 +125,24 @@ describe('LogisticsPoolPage', () => {
   });
 
   it('shows import button for admins', async () => {
-    useAuthStore.mockReturnValue({ isAdmin: () => true });
+    useAuthStore.mockReturnValue(makeStore({ isAdmin: true, subscriptionType: 'enterprise' }));
     
     render(<LogisticsPoolPage />);
     
     expect(screen.getByText('导入 Excel')).toBeInTheDocument();
   });
 
+  it('disables import button for non-enterprise admins', async () => {
+    useAuthStore.mockReturnValue(makeStore({ isAdmin: true, subscriptionType: 'professional' }));
+
+    render(<LogisticsPoolPage />);
+
+    const button = await screen.findByText('导入 Excel');
+    expect(button.closest('button')).toBeDisabled();
+  });
+
   it('handles importing xlsx file successfully', async () => {
-    useAuthStore.mockReturnValue({ isAdmin: () => true });
+    useAuthStore.mockReturnValue(makeStore({ isAdmin: true, subscriptionType: 'enterprise' }));
     logisticsPoolAPI.importXlsx.mockResolvedValue({});
     
     // Create a dummy file

@@ -2,6 +2,16 @@ import { create } from 'zustand'
 
 const adminPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/settings', '/users', '/plans', '/statistics', '/about']
 const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/about']
+const PROFESSIONAL_TIERS = ['professional', 'enterprise', 'gratitude', 'test']
+const ENTERPRISE_TIERS = ['enterprise', 'gratitude', 'test']
+
+const normalizeSubscriptionType = (user) => {
+  if (!user) return user
+  return {
+    ...user,
+    subscription_type: user.subscription_type || user.user_type || 'free',
+  }
+}
 
 export const useAuthStore = create((set, get) => ({
   user: null,
@@ -17,7 +27,7 @@ export const useAuthStore = create((set, get) => ({
     const userStr = localStorage.getItem('api_user')
     if (token && userStr) {
       try {
-        const user = JSON.parse(userStr)
+        const user = normalizeSubscriptionType(JSON.parse(userStr))
         set({ user, token, isAuthenticated: true, isLoading: false })
       } catch {
         localStorage.removeItem('api_token')
@@ -32,9 +42,10 @@ export const useAuthStore = create((set, get) => ({
   },
 
   setAuth: (user, token) => {
+    const normalizedUser = normalizeSubscriptionType(user)
     localStorage.setItem('api_token', token)
-    localStorage.setItem('api_user', JSON.stringify(user))
-    set({ user, token, isAuthenticated: true })
+    localStorage.setItem('api_user', JSON.stringify(normalizedUser))
+    set({ user: normalizedUser, token, isAuthenticated: true })
   },
 
   logout: () => {
@@ -43,7 +54,7 @@ export const useAuthStore = create((set, get) => ({
     set({ user: null, token: null, isAuthenticated: false })
   },
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => set({ user: normalizeSubscriptionType(user) }),
 
   hasPermission: (page) => {
     const { user } = get()
@@ -55,5 +66,22 @@ export const useAuthStore = create((set, get) => ({
   isAdmin: () => {
     const { user } = get()
     return user?.role === 'admin'
+  },
+
+  getSubscriptionType: () => {
+    const { user } = get()
+    return user?.subscription_type || user?.user_type || 'free'
+  },
+
+  hasProfessionalAccess: () => {
+    if (get().isAdmin()) return true
+    const subscriptionType = get().getSubscriptionType()
+    return PROFESSIONAL_TIERS.includes(subscriptionType)
+  },
+
+  hasEnterpriseAccess: () => {
+    if (get().isAdmin()) return true
+    const subscriptionType = get().getSubscriptionType()
+    return ENTERPRISE_TIERS.includes(subscriptionType)
   },
 }))

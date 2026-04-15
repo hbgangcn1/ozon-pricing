@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { productImportAPI } from '../services/api'
+import { useAuthStore } from '../stores/authStore'
 
 const PRODUCT_FIELDS = [
   { id: 'name', label: '产品名称 (必填)' },
@@ -23,6 +24,7 @@ const PRODUCT_FIELDS = [
 const PREVIEW_DISPLAY_LIMIT = 10
 
 export default function ProductImportPage() {
+  const { user, hasEnterpriseAccess } = useAuthStore()
   const [step, setStep] = useState(1)
   const [isUploading, setIsUploading] = useState(false)
   const [isConfirming, setIsConfirming] = useState(false)
@@ -37,6 +39,8 @@ export default function ProductImportPage() {
   const [importResult, setImportResult] = useState(null)
   
   const fileInputRef = useRef(null)
+  const canImport = hasEnterpriseAccess()
+  const subscriptionType = user?.subscription_type || user?.user_type || 'free'
 
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0]
@@ -120,6 +124,18 @@ export default function ProductImportPage() {
         <h1 className="text-xl font-semibold text-text-primary tracking-tight">产品批量导入</h1>
         <p className="text-sm text-text-secondary mt-1">支持 Excel (.xlsx, .xls) 格式文件导入</p>
       </div>
+
+      {!canImport ? (
+        <Card className="border-amber-200 bg-amber-50/80 shadow-sm">
+          <CardContent className="py-10">
+            <div className="space-y-2 text-center">
+              <h2 className="text-lg font-semibold text-amber-900">升级到企业版，解锁 Excel 产品导入</h2>
+              <p className="text-sm text-amber-800">当前订阅为 {subscriptionType}，企业版及以上支持 Excel 预览与正式导入。</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
 
       {step === 1 && (
         <Card className="border-dashed border-2 bg-surface-container">
@@ -295,6 +311,8 @@ export default function ProductImportPage() {
             </Button>
           </div>
         </Card>
+      )}
+        </>
       )}
     </div>
   )

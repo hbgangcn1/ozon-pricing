@@ -25,8 +25,9 @@ export default function LogisticsPoolPage() {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [isBatchAdding, setIsBatchAdding] = useState(false)
   
-  const { isAdmin } = useAuthStore()
+  const { isAdmin, hasEnterpriseAccess } = useAuthStore()
   const fileInputRef = useRef(null)
+  const canImportExcel = hasEnterpriseAccess()
 
   const DetailSection = ({ title, fields, cols = 3 }) => {
     const validFields = fields.filter(f => f.value !== null && f.value !== undefined && f.value !== '')
@@ -227,7 +228,8 @@ export default function LogisticsPoolPage() {
               />
               <Button 
                 onClick={() => fileInputRef.current?.click()} 
-                disabled={isImporting}
+                disabled={isImporting || !canImportExcel}
+                title={!canImportExcel ? '此功能需要企业版或更高订阅等级' : undefined}
                 variant="outline"
               >
                 {isImporting ? (

@@ -66,6 +66,7 @@ async def login(
             username=user["username"],
             role=user["role"],
             user_type=user.get("user_type", "free"),
+            subscription_type=user.get("subscription_type", "free"),
             remaining_calculations=user.get("remaining_calculations", -1),
         ),
     )
@@ -130,6 +131,7 @@ async def register(
             username=user_data.username,
             role="user",
             user_type="free",
+            subscription_type="free",
             remaining_calculations=-1,
         ),
     )
@@ -144,6 +146,7 @@ async def get_me(
         username=user["username"],
         role=user["role"],
         user_type=user.get("user_type") or "free",
+        subscription_type=user.get("subscription_type") or "free",
         remaining_calculations=(
             user["remaining_calculations"]
             if user.get("remaining_calculations") is not None

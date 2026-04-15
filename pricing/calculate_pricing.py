@@ -822,7 +822,9 @@ def calculate_pricing_grouped(
         ]
         group_product = _apply_commission(ft)
         if apply_fbp_filter:
-            return _group_fbp_cis(subset, group_product, mode, _split)
+            res = _group_fbp_cis(subset, group_product, mode, _split)
+            res["group_product"] = group_product
+            return res
         land, air = _split(subset)
         pp = calculate_pricing(
             group_product,
@@ -854,6 +856,7 @@ def calculate_pricing_grouped(
             "price_priority": pp,
             "speed_priority": sp,
             "filtered_logistics": merged,
+            "group_product": group_product,
         }
 
     fbp_all = [r for r in all_logistics if r.get("fulfillment_type", "rfbs") == "fbp"]

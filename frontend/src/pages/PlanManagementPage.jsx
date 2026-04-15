@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Edit, Save, X, Check, Plus, List, Settings } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Edit, Save, X, Check, Plus, List, Settings, Trash2, Power } from 'lucide-react'
 import { toast } from 'sonner'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
@@ -10,75 +10,45 @@ import { Badge } from '../components/ui/badge'
 import { Switch } from '../components/ui/switch'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Textarea } from '../components/ui/textarea'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog'
+import { plansAPI } from '../services/api'
 
-const initialPlans = {
-  free: {
-    id: 'free',
-    name: '免费版',
-    displayPriceMonth: 0,
-    displayPriceYear: 0,
-    actualPriceMonth: 0,
-    actualPriceYear: 0,
-    testPriceMonth: 0,
-    testPriceYear: 0,
-    calcLimit: 10,
-    logisticsTemplate: 1,
-    sort: 1,
-    status: true,
-    description: '免费基础版本，适合新手试用',
-    features: ['极速模式', '基础物流模板', '每日10次计算'],
-  },
-  efficiency: {
-    id: 'efficiency',
-    name: '效率版',
-    displayPriceMonth: 9.9,
-    displayPriceYear: 99,
-    actualPriceMonth: 9.9,
-    actualPriceYear: 99,
-    testPriceMonth: 0.01,
-    testPriceYear: 0.1,
-    calcLimit: -1,
-    logisticsTemplate: 3,
-    sort: 2,
-    status: true,
-    description: '适合中小型卖家使用',
-    features: ['无限极速模式', '3个物流模板', '无限计算次数'],
-  },
-  professional: {
-    id: 'professional',
-    name: '专业版',
-    displayPriceMonth: 149,
-    displayPriceYear: 1499,
-    actualPriceMonth: 149,
-    actualPriceYear: 1499,
-    testPriceMonth: 0.1,
-    testPriceYear: 1,
-    calcLimit: -1,
-    logisticsTemplate: -1,
-    sort: 3,
-    status: true,
-    description: '适合专业卖家，支持精准模式',
-    features: ['极速+精准模式', '无限物流模板', '多物流比价', '无限计算次数'],
-  },
-  enterprise: {
-    id: 'enterprise',
-    name: '企业版',
-    displayPriceMonth: 999,
-    displayPriceYear: 0,
-    actualPriceMonth: 999,
-    actualPriceYear: 0,
-    testPriceMonth: 1,
-    testPriceYear: 0,
-    calcLimit: -1,
-    logisticsTemplate: -1,
-    sort: 4,
-    status: false,
-    description: '适合大型企业，功能最全面',
-    features: ['专业版所有功能', 'API级活动监控', '专属客服', '开发中...'],
-  },
-}
+const apiPlanToLocal = (p) => ({
+  id: p.id,
+  code: p.code,
+  name: p.name,
+  displayPriceMonth: p.display_price_month,
+  displayPriceYear: p.display_price_year,
+  actualPriceMonth: p.actual_price_month,
+  actualPriceYear: p.actual_price_year,
+  testPriceMonth: p.test_price_month,
+  testPriceYear: p.test_price_year,
+  calcLimit: p.calc_limit,
+  logisticsTemplate: p.logistics_limit,
+  sort: p.sort,
+  status: p.status,
+  description: p.description || '',
+  features: p.features || [],
+})
 
-function PlanCard({ plan, onEdit, isEditing }) {
+const localPlanToApi = (p) => ({
+  plan_code: p.code,
+  plan_name: p.name,
+  display_price_month: p.displayPriceMonth,
+  display_price_year: p.displayPriceYear,
+  actual_price_month: p.actualPriceMonth,
+  actual_price_year: p.actualPriceYear,
+  test_price_month: p.testPriceMonth,
+  test_price_year: p.testPriceYear,
+  calc_limit: p.calcLimit,
+  logistics_limit: p.logisticsTemplate,
+  description: p.description,
+  features: Array.isArray(p.features) ? p.features : [],
+  sort_order: p.sort,
+  is_active: p.status ? 1 : 0,
+})
+
+function PlanCard({ plan, onEdit, isEditing, onDelete, onToggle }) {
   return (
     <Card className="mb-4">
       <CardHeader>
@@ -89,15 +59,25 @@ function PlanCard({ plan, onEdit, isEditing }) {
               {plan.status ? '已上架' : '未上架'}
             </Badge>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => onEdit(plan.id)}
-            disabled={isEditing}
-          >
-            <Edit className="w-4 h-4 mr-2" />
-            编辑
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => onToggle(plan.id)}>
+              <Power className="w-4 h-4 mr-2" />
+              {plan.status ? '下架' : '上架'}
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => onEdit(plan.id)}
+              disabled={isEditing}
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              编辑
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => onDelete(plan.id)} className="text-red-400 hover:text-red-300">
+              <Trash2 className="w-4 h-4 mr-2" />
+              删除
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -117,12 +97,12 @@ function PlanCard({ plan, onEdit, isEditing }) {
           </TableHeader>
           <TableBody>
             <TableRow>
-              <TableCell>¥{plan.displayPriceMonth}</TableCell>
-              <TableCell>¥{plan.displayPriceYear || '-'}</TableCell>
-              <TableCell>¥{plan.actualPriceMonth}</TableCell>
-              <TableCell>¥{plan.actualPriceYear || '-'}</TableCell>
-              <TableCell>¥{plan.testPriceMonth}</TableCell>
-              <TableCell>¥{plan.testPriceYear || '-'}</TableCell>
+              <TableCell>¥{Number(plan.displayPriceMonth).toFixed(2)}</TableCell>
+              <TableCell>{plan.displayPriceYear ? `¥${Number(plan.displayPriceYear).toFixed(2)}` : '-'}</TableCell>
+              <TableCell>¥{Number(plan.actualPriceMonth).toFixed(2)}</TableCell>
+              <TableCell>{plan.actualPriceYear ? `¥${Number(plan.actualPriceYear).toFixed(2)}` : '-'}</TableCell>
+              <TableCell>¥{Number(plan.testPriceMonth).toFixed(2)}</TableCell>
+              <TableCell>{plan.testPriceYear ? `¥${Number(plan.testPriceYear).toFixed(2)}` : '-'}</TableCell>
               <TableCell>{plan.calcLimit === -1 ? '无限' : `${plan.calcLimit}次/月`}</TableCell>
               <TableCell>{plan.logisticsTemplate === -1 ? '无限' : plan.logisticsTemplate}</TableCell>
               <TableCell>{plan.sort}</TableCell>
@@ -135,8 +115,8 @@ function PlanCard({ plan, onEdit, isEditing }) {
         </div>
         
         <div className="mt-4 flex flex-wrap gap-2">
-          {plan.features.map((f, i) => (
-            <Badge key={i} variant="secondary">{f}</Badge>
+          {plan.features.map((f) => (
+            <Badge key={f} variant="secondary">{f}</Badge>
           ))}
         </div>
       </CardContent>
@@ -144,7 +124,7 @@ function PlanCard({ plan, onEdit, isEditing }) {
   )
 }
 
-function PlanEditForm({ plan, onSave, onCancel }) {
+function PlanEditForm({ plan, onSave, onCancel, isNew }) {
   const [formData, setFormData] = useState({
     ...plan,
     features: Array.isArray(plan.features) ? plan.features.join(', ') : ''
@@ -154,8 +134,21 @@ function PlanEditForm({ plan, onSave, onCancel }) {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
+  const PRICE_FIELDS = new Set([
+    'displayPriceMonth', 'displayPriceYear',
+    'actualPriceMonth', 'actualPriceYear',
+    'testPriceMonth', 'testPriceYear',
+  ])
+
   const handleNumberChange = (field, value) => {
-    const numValue = value === '' ? 0 : parseFloat(value)
+    if (value === '') {
+      setFormData(prev => ({ ...prev, [field]: 0 }))
+      return
+    }
+    let numValue = parseFloat(value)
+    if (PRICE_FIELDS.has(field)) {
+      numValue = Math.round(numValue * 100) / 100
+    }
     setFormData(prev => ({ ...prev, [field]: numValue }))
   }
 
@@ -171,7 +164,7 @@ function PlanEditForm({ plan, onSave, onCancel }) {
     <Card className="mb-4">
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>编辑套餐: {plan.name}</CardTitle>
+          <CardTitle>{isNew ? '新增套餐' : `编辑套餐: ${plan.name}`}</CardTitle>
           <div className="flex gap-2">
             <Button type="button" onClick={handleSubmit}>
               <Save className="w-4 h-4 mr-2" />
@@ -186,6 +179,29 @@ function PlanEditForm({ plan, onSave, onCancel }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {isNew && (
+              <div className="space-y-2">
+                <Label>套餐代码</Label>
+                <Input
+                  value={formData.code}
+                  onChange={(e) => handleChange('code', e.target.value)}
+                  placeholder="例如: basic_plan"
+                  required
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>套餐名称</Label>
+              <Input
+                value={formData.name}
+                onChange={(e) => handleChange('name', e.target.value)}
+                placeholder="例如: 基础版"
+                required
+              />
+            </div>
+          </div>
+          
           {/* 价格配置 */}
           <div>
             <h3 className="text-lg font-medium text-text-primary mb-4 font-headline tracking-tight">💵 价格配置</h3>
@@ -326,21 +342,78 @@ function PlanEditForm({ plan, onSave, onCancel }) {
 }
 
 function PlanManagementPage() {
-  const [plans, setPlans] = useState(initialPlans)
+  const [plans, setPlans] = useState([])
   const [editingPlan, setEditingPlan] = useState(null)
   const [activeTab, setActiveTab] = useState('list')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+
+  const fetchPlans = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await plansAPI.getAll(false)
+      const list = Array.isArray(data) ? data : []
+      setPlans(list.map(apiPlanToLocal))
+    } catch (err) {
+      setError('获取套餐列表失败')
+      toast.error('获取套餐列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchPlans()
+  }, [fetchPlans])
 
   const handleEdit = (planId) => {
     setEditingPlan(planId)
   }
 
-  const handleSave = (planId, values) => {
-    setPlans(prev => ({
-      ...prev,
-      [planId]: { ...prev[planId], ...values }
-    }))
-    setEditingPlan(null)
-    toast.success('保存成功')
+  const handleCreate = async (_id, values) => {
+    try {
+      const apiData = localPlanToApi(values)
+      await plansAPI.create(apiData)
+      toast.success('套餐创建成功')
+      setActiveTab('list')
+      fetchPlans()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '创建套餐失败')
+    }
+  }
+
+  const handleSave = async (planId, values) => {
+    try {
+      const apiData = localPlanToApi(values)
+      await plansAPI.update(planId, apiData)
+      toast.success('保存成功')
+      setEditingPlan(null)
+      fetchPlans()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '保存失败')
+    }
+  }
+
+  const handleDelete = async (planId) => {
+    try {
+      await plansAPI.delete(planId)
+      toast.success('套餐已删除')
+      setDeleteConfirm(null)
+      fetchPlans()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '删除失败')
+    }
+  }
+
+  const handleToggle = async (planId) => {
+    try {
+      await plansAPI.toggleActive(planId)
+      fetchPlans()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || '状态切换失败')
+    }
   }
 
   const handleCancel = () => {
@@ -366,36 +439,79 @@ function PlanManagementPage() {
         </TabsList>
 
         <TabsContent value="list" className="space-y-4">
-          {Object.values(plans).map(plan => (
-            editingPlan === plan.id ? (
-              <PlanEditForm 
-                key={plan.id} 
-                plan={plans[plan.id]} 
-                onSave={handleSave} 
-                onCancel={handleCancel}
-              />
-            ) : (
-              <PlanCard 
-                key={plan.id} 
-                plan={plan} 
-                onEdit={handleEdit}
-                isEditing={editingPlan !== null}
-              />
-            )
-          ))}
+          {loading ? (
+            <Card>
+              <CardContent className="py-8 text-center text-zinc-400">加载中...</CardContent>
+            </Card>
+          ) : error ? (
+            <Card>
+              <CardContent className="py-8 text-center text-red-400">{error}</CardContent>
+            </Card>
+          ) : plans.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-zinc-400">暂无套餐数据</CardContent>
+            </Card>
+          ) : (
+            plans.map(plan => (
+              editingPlan === plan.id ? (
+                <PlanEditForm 
+                  key={plan.id} 
+                  plan={plan} 
+                  onSave={handleSave} 
+                  onCancel={handleCancel}
+                />
+              ) : (
+                <PlanCard 
+                  key={plan.id} 
+                  plan={plan} 
+                  onEdit={handleEdit}
+                  isEditing={editingPlan !== null}
+                  onDelete={setDeleteConfirm}
+                  onToggle={handleToggle}
+                />
+              )
+            ))
+          )}
         </TabsContent>
 
         <TabsContent value="add">
-          <Card>
-            <CardHeader>
-              <CardTitle>➕ 新增套餐</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-text-secondary">新增套餐功能开发中...</p>
-            </CardContent>
-          </Card>
+          <PlanEditForm
+            plan={{
+              id: null,
+              code: '',
+              name: '',
+              displayPriceMonth: 0,
+              displayPriceYear: 0,
+              actualPriceMonth: 0,
+              actualPriceYear: 0,
+              testPriceMonth: 0,
+              testPriceYear: 0,
+              calcLimit: -1,
+              logisticsTemplate: 1,
+              sort: plans.length + 1,
+              status: true,
+              description: '',
+              features: [],
+            }}
+            onSave={handleCreate}
+            onCancel={() => setActiveTab('list')}
+            isNew={true}
+          />
         </TabsContent>
       </Tabs>
+      
+      <AlertDialog open={deleteConfirm !== null} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>确定要删除该套餐吗？此操作不可撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleDelete(deleteConfirm)} className="bg-red-600 hover:bg-red-700">确认删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

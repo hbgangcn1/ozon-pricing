@@ -157,6 +157,7 @@ def format_result(res, product, rate, is_land=True):
         saved_cost=0,
         avg_days=0,
         saved_days=0,
+        is_smart=0,
         breakdown=[],
     )
     if not res:
@@ -201,6 +202,7 @@ def format_result(res, product, rate, is_land=True):
         saved_cost=round(saved_cost, 4) if saved_cost is not None else 0,
         avg_days=round(avg_days, 2) if avg_days is not None else 0,
         saved_days=round(saved_days, 2) if saved_days is not None else 0,
+        is_smart=best_log.get("is_smart", 0) if best_log else 0,
         breakdown=build_breakdown(
             product,
             0 if cost is None else cost,
@@ -379,6 +381,7 @@ async def calculate_grouped(
             commission_category = await fetch_commission_category(
                 int(cat_id),
                 session,
+                user_id=user_id,
             )
 
     grouped = cast(
@@ -412,17 +415,18 @@ async def calculate_grouped(
         )
 
     def _fmt_group(dual_res):
+        grp_product = dual_res.get("group_product", product)
         return PricingDualPriorityGroupResult(
             price_priority=PricingGroupResult(
                 land=format_result(
                     dual_res["price_priority"],
-                    product,
+                    grp_product,
                     rate,
                     is_land=True,
                 ),
                 air=format_result(
                     dual_res["price_priority"],
-                    product,
+                    grp_product,
                     rate,
                     is_land=False,
                 ),
@@ -430,13 +434,13 @@ async def calculate_grouped(
             speed_priority=PricingGroupResult(
                 land=format_result(
                     dual_res["speed_priority"],
-                    product,
+                    grp_product,
                     rate,
                     is_land=True,
                 ),
                 air=format_result(
                     dual_res["speed_priority"],
-                    product,
+                    grp_product,
                     rate,
                     is_land=False,
                 ),
