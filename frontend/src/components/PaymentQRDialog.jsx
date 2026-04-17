@@ -24,6 +24,7 @@ function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
         return
       }
     } catch (error) {
+      // intentionally empty - polling continues on error
     }
 
     if (!isMountedRef.current) return
@@ -50,7 +51,7 @@ export default function PaymentQRDialog({
   open,
   onOpenChange,
   planCode,
-  planName,
+  _planName,
   billingCycle,
   amount,
   onSuccess,

@@ -1,27 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import {
-  Download, RefreshCw, Settings, FolderOpen, Info, ChevronDown,
-  Clock, HardDrive, Database, Trash2, PlayCircle, Loader2, AlertTriangle
-} from 'lucide-react'
+import { Trash2, Download, PlayCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table'
 import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
-import { Badge } from '../components/ui/badge'
-import { Switch } from '../components/ui/switch'
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '../components/ui/alert-dialog'
 import { settingsAPI, logoutUser } from '../services/api'
 import SystemConfigCard from '../components/settings/SystemConfigCard'
 import BackupManagementCard from '../components/settings/BackupManagementCard'
@@ -49,7 +29,7 @@ function SettingsPage() {
   const [backupStats, setBackupStats] = useState({ count: 0, total_size_mb: 0 })
 
   // FAQ 折叠
-  const [expandedFaq, setExpandedFaq] = useState(null)
+  const [_expandedFaq, _setExpandedFaq] = useState(null)
 
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState(null) // { name }
@@ -176,7 +156,7 @@ function SettingsPage() {
     toast.loading('🔄 正在恢复数据库，这可能需要十几秒，请稍候...', { id: 'restore-progress', duration: 999999 })
 
     try {
-      const result = await settingsAPI.restoreBackup(backupName, true)
+      await settingsAPI.restoreBackup(backupName, true)
       toast.dismiss('restore-progress')
       toast.success(`✅ 数据库已从「${backupName}」恢复。请重新登录。`, { duration: 8000 })
       // 恢复后数据库被覆盖，当前 token 失效，强制重新登录

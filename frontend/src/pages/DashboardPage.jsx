@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Package, Truck, User, Activity } from 'lucide-react';
 import { Skeleton } from '../components/ui/skeleton';
 import { productsAPI, logisticsAPI } from '../services/api';

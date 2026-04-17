@@ -4,10 +4,8 @@ import { toast } from 'sonner'
 import { productsAPI } from '../services/api'
 import { useProductStore } from '../stores/productStore'
 
-import { Button } from '../components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog'
-import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 
 function ProductsPage() {
@@ -25,10 +23,6 @@ function ProductsPage() {
     weight_g: ''
   })
 
-  useEffect(() => {
-    fetchProducts()
-  }, [])
-
   const fetchProducts = useCallback(async () => {
     setLoading(true)
     try {
@@ -40,6 +34,10 @@ function ProductsPage() {
       setLoading(false)
     }
   }, [setProducts])
+
+  useEffect(() => {
+    fetchProducts()
+  }, [fetchProducts])
 
   const handleAdd = useCallback(() => {
     setEditingProduct(null)

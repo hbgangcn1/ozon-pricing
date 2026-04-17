@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Edit, Save, X, Check, Plus, List, Settings, Trash2, Power } from 'lucide-react'
+import { Edit, Save, X, Plus, List, Trash2, Power } from 'lucide-react'
 import { toast } from 'sonner'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Upload, Loader2, CheckCircle2, Eye, Trash2, Truck, X } from 'lucide-react'
+import { Plus, Upload, Loader2, Eye, Trash2, Truck, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '../components/ui/table'
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
+import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Checkbox } from '../components/ui/checkbox'

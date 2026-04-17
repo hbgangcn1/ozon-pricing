@@ -158,8 +158,8 @@ function StatisticsPage() {
     void fetchData()
   }, [fetchData])
 
-  const loginLogs = loginLogsPage.items ?? []
-  const adminLogs = adminLogsPage.items ?? []
+  const loginLogs = useMemo(() => loginLogsPage.items ?? [], [loginLogsPage.items])
+  const adminLogs = useMemo(() => adminLogsPage.items ?? [], [adminLogsPage.items])
 
   const handleLoginExport = useCallback(() => {
     downloadCsv(

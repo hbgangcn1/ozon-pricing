@@ -1,6 +1,6 @@
 import React from "react"
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/card"
-import { HardDrive, RefreshCw, Loader2, Download, PlayCircle, Trash2, Clock, Database, FolderOpen, Info } from "lucide-react"
+import { HardDrive, RefreshCw, Loader2, Clock, Database, FolderOpen, Info } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
 import { Button } from "../ui/button"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table"
@@ -166,7 +166,7 @@ const BackupManagementCard = ({
                 <h3 className="font-medium text-text-primary font-headline tracking-tight">如何恢复备份？</h3>
                 <ol className="list-decimal list-inside space-y-2 text-text-secondary">
                   <li>在备份列表中找到要恢复的备份</li>
-                  <li>点击"恢复"按钮</li>
+                   <li>点击&quot;恢复&quot;按钮</li>
                   <li>系统自动创建 pre_restore 快照</li>
                   <li>数据恢复到所选备份的时间点</li>
                   <li>完成后显示恢复结果</li>

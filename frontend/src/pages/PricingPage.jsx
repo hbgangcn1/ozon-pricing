@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react'
+import React, { useCallback, useEffect, useState, Suspense } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Button } from '../components/ui/button'
@@ -258,8 +258,6 @@ export default function PricingPage() {
 
   const isPreciseDisabled = user?.user_type === 'free' || user?.user_type === 'efficiency'
   const preciseLabel = isPreciseDisabled ? '精准模式（限专业版/企业版）' : '精准模式'
-  const lastCalcToastRef = useRef(0)
-  const calcToastShownRef = useRef(false)
 
   const refreshCommissionCategories = useCallback(() => {
     commissionCategoriesAPI.getAll().then(data => setCommissionCategories(Array.isArray(data) ? data : [])).catch(err => { console.error(err) })
@@ -293,27 +291,6 @@ export default function PricingPage() {
     }
     checkLogistics()
   }, [])
-
-  const handleOpenProductDialog = () => {
-    setEditingProduct(null)
-    setProductForm({
-      name: '',
-      unit_price: '',
-      labeling_fee: '0',
-      shipping_fee: '0',
-      weight_g: '',
-      length_cm: '',
-      width_cm: '',
-      height_cm: '',
-      is_cylinder: 'regular',
-      cylinder_diameter: '',
-      cylinder_length: '',
-      has_battery: false,
-      has_liquid: false,
-      commission_category_id: '',
-    })
-    setProductDialogOpen(true)
-  }
 
   const handleEditProduct = (product) => {
     setEditingProduct(product)

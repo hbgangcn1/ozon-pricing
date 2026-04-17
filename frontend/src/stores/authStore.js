@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { useProductStore } from './productStore'
 import { useLogisticsStore } from './logisticsStore'
 
-const adminPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/settings', '/users', '/plans', '/statistics', '/about']
 const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/about']
 const PROFESSIONAL_TIERS = ['professional', 'enterprise', 'gratitude', 'test']
 const ENTERPRISE_TIERS = ['enterprise', 'gratitude', 'test']

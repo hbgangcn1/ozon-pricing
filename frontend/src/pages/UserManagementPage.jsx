@@ -1,5 +1,5 @@
 import { useState, useEffect , useMemo } from 'react'
-import { UserPlus, Key, Trash2, RefreshCw, Search, X, Plus, User, Lock, Shield, Check } from 'lucide-react'
+import { UserPlus, Key, Trash2, RefreshCw, Search, X, User, Lock, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import { adminAPI } from '../services/api'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table'
@@ -30,13 +30,13 @@ function UserManagementPage() {
     password: '',
     role: 'user'
   })
-  const [selectedUsersForSync, setSelectedUsersForSync] = useState([])
+  const [_selectedUsersForSync, setSelectedUsersForSync] = useState([])
   const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [_loading, setLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize] = useState(20)
 
   // 获取用户列表
   const fetchUsers = async (page = 1, pageSize = 20, keyword = '') => {

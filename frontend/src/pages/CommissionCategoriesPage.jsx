@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '../components/ui/table'
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
+import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'

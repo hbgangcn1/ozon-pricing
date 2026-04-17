@@ -26,7 +26,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
   let cumAngle = -90 // 从12点位置开始
   const paths = []
 
-  sortedData.forEach((item, i) => {
+  sortedData.forEach((item, _i) => {
     const angle = (item.value / total) * 360
     if (angle < 0.1) return
     // 逆时针：角度递减
@@ -68,7 +68,7 @@ function SimplePieChart({ data, size = 200, innerRadius = 3, outerRadius = 95 })
   )
 }
 
-function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingComparison, timeComparison }) {
+function CostPieChart({ breakdown = [], totalPrice = 0, _netProfit = 0, shippingComparison, timeComparison }) {
   if (!breakdown || breakdown.length === 0) {
     return (
       <div className="text-center text-text-muted py-4 text-sm">
@@ -77,7 +77,6 @@ function CostPieChart({ breakdown = [], totalPrice = 0, netProfit = 0, shippingC
     )
   }
 
-  const totalCost = breakdown.reduce((sum, item) => sum + (item.value || 0), 0)
   const pieData = breakdown.map(item => ({
     name: item.label,
     value: item.value || 0,

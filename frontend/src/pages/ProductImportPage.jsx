@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { Upload, ArrowRight, CheckCircle2, Loader2, RefreshCcw } from 'lucide-react'
+import { Upload, CheckCircle2, Loader2, RefreshCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
