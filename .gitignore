@@ -171,3 +171,16 @@ _ul
 !env.template
 !cert_env_config.template.txt
 setup.cfg
+
+# Agent 临时文件
+.playwright-mcp/
+.sisyphus/
+openspec/
+
+# 临时截图和浏览器快照
+browser-snapshot-*.yml
+browser-test-*.png
+e2e-*.png
+
+# 数据文件（xlsx 导入源）
+xlsx/
