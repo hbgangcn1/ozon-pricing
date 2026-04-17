@@ -89,10 +89,18 @@ class TestRootEndpoints:
         assert r.status_code == 200
         assert "version" in r.json()
 
-    def test_health(self):
+    @patch("api.main.engine")
+    def test_health(self, mock_engine):
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock()
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_engine.connect.return_value = mock_cm
         r = client.get("/health")
         assert r.status_code == 200
         assert r.json()["status"] == "healthy"
+        assert r.json()["database"] == "ok"
 
 
 class TestAuth:

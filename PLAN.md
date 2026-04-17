@@ -665,3 +665,23 @@ frontend/tests/
 | 18.4 | ✅ | `frontend/src/stores/authStore.js` 增加 `subscription_type` 归一化与 `hasProfessionalAccess` / `hasEnterpriseAccess` helper |
 | 18.5 | ✅ | `frontend/src/pages/CommissionCategoriesPage.jsx`、`ProductImportPage.jsx`、`LogisticsPoolPage.jsx` 增加升级提示、条件渲染与导入按钮禁用提示 |
 | 18.6 | ✅ | 新增/更新后端与前端测试：后端 45 条定向测试通过，前端 47 条定向测试通过 |
+
+### Phase 19: 深度安全加固 ✅
+
+| Task | 状态 | 描述 |
+|------|------|------|
+| 1 | ✅ | `api/dependencies.py` — 提取 `_get_user()` 公共函数，`is_frozen` 统一为 `bool()` 检查 |
+| 2 | ✅ | `api/middleware/login_limiter.py` — 新建 `LoginRateLimiter`（5次/分锁定15分钟） |
+| 3 | ✅ | `db/users.py` — SHA-256 密码自动迁移到 bcrypt |
+| 4 | ✅ | `api/routes/payment.py` — `asyncio.create_task` 改为 `await` |
+| 5 | ✅ | 多文件 — 静默吞异常修复，空 `except` 添加 `logger.warning` |
+| 6 | ✅ | `api/middleware/rate_limit.py` — trusted_proxies、生产模式 localhost 检查、per-IP 上限 |
+| 7 | ✅ | `api/main.py` — CORS 收窄 + `security/tokens.py` JWT 8h 过期 + E2E_TEST 生产保护 |
+| 8 | ✅ | httpOnly Cookie 迁移 — 后端 login/register 设置 httpOnly cookie，前端移除 localStorage token |
+| 9 | ✅ | `db/statistics.py` — `month_start` epoch 取模 → `_month_start()` 正确计算 |
+| 11 | ✅ | 测试文件拆分 — `test_logic_coverage.py` + `test_routes_pricing.py` 各拆为 2 个文件 |
+| 12 | ✅ | 集成测试 — cookie 认证流程、登录限流、冻结用户拒绝、密码迁移、E2E_TEST 保护（11 tests） |
+
+**新增/修改文件**：
+- 新建: `api/middleware/login_limiter.py`, `tests/test_login_limiter.py`, `tests/test_password_migration.py`, `tests/test_integration_security.py`, `tests/test_logic_coverage_part2.py`, `tests/test_routes_pricing_part2.py`
+- 修改: `api/dependencies.py`, `api/routes/auth.py`, `api/routes/payment.py`, `api/routes/subscriptions.py`, `api/routes/statistics.py`, `api/main.py`, `api/middleware/rate_limit.py`, `db/users.py`, `db/statistics.py`, `security/tokens.py`, `frontend/src/services/api.js`, `frontend/src/stores/authStore.js`, `frontend/src/__tests__/authStore.test.js`

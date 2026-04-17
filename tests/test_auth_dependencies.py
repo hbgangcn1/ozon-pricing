@@ -13,6 +13,12 @@ def _make_api_key(token_str: str):
     return mock
 
 
+def _make_request(token_str=None):
+    req = MagicMock()
+    req.cookies = {"access_token": token_str} if token_str else {}
+    return req
+
+
 def _make_user(
     user_id=1,
     username="alice",
@@ -76,7 +82,7 @@ class TestGetCurrentUserId:
 
         from api.dependencies import get_current_user_id
 
-        result = await get_current_user_id(api_key, session)
+        result = await get_current_user_id(_make_request(), api_key, session)
         assert result == 42
         session.get.assert_awaited_once()
 
@@ -90,7 +96,7 @@ class TestGetCurrentUserId:
         from api.dependencies import get_current_user_id
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user_id(api_key, session)
+            await get_current_user_id(_make_request(), api_key, session)
         assert exc_info.value.status_code == 401
         assert "用户不存在" in exc_info.value.detail
 
@@ -104,7 +110,7 @@ class TestGetCurrentUserId:
         from api.dependencies import get_current_user_id
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user_id(api_key, session)
+            await get_current_user_id(_make_request(), api_key, session)
         assert exc_info.value.status_code == 403
 
     @patch("api.dependencies.get_user_id_from_token")
@@ -118,7 +124,7 @@ class TestGetCurrentUserId:
         from api.dependencies import get_current_user_id
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user_id(api_key, session)
+            await get_current_user_id(_make_request(), api_key, session)
         assert exc_info.value.status_code == 401
 
 
@@ -138,7 +144,7 @@ class TestGetCurrentUser:
 
         from api.dependencies import get_current_user
 
-        result = await get_current_user(api_key, session)
+        result = await get_current_user(_make_request(), api_key, session)
         assert result == {
             "id": 10,
             "username": "alice",
@@ -158,7 +164,7 @@ class TestGetCurrentUser:
         from api.dependencies import get_current_user
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(api_key, session)
+            await get_current_user(_make_request(), api_key, session)
         assert exc_info.value.status_code == 401
         assert "用户不存在" in exc_info.value.detail
 
@@ -173,7 +179,7 @@ class TestGetCurrentUser:
         from api.dependencies import get_current_user
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(api_key, session)
+            await get_current_user(_make_request(), api_key, session)
         assert exc_info.value.status_code == 401
 
 
@@ -194,7 +200,7 @@ class TestGetUserWithSubscription:
 
         from api.dependencies import get_user_with_subscription
 
-        result = await get_user_with_subscription(api_key, session)
+        result = await get_user_with_subscription(_make_request(), api_key, session)
         assert result == {
             "id": 10,
             "username": "alice",
@@ -215,7 +221,7 @@ class TestGetUserWithSubscription:
 
         from api.dependencies import get_user_with_subscription
 
-        result = await get_user_with_subscription(api_key, session)
+        result = await get_user_with_subscription(_make_request(), api_key, session)
         assert result["subscription_type"] == "free"
 
     @patch("api.dependencies.get_user_id_from_token")
@@ -228,7 +234,7 @@ class TestGetUserWithSubscription:
         from api.dependencies import get_user_with_subscription
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_user_with_subscription(api_key, session)
+            await get_user_with_subscription(_make_request(), api_key, session)
         assert exc_info.value.status_code == 403
 
 
@@ -242,7 +248,7 @@ class TestRequireAdmin:
 
         from api.dependencies import require_admin
 
-        result = await require_admin(api_key, session)
+        result = await require_admin(_make_request(), api_key, session)
         assert result == 1
 
     @patch("api.dependencies.get_user_id_from_token")
@@ -255,7 +261,7 @@ class TestRequireAdmin:
         from api.dependencies import require_admin
 
         with pytest.raises(HTTPException) as exc_info:
-            await require_admin(api_key, session)
+            await require_admin(_make_request(), api_key, session)
         assert exc_info.value.status_code == 403
 
     @patch("api.dependencies.get_user_id_from_token")
@@ -268,7 +274,7 @@ class TestRequireAdmin:
         from api.dependencies import require_admin
 
         with pytest.raises(HTTPException) as exc_info:
-            await require_admin(api_key, session)
+            await require_admin(_make_request(), api_key, session)
         assert exc_info.value.status_code == 401
 
     @patch("api.dependencies.get_user_id_from_token")
@@ -282,7 +288,7 @@ class TestRequireAdmin:
         from api.dependencies import require_admin
 
         with pytest.raises(HTTPException) as exc_info:
-            await require_admin(api_key, session)
+            await require_admin(_make_request(), api_key, session)
         assert exc_info.value.status_code == 401
 
     @patch("api.dependencies.get_user_id_from_token")
@@ -295,5 +301,5 @@ class TestRequireAdmin:
         from api.dependencies import require_admin
 
         with pytest.raises(HTTPException) as exc_info:
-            await require_admin(api_key, session)
+            await require_admin(_make_request(), api_key, session)
         assert exc_info.value.status_code == 401

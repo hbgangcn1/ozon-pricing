@@ -22,22 +22,20 @@ describe('authStore.js', () => {
   })
 
   describe('initAuth()', () => {
-    it('sets state when valid user and token exist in localStorage', () => {
+    it('sets state when valid user exists in localStorage', () => {
       const mockUser = { id: 1, role: 'user' }
-      localStorage.setItem('api_token', 'valid-token')
       localStorage.setItem('api_user', JSON.stringify(mockUser))
 
       useAuthStore.getState().initAuth()
 
       const state = useAuthStore.getState()
       expect(state.user).toEqual({ ...mockUser, subscription_type: 'free' })
-      expect(state.token).toBe('valid-token')
+      expect(state.token).toBeNull()
       expect(state.isAuthenticated).toBe(true)
       expect(state.isLoading).toBe(false)
     })
 
     it('clears storage and sets isLoading false when user is invalid JSON', () => {
-      localStorage.setItem('api_token', 'valid-token')
       localStorage.setItem('api_user', 'invalid-json')
 
       useAuthStore.getState().initAuth()
@@ -45,31 +43,19 @@ describe('authStore.js', () => {
       const state = useAuthStore.getState()
       expect(state.isLoading).toBe(false)
       expect(state.user).toBeNull()
-      expect(localStorage.getItem('api_token')).toBeNull()
       expect(localStorage.getItem('api_user')).toBeNull()
     })
 
-    it('clears storage and sets isLoading false when token is missing', () => {
-      localStorage.setItem('api_user', JSON.stringify({ id: 1 }))
-
+    it('sets isLoading false when user is missing', () => {
       useAuthStore.getState().initAuth()
 
       expect(useAuthStore.getState().isLoading).toBe(false)
-      expect(localStorage.getItem('api_user')).toBeNull()
-    })
-
-    it('clears storage and sets isLoading false when user is missing', () => {
-      localStorage.setItem('api_token', 'valid-token')
-
-      useAuthStore.getState().initAuth()
-
-      expect(useAuthStore.getState().isLoading).toBe(false)
-      expect(localStorage.getItem('api_token')).toBeNull()
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
     })
   })
 
   describe('setAuth()', () => {
-    it('saves to localStorage and updates state', () => {
+    it('saves user to localStorage and updates state (token not stored)', () => {
       const mockUser = { id: 2 }
       const mockToken = 'new-token'
 
@@ -77,10 +63,10 @@ describe('authStore.js', () => {
 
       const state = useAuthStore.getState()
       expect(state.user).toEqual({ ...mockUser, subscription_type: 'free' })
-      expect(state.token).toBe(mockToken)
+      expect(state.token).toBeNull()
       expect(state.isAuthenticated).toBe(true)
 
-      expect(localStorage.getItem('api_token')).toBe(mockToken)
+      expect(localStorage.getItem('api_token')).toBeNull()
       expect(localStorage.getItem('api_user')).toBe(
         JSON.stringify({ ...mockUser, subscription_type: 'free' })
       )
@@ -112,7 +98,6 @@ describe('authStore.js', () => {
         token: 'token',
         isAuthenticated: true,
       })
-      localStorage.setItem('api_token', 'token')
       localStorage.setItem('api_user', 'user')
 
       useAuthStore.getState().logout()
@@ -122,7 +107,6 @@ describe('authStore.js', () => {
       expect(state.token).toBeNull()
       expect(state.isAuthenticated).toBe(false)
 
-      expect(localStorage.getItem('api_token')).toBeNull()
       expect(localStorage.getItem('api_user')).toBeNull()
     })
   })

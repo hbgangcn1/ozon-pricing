@@ -7,8 +7,11 @@ Redis缓存服务
 import json
 import time
 import hashlib
+import logging
 from typing import Any, Optional, Dict
 from functools import wraps
+
+_logger = logging.getLogger(__name__)
 
 # 尝试导入Redis
 try:
@@ -17,6 +20,7 @@ try:
         RedisError,
         ConnectionError as RedisConnectionError,
     )
+
     _redis_available = True
 except ImportError:
     _redis_available = False
@@ -29,31 +33,31 @@ REDIS_AVAILABLE = _redis_available
 # 全局Redis连接
 _redis_client: Optional[Any] = None
 _redis_init_failed: bool = False  # 标记Redis是否初始化失败，避免反复超时重试
-_redis_fail_time: float = 0.0    # 失败时间戳
-_REDIS_RETRY_INTERVAL = 300      # 失败后 300 秒才重试
+_redis_fail_time: float = 0.0  # 失败时间戳
+_REDIS_RETRY_INTERVAL = 300  # 失败后 300 秒才重试
 
 # 缓存配置
 CACHE_CONFIG = {
-    'host': 'localhost',
-    'port': 6379,
-    'db': 0,
-    'password': None,
-    'decode_responses': True,
-    'socket_timeout': 1,
-    'socket_connect_timeout': 1,
-    'retry_on_timeout': False,
-    'max_connections': 20,
+    "host": "localhost",
+    "port": 6379,
+    "db": 0,
+    "password": None,
+    "decode_responses": True,
+    "socket_timeout": 1,
+    "socket_connect_timeout": 1,
+    "retry_on_timeout": False,
+    "max_connections": 20,
 }
 
 # 默认TTL配置（秒）
 DEFAULT_TTL = {
-    'exchange_rate': 3600,  # 汇率缓存1小时
-    'user_data': 1800,      # 用户数据缓存30分钟
-    'product_data': 1800,   # 产品数据缓存30分钟
-    'logistics_data': 1800,  # 物流数据缓存30分钟
-    'statistics': 300,      # 统计数据缓存5分钟
-    'session': 7200,        # 会话缓存2小时
-    'default': 600,         # 默认缓存10分钟
+    "exchange_rate": 3600,  # 汇率缓存1小时
+    "user_data": 1800,  # 用户数据缓存30分钟
+    "product_data": 1800,  # 产品数据缓存30分钟
+    "logistics_data": 1800,  # 物流数据缓存30分钟
+    "statistics": 300,  # 统计数据缓存5分钟
+    "session": 7200,  # 会话缓存2小时
+    "default": 600,  # 默认缓存10分钟
 }
 
 
@@ -101,10 +105,24 @@ def init_redis_client(config: Optional[Dict[str, Any]] = None) -> bool:
 def get_redis_client() -> Optional[Any]:
     """获取Redis客户端，失败后短期内不重试"""
     if _redis_client is None:
-        if _redis_init_failed and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL:
+        if (
+            _redis_init_failed
+            and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL
+        ):
             return None
         init_redis_client()
     return _redis_client
+
+
+def close_redis_client() -> None:
+    """关闭 Redis 连接池，用于应用关闭时清理资源。"""
+    global _redis_client
+    if _redis_client is not None:
+        try:
+            _redis_client.close()
+        except Exception:
+            pass
+        _redis_client = None
 
 
 def cache_key(prefix: str, *args, **kwargs) -> str:
@@ -159,7 +177,7 @@ def get_cache(key: str) -> Optional[Any]:
             return data
 
     except (RedisError, RedisConnectionError) as e:
-        print(f"获取缓存失败: {e}")
+        _logger.warning("获取缓存失败: %s", e)
         return None
 
 
@@ -188,14 +206,14 @@ def set_cache(key: str, value: Any, ttl: Optional[int] = None) -> bool:
 
         # 设置TTL
         if ttl is None:
-            ttl = DEFAULT_TTL.get('default', 600)
+            ttl = DEFAULT_TTL.get("default", 600)
 
         # 设置缓存
         result = client.setex(key, ttl, data)
         return bool(result)
 
     except (RedisError, RedisConnectionError, TypeError) as e:
-        print(f"设置缓存失败: {e}")
+        _logger.warning("设置缓存失败: %s", e)
         return False
 
 
@@ -217,7 +235,7 @@ def delete_cache(key: str) -> bool:
         result = client.delete(key)
         return bool(result)
     except (RedisError, RedisConnectionError) as e:
-        print(f"删除缓存失败: {e}")
+        _logger.warning("删除缓存失败: %s", e)
         return False
 
 
@@ -243,7 +261,7 @@ def delete_cache_pattern(pattern: str) -> int:
         result = client.delete(*keys)
         return result
     except (RedisError, RedisConnectionError) as e:
-        print(f"按模式删除缓存失败: {e}")
+        _logger.warning("按模式删除缓存失败: %s", e)
         return 0
 
 
@@ -257,7 +275,7 @@ def clear_all_cache() -> bool:
         client.flushdb()
         return True
     except (RedisError, RedisConnectionError) as e:
-        print(f"清空缓存失败: {e}")
+        _logger.warning("清空缓存失败: %s", e)
         return False
 
 
@@ -265,29 +283,27 @@ def get_cache_info() -> Dict[str, Any]:
     """获取缓存信息"""
     client = get_redis_client()
     if not client:
-        return {'status': 'unavailable', 'error': 'Redis未连接'}
+        return {"status": "unavailable", "error": "Redis未连接"}
 
     try:
         info = client.info()
         return {
-            'status': 'connected',
-            'used_memory': info.get('used_memory_human', 'N/A'),
-            'connected_clients': info.get('connected_clients', 0),
-            'total_commands_processed': info.get(
-                'total_commands_processed', 0
-            ),
-            'keyspace_hits': info.get('keyspace_hits', 0),
-            'keyspace_misses': info.get('keyspace_misses', 0),
-            'hit_rate': _calculate_hit_rate(info),
+            "status": "connected",
+            "used_memory": info.get("used_memory_human", "N/A"),
+            "connected_clients": info.get("connected_clients", 0),
+            "total_commands_processed": info.get("total_commands_processed", 0),
+            "keyspace_hits": info.get("keyspace_hits", 0),
+            "keyspace_misses": info.get("keyspace_misses", 0),
+            "hit_rate": _calculate_hit_rate(info),
         }
     except (RedisError, RedisConnectionError) as e:
-        return {'status': 'error', 'error': str(e)}
+        return {"status": "error", "error": str(e)}
 
 
 def _calculate_hit_rate(info: Dict[str, Any]) -> float:
     """计算缓存命中率"""
-    hits = info.get('keyspace_hits', 0)
-    misses = info.get('keyspace_misses', 0)
+    hits = info.get("keyspace_hits", 0)
+    misses = info.get("keyspace_misses", 0)
     total = hits + misses
 
     if total == 0:
@@ -296,7 +312,7 @@ def _calculate_hit_rate(info: Dict[str, Any]) -> float:
     return round(hits / total * 100, 2)
 
 
-def cached(ttl: Optional[int] = None, key_prefix: str = 'default'):
+def cached(ttl: Optional[int] = None, key_prefix: str = "default"):
     """
     缓存装饰器
 
@@ -309,6 +325,7 @@ def cached(ttl: Optional[int] = None, key_prefix: str = 'default'):
         def get_user_data(user_id: int):
             return expensive_operation(user_id)
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -329,13 +346,14 @@ def cached(ttl: Optional[int] = None, key_prefix: str = 'default'):
             return result
 
         return wrapper
+
     return decorator
 
 
 class CacheManager:
     """缓存管理器"""
 
-    def __init__(self, prefix: str = 'logistics'):
+    def __init__(self, prefix: str = "logistics"):
         self.prefix = prefix
 
     def get(self, key: str) -> Optional[Any]:
@@ -390,12 +408,12 @@ def get_cache_stats() -> Dict[str, Any]:
 
 def cache_exchange_rate(rate: float, ttl: int = 3600) -> bool:
     """缓存汇率数据"""
-    return cache_manager.set('exchange_rate', rate, ttl)
+    return cache_manager.set("exchange_rate", rate, ttl)
 
 
 def get_cached_exchange_rate() -> Optional[float]:
     """获取缓存的汇率数据"""
-    return cache_manager.get('exchange_rate')
+    return cache_manager.get("exchange_rate")
 
 
 def cache_user_data(

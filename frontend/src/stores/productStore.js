@@ -23,4 +23,6 @@ export const useProductStore = create((set) => ({
     set((state) => ({
       products: state.products.filter((p) => p.id !== id),
     })),
+
+  reset: () => set({ products: [], loading: false, error: null }),
 }))

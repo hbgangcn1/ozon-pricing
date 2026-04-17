@@ -5,24 +5,16 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
-})
-
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('api_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
 })
 
 apiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401 && window.location.pathname !== '/login') {
-      localStorage.removeItem('api_token')
       localStorage.removeItem('api_user')
       window.location.href = '/login'
     }
@@ -49,7 +41,6 @@ export const authAPI = {
 }
 
 export const logoutUser = () => {
-  localStorage.removeItem('api_token')
   localStorage.removeItem('api_user')
   window.location.href = '/login'
 }

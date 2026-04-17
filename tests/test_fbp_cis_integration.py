@@ -125,11 +125,11 @@ def _run_grouped(
             side_effect=pricing_side_effect,
         ),
         patch(
-            "pricing.calculate_pricing.cost_and_filter",
+            "pricing.grouped_pricing.cost_and_filter",
             side_effect=cost_side_effect,
         ),
         patch(
-            "pricing.calculate_pricing._get_exchange_rates",
+            "pricing.grouped_pricing._get_exchange_rates",
             return_value=(0.09, 7.2),
         ),
     ):

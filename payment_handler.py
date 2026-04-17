@@ -75,7 +75,7 @@ class PaymentHandler:
             return {
                 "success": False,
                 "status": "UNKNOWN",
-                "message": str(e),
+                "message": "查询支付状态失败",
             }
 
     @staticmethod
@@ -159,7 +159,7 @@ class _PaymentHandlerModule:
             logger.error(f"处理微信通知时出错: {e}")
             return {
                 "success": False,
-                "message": str(e),
+                "message": "处理通知失败",
                 "out_trade_no": "",
             }
 

@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { useProductStore } from './productStore'
+import { useLogisticsStore } from './logisticsStore'
 
 const adminPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/settings', '/users', '/plans', '/statistics', '/about']
 const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/about']
@@ -23,34 +25,33 @@ export const useAuthStore = create((set, get) => ({
   setCalcMode: (mode) => set({ calcMode: mode }),
 
   initAuth: () => {
-    const token = localStorage.getItem('api_token')
     const userStr = localStorage.getItem('api_user')
-    if (token && userStr) {
+    if (userStr) {
       try {
         const user = normalizeSubscriptionType(JSON.parse(userStr))
-        set({ user, token, isAuthenticated: true, isLoading: false })
+        set({ user, isAuthenticated: true, isLoading: false })
       } catch {
-        localStorage.removeItem('api_token')
         localStorage.removeItem('api_user')
         set({ isLoading: false })
       }
     } else {
-      localStorage.removeItem('api_token')
-      localStorage.removeItem('api_user')
       set({ isLoading: false })
     }
   },
 
-  setAuth: (user, token) => {
+  setAuth: (user, _token) => {
     const normalizedUser = normalizeSubscriptionType(user)
-    localStorage.setItem('api_token', token)
-    localStorage.setItem('api_user', JSON.stringify(normalizedUser))
-    set({ user: normalizedUser, token, isAuthenticated: true })
+    // Only persist essential fields to localStorage (no PII like email, phone)
+    const { id, username, role, subscription_type, user_type, remaining_calculations } = normalizedUser
+    const persistUser = { id, username, role, subscription_type, user_type, remaining_calculations }
+    localStorage.setItem('api_user', JSON.stringify(persistUser))
+    set({ user: normalizedUser, token: null, isAuthenticated: true })
   },
 
   logout: () => {
-    localStorage.removeItem('api_token')
     localStorage.removeItem('api_user')
+    useProductStore.getState().reset()
+    useLogisticsStore.getState().reset()
     set({ user: null, token: null, isAuthenticated: false })
   },
 

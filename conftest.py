@@ -9,6 +9,7 @@ import types
 from pathlib import Path
 
 os.environ["E2E_TEST"] = "1"
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-do-not-use-in-production")
 
 
 def pytest_ignore_collect(collection_path, config):

@@ -100,7 +100,7 @@ def test_estimate_price_rub_returns_reasonable_positive_value():
     product = _sample_product()
 
     with patch(
-        "pricing.calculate_pricing._get_exchange_rates",
+        "pricing.grouped_pricing._get_exchange_rates",
         return_value=(0.1, 7.2),
     ):
         result = _estimate_price_rub(product)
@@ -115,7 +115,7 @@ def test_estimate_and_select_rate_passes_expected_args_to_select_fn():
     category = _sample_category()
     select_fn = MagicMock(return_value=0.17)
 
-    with patch("pricing.calculate_pricing._estimate_price_rub", return_value=2345.67):
+    with patch("pricing.grouped_pricing._estimate_price_rub", return_value=2345.67):
         result = _estimate_and_select_rate(product, category, "fbp", select_fn)
 
     assert result == pytest.approx(0.17)

@@ -176,13 +176,14 @@ async def get_dashboard_stats(session: AsyncSession) -> dict:
         try:
             return json.loads(cached)
         except Exception:
-            pass
+            logger.warning("统计缓存JSON解析失败: key=%s", cache_key)
 
     try:
         current_time = int(time.time())
         today_start = current_time - (current_time % 86400)
         yesterday_start = today_start - 86400
-        month_start = current_time - (current_time % (30 * 86400))
+        month_start_dt = _month_start(datetime.now())
+        month_start = int(month_start_dt.timestamp())
 
         user_stats = await _get_user_stats_orm(
             session,

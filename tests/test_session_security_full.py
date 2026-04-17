@@ -641,12 +641,27 @@ class TestHmacSecret:
         assert r == "custom"
 
     def test_prod_mode_raises_without_secret(self):
-        with patch.dict(os.environ, {"PRODUCTION_MODE": "true"}, clear=True):
-            try:
-                SessionSecurityEnhanced._get_hmac_secret()
-                assert False, "Should raise"
-            except ValueError as e:
-                assert "SESSION_HMAC_SECRET" in str(e)
+        # _get_hmac_secret() skips the raise when "pytest" is in
+        # sys.modules (test-env safety net).  Temporarily hide it so
+        # the production-mode ValueError fires as expected.
+        import sys as _sys
+
+        saved = _sys.modules.pop("pytest", None)
+        saved_env = _sys.modules.pop("PYTEST_CURRENT_TEST", None)  # noqa: F841
+        try:
+            with patch.dict(
+                os.environ,
+                {"PRODUCTION_MODE": "true"},
+                clear=True,
+            ):
+                try:
+                    SessionSecurityEnhanced._get_hmac_secret()
+                    assert False, "Should raise"
+                except ValueError as e:
+                    assert "SESSION_HMAC_SECRET" in str(e)
+        finally:
+            if saved is not None:
+                _sys.modules["pytest"] = saved
 
     def test_prod_mode_with_secret(self):
         with patch.dict(

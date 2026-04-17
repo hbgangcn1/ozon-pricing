@@ -83,7 +83,7 @@ def test_list_categories_requires_login():
     response = client.get("/api/commission-categories")
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated"
+    assert response.json()["detail"] == "未提供认证凭证"
 
 
 def test_create_category_success():

@@ -140,14 +140,17 @@ class TestCreatePayment:
 
 
 class TestPaymentNotify:
-    @patch("api.routes.payment.asyncio.create_task")
+    @patch(
+        "api.routes.payment._handle_payment_success_task",
+        new_callable=AsyncMock,
+    )
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)
     @patch(
         "api.routes.payment._get_order",
         new_callable=AsyncMock,
     )
-    def test_success(self, mock_get_order, mock_wechat, mock_task):
+    def test_success(self, mock_get_order, mock_wechat, mock_handle):
         mock_get_order.return_value = None
         mock_wechat.process_notify.return_value = {
             "success": True,

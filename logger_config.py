@@ -12,6 +12,7 @@ from pathlib import Path
 # 尝试导入 loguru，如果失败则使用标准 logging
 try:
     from loguru import logger as _logger  # type: ignore
+
     _loguru_available = True
 except ImportError:
     # loguru 不可用，使用标准 logging 作为回退
@@ -21,8 +22,8 @@ except ImportError:
     if not _logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         log_format = (
-            '%(asctime)s | %(levelname)-8s | '
-            '%(name)s:%(funcName)s:%(lineno)d | %(message)s'
+            "%(asctime)s | %(levelname)-8s | "
+            "%(name)s:%(funcName)s:%(lineno)d | %(message)s"
         )
         handler.setFormatter(logging.Formatter(log_format))
         _logger.addHandler(handler)
@@ -59,7 +60,7 @@ class SensitiveFormatter:
     @staticmethod
     def mask_email(email: str) -> str:
         """脱敏邮箱"""
-        parts = email.split('@')
+        parts = email.split("@")
         if len(parts) == 2:
             name = parts[0]
             if len(name) > 2:
@@ -127,74 +128,82 @@ class SensitiveFormatter:
 
         # 脱敏密码模式（password=xxx, pwd=xxx等）
         message = re.sub(
-            r'(password|pwd|passwd)\s*[:=]\s*[^\s,;}\]]+',
-            r'\1=****',
+            r"(password|pwd|passwd)\s*[:=]\s*[^\s,;}\]]+",
+            r"\1=****",
             message,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
 
         # 脱敏支付金额模式（金额=xxx, amount=xxx, 支付金额=xxx等）
         # 增强：匹配更多金额格式（包括分单位）
         amount_pattern = (
-            r'(amount|金额|支付金额|金额为|'
-            r'payment_amount|price|价格)\s*[:=]\s*[¥$]?\d+\.?\d*'
+            r"(amount|金额|支付金额|金额为|"
+            r"payment_amount|price|价格)\s*[:=]\s*[¥$]?\d+\.?\d*"
         )
         message = re.sub(
-            amount_pattern,
-            lambda m: f"{m.group(1)}=****",
-            message,
-            flags=re.IGNORECASE
+            amount_pattern, lambda m: f"{m.group(1)}=****", message, flags=re.IGNORECASE
         )
 
         # 脱敏交易号模式
         transaction_pattern = (
-            r'(transaction_id|交易号|微信交易号|'
-            r'wechat_transaction_id)\s*[:=]\s*([A-Z0-9]+)'
+            r"(transaction_id|交易号|微信交易号|"
+            r"wechat_transaction_id)\s*[:=]\s*([A-Z0-9]+)"
         )
         message = re.sub(
             transaction_pattern,
             lambda m: (
-                f"{m.group(1)}="
-                f"{SensitiveFormatter.mask_transaction_id(m.group(2))}"
+                f"{m.group(1)}={SensitiveFormatter.mask_transaction_id(m.group(2))}"
             ),
             message,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
 
         # 脱敏支付回调相关数据
         message = re.sub(
-            r'(out_trade_no|商户订单号|订单号)\s*[:=]\s*([A-Z0-9_]+)',
-            lambda m: (
-                f"{m.group(1)}="
-                f"{SensitiveFormatter.mask_order_id(m.group(2))}"
-            ),
+            r"(out_trade_no|商户订单号|订单号)\s*[:=]\s*([A-Z0-9_]+)",
+            lambda m: f"{m.group(1)}={SensitiveFormatter.mask_order_id(m.group(2))}",
             message,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
 
         # 脱敏订单号模式
         message = re.sub(
-            r'(order_id|订单号|订单ID)\s*[:=]\s*([A-Z0-9_]+)',
-            lambda m: (
-                f"{m.group(1)}="
-                f"{SensitiveFormatter.mask_order_id(m.group(2))}"
-            ),
+            r"(order_id|订单号|订单ID)\s*[:=]\s*([A-Z0-9_]+)",
+            lambda m: f"{m.group(1)}={SensitiveFormatter.mask_order_id(m.group(2))}",
             message,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
 
         # 脱敏用户ID模式
         message = re.sub(
-            r'(user_id|用户ID|用户id)\s*[:=]\s*(\d+)',
+            r"(user_id|用户ID|用户id)\s*[:=]\s*(\d+)",
             lambda m: (
-                f"{m.group(1)}="
-                f"{SensitiveFormatter.mask_user_id(int(m.group(2)))}"
+                f"{m.group(1)}={SensitiveFormatter.mask_user_id(int(m.group(2)))}"
             ),
             message,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
 
         return message
+
+
+class InterceptHandler(logging.Handler):
+    """将 stdlib logging 路由到 loguru"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        from loguru import logger as _loguru
+
+        try:
+            level = _loguru.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+        _loguru.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
 def configure_logger(
@@ -202,7 +211,7 @@ def configure_logger(
     log_level: str = "INFO",
     enable_console: bool = True,
     enable_file: bool = True,
-    log_dir: str = "logs"
+    log_dir: str = "logs",
 ):
     """
     配置全局日志器
@@ -239,7 +248,7 @@ def configure_logger(
         # 自动脱敏敏感信息
         message = SensitiveFormatter.sanitize_message(message)
         # 转义函数名中的特殊字符，防止loguru解析错误
-        fn_name = record['function'].replace('<', '\\<').replace('>', '\\>')
+        fn_name = record["function"].replace("<", "\\<").replace(">", "\\>")
         return (
             f"<green>{record['time']:YYYY-MM-DD HH:mm:ss}</green> | "
             f"<level>{record['level'].name: <8}</level> | "
@@ -256,37 +265,37 @@ def configure_logger(
             colorize=True,
             format=format_log,
             level=log_level,  # 使用传入的日志级别
-            enqueue=True  # 异步写入，避免阻塞
+            enqueue=True,  # 异步写入，避免阻塞
         )
 
     # 文件输出（所有级别）（高优先级安全改进：关闭diagnose避免泄露敏感信息）
     if enable_file:
         loguru_logger.add(  # type: ignore
             f"{log_dir}/{app_name}_{{time:YYYY-MM-DD}}.log",
-            rotation="100 MB",         # 每100MB轮转
-            retention="30 days",       # 保留30天
-            compression="zip",         # 压缩旧日志
+            rotation="100 MB",  # 每100MB轮转
+            retention="30 days",  # 保留30天
+            compression="zip",  # 压缩旧日志
             encoding="utf-8",
             level=log_level,
             format=format_log,
             enqueue=True,
-            backtrace=True,            # 显示完整堆栈
-            diagnose=False             # 关闭变量值显示，防止敏感信息泄露
+            backtrace=True,  # 显示完整堆栈
+            diagnose=False,  # 关闭变量值显示，防止敏感信息泄露
         )
 
     # 错误日志单独文件（高优先级安全改进：关闭diagnose避免泄露敏感信息）
     if enable_file:
         loguru_logger.add(  # type: ignore
             f"{log_dir}/{app_name}_error_{{time:YYYY-MM-DD}}.log",
-            rotation="100 MB",         # 100MB轮转
-            retention="90 days",       # 错误日志保留90天
+            rotation="100 MB",  # 100MB轮转
+            retention="90 days",  # 错误日志保留90天
             compression="zip",
             encoding="utf-8",
             level="ERROR",
             format=format_log,
             enqueue=True,
             backtrace=True,
-            diagnose=False             # 关闭变量值显示，防止敏感信息泄露
+            diagnose=False,  # 关闭变量值显示，防止敏感信息泄露
         )
 
     logger.info(f"日志系统初始化完成: {app_name}")
@@ -330,25 +339,30 @@ def log_debug(message: str, **kwargs):
 # 初始化日志系统（仅在 loguru 可用时配置）
 if LOGURU_AVAILABLE:
     configure_logger(
-        app_name="logistics",
-        log_level="INFO",
-        enable_console=True,
-        enable_file=True
+        app_name="logistics", log_level="INFO", enable_console=True, enable_file=True
     )
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 else:
     # loguru 不可用，使用标准 logging 的基本配置
     configure_logger(
         app_name="logistics",
         log_level="INFO",
         enable_console=True,
-        enable_file=False  # 标准 logging 需要额外配置才能写入文件
+        enable_file=False,  # 标准 logging 需要额外配置才能写入文件
     )
 
 # 确保 logger 可被正确导入
 __all__ = [
-    'logger', 'configure_logger', 'SensitiveFormatter',
-    'log_info', 'log_error', 'log_warning', 'log_debug',
-    'log_safe_info', 'log_safe_error', 'log_safe_warning'
+    "logger",
+    "configure_logger",
+    "SensitiveFormatter",
+    "log_info",
+    "log_error",
+    "log_warning",
+    "log_debug",
+    "log_safe_info",
+    "log_safe_error",
+    "log_safe_warning",
 ]
 
 
@@ -359,9 +373,7 @@ def log_safe_info(message: str, **kwargs):
     logger.info(safe_message, **kwargs)
 
 
-def log_safe_error(
-    message: str, exception: Optional[Exception] = None, **kwargs
-):
+def log_safe_error(message: str, exception: Optional[Exception] = None, **kwargs):
     """记录错误日志（自动脱敏敏感信息）"""
     safe_message = SensitiveFormatter.sanitize_message(message)
     if exception:

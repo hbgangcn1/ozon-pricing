@@ -23,4 +23,6 @@ export const useLogisticsStore = create((set) => ({
     set((state) => ({
       logistics: state.logistics.filter((l) => l.id !== id),
     })),
+
+  reset: () => set({ logistics: [], loading: false, error: null }),
 }))

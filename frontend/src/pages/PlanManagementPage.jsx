@@ -125,9 +125,12 @@ function PlanCard({ plan, onEdit, isEditing, onDelete, onToggle }) {
 }
 
 function PlanEditForm({ plan, onSave, onCancel, isNew }) {
-  const [formData, setFormData] = useState({
-    ...plan,
-    features: Array.isArray(plan.features) ? plan.features.join(', ') : ''
+  const [formData, setFormData] = useState(() => {
+    const data = { ...plan, features: Array.isArray(plan.features) ? plan.features.join(', ') : '' }
+    for (const f of ['displayPriceMonth', 'displayPriceYear', 'actualPriceMonth', 'actualPriceYear', 'testPriceMonth', 'testPriceYear']) {
+      data[f] = Number(data[f] || 0).toFixed(2)
+    }
+    return data
   })
 
   const handleChange = (field, value) => {
@@ -157,7 +160,8 @@ function PlanEditForm({ plan, onSave, onCancel, isNew }) {
     const featuresArray = formData.features 
       ? formData.features.split(',').map(f => f.trim()).filter(f => f)
       : []
-    onSave(plan.id, { ...formData, features: featuresArray })
+    const { _prevCalcLimit, _prevLogisticsTemplate, ...submitData } = formData
+    onSave(plan.id, { ...submitData, features: featuresArray })
   }
 
   return (
@@ -275,21 +279,53 @@ function PlanEditForm({ plan, onSave, onCancel, isNew }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label>计算次数</Label>
-                <Input
-                  type="number"
-                  min="-1"
-                  value={formData.calcLimit}
-                  onChange={(e) => handleNumberChange('calcLimit', e.target.value)}
-                />
+                <div className="flex items-center gap-2 mb-1">
+                  <Switch
+                    checked={formData.calcLimit === -1}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        handleChange('_prevCalcLimit', formData.calcLimit > 0 ? formData.calcLimit : 100)
+                        handleNumberChange('calcLimit', '-1')
+                      } else {
+                        handleNumberChange('calcLimit', String(formData._prevCalcLimit || 100))
+                      }
+                    }}
+                  />
+                  <span className="text-sm text-text-secondary">无限</span>
+                </div>
+                {formData.calcLimit !== -1 && (
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.calcLimit}
+                    onChange={(e) => handleNumberChange('calcLimit', e.target.value)}
+                  />
+                )}
               </div>
               <div className="space-y-2">
                 <Label>物流模板</Label>
-                <Input
-                  type="number"
-                  min="-1"
-                  value={formData.logisticsTemplate}
-                  onChange={(e) => handleNumberChange('logisticsTemplate', e.target.value)}
-                />
+                <div className="flex items-center gap-2 mb-1">
+                  <Switch
+                    checked={formData.logisticsTemplate === -1}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        handleChange('_prevLogisticsTemplate', formData.logisticsTemplate > 0 ? formData.logisticsTemplate : 1)
+                        handleNumberChange('logisticsTemplate', '-1')
+                      } else {
+                        handleNumberChange('logisticsTemplate', String(formData._prevLogisticsTemplate || 1))
+                      }
+                    }}
+                  />
+                  <span className="text-sm text-text-secondary">无限</span>
+                </div>
+                {formData.logisticsTemplate !== -1 && (
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.logisticsTemplate}
+                    onChange={(e) => handleNumberChange('logisticsTemplate', e.target.value)}
+                  />
+                )}
               </div>
               <div className="space-y-2">
                 <Label>排序</Label>

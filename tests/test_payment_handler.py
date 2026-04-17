@@ -106,7 +106,7 @@ class TestPaymentHandlerQueryStatus(unittest.TestCase):
         result = PaymentHandler.query_payment_status("order_err")
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "UNKNOWN")
-        self.assertIn("network error", result["message"])
+        self.assertIn("查询支付状态失败", result["message"])
 
 
 class TestPaymentHandlerHandleSuccess(unittest.TestCase):
@@ -343,7 +343,7 @@ class TestProcessWechatNotifyException(unittest.TestCase):
         mock_wechat.process_notify.side_effect = RuntimeError("notify boom")
         result = asyncio.run(payment_handler.process_wechat_notify({"data": "x"}))
         self.assertFalse(result["success"])
-        self.assertIn("notify boom", result["message"])
+        self.assertIn("处理通知失败", result["message"])
         self.assertEqual(result["out_trade_no"], "")
 
 

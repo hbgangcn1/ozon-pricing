@@ -201,27 +201,22 @@ class SessionSecurityEnhanced:
     @staticmethod
     def _get_hmac_secret() -> str:
         import os
+        import sys
 
         if SessionSecurityEnhanced._hmac_secret_cache is not None:
             return SessionSecurityEnhanced._hmac_secret_cache
 
-        production_mode = os.environ.get("PRODUCTION_MODE", "false").lower() == "true"
-
-        if production_mode:
-            secret_key = os.environ.get("SESSION_HMAC_SECRET")
-            if not secret_key:
-                raise ValueError(
-                    "SESSION_HMAC_SECRET environment variable "
-                    "must be set in production mode"
-                )
-            SessionSecurityEnhanced._hmac_secret_cache = secret_key
-        else:
-            secret_key = os.environ.get(
-                "SESSION_HMAC_SECRET",
-                "dev-only-hmac-secret-do-not-use-in-production",
+        secret_key = os.environ.get("SESSION_HMAC_SECRET")
+        if not secret_key:
+            # Only allow default in test environment
+            is_testing = "pytest" in sys.modules or os.environ.get(
+                "PYTEST_CURRENT_TEST"
             )
-            SessionSecurityEnhanced._hmac_secret_cache = secret_key
-
+            if is_testing:
+                secret_key = "dev-only-hmac-secret-do-not-use-in-production"
+            else:
+                raise ValueError("SESSION_HMAC_SECRET environment variable must be set")
+        SessionSecurityEnhanced._hmac_secret_cache = secret_key
         return secret_key
 
     @staticmethod

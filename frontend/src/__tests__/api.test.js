@@ -50,21 +50,14 @@ describe('api.js', () => {
   })
 
   describe('Interceptors', () => {
-    it('request interceptor adds Authorization header if token exists', () => {
-      localStorage.setItem('api_token', 'test-token-123')
-      const reqInterceptor = mockRequestUse.mock.calls[0][0]
-      const config = { headers: {} }
-      
-      const updatedConfig = reqInterceptor(config)
-      expect(updatedConfig.headers.Authorization).toBe('Bearer test-token-123')
+    it('api client is configured with withCredentials', () => {
+      expect(axios.create).toHaveBeenCalledWith(
+        expect.objectContaining({ withCredentials: true })
+      )
     })
 
-    it('request interceptor does not add Authorization header if no token', () => {
-      const reqInterceptor = mockRequestUse.mock.calls[0][0]
-      const config = { headers: {} }
-      
-      const updatedConfig = reqInterceptor(config)
-      expect(updatedConfig.headers.Authorization).toBeUndefined()
+    it('does not register a request interceptor', () => {
+      expect(mockRequestUse).not.toHaveBeenCalled()
     })
 
     it('response interceptor returns response.data on success', () => {
@@ -75,8 +68,7 @@ describe('api.js', () => {
       expect(result).toEqual({ foo: 'bar' })
     })
 
-    it('response interceptor clears storage and redirects to /login on 401 when not on /login page', async () => {
-      localStorage.setItem('api_token', 'token')
+    it('response interceptor clears api_user and redirects to /login on 401 when not on /login page', async () => {
       localStorage.setItem('api_user', 'user')
       window.location.pathname = '/dashboard'
       
@@ -85,13 +77,11 @@ describe('api.js', () => {
       
       await expect(resErrorInterceptor(mockError)).rejects.toEqual(mockError)
       
-      expect(localStorage.getItem('api_token')).toBeNull()
       expect(localStorage.getItem('api_user')).toBeNull()
       expect(window.location.href).toBe('/login')
     })
 
     it('response interceptor does NOT clear storage or redirect on 401 when on /login page', async () => {
-      localStorage.setItem('api_token', 'token')
       localStorage.setItem('api_user', 'user')
       window.location.pathname = '/login'
       window.location.href = 'http://localhost/login'
@@ -101,13 +91,11 @@ describe('api.js', () => {
       
       await expect(resErrorInterceptor(mockError)).rejects.toEqual(mockError)
       
-      expect(localStorage.getItem('api_token')).toBe('token')
       expect(localStorage.getItem('api_user')).toBe('user')
       expect(window.location.href).toBe('http://localhost/login')
     })
 
     it('response interceptor rejects with error on non-401 error', async () => {
-      localStorage.setItem('api_token', 'token')
       window.location.pathname = '/dashboard'
       
       const resErrorInterceptor = mockResponseUse.mock.calls[0][1]
@@ -115,19 +103,16 @@ describe('api.js', () => {
       
       await expect(resErrorInterceptor(mockError)).rejects.toEqual(mockError)
       
-      expect(localStorage.getItem('api_token')).toBe('token')
       expect(window.location.href).toBe('')
     })
   })
   
   describe('logoutUser', () => {
-    it('removes token and user from localStorage and redirects to /login', () => {
-      localStorage.setItem('api_token', 'token')
+    it('removes api_user from localStorage and redirects to /login', () => {
       localStorage.setItem('api_user', 'user')
       
       logoutUser()
       
-      expect(localStorage.getItem('api_token')).toBeNull()
       expect(localStorage.getItem('api_user')).toBeNull()
       expect(window.location.href).toBe('/login')
     })

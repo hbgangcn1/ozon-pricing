@@ -109,7 +109,8 @@ async def import_logistics_pool(
                 imported += 1
             except Exception as exc:
                 skipped += 1
-                errors.append(f"row {index}: {exc}")
+                errors.append(f"第 {index} 行导入失败")
+                logger.warning("物流池导入第 %d 行失败: %s", index, exc)
         return {"imported": imported, "skipped": skipped, "errors": errors}
     except HTTPException:
         raise
@@ -123,7 +124,7 @@ async def import_logistics_pool(
         logger.exception("物流池导入失败: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail=f"导入处理失败: {exc}",
+            detail="导入处理失败，请联系管理员",
         )
     finally:
         if temp_path and os.path.exists(temp_path):
@@ -142,7 +143,7 @@ async def delete_all_logistics_pool(
         logger.exception("物流池删除全部失败: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail=f"删除失败: {exc}",
+            detail="删除失败，请联系管理员",
         )
 
 

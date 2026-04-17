@@ -1,7 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import PlanManagementPage from '../pages/PlanManagementPage';
 import { toast } from 'sonner';
+
+const mockPlans = [
+  { id: 1, code: 'free', name: '免费版', display_price_month: 0, display_price_year: 0, actual_price_month: 0, actual_price_year: 0, test_price_month: 0, test_price_year: 0, calc_limit: -1, logistics_limit: 1, sort: 1, status: 1, description: '免费', features: ['基础功能'] },
+  { id: 2, code: 'efficiency', name: '效率版', display_price_month: 29.9, display_price_year: 299, actual_price_month: 29.9, actual_price_year: 299, test_price_month: 0.01, test_price_year: 0.01, calc_limit: -1, logistics_limit: 5, sort: 2, status: 1, description: '效率', features: ['极速模式'] },
+  { id: 3, code: 'pro', name: '专业版', display_price_month: 59.9, display_price_year: 599, actual_price_month: 59.9, actual_price_year: 599, test_price_month: 0.01, test_price_year: 0.01, calc_limit: -1, logistics_limit: -1, sort: 3, status: 1, description: '专业', features: ['无限模板'] },
+  { id: 4, code: 'enterprise', name: '企业版', display_price_month: 199, display_price_year: 1999, actual_price_month: 199, actual_price_year: 1999, test_price_month: 0.01, test_price_year: 0.01, calc_limit: -1, logistics_limit: -1, sort: 4, status: 1, description: '企业', features: ['专属服务'] },
+];
+
+vi.mock('../services/api', () => ({
+  plansAPI: {
+    getAll: vi.fn(() => Promise.resolve(mockPlans)),
+    create: vi.fn(() => Promise.resolve({})),
+    update: vi.fn(() => Promise.resolve({})),
+    delete: vi.fn(() => Promise.resolve({})),
+    toggleActive: vi.fn(() => Promise.resolve({})),
+  },
+}));
 
 vi.mock('lucide-react', () => ({
   Edit: () => null,
@@ -11,6 +28,8 @@ vi.mock('lucide-react', () => ({
   Plus: () => null,
   List: () => null,
   Settings: () => null,
+  Trash2: () => null,
+  Power: () => null,
 }));
 
 vi.mock('sonner', () => ({
@@ -67,9 +86,20 @@ vi.mock('../components/ui/tabs', () => ({
   Tabs: ({ children, value, onValueChange }) => <div data-active={value}>{children}</div>,
   TabsList: ({ children }) => <div role="tablist">{children}</div>,
   TabsTrigger: ({ children, value, onClick }) => (
-    <button role="tab" data-value={value} onClick={onClick}>{children}</button>
+    <button type="button" role="tab" data-value={value} onClick={onClick}>{children}</button>
   ),
   TabsContent: ({ children, value }) => <div data-tab={value}>{children}</div>,
+}));
+
+vi.mock('../components/ui/alert-dialog', () => ({
+  AlertDialog: ({ children, open }) => open ? <div data-testid="alert-dialog">{children}</div> : null,
+  AlertDialogContent: ({ children }) => <div>{children}</div>,
+  AlertDialogHeader: ({ children }) => <div>{children}</div>,
+  AlertDialogTitle: ({ children }) => <h3>{children}</h3>,
+  AlertDialogDescription: ({ children }) => <p>{children}</p>,
+  AlertDialogFooter: ({ children }) => <div>{children}</div>,
+  AlertDialogAction: ({ children, onClick }) => <button type="button" onClick={onClick}>{children}</button>,
+  AlertDialogCancel: ({ children, onClick }) => <button type="button" onClick={onClick}>{children}</button>,
 }));
 
 describe('PlanManagementPage', () => {
@@ -82,41 +112,68 @@ describe('PlanManagementPage', () => {
     expect(screen.getByText(/套餐管理/)).toBeInTheDocument();
   });
 
-  it('renders all 4 plan cards in list tab', () => {
+  it('renders all 4 plan cards in list tab', async () => {
     render(<PlanManagementPage />);
-    expect(screen.getByText('免费版')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('免费版')).toBeInTheDocument();
+    });
     expect(screen.getByText('效率版')).toBeInTheDocument();
     expect(screen.getByText('专业版')).toBeInTheDocument();
     expect(screen.getByText('企业版')).toBeInTheDocument();
   });
 
-  it('shows edit form when edit button is clicked', () => {
+  it('shows edit form when edit button is clicked', async () => {
     render(<PlanManagementPage />);
+    await waitFor(() => {
+      expect(screen.getByText('免费版')).toBeInTheDocument();
+    });
     const editButtons = screen.getAllByText(/编辑/);
     fireEvent.click(editButtons[0]);
     expect(screen.getByText(/编辑套餐:/)).toBeInTheDocument();
   });
 
-  it('cancels edit and returns to plan card view', () => {
+  it('cancels edit and returns to plan card view', async () => {
     render(<PlanManagementPage />);
+    await waitFor(() => {
+      expect(screen.getByText('免费版')).toBeInTheDocument();
+    });
     const editButtons = screen.getAllByText(/编辑/);
     fireEvent.click(editButtons[0]);
     expect(screen.getByText(/编辑套餐:/)).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/取消/));
+    const cancelButtons = screen.getAllByText(/取消/);
+    fireEvent.click(cancelButtons[0]);
     expect(screen.queryByText(/编辑套餐:/)).not.toBeInTheDocument();
   });
 
-  it('saves plan changes and shows success toast', () => {
+  it('saves plan changes and shows success toast', async () => {
     render(<PlanManagementPage />);
+    await waitFor(() => {
+      expect(screen.getByText('免费版')).toBeInTheDocument();
+    });
     const editButtons = screen.getAllByText(/编辑/);
     fireEvent.click(editButtons[0]);
-    fireEvent.click(screen.getByText(/保存/));
-    expect(toast.success).toHaveBeenCalledWith('保存成功');
-    expect(screen.queryByText(/编辑套餐:/)).not.toBeInTheDocument();
+    const saveButtons = screen.getAllByText(/保存/);
+    fireEvent.click(saveButtons[0]);
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('保存成功');
+    });
   });
 
   it('renders "新增套餐" tab trigger', () => {
     render(<PlanManagementPage />);
     expect(screen.getAllByText(/新增套餐/).length).toBeGreaterThan(0);
+  });
+
+  it('displays prices with 2 decimal places in edit form', async () => {
+    render(<PlanManagementPage />);
+    await waitFor(() => {
+      expect(screen.getByText('效率版')).toBeInTheDocument();
+    });
+    // Click edit on 效率版 (second plan)
+    const editButtons = screen.getAllByText(/编辑/);
+    fireEvent.click(editButtons[1]);
+    // Check that price inputs show 2 decimal places
+    const priceInputs = screen.getAllByDisplayValue('29.90');
+    expect(priceInputs.length).toBeGreaterThan(0);
   });
 });

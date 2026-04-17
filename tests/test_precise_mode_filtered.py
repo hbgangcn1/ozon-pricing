@@ -467,11 +467,11 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
             side_effect=_mock_calculate,
         ),
         patch(
-            "pricing.calculate_pricing.cost_and_filter",
+            "pricing.grouped_pricing.cost_and_filter",
             side_effect=_mock_cost_and_filter,
         ) as mock_cost_filter,
         patch(
-            "pricing.calculate_pricing._get_exchange_rates",
+            "pricing.grouped_pricing._get_exchange_rates",
             return_value=(0.0904, 7.2),
         ),
     ):

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -15,6 +17,8 @@ from db.plans import (
     update_plan,
 )
 from db.subscriptions import get_user_subscription_info
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/subscriptions", tags=["订阅"])
 
@@ -109,6 +113,7 @@ async def get_plans_route(
     try:
         plans = await get_plans(session, active_only=active_only)
     except Exception:
+        logger.warning("获取套餐列表失败", exc_info=True)
         return []
     return [_to_plan_response(plan) for plan in plans]
 

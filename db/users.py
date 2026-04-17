@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import delete as sa_delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.password import hash_password, verify_password
+from db.password import hash_password, is_bcrypt_hash, verify_password
 from models.log import AdminActionLog, AlertRecord, UserBehaviorLog, UserLoginLog
 from models.logistics import Logistics
 from models.order import PaymentOrder
@@ -94,6 +94,11 @@ async def verify_user(
     stored = user.password or ""
     if not verify_password(password, stored):
         return None
+
+    # Auto-migrate legacy SHA-256 hash to bcrypt
+    if not is_bcrypt_hash(stored):
+        user.password = hash_password(password)
+        logger.info("Migrated password hash to bcrypt for user %s", user.username)
 
     return {
         "id": user.id,

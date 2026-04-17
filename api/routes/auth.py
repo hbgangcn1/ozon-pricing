@@ -1,5 +1,8 @@
+import os
 import re
-from fastapi import APIRouter, Depends, HTTPException, status
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -23,6 +26,14 @@ from api.dependencies import (
     get_current_user_id,
     get_current_user as get_current_user_dep,
 )
+from api.middleware.login_limiter import login_limiter
+
+_is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
+_cookie_secure = (
+    os.environ.get("COOKIE_SECURE", "true" if _is_production else "false").lower()
+    == "true"
+)
+_COOKIE_MAX_AGE = 8 * 3600  # 8 hours
 
 
 def validate_password(password: str) -> bool:
@@ -42,24 +53,42 @@ def validate_password(password: str) -> bool:
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
 
-@router.post("/login", response_model=TokenResponse)
+def _set_token_cookie(response: JSONResponse, token: str) -> None:
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=_cookie_secure,
+        samesite="strict",
+        max_age=_COOKIE_MAX_AGE,
+        path="/",
+    )
+
+
+@router.post("/login")
 async def login(
     credentials: UserLogin,
+    request: Request,
     session: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    login_limiter.check(client_ip)
+
     user = await verify_user(session, credentials.username, credentials.password)
     if not user:
+        login_limiter.record_attempt(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
         )
 
+    login_limiter.clear(client_ip)
     token = create_access_token(
         user_id=user["id"],
         username=user["username"],
         role=user.get("role", "user"),
     )
-    return TokenResponse(
+    body = TokenResponse(
         access_token=token,
         user=UserResponse(
             id=user["id"],
@@ -70,14 +99,27 @@ async def login(
             remaining_calculations=user.get("remaining_calculations", -1),
         ),
     )
+    response = JSONResponse(content=body.model_dump())
+    _set_token_cookie(response, token)
+    return response
 
 
-@router.post("/logout", response_model=MessageResponse)
+@router.post("/logout")
 async def logout():
-    return MessageResponse(message="登出成功")
+    response = JSONResponse(
+        content=MessageResponse(message="登出成功").model_dump(),
+    )
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        httponly=True,
+        secure=_cookie_secure,
+        samesite="strict",
+    )
+    return response
 
 
-@router.post("/register", response_model=TokenResponse)
+@router.post("/register")
 async def register(
     user_data: UserRegister,
     session: AsyncSession = Depends(get_db),
@@ -124,7 +166,7 @@ async def register(
         username=user_data.username,
         role="user",
     )
-    return TokenResponse(
+    body = TokenResponse(
         access_token=token,
         user=UserResponse(
             id=user_id,
@@ -135,6 +177,9 @@ async def register(
             remaining_calculations=-1,
         ),
     )
+    response = JSONResponse(content=body.model_dump())
+    _set_token_cookie(response, token)
+    return response
 
 
 @router.get("/me", response_model=UserResponse)

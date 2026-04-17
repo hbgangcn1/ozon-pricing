@@ -1,4 +1,7 @@
-from fastapi import Depends, HTTPException, status
+import os
+from urllib.parse import urlparse
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,9 +13,46 @@ from security.tokens import (
     TokenInvalidError,
 )
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 COMMISSION_ALLOWED_TIERS = {"professional", "enterprise", "gratitude", "test"}
 EXCEL_ALLOWED_TIERS = {"enterprise", "gratitude", "test"}
+
+_allowed_origins_raw = os.environ.get("ALLOWED_ORIGINS", "")
+_ALLOWED_ORIGINS = {
+    o.strip().rstrip("/") for o in _allowed_origins_raw.split(",") if o.strip()
+}
+
+
+def _check_csrf_origin(request: Request) -> None:
+    """Validate Origin for cookie-auth state-changing requests."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    if not _ALLOWED_ORIGINS:
+        return
+    origin = request.headers.get("origin")
+    if not origin:
+        referer = request.headers.get("referer")
+        if referer:
+            parsed = urlparse(referer)
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+    if not origin or origin.rstrip("/") not in _ALLOWED_ORIGINS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="请求来源不合法",
+        )
+
+
+def _extract_token(api_key, request: Request) -> str:
+    if api_key and api_key.credentials:
+        return api_key.credentials
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        _check_csrf_origin(request)
+        return cookie_token
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="未提供认证凭证",
+    )
 
 
 def _resolve_user_id(token: str) -> int:
@@ -25,11 +65,7 @@ def _resolve_user_id(token: str) -> int:
         )
 
 
-async def get_current_user_id(
-    api_key=Depends(security),
-    session: AsyncSession = Depends(get_db),
-) -> int:
-    token = api_key.credentials
+async def _get_user(token: str, session: AsyncSession) -> User:
     user_id = _resolve_user_id(token)
     user = await session.get(User, user_id)
     if not user:
@@ -37,26 +73,31 @@ async def get_current_user_id(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户不存在",
         )
-    if user.is_frozen == 1:
+    if bool(user.is_frozen):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户已被冻结",
         )
-    return user_id
+    return user
+
+
+async def get_current_user_id(
+    request: Request,
+    api_key=Depends(security),
+    session: AsyncSession = Depends(get_db),
+) -> int:
+    token = _extract_token(api_key, request)
+    user = await _get_user(token, session)
+    return user.id
 
 
 async def get_current_user(
+    request: Request,
     api_key=Depends(security),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    token = api_key.credentials
-    user_id = _resolve_user_id(token)
-    user = await session.get(User, user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户不存在",
-        )
+    token = _extract_token(api_key, request)
+    user = await _get_user(token, session)
     return {
         "id": user.id,
         "username": user.username,
@@ -68,22 +109,12 @@ async def get_current_user(
 
 
 async def get_user_with_subscription(
+    request: Request,
     api_key=Depends(security),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    token = api_key.credentials
-    user_id = _resolve_user_id(token)
-    user = await session.get(User, user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户不存在",
-        )
-    if user.is_frozen == 1:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="账户已被冻结",
-        )
+    token = _extract_token(api_key, request)
+    user = await _get_user(token, session)
     return {
         "id": user.id,
         "username": user.username,
@@ -95,20 +126,15 @@ async def get_user_with_subscription(
 
 
 async def require_admin(
+    request: Request,
     api_key=Depends(security),
     session: AsyncSession = Depends(get_db),
 ) -> int:
-    token = api_key.credentials
-    user_id = _resolve_user_id(token)
-    user = await session.get(User, user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户不存在",
-        )
+    token = _extract_token(api_key, request)
+    user = await _get_user(token, session)
     if user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="需要管理员权限",
         )
-    return user_id
+    return user.id

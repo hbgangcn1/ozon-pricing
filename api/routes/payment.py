@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import time
@@ -170,13 +169,11 @@ async def payment_notify(
     result = wechat_pay_v3.process_notify(request_data)
     if not result.get("success"):
         message = result.get("message", "通知处理失败")
-        if message == "签名验证失败":
-            return JSONResponse(
-                status_code=400,
-                content={"code": "FAIL", "message": "签名验证失败"},
-            )
         logger.warning("微信支付通知处理失败: %s", message)
-        return NotifyResponse(code="SUCCESS", message="成功")
+        return JSONResponse(
+            status_code=400,
+            content={"code": "FAIL", "message": message},
+        )
 
     out_trade_no = result.get("out_trade_no") or known_order_id
     if out_trade_no:
@@ -185,7 +182,7 @@ async def payment_notify(
             return NotifyResponse(code="SUCCESS", message="成功")
 
     if result.get("trade_state") == "SUCCESS" and out_trade_no:
-        asyncio.create_task(_handle_payment_success_task(out_trade_no))
+        await _handle_payment_success_task(out_trade_no)
 
     return NotifyResponse(code="SUCCESS", message="成功")
 

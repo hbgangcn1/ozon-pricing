@@ -130,7 +130,7 @@ def test_weight_fail_shows_weight_reason_not_secondary():
             side_effect=stage1_se,
         ),
         patch(
-            "pricing.calculate_pricing._get_exchange_rates",
+            "pricing.grouped_pricing._get_exchange_rates",
             return_value=(0.09, 7.2),
         ),
         patch(
@@ -209,11 +209,11 @@ def test_secondary_only_shows_secondary_reason():
             side_effect=lambda items: (list(items), []),
         ),
         patch(
-            "pricing.calculate_pricing.cost_and_filter",
+            "pricing.grouped_pricing.cost_and_filter",
             side_effect=mock_cost_and_filter,
         ),
         patch(
-            "pricing.calculate_pricing._get_exchange_rates",
+            "pricing.grouped_pricing._get_exchange_rates",
             return_value=(0.09, 7.2),
         ),
         patch(
@@ -291,11 +291,11 @@ def test_selected_logistics_not_in_eliminated():
             side_effect=lambda items: (list(items), []),
         ),
         patch(
-            "pricing.calculate_pricing.cost_and_filter",
+            "pricing.grouped_pricing.cost_and_filter",
             side_effect=mock_cost_and_filter,
         ),
         patch(
-            "pricing.calculate_pricing._get_exchange_rates",
+            "pricing.grouped_pricing._get_exchange_rates",
             return_value=(0.09, 7.2),
         ),
         patch(
@@ -370,7 +370,7 @@ def test_dimension_fail_shows_dimension_reason():
             side_effect=stage1_se,
         ),
         patch(
-            "pricing.calculate_pricing._get_exchange_rates",
+            "pricing.grouped_pricing._get_exchange_rates",
             return_value=(0.09, 7.2),
         ),
         patch(

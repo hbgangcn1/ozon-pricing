@@ -18,7 +18,7 @@ DB_CONFIG = {
     "port": int(os.environ.get("POSTGRES_PORT", "5432")),
     "dbname": os.environ.get("POSTGRES_DB", "logistics"),
     "user": os.environ.get("POSTGRES_USER", "postgres"),
-    "password": os.environ.get("POSTGRES_PASSWORD", "***REMOVED-PG-PWD***"),
+    "password": os.environ.get("POSTGRES_PASSWORD", ""),
 }
 
 CONDITION = (
@@ -27,6 +27,10 @@ CONDITION = (
 
 
 def main():
+    if not DB_CONFIG["password"]:
+        print("ERROR: POSTGRES_PASSWORD environment variable must be set")
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(
         description="Purge accumulated test users from database",
     )

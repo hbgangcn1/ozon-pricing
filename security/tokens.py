@@ -9,16 +9,15 @@ def _get_jwt_secret() -> str:
     secret = os.environ.get("JWT_SECRET_KEY")
     if secret:
         return secret
-    if os.environ.get("PRODUCTION_MODE", "").lower() == "true":
-        raise RuntimeError(
-            "JWT_SECRET_KEY environment variable must be set in production"
-        )
-    return "dev-only-jwt-secret-do-not-use-in-production"
+    raise RuntimeError(
+        "JWT_SECRET_KEY environment variable is required. "
+        "Set it in .env for development or system environment for production."
+    )
 
 
 SECRET_KEY = _get_jwt_secret()
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "480"))
 
 
 class TokenError(Exception):

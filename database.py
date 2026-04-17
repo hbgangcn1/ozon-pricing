@@ -46,8 +46,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def run_migrations() -> None:
-    """异步执行 Alembic upgrade head。在 app lifespan 中 await 调用。"""
+    """异步执行 Alembic upgrade head。使用 advisory lock 防止多 worker 竞争。"""
     from alembic.config import Config
+    from sqlalchemy import text
     import os
 
     alembic_ini = os.path.join(
@@ -56,10 +57,18 @@ async def run_migrations() -> None:
     )
     alembic_cfg = Config(alembic_ini)
 
-    # 复用已有 engine 执行迁移，避免 asyncio.run() 冲突
     async with engine.connect() as connection:
-        await connection.run_sync(_do_alembic_upgrade, alembic_cfg)
-    logger.info("Alembic migrations applied successfully")
+        lock_acquired = await connection.scalar(
+            text("SELECT pg_try_advisory_lock(73571)")
+        )
+        if not lock_acquired:
+            logger.info("Another worker is running migrations, skipping")
+            return
+        try:
+            await connection.run_sync(_do_alembic_upgrade, alembic_cfg)
+            logger.info("Alembic migrations applied successfully")
+        finally:
+            await connection.execute(text("SELECT pg_advisory_unlock(73571)"))
 
 
 def _do_alembic_upgrade(connection, alembic_cfg):

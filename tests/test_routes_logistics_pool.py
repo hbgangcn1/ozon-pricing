@@ -96,7 +96,7 @@ def test_list_logistics_pool_requires_login():
     response = client.get("/api/logistics-pool")
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated"
+    assert response.json()["detail"] == "未提供认证凭证"
 
 
 def test_import_logistics_pool_success():
@@ -161,7 +161,7 @@ def test_import_logistics_pool_requires_admin():
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated"
+    assert response.json()["detail"] == "未提供认证凭证"
 
 
 def test_set_logistics_pool_active_success():
@@ -351,4 +351,4 @@ def test_batch_add_to_my_logistics_requires_login():
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated"
+    assert response.json()["detail"] == "未提供认证凭证"
