@@ -100,7 +100,7 @@ class TestRootEndpoints:
         r = client.get("/health")
         assert r.status_code == 200
         assert r.json()["status"] == "healthy"
-        assert r.json()["database"] == "ok"
+        assert r.json()["db_status"] == "ok"
 
 
 class TestAuth:

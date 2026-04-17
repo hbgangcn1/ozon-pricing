@@ -194,37 +194,7 @@ def _stage3_select(land_candidates, air_candidates):
     return price_best_land, price_best_air, speed_best_land, speed_best_air
 
 
-def _group_fbp_cis(subset, group_product, mode, split_fn):
-    from pricing.fbp_secondary_filter import fbp_secondary_filter
-    from .calculate_pricing import calculate_pricing
-
-    land_all, air_all = split_fn(subset)
-
-    survivors, stage1_filtered = _stage1_filter(
-        group_product,
-        land_all,
-        air_all,
-        mode,
-    )
-
-    kept, eliminated = fbp_secondary_filter(survivors)
-
-    kept_land, kept_air = split_fn(kept)
-    pp = calculate_pricing(
-        group_product,
-        kept_land,
-        kept_air,
-        mode=mode,
-        priority="低价优先",
-    )
-    sp = calculate_pricing(
-        group_product,
-        kept_land,
-        kept_air,
-        mode=mode,
-        priority="速度优先",
-    )
-
+def _compute_fbp_candidates(group_product, kept_land, kept_air, mode):
     unit_price = float(group_product.get("unit_price", 0))
     labeling_fee = float(group_product.get("labeling_fee", 0))
     shipping_fee = float(group_product.get("shipping_fee", 0))
@@ -256,11 +226,21 @@ def _group_fbp_cis(subset, group_product, mode, split_fn):
         {"land": [], "air": []},
         _discard,
     )
+    return land_cands, air_cands
 
-    pb_land, pb_air, sb_land, sb_air = _stage3_select(land_cands, air_cands)
-    _override_stage3_best(pp, pb_land, pb_air)
-    _override_stage3_best(sp, sb_land, sb_air)
 
+def _build_fbp_cis_filtered(
+    pp,
+    sp,
+    stage1_filtered,
+    eliminated,
+    land_cands,
+    air_cands,
+    pb_land,
+    pb_air,
+    sb_land,
+    sb_air,
+):
     selected_names = _collect_selected_names(pp, sp)
     pp_fl = pp.get("filtered_logistics", {"land": [], "air": []})
     sp_fl = sp.get("filtered_logistics", {"land": [], "air": []})
@@ -270,33 +250,126 @@ def _group_fbp_cis(subset, group_product, mode, split_fn):
     _merge_stage1_filtered(stage1_filtered, merged, seen, selected_names)
     _merge_stage2_eliminated(eliminated, merged, seen)
     _add_stage3_price_filtered(
-        land_cands,
-        pb_land,
-        merged["land"],
-        skip_names=selected_names,
+        land_cands, pb_land, merged["land"], skip_names=selected_names
     )
     _add_stage3_price_filtered(
-        air_cands,
-        pb_air,
-        merged["air"],
-        skip_names=selected_names,
+        air_cands, pb_air, merged["air"], skip_names=selected_names
     )
     _add_stage3_speed_filtered(
+        land_cands, sb_land, merged["land"], skip_names=selected_names
+    )
+    _add_stage3_speed_filtered(
+        air_cands, sb_air, merged["air"], skip_names=selected_names
+    )
+    return merged
+
+
+def _group_fbp_cis(subset, group_product, mode, split_fn):
+    from pricing.fbp_secondary_filter import fbp_secondary_filter
+    from .calculate_pricing import calculate_pricing
+
+    land_all, air_all = split_fn(subset)
+
+    survivors, stage1_filtered = _stage1_filter(
+        group_product,
+        land_all,
+        air_all,
+        mode,
+    )
+
+    kept, eliminated = fbp_secondary_filter(survivors)
+
+    kept_land, kept_air = split_fn(kept)
+    pp = calculate_pricing(
+        group_product,
+        kept_land,
+        kept_air,
+        mode=mode,
+        priority="低价优先",
+    )
+    sp = calculate_pricing(
+        group_product,
+        kept_land,
+        kept_air,
+        mode=mode,
+        priority="速度优先",
+    )
+
+    land_cands, air_cands = _compute_fbp_candidates(
+        group_product, kept_land, kept_air, mode
+    )
+    pb_land, pb_air, sb_land, sb_air = _stage3_select(land_cands, air_cands)
+    _override_stage3_best(pp, pb_land, pb_air)
+    _override_stage3_best(sp, sb_land, sb_air)
+
+    merged = _build_fbp_cis_filtered(
+        pp,
+        sp,
+        stage1_filtered,
+        eliminated,
         land_cands,
-        sb_land,
-        merged["land"],
-        skip_names=selected_names,
-    )
-    _add_stage3_speed_filtered(
         air_cands,
+        pb_land,
+        pb_air,
+        sb_land,
         sb_air,
-        merged["air"],
-        skip_names=selected_names,
     )
     return {
         "price_priority": pp,
         "speed_priority": sp,
         "filtered_logistics": merged,
+    }
+
+
+def _split_logistics(logistics_list):
+    land = [r for r in logistics_list if r.get("type") == "land"]
+    air = [r for r in logistics_list if r.get("type") == "air"]
+    return land, air
+
+
+def _apply_commission_rate(product, commission_category, mode, ft):
+    from pricing.commission import select_commission_rate_from_category
+
+    if commission_category is None or mode == "fast":
+        return product
+    prod_copy = dict(product)
+    rate_val = _estimate_and_select_rate(
+        prod_copy,
+        commission_category,
+        ft,
+        select_commission_rate_from_category,
+    )
+    if rate_val is not None:
+        prod_copy["commission_rate"] = rate_val
+    return prod_copy
+
+
+def _run_group(ft, dest_filter, apply_fbp_filter, all_logistics, group_product, mode):
+    from .calculate_pricing import calculate_pricing
+
+    subset = [
+        r
+        for r in all_logistics
+        if r.get("fulfillment_type", "rfbs") == ft and dest_filter(r)
+    ]
+    if apply_fbp_filter:
+        res = _group_fbp_cis(subset, group_product, mode, _split_logistics)
+        res["group_product"] = group_product
+        return res
+    land, air = _split_logistics(subset)
+    pp = calculate_pricing(group_product, land, air, mode=mode, priority="低价优先")
+    sp = calculate_pricing(group_product, land, air, mode=mode, priority="速度优先")
+    selected_names = _collect_selected_names(pp, sp)
+    pp_fl = pp.get("filtered_logistics", {"land": [], "air": []})
+    sp_fl = sp.get("filtered_logistics", {"land": [], "air": []})
+    seen = set()
+    merged = {"land": [], "air": []}
+    _merge_filtered(pp_fl, sp_fl, selected_names, seen, merged)
+    return {
+        "price_priority": pp,
+        "speed_priority": sp,
+        "filtered_logistics": merged,
+        "group_product": group_product,
     }
 
 
@@ -307,74 +380,11 @@ def calculate_pricing_grouped(
     priority="低价优先",
     commission_category=None,
 ):
-    from pricing.commission import select_commission_rate_from_category
-    from .calculate_pricing import calculate_pricing
-
     _CIS_DESTS = {"KZ", "BY", "KGZ", "UZ", "GE", "AZ"}
 
-    def _split(logistics_list):
-        land = [r for r in logistics_list if r.get("type") == "land"]
-        air = [r for r in logistics_list if r.get("type") == "air"]
-        return land, air
-
-    def _apply_commission(ft):
-        if commission_category is None or mode == "fast":
-            return product
-        prod_copy = dict(product)
-        rate_val = _estimate_and_select_rate(
-            prod_copy,
-            commission_category,
-            ft,
-            select_commission_rate_from_category,
-        )
-        if rate_val is not None:
-            prod_copy["commission_rate"] = rate_val
-        return prod_copy
-
     def _group(ft, dest_filter, apply_fbp_filter=False):
-        subset = [
-            r
-            for r in all_logistics
-            if r.get("fulfillment_type", "rfbs") == ft and dest_filter(r)
-        ]
-        group_product = _apply_commission(ft)
-        if apply_fbp_filter:
-            res = _group_fbp_cis(subset, group_product, mode, _split)
-            res["group_product"] = group_product
-            return res
-        land, air = _split(subset)
-        pp = calculate_pricing(
-            group_product,
-            land,
-            air,
-            mode=mode,
-            priority="低价优先",
-        )
-        sp = calculate_pricing(
-            group_product,
-            land,
-            air,
-            mode=mode,
-            priority="速度优先",
-        )
-        selected_names = _collect_selected_names(pp, sp)
-        pp_fl = pp.get("filtered_logistics", {"land": [], "air": []})
-        sp_fl = sp.get("filtered_logistics", {"land": [], "air": []})
-        seen = set()
-        merged = {"land": [], "air": []}
-        _merge_filtered(
-            pp_fl,
-            sp_fl,
-            selected_names,
-            seen,
-            merged,
-        )
-        return {
-            "price_priority": pp,
-            "speed_priority": sp,
-            "filtered_logistics": merged,
-            "group_product": group_product,
-        }
+        gp = _apply_commission_rate(product, commission_category, mode, ft)
+        return _run_group(ft, dest_filter, apply_fbp_filter, all_logistics, gp, mode)
 
     fbp_all = [r for r in all_logistics if r.get("fulfillment_type", "rfbs") == "fbp"]
     cis_service_groups = set()

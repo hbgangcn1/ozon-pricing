@@ -1,7 +1,6 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from loguru import logger
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +16,6 @@ from db.plans import (
     update_plan,
 )
 from db.subscriptions import get_user_subscription_info
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/subscriptions", tags=["订阅"])
 
@@ -60,7 +57,7 @@ class PlanCreateRequest(BaseModel):
     calc_limit: int = -1
     logistics_limit: int = 1
     description: str = ""
-    features: List[str] = []
+    features: List[str] = Field(default_factory=list)
     sort_order: int = 0
     is_active: int = 1
 
@@ -112,8 +109,8 @@ async def get_plans_route(
 ):
     try:
         plans = await get_plans(session, active_only=active_only)
-    except Exception:
-        logger.warning("获取套餐列表失败", exc_info=True)
+    except Exception as e:
+        logger.error(f"获取套餐列表失败: {e}")
         return []
     return [_to_plan_response(plan) for plan in plans]
 

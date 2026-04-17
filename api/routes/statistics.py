@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -19,8 +19,6 @@ from db.statistics import (
     get_revenue_stats,
 )
 from api.dependencies import require_admin
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/statistics", tags=["统计"])
 
@@ -135,8 +133,8 @@ async def get_overview(
             )
             or 0
         )
-    except Exception:
-        logger.warning("查询今日新用户失败", exc_info=True)
+    except Exception as e:
+        logger.error(f"查询今日新用户失败: {e}")
         new_users_today = 0
 
     try:
@@ -148,8 +146,8 @@ async def get_overview(
             )
             or 0
         )
-    except Exception:
-        logger.warning("查询活跃用户失败", exc_info=True)
+    except Exception as e:
+        logger.error(f"查询活跃用户失败: {e}")
         active_users = 0
 
     return OverviewStats(
@@ -314,8 +312,8 @@ async def get_active_users(
             )
             or 0
         )
-    except Exception:
-        logger.warning("查询日活用户失败", exc_info=True)
+    except Exception as e:
+        logger.error(f"查询日活用户失败: {e}")
         daily = 0
 
     try:
@@ -327,8 +325,8 @@ async def get_active_users(
             )
             or 0
         )
-    except Exception:
-        logger.warning("查询周活用户失败", exc_info=True)
+    except Exception as e:
+        logger.error(f"查询周活用户失败: {e}")
         weekly = 0
 
     try:
@@ -341,8 +339,8 @@ async def get_active_users(
             )
             or 0
         )
-    except Exception:
-        logger.warning("查询昨日日活失败", exc_info=True)
+    except Exception as e:
+        logger.error(f"查询昨日日活失败: {e}")
         yesterday_daily = 0
 
     try:
@@ -355,8 +353,8 @@ async def get_active_users(
             )
             or 0
         )
-    except Exception:
-        logger.warning("查询上周周活失败", exc_info=True)
+    except Exception as e:
+        logger.error(f"查询上周周活失败: {e}")
         last_week_weekly = 0
 
     return {

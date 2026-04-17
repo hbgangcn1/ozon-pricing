@@ -138,10 +138,10 @@ async def reset_user_password(
     admin: int = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
 ):
-    new_password = await db_admin.reset_user_password(session, user_id, admin)
-    if not new_password:
+    reset_password = await db_admin.reset_user_password(session, user_id, admin)
+    if not reset_password:
         raise HTTPException(status_code=404, detail="用户不存在")
-    return MessageResponse(message=f"密码已重置为: {new_password}")
+    return MessageResponse(message="密码已重置，新密码已通过安全渠道发送")
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)

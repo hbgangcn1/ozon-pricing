@@ -254,7 +254,7 @@ def delete_cache_pattern(pattern: str) -> int:
         return 0
 
     try:
-        keys = client.keys(pattern)
+        keys = list(client.scan_iter(match=pattern))
         if not keys:
             return 0
 

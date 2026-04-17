@@ -28,7 +28,56 @@ from api.middleware.rate_limit import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
-_is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
+
+def _get_app_environment() -> str:
+    app_env = os.getenv("APP_ENV") or os.getenv("ENVIRONMENT")
+    if app_env:
+        return app_env.lower()
+    if os.getenv("PRODUCTION_MODE", "").lower() == "true":
+        return "production"
+    return "development"
+
+
+def _get_docs_config() -> dict:
+    if _is_production:
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {}
+
+
+def _check_redis_health() -> dict:
+    import time as _time
+
+    from redis_cache import REDIS_AVAILABLE, get_redis_client
+
+    if not REDIS_AVAILABLE:
+        return {"redis_status": "not_configured"}
+
+    client = get_redis_client()
+    if client is None:
+        return {"redis_status": "unavailable"}
+
+    start = _time.monotonic()
+    client.ping()
+    return {
+        "redis_status": "ok",
+        "redis_latency_ms": round((_time.monotonic() - start) * 1000, 1),
+    }
+
+
+_APP_ENV = _get_app_environment()
+_is_production = _APP_ENV == "production"
+_CSP_POLICY = os.getenv(
+    "CSP_POLICY",
+    "default-src 'self'; script-src 'self'; style-src 'self' "
+    "'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; "
+    "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+    "form-action 'self'",
+)
+_PERMISSIONS_POLICY = (
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), "
+    "magnetometer=(), gyroscope=(), accelerometer=()"
+)
+_HSTS_POLICY = "max-age=63072000; includeSubDomains; preload"
 
 
 @asynccontextmanager
@@ -73,6 +122,13 @@ async def lifespan(app: FastAPI):
         logger.warning("停止备份服务失败: %s", e)
 
     try:
+        from payment_callback_enhanced import stop_payment_callback_monitor
+
+        stop_payment_callback_monitor()
+    except Exception as e:
+        logger.warning("停止支付回调监控失败: %s", e)
+
+    try:
         from redis_cache import get_redis_client
 
         client = get_redis_client()
@@ -89,6 +145,7 @@ app = FastAPI(
     description="提供商品管理、物流规则管理和定价计算的HTTP接口",
     version="1.0.0",
     lifespan=lifespan,
+    **_get_docs_config(),
 )
 
 _cors_origins_env = os.environ.get("ALLOWED_ORIGINS")
@@ -143,12 +200,11 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = _CSP_POLICY
+    response.headers["Permissions-Policy"] = _PERMISSIONS_POLICY
     if _is_production:
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
+        response.headers["Strict-Transport-Security"] = _HSTS_POLICY
     return response
 
 
@@ -168,12 +224,20 @@ async def health_check():
         start = _time.monotonic()
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        checks["database"] = "ok"
+        checks["db_status"] = "ok"
         checks["db_latency_ms"] = round((_time.monotonic() - start) * 1000, 1)
-    except Exception as exc:
-        checks["database"] = "error"
-        checks["db_error"] = str(type(exc).__name__)
-    status = "healthy" if checks.get("database") == "ok" else "degraded"
+    except Exception:
+        checks["db_status"] = "error"
+        checks["db_error"] = "database connection failed"
+
+    try:
+        checks.update(_check_redis_health())
+    except Exception:
+        checks["redis_status"] = "unavailable"
+        checks["redis_error"] = "service check failed"
+
+    redis_ok = checks.get("redis_status") in ("ok", "not_configured", "unavailable")
+    status = "healthy" if checks.get("db_status") == "ok" and redis_ok else "degraded"
     code = 200 if status == "healthy" else 503
     return JSONResponse(content={"status": status, **checks}, status_code=code)
 

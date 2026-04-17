@@ -22,7 +22,7 @@ echo "  PRODUCTION_MODE=$PRODUCTION_MODE"
 echo "  ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-未设置}"
 echo
 
-WORKERS=${GUNICORN_WORKERS:-4}
+WORKERS=${GUNICORN_WORKERS:-$(( 2 * $(nproc) + 1 ))}
 BIND=${GUNICORN_BIND:-0.0.0.0:8003}
 
 echo "启动 Gunicorn (workers=$WORKERS, bind=$BIND) ..."
@@ -32,4 +32,7 @@ exec gunicorn api.main:app \
     -b "$BIND" \
     --access-logfile - \
     --error-logfile - \
-    --timeout 120
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --max-requests 1000 \
+    --max-requests-jitter 50

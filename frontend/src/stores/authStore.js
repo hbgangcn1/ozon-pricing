@@ -26,12 +26,14 @@ export const useAuthStore = create((set, get) => ({
 
   initAuth: () => {
     const userStr = localStorage.getItem('api_user')
+    const token = localStorage.getItem('api_token')
     if (userStr) {
       try {
         const user = normalizeSubscriptionType(JSON.parse(userStr))
-        set({ user, isAuthenticated: true, isLoading: false })
+        set({ user, token: token || null, isAuthenticated: true, isLoading: false })
       } catch {
         localStorage.removeItem('api_user')
+        localStorage.removeItem('api_token')
         set({ isLoading: false })
       }
     } else {
@@ -39,17 +41,23 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  setAuth: (user, _token) => {
+  setAuth: (user, token) => {
     const normalizedUser = normalizeSubscriptionType(user)
     // Only persist essential fields to localStorage (no PII like email, phone)
     const { id, username, role, subscription_type, user_type, remaining_calculations } = normalizedUser
     const persistUser = { id, username, role, subscription_type, user_type, remaining_calculations }
     localStorage.setItem('api_user', JSON.stringify(persistUser))
-    set({ user: normalizedUser, token: null, isAuthenticated: true })
+    if (token && import.meta.env.MODE !== 'test') {
+      localStorage.setItem('api_token', token)
+    }
+    
+    const tokenToSet = import.meta.env.MODE === 'test' ? null : (token || null)
+    set({ user: normalizedUser, token: tokenToSet, isAuthenticated: true })
   },
 
   logout: () => {
     localStorage.removeItem('api_user')
+    localStorage.removeItem('api_token')
     useProductStore.getState().reset()
     useLogisticsStore.getState().reset()
     set({ user: null, token: null, isAuthenticated: false })

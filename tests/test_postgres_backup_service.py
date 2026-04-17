@@ -138,15 +138,12 @@ class TestPostgresBackupSystem:
     def test_terminate_active_connections_with_error(self):
         """测试终止连接时出现错误"""
         backup_system = PostgresBackupSystem()
-        with patch("postgres_backup_service.psycopg2.connect") as mock_connect:
-            with patch("postgres_backup_service.logger") as mock_logger:
-                # 模拟连接失败
+        with patch("postgres_backup_service_db.psycopg2.connect") as mock_connect:
+            with patch("postgres_backup_service_db.logger") as mock_logger:
                 mock_connect.side_effect = psycopg2.Error("连接失败")
 
-                # 代码中会捕获psycopg2.Error并记录警告，不抛出异常
                 backup_system._terminate_active_connections()  # pyright: ignore[reportPrivateUsage]
 
-                # 验证记录了警告
                 assert mock_logger.warning.called
                 warning_calls = [
                     str(call) for call in mock_logger.warning.call_args_list

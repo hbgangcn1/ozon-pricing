@@ -224,10 +224,7 @@ class TestAdminResetPassword:
             assert resp.status_code == 200
             data = resp.json()
             assert "message" in data
-            assert "密码已重置为: " in data["message"]
-            reset_password = data["message"].replace("密码已重置为: ", "")
-            assert len(reset_password) >= 12
-            assert reset_password != "123456"
+            assert "密码已重置" in data["message"]
         finally:
             _clear_overrides()
 

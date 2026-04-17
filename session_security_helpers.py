@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
-import time
 import logging
 import threading
 
 logger = logging.getLogger(__name__)
 
 try:
-    from redis_cache import get_redis_client
-
-    REDIS_AVAILABLE = True
+    from redis_cache import get_redis_client as _redis_client_factory
 except ImportError:
-    REDIS_AVAILABLE = False
+    _redis_client_factory = None
 
-    def get_redis_client():
+REDIS_AVAILABLE = _redis_client_factory is not None
+
+
+def get_redis_client():
+    if _redis_client_factory is None:
         return None
+    return _redis_client_factory()
 
 
 class DistributedLock:
@@ -25,13 +27,22 @@ class DistributedLock:
         self.local_lock = threading.Lock()
 
     def acquire(self):
-        if self.redis_available:
-            client = get_redis_client()
-            if client:
-                self.lock_acquired = client.set(self.key, "1", ex=self.timeout, nx=True)
-                return self.lock_acquired
-        self.local_lock.acquire(timeout=self.timeout)
-        self.lock_acquired = True
+        acquired = self.local_lock.acquire(timeout=self.timeout)
+        self.lock_acquired = bool(acquired)
+        if not self.lock_acquired:
+            return False
+        if not self.redis_available:
+            return True
+
+        client = get_redis_client()
+        if not client:
+            return True
+
+        redis_acquired = bool(client.set(self.key, "1", ex=self.timeout, nx=True))
+        if not redis_acquired:
+            self.local_lock.release()
+            self.lock_acquired = False
+            return False
         return True
 
     def release(self):
@@ -40,11 +51,10 @@ class DistributedLock:
                 client = get_redis_client()
                 if client:
                     client.delete(self.key)
-            else:
-                try:
-                    self.local_lock.release()
-                except RuntimeError:
-                    pass
+            try:
+                self.local_lock.release()
+            except RuntimeError:
+                pass
             self.lock_acquired = False
 
     def __enter__(self):
@@ -63,36 +73,35 @@ def get_client_info() -> dict:
     try:
         from security import utils as security_utils
 
-        if hasattr(security_utils, "_streamlit"):
-            st = security_utils._streamlit
-            if hasattr(st, "context") and hasattr(st.context, "headers"):
-                headers = st.context.headers
-                if headers:
-                    x_forwarded_for = headers.get("X-Forwarded-For")
-                    if x_forwarded_for and not isinstance(x_forwarded_for, type(None)):
-                        if isinstance(x_forwarded_for, str) and "MagicMock" not in str(
-                            x_forwarded_for
+        st = getattr(security_utils, "_streamlit", None)
+        if st and hasattr(st, "context") and hasattr(st.context, "headers"):
+            headers = st.context.headers
+            if headers:
+                x_forwarded_for = headers.get("X-Forwarded-For")
+                if x_forwarded_for and not isinstance(x_forwarded_for, type(None)):
+                    if isinstance(x_forwarded_for, str) and "MagicMock" not in str(
+                        x_forwarded_for
+                    ):
+                        ip_address = x_forwarded_for.split(",")[0].strip()
+                    else:
+                        ip_address = "unknown"
+                else:
+                    x_real_ip = headers.get("X-Real-IP")
+                    if x_real_ip and not isinstance(x_real_ip, type(None)):
+                        if isinstance(x_real_ip, str) and "MagicMock" not in str(
+                            x_real_ip
                         ):
-                            ip_address = x_forwarded_for.split(",")[0].strip()
+                            ip_address = x_real_ip
                         else:
                             ip_address = "unknown"
-                    else:
-                        x_real_ip = headers.get("X-Real-IP")
-                        if x_real_ip and not isinstance(x_real_ip, type(None)):
-                            if isinstance(x_real_ip, str) and "MagicMock" not in str(
-                                x_real_ip
-                            ):
-                                ip_address = x_real_ip
-                            else:
-                                ip_address = "unknown"
-                    ua = headers.get("User-Agent")
-                    if (
-                        ua
-                        and not isinstance(ua, type(None))
-                        and isinstance(ua, str)
-                        and "MagicMock" not in str(ua)
-                    ):
-                        user_agent = ua
+                ua = headers.get("User-Agent")
+                if (
+                    ua
+                    and not isinstance(ua, type(None))
+                    and isinstance(ua, str)
+                    and "MagicMock" not in str(ua)
+                ):
+                    user_agent = ua
     except (ImportError, AttributeError, TypeError):
         pass
 

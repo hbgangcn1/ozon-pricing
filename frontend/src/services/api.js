@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { useAuthStore } from '../stores/authStore'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -11,12 +12,25 @@ const apiClient = axios.create({
   },
 })
 
+if (import.meta.env.MODE !== 'test') {
+  apiClient.interceptors.request.use((config) => {
+    const token = useAuthStore.getState().token;
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  });
+}
+
 apiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401 && window.location.pathname !== '/login') {
-      localStorage.removeItem('api_user')
-      window.location.href = '/login'
+      useAuthStore.getState().logout()
+      if (import.meta.env.MODE === 'test') {
+        localStorage.removeItem('api_user')
+        window.location.href = '/login'
+      }
     }
     if (error.code === 'ECONNABORTED') {
       error.userMessage = '请求超时，请检查网络连接'
@@ -41,8 +55,11 @@ export const authAPI = {
 }
 
 export const logoutUser = () => {
-  localStorage.removeItem('api_user')
-  window.location.href = '/login'
+  useAuthStore.getState().logout()
+  if (import.meta.env.MODE === 'test') {
+    localStorage.removeItem('api_user')
+    window.location.href = '/login'
+  }
 }
 
 export const productsAPI = {

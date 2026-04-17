@@ -382,7 +382,7 @@ async def reset_user_password(
     password_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt())
     user.password = password_hash.decode("utf-8")
 
-    details_text = f"管理员重置密码: {new_password}"
+    details_text = "管理员重置了用户密码"
     audit = AuditLog(
         admin_id=admin_id,
         user_id=user_id,

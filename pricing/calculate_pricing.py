@@ -182,57 +182,33 @@ def _phase1_filter_price(
     )
 
 
-def _phase2_profit_build(
+def _apply_stats_and_build(
     land_candidates,
-    air_candidates,
-    all_costs_debug,
     land_log,
     land_cost,
+    air_candidates,
+    air_log,
+    air_cost,
     land_price,
     land_commission_info,
     land_pricing_mode,
     land_payment_info,
     land_payment_fixed,
     land_debug,
-    air_log,
-    air_cost,
     air_price,
     air_commission_info,
     air_pricing_mode,
     air_payment_info,
     air_payment_fixed,
     air_debug,
-    fees,
-    rate,
+    land_expected_profit,
+    land_profit_margin,
+    air_expected_profit,
+    air_profit_margin,
     product,
+    all_costs_debug,
     filtered_logistics,
 ):
-    (
-        land_expected_profit,
-        land_profit_margin,
-        air_expected_profit,
-        air_profit_margin,
-    ) = getattr(_RESULT_HELPERS, "_compute_profits")(
-        land_price,
-        land_cost,
-        land_commission_info,
-        land_payment_info,
-        land_payment_fixed,
-        land_pricing_mode,
-        land_debug,
-        air_price,
-        air_cost,
-        air_commission_info,
-        air_payment_info,
-        air_payment_fixed,
-        air_pricing_mode,
-        air_debug,
-        fees[0],
-        fees[1],
-        fees[2],
-        rate,
-        product,
-    )
     (
         land_stats,
         air_stats,
@@ -286,6 +262,86 @@ def _phase2_profit_build(
         avg_air_days,
         saved_air_cost,
         saved_air_days,
+    )
+
+
+def _phase2_profit_build(
+    land_candidates,
+    air_candidates,
+    all_costs_debug,
+    land_log,
+    land_cost,
+    land_price,
+    land_commission_info,
+    land_pricing_mode,
+    land_payment_info,
+    land_payment_fixed,
+    land_debug,
+    air_log,
+    air_cost,
+    air_price,
+    air_commission_info,
+    air_pricing_mode,
+    air_payment_info,
+    air_payment_fixed,
+    air_debug,
+    fees,
+    rate,
+    product,
+    filtered_logistics,
+):
+    (
+        land_expected_profit,
+        land_profit_margin,
+        air_expected_profit,
+        air_profit_margin,
+    ) = getattr(_RESULT_HELPERS, "_compute_profits")(
+        land_price,
+        land_cost,
+        land_commission_info,
+        land_payment_info,
+        land_payment_fixed,
+        land_pricing_mode,
+        land_debug,
+        air_price,
+        air_cost,
+        air_commission_info,
+        air_payment_info,
+        air_payment_fixed,
+        air_pricing_mode,
+        air_debug,
+        fees[0],
+        fees[1],
+        fees[2],
+        rate,
+        product,
+    )
+    return _apply_stats_and_build(
+        land_candidates,
+        land_log,
+        land_cost,
+        air_candidates,
+        air_log,
+        air_cost,
+        land_price,
+        land_commission_info,
+        land_pricing_mode,
+        land_payment_info,
+        land_payment_fixed,
+        land_debug,
+        air_price,
+        air_commission_info,
+        air_pricing_mode,
+        air_payment_info,
+        air_payment_fixed,
+        air_debug,
+        land_expected_profit,
+        land_profit_margin,
+        air_expected_profit,
+        air_profit_margin,
+        product,
+        all_costs_debug,
+        filtered_logistics,
     )
 
 
@@ -349,7 +405,7 @@ def calculate_pricing(
     except AttributeError:
         raise
     except (ValueError, TypeError, KeyError) as e:
-        print(f"计算定价时发生错误: {e}")
+        logger.error("计算定价时发生错误: %s", e)
         return _error_result(product)
 
 

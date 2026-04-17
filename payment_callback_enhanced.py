@@ -483,6 +483,16 @@ def get_payment_callback_monitor() -> PaymentCallbackEnhanced:
         return _global_payment_monitor
 
 
+def stop_payment_callback_monitor() -> None:
+    """停止全局支付回调监控实例（如果已启动）。"""
+    global _global_payment_monitor
+    with _payment_monitor_lock:
+        if _global_payment_monitor is None:
+            return
+        _global_payment_monitor.stop_monitoring()
+        _global_payment_monitor = None
+
+
 if __name__ == "__main__":
     # 测试支付回调监控
     print("测试增强支付回调监控...")
