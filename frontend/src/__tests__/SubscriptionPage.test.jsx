@@ -38,13 +38,13 @@ vi.mock('../components/ui/card', () => ({
 }))
 
 vi.mock('../components/ui/button', () => ({
-  Button: ({ children, onClick, disabled, className, variant, size, ...rest }) => (
+  Button: ({ children, onClick, disabled, className, _variant, _size, ...rest }) => (
     <button onClick={onClick} disabled={disabled} className={className} {...rest}>{children}</button>
   ),
 }))
 
 vi.mock('../components/ui/badge', () => ({
-  Badge: ({ children, className, variant }) => <span className={className}>{children}</span>,
+  Badge: ({ children, className, _variant }) => <span className={className}>{children}</span>,
 }))
 
 vi.mock('../components/ui/dialog', () => ({

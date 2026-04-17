@@ -62,7 +62,7 @@ vi.mock('../components/ui/table', () => ({
 }));
 
 vi.mock('../components/ui/dialog', () => ({
-  Dialog: ({ open, children, onOpenChange }) => open ? <div data-testid="dialog">{children}</div> : null,
+  Dialog: ({ open, children, _onOpenChange }) => open ? <div data-testid="dialog">{children}</div> : null,
   DialogContent: ({ children, className }) => <div className={className} data-testid="dialog-content">{children}</div>,
   DialogHeader: ({ children }) => <div data-testid="dialog-header">{children}</div>,
   DialogTitle: ({ children, className }) => <h2 className={className} data-testid="dialog-title">{children}</h2>,

@@ -35,7 +35,7 @@ vi.mock('../components/ui/card', () => ({
 }))
 
 vi.mock('../components/ui/button', () => ({
-  Button: ({ children, onClick, disabled, className, variant, size, ...rest }) => (
+  Button: ({ children, onClick, disabled, className, _variant, _size, ...rest }) => (
     <button onClick={onClick} disabled={disabled} className={className} {...rest}>{children}</button>
   ),
 }))
@@ -45,11 +45,11 @@ vi.mock('../components/ui/input', () => ({
 }))
 
 vi.mock('../components/ui/badge', () => ({
-  Badge: ({ children, className, variant }) => <span className={className}>{children}</span>,
+  Badge: ({ children, className, _variant }) => <span className={className}>{children}</span>,
 }))
 
 vi.mock('../components/ui/select', () => ({
-  Select: ({ children, value, onValueChange }) => <div>{children}</div>,
+  Select: ({ children, _value, _onValueChange }) => <div>{children}</div>,
   SelectTrigger: ({ children, className }) => <div className={className}>{children}</div>,
   SelectContent: ({ children }) => <div>{children}</div>,
   SelectItem: ({ children, value }) => <div data-value={value}>{children}</div>,

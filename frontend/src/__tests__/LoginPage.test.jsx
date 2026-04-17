@@ -4,7 +4,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import LoginPage from '../pages/LoginPage';
 import { authAPI } from '../services/api';
-import { useAuthStore } from '../stores/authStore';
 import { toast } from 'sonner';
 
 const mockNavigate = vi.fn();

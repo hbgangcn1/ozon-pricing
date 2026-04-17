@@ -35,7 +35,7 @@ vi.mock('../components/ui/card', () => ({
 }));
 
 vi.mock('../components/ui/button', () => ({
-  Button: ({ children, onClick, disabled, className, type, variant, size, 'aria-label': ariaLabel }) => (
+  Button: ({ children, onClick, disabled, className, type, _variant, _size, 'aria-label': ariaLabel }) => (
     <button onClick={onClick} disabled={disabled} className={className} type={type} aria-label={ariaLabel}>{children}</button>
   ),
 }));
@@ -49,7 +49,7 @@ vi.mock('../components/ui/label', () => ({
 }));
 
 vi.mock('../components/ui/badge', () => ({
-  Badge: ({ children, className, variant }) => <span className={className}>{children}</span>,
+  Badge: ({ children, className, _variant }) => <span className={className}>{children}</span>,
 }));
 
 vi.mock('../components/ui/select', () => {
@@ -76,7 +76,7 @@ vi.mock('../components/ui/select', () => {
 });
 
 vi.mock('../components/ui/dialog', () => ({
-  Dialog: ({ children, open, onOpenChange }) => open ? <div>{children}</div> : null,
+  Dialog: ({ children, open, _onOpenChange }) => open ? <div>{children}</div> : null,
   DialogContent: ({ children, className }) => <div className={className}>{children}</div>,
   DialogHeader: ({ children }) => <div>{children}</div>,
   DialogTitle: ({ children }) => <h2>{children}</h2>,
@@ -111,7 +111,7 @@ vi.mock('../components/ui/switch', () => ({
 }));
 
 vi.mock('../components/ui/radio-group', () => ({
-  RadioGroup: ({ children, value, onValueChange, className }) => <div className={className}>{children}</div>,
+  RadioGroup: ({ children, _value, _onValueChange, className }) => <div className={className}>{children}</div>,
   RadioGroupItem: ({ value, id, className }) => <input type="radio" id={id} value={value} className={className} />,
 }));
 
@@ -127,7 +127,7 @@ vi.mock('../components/ui/checkbox', () => ({
 }));
 
 vi.mock('../components/ui/alert-dialog', () => ({
-  AlertDialog: ({ children, open, onOpenChange }) => open ? <div>{children}</div> : null,
+  AlertDialog: ({ children, open, _onOpenChange }) => open ? <div>{children}</div> : null,
   AlertDialogContent: ({ children }) => <div>{children}</div>,
   AlertDialogHeader: ({ children }) => <div>{children}</div>,
   AlertDialogTitle: ({ children }) => <h2>{children}</h2>,

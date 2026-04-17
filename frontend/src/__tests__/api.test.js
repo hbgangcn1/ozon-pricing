@@ -21,7 +21,7 @@ vi.mock('axios', () => {
   }
 })
 
-import apiClient, {
+import {
   logoutUser,
   authAPI,
   productsAPI,

@@ -43,13 +43,13 @@ vi.mock('../components/ui/table', () => ({
 }));
 
 vi.mock('../components/ui/button', () => ({
-  Button: ({ children, onClick, variant, size, className, disabled, title }) => (
-    <button type="button" onClick={onClick} className={className} data-variant={variant} disabled={disabled} title={title}>{children}</button>
+  Button: ({ children, onClick, _variant, _size, className, disabled, title }) => (
+    <button type="button" onClick={onClick} className={className} disabled={disabled} title={title}>{children}</button>
   ),
 }));
 
 vi.mock('../components/ui/dialog', () => ({
-  Dialog: ({ children, open, onOpenChange }) => open ? <div>{children}</div> : null,
+  Dialog: ({ children, open, _onOpenChange }) => open ? <div>{children}</div> : null,
   DialogContent: ({ children }) => <div>{children}</div>,
   DialogHeader: ({ children }) => <div>{children}</div>,
   DialogTitle: ({ children }) => <div>{children}</div>,

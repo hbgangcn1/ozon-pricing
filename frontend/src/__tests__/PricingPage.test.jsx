@@ -50,7 +50,7 @@ vi.mock('../components/ui/card', () => ({
 }));
 
 vi.mock('../components/ui/button', () => ({
-  Button: ({ children, onClick, disabled, className, size, variant }) => (
+  Button: ({ children, onClick, disabled, className, _size, _variant }) => (
     <button type="button" onClick={onClick} disabled={disabled} className={className}>{children}</button>
   ),
 }));
@@ -117,7 +117,7 @@ vi.mock('../components/ui/tabs', () => ({
 }));
 
 vi.mock('../components/ui/select', () => ({
-  Select: ({ children, onValueChange, value }) => <div>{children}</div>,
+  Select: ({ children, _onValueChange, _value }) => <div>{children}</div>,
   SelectTrigger: ({ children, className }) => <div className={className}>{children}</div>,
   SelectValue: ({ placeholder }) => <span>{placeholder}</span>,
   SelectContent: ({ children }) => <div>{children}</div>,
@@ -125,12 +125,12 @@ vi.mock('../components/ui/select', () => ({
 }));
 
 vi.mock('../components/ui/radio-group', () => ({
-  RadioGroup: ({ children, value, onValueChange, className }) => <div className={className}>{children}</div>,
+  RadioGroup: ({ children, _value, _onValueChange, className }) => <div className={className}>{children}</div>,
   RadioGroupItem: ({ value, id }) => <input type="radio" id={id} value={value} readOnly />,
 }));
 
 vi.mock('../components/ui/dialog', () => ({
-  Dialog: ({ children, open, onOpenChange }) => open ? <div>{children}</div> : null,
+  Dialog: ({ children, open, _onOpenChange }) => open ? <div>{children}</div> : null,
   DialogContent: ({ children }) => <div>{children}</div>,
   DialogHeader: ({ children }) => <div>{children}</div>,
   DialogTitle: ({ children }) => <h2>{children}</h2>,

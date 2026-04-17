@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SettingsPage from '../pages/SettingsPage';
-import { settingsAPI, logoutUser } from '../services/api';
+import { settingsAPI } from '../services/api';
 import { toast } from 'sonner';
 
 vi.mock('../services/api', () => ({

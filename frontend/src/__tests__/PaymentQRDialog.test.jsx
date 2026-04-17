@@ -15,7 +15,7 @@ vi.mock('../services/api', () => ({
 }))
 
 vi.mock('qrcode.react', () => ({
-  QRCodeSVG: ({ value, size }) => <div data-testid="qrcode" data-value={value}>{value}</div>,
+  QRCodeSVG: ({ value, _size }) => <div data-testid="qrcode" data-value={value}>{value}</div>,
 }))
 
 vi.mock('lucide-react', () => ({
