@@ -15,13 +15,26 @@ def _get_jwt_secret() -> str:
     )
 
 
-SECRET_KEY = _get_jwt_secret()
+_SECRET_KEY: Optional[str] = None
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.environ.get(
         "ACCESS_TOKEN_EXPIRE_MINUTES", os.environ.get("JWT_EXPIRE_MINUTES", "15")
     )
 )
+
+
+def _get_secret_key() -> str:
+    global _SECRET_KEY
+    if _SECRET_KEY is None:
+        _SECRET_KEY = _get_jwt_secret()
+    return _SECRET_KEY
+
+
+def __getattr__(name: str) -> object:
+    if name == "SECRET_KEY":
+        return _get_secret_key()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class TokenError(Exception):
@@ -59,13 +72,13 @@ def create_access_token(
         "iat": now,
         "exp": now + expires_delta,
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, _get_secret_key(), algorithm=ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
     """Raises TokenExpiredError or TokenInvalidError."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
         raise TokenExpiredError("Token 已过期")

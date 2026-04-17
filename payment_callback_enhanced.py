@@ -92,6 +92,7 @@ class PaymentCallbackEnhanced:
         # 监控状态
         self.monitoring = False
         self.monitor_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
 
     def enqueue_order(self, order_id: str) -> Dict[str, Any]:
         """直接处理订单，失败时进入重试队列"""
@@ -115,13 +116,7 @@ class PaymentCallbackEnhanced:
         """在当前后台线程中同步执行异步支付成功处理。"""
         from payment_handler import PaymentHandler
 
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(PaymentHandler.handle_payment_success(order_id))
-        finally:
-            asyncio.set_event_loop(None)
-            loop.close()
+        asyncio.run(PaymentHandler.handle_payment_success(order_id))
 
     def _reject_retry_queue_entry(
         self, order_id: str, error_message: Optional[str] = None
@@ -443,6 +438,7 @@ class PaymentCallbackEnhanced:
             return
 
         self.monitoring = True
+        self._stop_event.clear()
         self.monitor_thread = threading.Thread(
             target=self._monitor_loop, daemon=True, name="PaymentCallbackMonitor"
         )
@@ -452,20 +448,21 @@ class PaymentCallbackEnhanced:
     def stop_monitoring(self):
         """停止监控"""
         self.monitoring = False
+        self._stop_event.set()
         if self.monitor_thread:
             self.monitor_thread.join(timeout=5)
         logger.info("支付回调监控已停止")
 
     def _monitor_loop(self):
         """监控循环"""
-        while self.monitoring:
+        while self.monitoring and not self._stop_event.is_set():
             try:
                 self.check_and_monitor()
             except Exception as e:
                 logger.error(f"监控检查异常: {e}")
 
             # 等待下次检查
-            time.sleep(self.check_interval)
+            self._stop_event.wait(self.check_interval)
 
 
 # 全局实例
@@ -491,35 +488,3 @@ def stop_payment_callback_monitor() -> None:
             return
         _global_payment_monitor.stop_monitoring()
         _global_payment_monitor = None
-
-
-if __name__ == "__main__":
-    # 测试支付回调监控
-    print("测试增强支付回调监控...")
-
-    monitor = PaymentCallbackEnhanced(
-        queue_maxsize=100,
-        queue_warning_threshold=50,
-        queue_critical_threshold=80,
-        check_interval=10,
-    )
-
-    monitor.start_monitoring()
-
-    # 模拟加入订单
-    for i in range(5):
-        monitor.enqueue_order(f"TEST_ORDER_{i}")
-
-    # 等待处理
-    time.sleep(15)
-
-    # 获取统计
-    stats = monitor.get_stats()
-    print(f"统计信息: {stats}")
-
-    # 获取告警
-    alerts = monitor.get_recent_alerts()
-    print(f"最近告警: {len(alerts)} 条")
-
-    monitor.stop_monitoring()
-    print("✅ 支付回调监控测试完成")

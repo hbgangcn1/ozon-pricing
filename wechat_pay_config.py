@@ -13,11 +13,13 @@ try:
     from logger_config import logger
 except ImportError:
     import logging
+
     logger = logging.getLogger(__name__)
 
 # 尝试加载.env文件
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     # 如果没有安装python-dotenv，定义一个占位符函数
@@ -38,7 +40,7 @@ class WeChatPayConfig:
 
     # 证书配置
     private_key_path: Optional[str] = None  # 商户私钥文件路径
-    cert_serial_no: Optional[str] = None    # 商户证书序列号
+    cert_serial_no: Optional[str] = None  # 商户证书序列号
     public_key_path: Optional[str] = None  # 微信支付公钥文件路径
 
     # 回调配置
@@ -97,12 +99,14 @@ def get_wechat_pay_config() -> WeChatPayConfig:
     # 检查是否为生产环境
     if os.getenv("PRODUCTION_MODE", "false").lower() == "true":
         from production_wechat_config import get_production_config
+
         return get_production_config()
 
     # 检查是否为本地测试模式
     if os.getenv("LOCAL_TEST_MODE", "false").lower() == "true":
         try:
             from local_test_config import get_local_test_config  # type: ignore[import-untyped]
+
             return get_local_test_config()
         except ImportError:
             # 如果本地测试配置模块不存在，记录警告并继续使用默认配置
@@ -116,55 +120,46 @@ def get_wechat_pay_config() -> WeChatPayConfig:
     config.mch_id = os.getenv("WECHAT_MCH_ID", "")
     config.api_v3_key = os.getenv("WECHAT_API_V3_KEY", "")
 
-    # 调试信息：检查环境变量是否被正确加载
+    # 调试信息：仅记录配置项是否已设置，不泄露具体值
     logger.debug("🔧 环境变量调试信息:")
     logger.debug(f"  WECHAT_APP_ID: {'已设置' if config.app_id else '未设置'}")
     logger.debug(f"  WECHAT_MCH_ID: {'已设置' if config.mch_id else '未设置'}")
-    logger.debug(
-        f"  WECHAT_API_V3_KEY: {'已设置' if config.api_v3_key else '未设置'}"
-    )
-    if config.api_v3_key:
-        logger.debug(f"  API_V3_KEY长度: {len(config.api_v3_key)}")
+    logger.debug(f"  WECHAT_API_V3_KEY: {'已设置' if config.api_v3_key else '未设置'}")
 
     # 证书配置（使用环境变量，支持多环境部署）
-    cert_dir = os.getenv('WECHAT_CERT_DIR', 'cert')
+    cert_dir = os.getenv("WECHAT_CERT_DIR", "cert")
     config.private_key_path = os.getenv(
-        "WECHAT_PRIVATE_KEY_PATH",
-        os.path.join(cert_dir, 'apiclient_key.pem')
+        "WECHAT_PRIVATE_KEY_PATH", os.path.join(cert_dir, "apiclient_key.pem")
     )
     config.public_key_path = os.getenv(
-        "WECHAT_PUBLIC_KEY_PATH",
-        os.path.join(cert_dir, 'apiclient_cert.pem')
+        "WECHAT_PUBLIC_KEY_PATH", os.path.join(cert_dir, "apiclient_cert.pem")
     )
     cert_serial_raw = os.getenv("WECHAT_CERT_SERIAL_NO")
 
     # 清理证书序列号格式（移除空格、冒号等）
     if cert_serial_raw:
         config.cert_serial_no = (
-            cert_serial_raw.replace(":", "")
-            .replace(" ", "")
-            .replace("-", "")
-            .upper()
+            cert_serial_raw.replace(":", "").replace(" ", "").replace("-", "").upper()
         )
     else:
         config.cert_serial_no = None
 
-    # 调试信息
+    # 调试信息：仅记录配置状态，不泄露敏感值
     logger.debug("🔧 微信支付配置加载:")
-    logger.debug(
-        f"  AppID: {config.app_id[:10] if config.app_id else 'None'}..."
-    )
-    logger.debug(f"  商户号: {config.mch_id}")
+    logger.debug(f"  AppID: {'已设置' if config.app_id else '未设置'}")
+    logger.debug(f"  商户号: {'已设置' if config.mch_id else '未设置'}")
     logger.debug(f"  私钥路径: {config.private_key_path}")
     logger.debug(f"  公钥路径: {config.public_key_path}")
-    logger.debug(f"  证书序列号: {config.cert_serial_no}")
+    logger.debug(f"  证书序列号: {'已设置' if config.cert_serial_no else '未设置'}")
     logger.debug(f"  API密钥: {'已设置' if config.api_v3_key else '未设置'}")
 
     # 回调地址
-    config.notify_url = os.getenv("WECHAT_NOTIFY_URL",
-                                  "https://www.cbprice.cn/wechat/notify")
-    config.return_url = os.getenv("WECHAT_RETURN_URL",
-                                  "https://www.cbprice.cn/payment/success")
+    config.notify_url = os.getenv(
+        "WECHAT_NOTIFY_URL", "https://www.cbprice.cn/wechat/notify"
+    )
+    config.return_url = os.getenv(
+        "WECHAT_RETURN_URL", "https://www.cbprice.cn/payment/success"
+    )
 
     # 是否使用沙箱环境
     config.sandbox = os.getenv("WECHAT_SANDBOX", "false").lower() == "true"

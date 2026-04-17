@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import time
 import logging
 from typing import Tuple, Optional
@@ -41,8 +42,10 @@ class SessionSecurityEnhanced:
         max_sessions = SessionSecurityEnhanced.MAX_CONCURRENT_SESSIONS
         lock_key = f"session_create_{user_id}"
         lock = DistributedLock(lock_key, timeout=5, redis_available=True)
-        lock.acquire()
+        loop = asyncio.get_event_loop()
+        acquired = False
         try:
+            acquired = await loop.run_in_executor(None, lock.acquire)
             async with AsyncSessionLocal() as session:
                 try:
                     active_count = await count_active_sessions(session, user_id)
@@ -61,14 +64,17 @@ class SessionSecurityEnhanced:
                     await session.rollback()
                     return False, f"会话创建失败: {str(e)}"
         finally:
-            lock.release()
+            if acquired:
+                await loop.run_in_executor(None, lock.release)
 
     @staticmethod
     async def update_session_activity_atomic(session_id: str) -> bool:
         lock_key = f"session_update_{session_id}"
         lock = DistributedLock(lock_key, timeout=2, redis_available=True)
-        lock.acquire()
+        loop = asyncio.get_event_loop()
+        acquired = False
         try:
+            acquired = await loop.run_in_executor(None, lock.acquire)
             async with AsyncSessionLocal() as session:
                 try:
                     await update_session_activity(session, session_id, time.time())
@@ -78,7 +84,8 @@ class SessionSecurityEnhanced:
                     await session.rollback()
                     return False
         finally:
-            lock.release()
+            if acquired:
+                await loop.run_in_executor(None, lock.release)
 
     @staticmethod
     async def check_suspicious_ip(user_id: int, ip_address: str) -> Tuple[bool, str]:
