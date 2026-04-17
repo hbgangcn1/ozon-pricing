@@ -478,32 +478,3 @@ def invalidate_user_cache(user_id: int) -> bool:
         total_deleted += deleted
 
     return total_deleted > 0
-
-
-if __name__ == "__main__":
-    # 测试缓存系统
-    print("测试Redis缓存系统...")
-
-    # 初始化
-    if init_cache_system():
-        print("✓ Redis缓存系统初始化成功")
-
-        # 测试基本功能
-        test_key = "test:key"
-        test_value = {"message": "Hello Redis!", "timestamp": time.time()}
-
-        # 设置缓存
-        if set_cache(test_key, test_value, 60):
-            print("✓ 设置缓存成功")
-
-        # 获取缓存
-        cached_value = get_cache(test_key)
-        if cached_value:
-            print(f"✓ 获取缓存成功: {cached_value}")
-
-        # 获取统计信息
-        stats = get_cache_info()
-        print(f"✓ 缓存统计: {stats}")
-
-    else:
-        print("❌ Redis缓存系统初始化失败")

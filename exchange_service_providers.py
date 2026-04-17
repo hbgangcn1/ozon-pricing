@@ -68,12 +68,27 @@ class ExchangeRateData:
 class ExchangeRateProvider:
     """汇率提供者基类"""
 
+    _shared_session: Optional[Any] = None
+
     def __init__(self, provider_name: str, timeout: int = 10):
         self.name = provider_name
         self.timeout = timeout
         self.last_success_time = 0.0
         self.failure_count = 0
         self.max_failures = 3
+
+    @classmethod
+    def _get_session(cls):
+        if not REQUESTS_AVAILABLE or requests is None:
+            return None
+        if cls._shared_session is None:
+            cls._shared_session = requests.Session()
+            cls._shared_session.headers.update(
+                {
+                    "Accept": "application/json",
+                }
+            )
+        return cls._shared_session
 
     def is_available(self) -> bool:
         """检查数据源是否可用"""
@@ -103,10 +118,11 @@ class ExchangeRateAPIProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            if not REQUESTS_AVAILABLE or requests is None:
+            http = self._get_session()
+            if http is None:
                 return None
 
-            response = requests.get(self.url, timeout=self.timeout)
+            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -138,14 +154,14 @@ class MOEXProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            if not REQUESTS_AVAILABLE or requests is None:
+            http = self._get_session()
+            if http is None:
                 return None
 
-            response = requests.get(self.url, timeout=self.timeout)
+            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
-            # 解析MOEX数据
             if "statistics" in data and "data" in data["statistics"]:
                 for item in data["statistics"]["data"]:
                     if "CNYRUBTOM" in str(item):
@@ -182,10 +198,11 @@ class FixerIOProvider(ExchangeRateProvider):
             return None
 
         try:
-            if not REQUESTS_AVAILABLE or requests is None:
+            http = self._get_session()
+            if http is None:
                 return None
 
-            response = requests.get(self.url, timeout=self.timeout)
+            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -225,10 +242,11 @@ class CurrencyLayerProvider(ExchangeRateProvider):
             return None
 
         try:
-            if not REQUESTS_AVAILABLE or requests is None:
+            http = self._get_session()
+            if http is None:
                 return None
 
-            response = requests.get(self.url, timeout=self.timeout)
+            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -322,10 +340,11 @@ class USDExchangeRateAPIProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            if not REQUESTS_AVAILABLE or requests is None:
+            http = self._get_session()
+            if http is None:
                 return None
 
-            response = requests.get(self.url, timeout=self.timeout)
+            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -361,10 +380,11 @@ class USDFixerIOProvider(ExchangeRateProvider):
             return None
 
         try:
-            if not REQUESTS_AVAILABLE or requests is None:
+            http = self._get_session()
+            if http is None:
                 return None
 
-            response = requests.get(self.url, timeout=self.timeout)
+            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -404,10 +424,11 @@ class USDCurrencyLayerProvider(ExchangeRateProvider):
             return None
 
         try:
-            if not REQUESTS_AVAILABLE or requests is None:
+            http = self._get_session()
+            if http is None:
                 return None
 
-            response = requests.get(self.url, timeout=self.timeout)
+            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 

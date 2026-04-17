@@ -109,11 +109,23 @@ async def _get_user_stats_orm(
             UserLoginLog.login_time >= today_start,
         ),
     )
-    new_today = await session.scalar(
-        select(func.count(User.id)).where(
-            User.role != "admin",
-            User.created_at >= today_start,
-        ),
+    # User.created_at 是 String 类型（可能是 epoch 字符串、ISO 日期或空字符串），
+    # 不能直接与 int 比较，需要在 Python 侧过滤。
+    today_start_dt = datetime.utcfromtimestamp(today_start)
+    user_rows = (
+        await session.execute(
+            select(User.created_at).where(
+                User.role != "admin",
+                User.created_at.is_not(None),
+                func.nullif(func.trim(User.created_at), "").is_not(None),
+            )
+        )
+    ).all()
+    new_today = sum(
+        1
+        for (created_at,) in user_rows
+        if (dt := _parse_user_created_at(created_at)) is not None
+        and dt >= today_start_dt
     )
     total = await session.scalar(
         select(func.count(User.id)).where(User.role != "admin"),
@@ -335,7 +347,7 @@ async def get_monthly_revenue(
     totals: dict[str, float] = {}
     for amount, created_at in rows:
         month_label = _month_start(datetime.fromtimestamp(created_at)).strftime("%Y-%m")
-        totals[month_label] = round(totals.get(month_label, 0.0) + amount / 100.0, 2)
+        totals[month_label] = totals.get(month_label, 0.0) + amount / 100.0
 
     month_labels = [
         _shift_month(earliest_month, offset).strftime("%Y-%m")
@@ -344,7 +356,7 @@ async def get_monthly_revenue(
     return [
         {
             "month": label,
-            "revenue": totals.get(label, 0.0),
+            "revenue": round(totals.get(label, 0.0), 2),
         }
         for label in month_labels
     ]

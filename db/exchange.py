@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select
@@ -13,14 +14,14 @@ logger = logging.getLogger(__name__)
 async def get_exchange_rate_fallback(
     session: AsyncSession,
     currency_pair: str,
-) -> Optional[float]:
+) -> Optional[Decimal]:
     try:
         stmt = select(ExchangeRate.rate).where(
             ExchangeRate.currency_pair == currency_pair,
         )
         result = await session.execute(stmt)
         value = result.scalar_one_or_none()
-        return float(value) if value is not None else None
+        return value if value is not None else None
     except Exception:
         logger.debug("从数据库获取汇率失败", exc_info=True)
         return None
@@ -29,7 +30,7 @@ async def get_exchange_rate_fallback(
 async def update_exchange_rate_fallback(
     session: AsyncSession,
     currency_pair: str,
-    rate: float,
+    rate: Decimal,
     source: str = "",
 ) -> None:
     try:

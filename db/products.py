@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 from typing import Any, Optional, cast
 
 from sqlalchemy import delete as sa_delete, select, update
@@ -50,12 +51,8 @@ _INT_DEFAULT_FIELDS = {
     "height_cm",
     "battery_capacity_mah",
 }
-_FLOAT_DEFAULT_FIELDS = {
+_DECIMAL_DEFAULT_FIELDS = {
     "unit_price",
-    "cylinder_diameter",
-    "cylinder_length",
-    "battery_capacity_wh",
-    "battery_voltage",
     "labeling_fee",
     "shipping_fee",
     "promotion_cost_rate",
@@ -65,6 +62,12 @@ _FLOAT_DEFAULT_FIELDS = {
     "payment_processing_fee",
     "return_rate",
     "vat_rate",
+}
+_FLOAT_DEFAULT_FIELDS = {
+    "cylinder_diameter",
+    "cylinder_length",
+    "battery_capacity_wh",
+    "battery_voltage",
 }
 
 
@@ -77,6 +80,9 @@ def _product_to_dict(p: Product) -> dict:
             continue
         if value is None and column.name in _INT_DEFAULT_FIELDS:
             data[column.name] = 0
+            continue
+        if value is None and column.name in _DECIMAL_DEFAULT_FIELDS:
+            data[column.name] = Decimal("0")
             continue
         if value is None and column.name in _FLOAT_DEFAULT_FIELDS:
             data[column.name] = 0.0

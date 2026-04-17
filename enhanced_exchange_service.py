@@ -9,6 +9,7 @@ import os
 import time
 import logging
 import threading
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -88,6 +89,9 @@ from exchange_service_providers import (  # noqa: E402, F401
 
 class EnhancedExchangeRateService:
     """增强汇率服务"""
+
+    _Q4 = Decimal("0.0001")
+    _Q6 = Decimal("0.000001")
 
     def __init__(self, cache_ttl: int = 3600):
         self.cache_ttl = cache_ttl
@@ -325,14 +329,16 @@ class EnhancedExchangeRateService:
 
             return best_rate
 
-    def get_usd_rate(self, use_cache: bool = True) -> float:
+    def get_usd_rate(self, use_cache: bool = True) -> Decimal:
         """获取USD汇率"""
         with self.lock:
             if use_cache:
                 local_rate = self._load_usd_from_local_storage()
                 if local_rate:
                     logger.info(f"USD汇率来自本地存储: {local_rate.rate}")
-                    return local_rate.rate
+                    return Decimal(str(local_rate.rate)).quantize(
+                        self._Q4, rounding=ROUND_HALF_UP
+                    )
 
             rates = []
             for provider in self.usd_providers:
@@ -360,24 +366,30 @@ class EnhancedExchangeRateService:
             logger.info(
                 f"USD汇率最终结果: {best_rate.rate} (来源: {best_rate.source.value})"
             )
-            return best_rate.rate
+            return Decimal(str(best_rate.rate)).quantize(
+                self._Q4, rounding=ROUND_HALF_UP
+            )
 
-    def get_fallback_exchange_rate(self) -> float:
+    def get_fallback_exchange_rate(self) -> Decimal:
         """获取兜底汇率（兼容性方法），返回4位小数"""
         exchange_rate_data = self.get_exchange_rate(use_cache=True)
-        return round(exchange_rate_data.rate, 4)
+        return Decimal(str(exchange_rate_data.rate)).quantize(
+            self._Q4, rounding=ROUND_HALF_UP
+        )
 
-    def get_fallback_usd_rate(self) -> float:
+    def get_fallback_usd_rate(self) -> Decimal:
         """获取兜底USD汇率（兼容性方法），返回4位小数"""
-        return round(self.get_usd_rate(use_cache=True), 4)
+        return self.get_usd_rate(use_cache=True).quantize(
+            self._Q4, rounding=ROUND_HALF_UP
+        )
 
     @staticmethod
-    def update_fallback_rates(rub_cny: float, usd_cny: float):
+    def update_fallback_rates(rub_cny: Decimal, usd_cny: Decimal):
         """手动更新兜底汇率"""
         try:
             fallback_data = {
-                "RUB_CNY": rub_cny,
-                "USD_CNY": usd_cny,
+                "RUB_CNY": float(rub_cny),
+                "USD_CNY": float(usd_cny),
                 "last_updated": time.time(),
                 "sources": ["manual_update"],
             }
@@ -434,53 +446,33 @@ class EnhancedExchangeRateService:
 
 # 全局服务实例
 _enhanced_service: Optional[EnhancedExchangeRateService] = None
+_enhanced_service_lock = threading.Lock()
 
 
 def get_enhanced_exchange_service() -> EnhancedExchangeRateService:
-    """获取增强汇率服务实例"""
+    """获取增强汇率服务实例（线程安全）"""
     global _enhanced_service
     if _enhanced_service is None:
-        _enhanced_service = EnhancedExchangeRateService()
+        with _enhanced_service_lock:
+            if _enhanced_service is None:
+                _enhanced_service = EnhancedExchangeRateService()
     return _enhanced_service
 
 
 # 兼容性函数
-def get_fallback_exchange_rate() -> float:
+def get_fallback_exchange_rate() -> Decimal:
     """获取兜底汇率（兼容性函数）"""
     exchange_service = get_enhanced_exchange_service()
     return exchange_service.get_fallback_exchange_rate()
 
 
-def get_fallback_usd_rate() -> float:
+def get_fallback_usd_rate() -> Decimal:
     """获取兜底USD汇率（兼容性函数）"""
     exchange_service = get_enhanced_exchange_service()
     return exchange_service.get_fallback_usd_rate()
 
 
-def get_usd_rate() -> float:
+def get_usd_rate() -> Decimal:
     """获取USD汇率（兼容性函数）"""
     exchange_service = get_enhanced_exchange_service()
     return exchange_service.get_usd_rate()
-
-
-if __name__ == "__main__":
-    print("测试增强汇率服务...")
-
-    test_service = get_enhanced_exchange_service()
-
-    print("\n1. 获取汇率:")
-    rate_data = test_service.get_exchange_rate()
-    print(f"汇率: {rate_data.rate}")
-    print(f"数据源: {rate_data.source.value}")
-    print(f"置信度: {rate_data.confidence}")
-    print(f"错误信息: {rate_data.error_message}")
-
-    print("\n2. 提供者状态:")
-    status = test_service.get_provider_status()
-    for name, info in status.items():
-        print(f"{name}: 可用={info['available']}, 失败次数={info['failure_count']}")
-
-    print("\n3. 测试所有提供者:")
-    test_results = test_service.test_all_providers()
-    for name, result in test_results.items():
-        print(f"{name}: 成功={result['success']}, 汇率={result['rate']}")
