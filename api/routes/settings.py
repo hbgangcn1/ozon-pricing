@@ -8,7 +8,7 @@ from typing import Optional, List, cast
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
+from database import get_db, engine
 from db.config import get_all_config, set_system_config
 from api.models.schemas import MessageResponse
 from api.dependencies import require_admin
@@ -335,6 +335,7 @@ async def restore_backup(
             create_snapshot=req.create_snapshot,
         )
         if success:
+            await engine.dispose()
             return MessageResponse(message=f"已从 {filename} 恢复数据库")
         else:
             raise HTTPException(

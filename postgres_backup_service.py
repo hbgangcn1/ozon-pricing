@@ -26,8 +26,6 @@ from postgres_backup_service_support import (
     logger,
 )
 
-ensure_postgres_bin_on_path()
-
 
 class PostgresBackupSystem(PostgresBackupDatabaseMixin):
     """PostgreSQL 数据库备份系统。"""
@@ -43,6 +41,7 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
         backup_interval_hours: int = 6,
         max_backups: int = 28,
     ) -> None:
+        ensure_postgres_bin_on_path()
         self.backup_dir = backup_dir
         self.backup_interval_hours = max(1, backup_interval_hours)
         self.max_backups = max_backups
@@ -268,8 +267,18 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
     def get_backup_file_path(self, backup_filename: str) -> str:
         return os.path.join(self.backup_dir, backup_filename)
 
-    def read_backup_file(self, backup_filename: str) -> bytes:
+    def read_backup_file(
+        self,
+        backup_filename: str,
+        max_size_mb: int = 500,
+    ) -> bytes:
         path = self.get_backup_file_path(backup_filename)
+        file_size = os.path.getsize(path)
+        if file_size > max_size_mb * 1024 * 1024:
+            raise ValueError(
+                f"备份文件过大 ({file_size / 1024 / 1024:.1f}MB)，"
+                f"超过 {max_size_mb}MB 限制"
+            )
         with open(path, "rb") as file_obj:
             return file_obj.read()
 

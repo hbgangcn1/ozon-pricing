@@ -2,6 +2,7 @@ import logging
 from collections.abc import AsyncGenerator
 from urllib.parse import quote_plus
 
+from sqlalchemy.exc import InterfaceError as SAInterfaceError
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
@@ -11,6 +12,14 @@ from sqlalchemy.ext.asyncio import (
 from db_config import POSTGRES_CONFIG
 
 logger = logging.getLogger(__name__)
+
+
+def _is_connection_dead(exc: Exception) -> bool:
+    if isinstance(exc, SAInterfaceError):
+        return True
+    msg = str(exc).lower()
+    return "connection" in msg and ("closed" in msg or "does not exist" in msg)
+
 
 _cfg = POSTGRES_CONFIG
 _pw = quote_plus(_cfg["password"])
@@ -41,8 +50,17 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-        except Exception:
-            await session.rollback()
+        except Exception as exc:
+            if _is_connection_dead(exc):
+                logger.warning(
+                    "数据库连接已断开，跳过 commit（%s）",
+                    type(exc).__name__,
+                )
+                return
+            try:
+                await session.rollback()
+            except Exception:
+                logger.warning("数据库连接已断开，跳过 rollback")
             raise
 
 
