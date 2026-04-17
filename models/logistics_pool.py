@@ -1,5 +1,6 @@
+from decimal import Decimal
 from typing import Optional
-from sqlalchemy import String, Integer, Float, text
+from sqlalchemy import String, Integer, Float, Numeric, text
 from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 
@@ -12,26 +13,26 @@ class LogisticsPool(Base):
     type: Mapped[Optional[str]] = mapped_column(String)
     min_days: Mapped[Optional[int]] = mapped_column(Integer)
     max_days: Mapped[Optional[int]] = mapped_column(Integer)
-    price_limit: Mapped[Optional[float]] = mapped_column(Float)
-    price_limit_rub: Mapped[Optional[float]] = mapped_column(Float)
-    price_min: Mapped[Optional[float]] = mapped_column(
-        Float,
+    price_limit: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    price_limit_rub: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    price_min: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
         server_default=text("0"),
     )
-    price_min_rub: Mapped[Optional[float]] = mapped_column(
-        Float,
+    price_min_rub: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
         server_default=text("0"),
     )
-    price_limit_cny: Mapped[Optional[float]] = mapped_column(
-        Float,
+    price_limit_cny: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
         server_default=text("0"),
     )
-    price_min_cny: Mapped[Optional[float]] = mapped_column(
-        Float,
+    price_min_cny: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
         server_default=text("0"),
     )
-    base_fee: Mapped[Optional[float]] = mapped_column(
-        Float,
+    base_fee: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
         server_default=text("0"),
     )
     min_weight: Mapped[Optional[int]] = mapped_column(Integer)
@@ -96,16 +97,16 @@ class LogisticsPool(Base):
         String,
         server_default=text("'base_plus_continue'"),
     )
-    first_fee: Mapped[Optional[float]] = mapped_column(
-        Float,
+    first_fee: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
         server_default=text("0"),
     )
     first_weight_g: Mapped[Optional[int]] = mapped_column(
         Integer,
         server_default=text("0"),
     )
-    continue_fee: Mapped[Optional[float]] = mapped_column(
-        Float,
+    continue_fee: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
         server_default=text("0"),
     )
     continue_unit: Mapped[Optional[str]] = mapped_column(
