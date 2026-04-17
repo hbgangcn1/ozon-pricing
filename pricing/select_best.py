@@ -1,3 +1,7 @@
+from decimal import Decimal
+from typing import List, Optional, Tuple
+
+
 def _speed_key(candidate):
     log = candidate[0]
     cost = candidate[1]
@@ -20,7 +24,10 @@ def _price_key(candidate):
     return cost, group_priority, candidate_avg_time
 
 
-def select_best_by_priority(candidates, priority_type):
+def select_best_by_priority(
+    candidates: list,
+    priority_type: str,
+) -> Tuple[Optional[dict], Optional[Decimal]]:
     if not candidates:
         return None, None
     if priority_type == "速度优先":
@@ -29,12 +36,15 @@ def select_best_by_priority(candidates, priority_type):
 
 
 def add_unselected(
-    candidates, filtered_list, global_best=None, priority_type="低价优先"
-):
+    candidates: list,
+    filtered_list: list,
+    global_best: Optional[tuple] = None,
+    priority_type: str = "低价优先",
+) -> None:
     if not candidates:
         return
     global_best_name = ""
-    global_best_cost = 0.0
+    global_best_cost = Decimal("0")
     best_min_days = 0
     best_max_days = 0
     if global_best and global_best[0]:

@@ -1,3 +1,4 @@
+from decimal import Decimal
 import logging
 from functools import lru_cache
 from .logistic_cost import calculate_logistic_cost
@@ -6,6 +7,12 @@ logger = logging.getLogger(__name__)
 
 _RESULT_HELPERS = __import__(f"{__package__}._result_helpers", fromlist=["*"])
 _FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
+
+
+def _to_decimal(value):
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
 
 
 def _empty_result(filtered_logistics=None):
@@ -82,12 +89,14 @@ def _get_exchange_rates():
     except ImportError:
 
         def get_fallback_exchange_rate():
-            return 0.0904
+            return Decimal("0.0904")
 
         def get_fallback_usd_rate():
-            return 7.2
+            return Decimal("7.2")
 
-    return get_fallback_exchange_rate(), get_fallback_usd_rate()
+    return _to_decimal(get_fallback_exchange_rate()), _to_decimal(
+        get_fallback_usd_rate()
+    )
 
 
 def _make_cached_cost(is_fast_mode):

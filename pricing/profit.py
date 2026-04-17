@@ -1,11 +1,15 @@
+from decimal import Decimal
+from typing import Optional, Tuple
+
+
 def _get_profit_rates(product):
-    target_margin = product.get("target_profit_margin", 0.2)
-    promotion_rate = product.get("promotion_cost_rate", 0)
-    commission_rate = product.get("commission_rate", 0.08)
-    withdrawal_rate = product.get("withdrawal_fee_rate", 0.02)
-    payment_rate = product.get("payment_processing_fee", 0)
-    return_rate = product.get("return_rate", 0)
-    vat_rate = product.get("vat_rate", 0)
+    target_margin = product.get("target_profit_margin", Decimal("0.2"))
+    promotion_rate = product.get("promotion_cost_rate", Decimal("0"))
+    commission_rate = product.get("commission_rate", Decimal("0.08"))
+    withdrawal_rate = product.get("withdrawal_fee_rate", Decimal("0.02"))
+    payment_rate = product.get("payment_processing_fee", Decimal("0"))
+    return_rate = product.get("return_rate", Decimal("0"))
+    vat_rate = product.get("vat_rate", Decimal("0"))
     if target_margin >= 1:
         target_margin /= 100
     if promotion_rate >= 1:
@@ -95,20 +99,20 @@ def _append_profit_debug(
 
 
 def calc_profit(
-    price,
-    cost,
-    commission_info,
-    payment_info,
-    payment_fixed,
-    pricing_mode,
-    unit_price,
-    labeling_fee,
-    shipping_fee,
-    rate,
-    product,
-    label,
-    debug_list,
-):
+    price: Decimal,
+    cost: Decimal,
+    commission_info: Decimal,
+    payment_info: Optional[Decimal],
+    payment_fixed: bool,
+    pricing_mode: Optional[str],
+    unit_price: Decimal,
+    labeling_fee: Decimal,
+    shipping_fee: Decimal,
+    rate: Decimal,
+    product: dict,
+    label: str,
+    debug_list: list,
+) -> Tuple[Decimal, Decimal]:
     (
         target_margin,
         promotion_rate,
@@ -121,7 +125,7 @@ def calc_profit(
     base_cost = unit_price + labeling_fee + shipping_fee + cost
     actual_commission = commission_info
     commission_fee = actual_commission * rate
-    actual_payment = payment_info if payment_info is not None else 0
+    actual_payment = payment_info if payment_info is not None else Decimal("0")
     payment_fee = actual_payment * rate
     total_cost = base_cost
     revenue_deductions = (
@@ -130,14 +134,16 @@ def calc_profit(
     if "代理费在分子中" in (pricing_mode or ""):
         total_cost += commission_fee
     else:
-        revenue_deductions += 0.02
+        revenue_deductions += Decimal("0.02")
     if payment_fixed:
         total_cost += payment_fee
     else:
         revenue_deductions += payment_rate
     actual_revenue = price * (1 - revenue_deductions)
     expected_profit = actual_revenue - total_cost
-    profit_margin = expected_profit / price * 100 if price > 0 else 0
+    profit_margin = (
+        expected_profit / price * Decimal("100") if price > 0 else Decimal("0")
+    )
     _append_profit_debug(
         debug_list,
         label,

@@ -1,3 +1,7 @@
+from decimal import Decimal
+from typing import Dict, List, Optional, Tuple
+
+
 def _avg_time(log):
     min_days = log.get("min_days") or 0
     max_days = log.get("max_days") or 0
@@ -7,10 +11,10 @@ def _avg_time(log):
 def _is_valid_log(log):
     min_days = log.get("min_days")
     max_days = log.get("max_days")
-    return bool(min_days) and bool(max_days)
+    return min_days is not None and max_days is not None
 
 
-def compute_temp_abcde_groups(logistics_list):
+def compute_temp_abcde_groups(logistics_list: list) -> Dict[str, str]:
     result = {}
     valid_logs = [log for log in logistics_list if _is_valid_log(log)]
     for log in logistics_list:
@@ -36,19 +40,28 @@ def compute_temp_abcde_groups(logistics_list):
     return result
 
 
-def select_best_speed_stage3(candidates, temp_groups):
+def select_best_speed_stage3(
+    candidates: list,
+    temp_groups: dict,
+) -> Tuple[Optional[dict], Optional[Decimal]]:
     if not candidates:
         return None, None
 
     def key(candidate):
         log, cost = candidate
         group = temp_groups.get(log.get("name"), "E")
-        return {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}.get(group, 4), cost, _avg_time(log)
+        return (
+            {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}.get(group, 4),
+            cost,
+            _avg_time(log),
+        )
 
     return min(candidates, key=key)
 
 
-def select_best_price_stage3(candidates):
+def select_best_price_stage3(
+    candidates: list,
+) -> Tuple[Optional[dict], Optional[Decimal]]:
     if not candidates:
         return None, None
 

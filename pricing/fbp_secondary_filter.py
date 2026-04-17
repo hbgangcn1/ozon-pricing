@@ -1,9 +1,13 @@
 from collections import defaultdict
+from decimal import Decimal
+from typing import List, Tuple
 
 _ELIMINATED_REASON = "该物流无法覆盖更高成本"
 
 
-def fbp_secondary_filter(logistics_list):
+def fbp_secondary_filter(
+    logistics_list: list,
+) -> Tuple[List[dict], List[dict]]:
     """按 (company, service_level, scoring_group) 分组，每组保留 base_fee 最高的1条。
 
     Returns:
@@ -26,7 +30,7 @@ def fbp_secondary_filter(logistics_list):
     for _key, group in groups.items():
         best = max(
             group,
-            key=lambda x: float(x.get("base_fee", 0)),
+            key=lambda x: x.get("base_fee", Decimal("0")),
         )
         kept.append(best)
         for log in group:

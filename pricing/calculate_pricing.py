@@ -1,3 +1,4 @@
+from decimal import Decimal
 import logging
 from .cost_filter import cost_and_filter
 from .select_best import select_best_by_priority, add_unselected
@@ -353,9 +354,9 @@ def _run_calculation(
     priority,
     filtered_logistics,
 ):
-    unit_price = float(product.get("unit_price", 0))
-    labeling_fee = float(product.get("labeling_fee", 0))
-    shipping_fee = float(product.get("shipping_fee", 0))
+    unit_price = product.get("unit_price") or Decimal("0")
+    labeling_fee = product.get("labeling_fee") or Decimal("0")
+    shipping_fee = product.get("shipping_fee") or Decimal("0")
     fees = (unit_price, labeling_fee, shipping_fee)
     rate, _ = _get_exchange_rates()
     phase1 = _phase1_filter_price(
@@ -372,12 +373,12 @@ def _run_calculation(
 
 
 def calculate_pricing(
-    product,
-    land_logistics,
-    air_logistics,
-    mode="fast",
-    priority="低价优先",
-):
+    product: dict,
+    land_logistics: list,
+    air_logistics: list,
+    mode: str = "fast",
+    priority: str = "低价优先",
+) -> dict:
     filtered_logistics = {"land": [], "air": []}
     try:
         if product is None or land_logistics is None or air_logistics is None:

@@ -1,20 +1,24 @@
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Optional, Tuple
+
+
 def calc_final_commission(
-    cost_input,
-    target_margin_input,
-    promotion_rate_input,
-    commission_rate_input,
-    withdrawal_rate_input,
-    payment_rate_input,
-    return_rate_input,
-    vat_rate_input,
-    rate_input,
-    max_iter=5,
-):
-    commission_fee = 15 * rate_input
-    payment_fee_fixed = 10 * rate_input
+    cost_input: Decimal,
+    target_margin_input: Decimal,
+    promotion_rate_input: Decimal,
+    commission_rate_input: Decimal,
+    withdrawal_rate_input: Decimal,
+    payment_rate_input: Decimal,
+    return_rate_input: Decimal,
+    vat_rate_input: Decimal,
+    rate_input: Decimal,
+    max_iter: int = 5,
+) -> Tuple[Decimal, Decimal, Decimal, bool]:
+    commission_fee = Decimal("15") * rate_input
+    payment_fee_fixed = Decimal("10") * rate_input
     use_fixed_payment = payment_rate_input > 0
-    price = 0
-    price_rub = 0.0
+    price = Decimal("0")
+    price_rub = Decimal("0")
 
     for _ in range(max_iter):
         if use_fixed_payment:
@@ -40,38 +44,51 @@ def calc_final_commission(
                 - return_rate_input
                 - vat_rate_input
             )
+        if final_price_denominator <= 0:
+            raise ValueError(
+                f"定价分母不合法 ({final_price_denominator:.4f})，"
+                "请检查费率配置（各费率之和不得 >= 1）"
+            )
+        if rate_input <= 0:
+            raise ValueError("汇率不合法，rate_input 必须大于 0")
         price = iter_total_cost / final_price_denominator
         price_rub = price / rate_input
-        new_commission_rub = max(15, min(200, price_rub * 0.02))
+        new_commission_rub = max(
+            Decimal("15"),
+            min(Decimal("200"), price_rub * Decimal("0.02")),
+        )
         new_commission_fee = new_commission_rub * rate_input
         if payment_rate_input > 0:
             payment_by_rate = price_rub * payment_rate_input
-            if payment_by_rate < 10:
+            if payment_by_rate < Decimal("10"):
                 use_fixed_payment = True
-                payment_fee_fixed = 10 * rate_input
+                payment_fee_fixed = Decimal("10") * rate_input
             else:
                 use_fixed_payment = False
-        if abs(new_commission_fee - commission_fee) < 0.01:
+        if abs(new_commission_fee - commission_fee) < Decimal("0.01"):
             break
         commission_fee = new_commission_fee
 
-    actual_payment_rub = 10.0 if use_fixed_payment else price_rub * payment_rate_input
+    actual_payment_rub = (
+        Decimal("10") if use_fixed_payment else price_rub * payment_rate_input
+    )
+    commission_rub = commission_fee / rate_input if rate_input > 0 else Decimal("0")
     return (
         price,
-        commission_fee / rate_input,
+        commission_rub,
         actual_payment_rub,
         use_fixed_payment,
     )
 
 
 def _get_final_rates(product):
-    final_target_margin = product.get("target_profit_margin", 0.2)
-    final_promotion_rate = product.get("promotion_cost_rate", 0)
-    final_commission_rate = product.get("commission_rate", 0.08)
-    final_withdrawal_rate = product.get("withdrawal_fee_rate", 0.02)
-    final_payment_rate = product.get("payment_processing_fee", 0)
-    final_return_rate = product.get("return_rate", 0)
-    final_vat_rate = product.get("vat_rate", 0)
+    final_target_margin = product.get("target_profit_margin", Decimal("0.2"))
+    final_promotion_rate = product.get("promotion_cost_rate", Decimal("0"))
+    final_commission_rate = product.get("commission_rate", Decimal("0.08"))
+    final_withdrawal_rate = product.get("withdrawal_fee_rate", Decimal("0.02"))
+    final_payment_rate = product.get("payment_processing_fee", Decimal("0"))
+    final_return_rate = product.get("return_rate", Decimal("0"))
+    final_vat_rate = product.get("vat_rate", Decimal("0"))
     if final_target_margin >= 1:
         final_target_margin /= 100
     if final_promotion_rate >= 1:
@@ -118,9 +135,13 @@ def _append_final_price_debug(
     pricing_mode,
 ):
     debug_list.append(f"代理费判断: actual_commission={actual_commission:.15f}")
-    debug_list.append(f"  四舍五入后: {round(actual_commission, 2)}")
-    debug_list.append(f"  原值 >= 200? {actual_commission >= 200}")
-    debug_list.append(f"  四舍五入后 >= 200? {round(actual_commission, 2) >= 200}")
+    rounded_commission = actual_commission.quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    debug_list.append(f"  四舍五入后: {rounded_commission}")
+    debug_list.append(f"  原值 >= 200? {actual_commission >= Decimal('200')}")
+    debug_list.append(f"  四舍五入后 >= 200? {rounded_commission >= Decimal('200')}")
     debug_list.append(f"迭代计算代理费: {actual_commission:.2f} RUB")
     debug_list.append(f"最终售价: {final_price:.2f} CNY")
     debug_list.append(f"最终售价(卢布): {final_price_rub:.2f} RUB")
@@ -193,10 +214,13 @@ def _calc_numerator_denom(
     final_vat_rate,
     rate,
 ):
-    actual_commission_rounded = round(actual_commission, 2)
-    commission_in_num = (
-        actual_commission_rounded <= 15 or actual_commission_rounded >= 200
+    actual_commission_rounded = actual_commission.quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
     )
+    commission_in_num = actual_commission_rounded <= Decimal(
+        "15"
+    ) or actual_commission_rounded >= Decimal("200")
     payment_in_num = final_fixed_payment
     numerator = base_cost_calc
     denom_deductions = (
@@ -210,7 +234,7 @@ def _calc_numerator_denom(
     if commission_in_num:
         numerator += actual_commission * rate
     else:
-        denom_deductions += 0.02
+        denom_deductions += Decimal("0.02")
     if payment_in_num:
         numerator += final_payment_rub * rate
     else:
@@ -222,10 +246,10 @@ def _calc_numerator_denom(
 def _calc_final_payment(final_price_rub, final_payment_rate):
     if final_payment_rate > 0:
         final_payment_by_rate = final_price_rub * final_payment_rate
-        if final_payment_by_rate < 10:
-            return 10.0, True
+        if final_payment_by_rate < Decimal("10"):
+            return Decimal("10"), True
         return final_payment_by_rate, False
-    return 0.0, False
+    return Decimal("0"), False
 
 
 def _emit_debug(
@@ -294,8 +318,14 @@ def _emit_debug(
 
 
 def compute_final_price(
-    cost, product, unit_price, labeling_fee, shipping_fee, rate, debug_list=None
-):
+    cost: Decimal,
+    product: dict,
+    unit_price: Decimal,
+    labeling_fee: Decimal,
+    shipping_fee: Decimal,
+    rate: Decimal,
+    debug_list: Optional[list] = None,
+) -> Tuple[Decimal, Decimal, str, Decimal, bool]:
     rates = _get_final_rates(product)
     (
         final_target_margin,
@@ -334,6 +364,11 @@ def compute_final_price(
         final_vat_rate,
         rate,
     )
+    if denominator <= 0:
+        raise ValueError(
+            f"最终定价分母不合法 ({denominator:.4f})，"
+            "请检查费率配置（各费率之和不得 >= 1）"
+        )
     final_price = numerator / denominator
     pricing_mode = ", ".join(
         [
@@ -341,8 +376,13 @@ def compute_final_price(
             "收单费在分子中" if payment_in_num else "收单费在分母中",
         ]
     )
+    if rate <= 0:
+        raise ValueError("汇率不合法，rate 必须大于 0")
     final_price_rub = final_price / rate
-    final_actual_commission = max(15, min(200, final_price_rub * 0.02))
+    final_actual_commission = max(
+        Decimal("15"),
+        min(Decimal("200"), final_price_rub * Decimal("0.02")),
+    )
     final_actual_payment_rub, final_fixed_payment = _calc_final_payment(
         final_price_rub, final_payment_rate
     )

@@ -1,5 +1,7 @@
 import math
 import re
+from decimal import Decimal
+from typing import List, Optional, Tuple
 
 
 def _parse_continue_unit(continue_unit_raw):
@@ -177,7 +179,7 @@ def _check_special_items(logistic, product, debug_info):
 
 def _calc_volume_weight(logistic, sides, actual_weight, debug_info):
     volume_mode = logistic.get("volume_mode", "none")
-    volume_coefficient = float(logistic.get("volume_coefficient", 5000))
+    volume_coefficient = logistic.get("volume_coefficient", 5000)
     debug_info.append(f"体积重量模式: {volume_mode}, 系数: {volume_coefficient}")
     if volume_mode == "max_actual_vs_volume":
         volume_weight = (sides[0] * sides[1] * sides[2]) / volume_coefficient
@@ -189,7 +191,7 @@ def _calc_volume_weight(logistic, sides, actual_weight, debug_info):
             f"计费重量: {calculated_weight:.2f}g"
         )
     elif volume_mode == "longest_side":
-        longest_side_threshold = float(logistic.get("longest_side_threshold", 0))
+        longest_side_threshold = logistic.get("longest_side_threshold", 0)
         longest_side = max(sides)
         debug_info.append(f"最长边: {longest_side}cm, 阈值: {longest_side_threshold}cm")
         if longest_side > longest_side_threshold:
@@ -205,7 +207,7 @@ def _calc_volume_weight(logistic, sides, actual_weight, debug_info):
             calculated_weight = actual_weight
             debug_info.append(f"最长边未超过阈值，使用实际重量: {calculated_weight}g")
     elif volume_mode == "sum_of_sides":
-        sum_of_sides_threshold = float(logistic.get("sum_of_sides_threshold", 0))
+        sum_of_sides_threshold = logistic.get("sum_of_sides_threshold", 0)
         sum_of_sides_val = sum(sides)
         debug_info.append(
             f"三边和: {sum_of_sides_val}cm, 阈值: {sum_of_sides_threshold}cm"
@@ -232,18 +234,18 @@ def _calc_fee(logistic, w, debug_info):
     fee_mode = logistic.get("fee_mode", "base_plus_continue")
     continue_unit_raw = logistic.get("continue_unit", 100)
     continue_unit = _parse_continue_unit(continue_unit_raw)
-    continue_fee = float(logistic.get("continue_fee", 0))
+    continue_fee = logistic.get("continue_fee", Decimal("0"))
     debug_info.append(
         f"计费方式: {fee_mode}, 续重单位: {continue_unit}g, 续重费用: {continue_fee:.5f}"
     )
     if fee_mode in ("base_weight", "base_plus_continue"):
         units = math.ceil(w / continue_unit)
-        base_fee = float(logistic.get("base_fee", 0))
+        base_fee = logistic.get("base_fee", Decimal("0"))
         cost = base_fee + continue_fee * units
         debug_info.append(f"基础费用: {base_fee}, 单位数: {units}, 运费: {cost}")
     else:
-        first_weight = float(logistic.get("first_weight_g", 0))
-        first_fee = float(logistic.get("first_fee", 0))
+        first_weight = logistic.get("first_weight_g", 0)
+        first_fee = logistic.get("first_fee", Decimal("0"))
         if w <= first_weight:
             cost = first_fee
             debug_info.append(f"首重费用: {first_fee}，在首重范围内")
@@ -257,7 +259,11 @@ def _calc_fee(logistic, w, debug_info):
     return cost
 
 
-def calculate_logistic_cost(logistic, product, is_fast_mode=False):
+def calculate_logistic_cost(
+    logistic: dict,
+    product: dict,
+    is_fast_mode: bool = False,
+) -> Tuple[Optional[Decimal], List[str]]:
     debug_info = []
     if logistic is None or product is None:
         debug_info.append("输入数据无效，返回 None")
@@ -271,14 +277,14 @@ def calculate_logistic_cost(logistic, product, is_fast_mode=False):
         debug_info.append("输入数据类型无效，返回 None")
         return (None, debug_info)
     actual_weight = product.get("weight_g", 0)
-    min_w = float(logistic.get("min_weight", 0))
-    max_w = float(logistic.get("max_weight", 0))
+    min_w = logistic.get("min_weight", 0)
+    max_w = logistic.get("max_weight", 0)
     if actual_weight < 0:
         debug_info.append(f"重量 {actual_weight}g 为负数，返回 None")
         return (None, debug_info)
     if actual_weight == 0:
         debug_info.append("重量为0，返回基础费用")
-        base_fee = float(logistic.get("base_fee", 0))
+        base_fee = logistic.get("base_fee", Decimal("0"))
         return (base_fee, debug_info)
     if min_w > 0 and actual_weight < min_w:
         debug_info.append(f"重量 {actual_weight}g 低于下限 {min_w}g，返回 None")

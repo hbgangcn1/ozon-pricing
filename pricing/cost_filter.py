@@ -1,3 +1,6 @@
+from decimal import Decimal
+from typing import Any, Callable, List, Tuple
+
 from .logistic_cost import calculate_logistic_cost
 from .filter import _debug_filter_reason
 from .floating_price import calc_floating_price, _get_filter_rates
@@ -34,14 +37,14 @@ def _to_log_dict(log):
 
 
 def _check_price_upper(log_dict, rough):
-    log_limit_value = float(log_dict.get("price_limit_cny") or 0)
+    log_limit_value = log_dict.get("price_limit_cny") or Decimal("0")
     if log_limit_value > 0 and rough > log_limit_value:
         return f"估算售价 {rough:.2f} CNY 超过价格上限 {log_limit_value:.2f} CNY"
     return None
 
 
 def _check_price_lower(log_dict, rough, debug_info):
-    log_min_value = float(log_dict.get("price_min_cny") or 0)
+    log_min_value = log_dict.get("price_min_cny") or Decimal("0")
     debug_info.append(
         f"价格下限检查: min_value={log_min_value:.2f} CNY, rough={rough:.2f} CNY"
     )
@@ -115,12 +118,21 @@ def _process_one_logistic(
     if commission_in_numerator:
         numerator += actual_commission * rate
     else:
-        denom_deductions += 0.02
+        denom_deductions += Decimal("0.02")
     if payment_in_numerator:
         numerator += actual_payment_rub * rate
     else:
         denom_deductions += payment_rate
     denominator = 1 - denom_deductions
+    if denominator <= 0:
+        debug_info.append(f"定价分母不合法 ({denominator:.4f})，跳过此物流方案")
+        _append_filtered(
+            filtered_logistics,
+            is_land,
+            log_dict,
+            f"费率配置异常，定价分母={denominator:.4f}",
+        )
+        return None
     rough = numerator / denominator
     pricing_parts = []
     pricing_parts.append(
@@ -135,7 +147,7 @@ def _process_one_logistic(
     )
     debug_info.append(f"定价模式: {pricing_mode}")
     debug_info.append(f"估算价格: {rough:.2f} CNY")
-    log_limit_value = float(log_dict.get("price_limit_cny") or 0)
+    log_limit_value = log_dict.get("price_limit_cny") or Decimal("0")
     if log_limit_value > 0:
         debug_info.append(
             f"限价判断: 估算售价 {rough:.2f} CNY, 上限 {log_limit_value:.2f} CNY"
@@ -154,17 +166,17 @@ def _process_one_logistic(
 
 
 def cost_and_filter(
-    logistics,
-    product,
-    land_logistics,
-    cached_cost,
-    unit_price,
-    labeling_fee,
-    shipping_fee,
-    rate,
-    filtered_logistics,
-    all_costs_debug,
-):
+    logistics: Any,
+    product: Any,
+    land_logistics: Any,
+    cached_cost: Callable,
+    unit_price: Decimal,
+    labeling_fee: Decimal,
+    shipping_fee: Decimal,
+    rate: Decimal,
+    filtered_logistics: dict,
+    all_costs_debug: list,
+) -> List[Tuple[dict, Decimal]]:
     res = []
     product_dict = _to_product_dict(product)
     is_land = logistics is land_logistics

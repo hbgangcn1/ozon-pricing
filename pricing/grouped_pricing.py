@@ -1,3 +1,6 @@
+from decimal import Decimal
+from typing import Any, Dict, Optional
+
 from .cost_filter import cost_and_filter
 from ._pricing_helpers import (
     _get_exchange_rates,
@@ -8,16 +11,16 @@ from ._pricing_helpers import (
 
 def _estimate_price_rub(product):
     rate, _ = _get_exchange_rates()
-    unit_price = float(product.get("unit_price", 0) or 0)
-    labeling_fee = float(product.get("labeling_fee", 0) or 0)
-    shipping_fee = float(product.get("shipping_fee", 0) or 0)
-    margin = float(product.get("target_profit_margin", 0.2) or 0)
+    unit_price = product.get("unit_price") or Decimal("0")
+    labeling_fee = product.get("labeling_fee") or Decimal("0")
+    shipping_fee = product.get("shipping_fee") or Decimal("0")
+    margin = product.get("target_profit_margin") or Decimal("0")
     if margin >= 1:
         margin /= 100
     total_cost = unit_price + labeling_fee + shipping_fee
-    denom = max(1 - margin - 0.1, 0.3)
+    denom = max(1 - margin - Decimal("0.1"), Decimal("0.3"))
     price_cny = total_cost / denom if denom > 0 else total_cost * 2
-    return price_cny / rate if rate > 0 else 0
+    return price_cny / rate if rate > 0 else Decimal("0")
 
 
 def _estimate_and_select_rate(
@@ -65,7 +68,9 @@ def _add_stage3_price_filtered(
 ):
     """低价优先路径：未被选中物流标注更优方案信息。"""
     best_name = price_best[0].get("name", "") if price_best and price_best[0] else ""
-    best_cost = price_best[1] if price_best and price_best[1] is not None else 0.0
+    best_cost = (
+        price_best[1] if price_best and price_best[1] is not None else Decimal("0")
+    )
     existing = {item["name"] for item in filtered_list}
     skip = skip_names or set()
     for log_dict, _cost in candidates:
@@ -138,9 +143,9 @@ def _override_stage3_best(result, land_best, air_best):
 
 def _stage1_filter(group_product, land_all, air_all, mode):
     """Stage 1: 仅做物理约束筛选，不调用 add_unselected。"""
-    unit_price = float(group_product.get("unit_price", 0))
-    labeling_fee = float(group_product.get("labeling_fee", 0))
-    shipping_fee = float(group_product.get("shipping_fee", 0))
+    unit_price = group_product.get("unit_price") or Decimal("0")
+    labeling_fee = group_product.get("labeling_fee") or Decimal("0")
+    shipping_fee = group_product.get("shipping_fee") or Decimal("0")
     rate, _ = _get_exchange_rates()
     stage1_filtered = {"land": [], "air": []}
     is_fast_mode = mode == "fast"
@@ -195,9 +200,9 @@ def _stage3_select(land_candidates, air_candidates):
 
 
 def _compute_fbp_candidates(group_product, kept_land, kept_air, mode):
-    unit_price = float(group_product.get("unit_price", 0))
-    labeling_fee = float(group_product.get("labeling_fee", 0))
-    shipping_fee = float(group_product.get("shipping_fee", 0))
+    unit_price = group_product.get("unit_price") or Decimal("0")
+    labeling_fee = group_product.get("labeling_fee") or Decimal("0")
+    shipping_fee = group_product.get("shipping_fee") or Decimal("0")
     rate, _ = _get_exchange_rates()
     is_fast_mode = mode == "fast"
     cached_cost = _make_cached_cost(is_fast_mode)
@@ -374,12 +379,12 @@ def _run_group(ft, dest_filter, apply_fbp_filter, all_logistics, group_product, 
 
 
 def calculate_pricing_grouped(
-    product,
-    all_logistics,
-    mode="fast",
-    priority="低价优先",
-    commission_category=None,
-):
+    product: dict,
+    all_logistics: list,
+    mode: str = "fast",
+    priority: str = "低价优先",
+    commission_category: Optional[dict] = None,
+) -> Dict[str, Any]:
     _CIS_DESTS = {"KZ", "BY", "KGZ", "UZ", "GE", "AZ"}
 
     def _group(ft, dest_filter, apply_fbp_filter=False):

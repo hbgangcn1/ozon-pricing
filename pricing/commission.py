@@ -1,16 +1,19 @@
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+_Q4 = Decimal("0.0001")
+
 
 async def get_commission_rate(
-    price_rub: float,
+    price_rub: Decimal,
     category_id: Optional[int],
     fulfillment_type: str,
     db_session: AsyncSession,
     user_id: Optional[int] = None,
-) -> Optional[float]:
+) -> Optional[Decimal]:
     if category_id is None:
         return None
 
@@ -37,11 +40,11 @@ async def get_commission_rate(
 
     if rate_value is None:
         return None
-    fbp_rate = float(rate_value)
+    fbp_rate = rate_value
 
     if fulfillment_type == "rfbs":
-        return round(fbp_rate + 0.01, 4)
-    return round(fbp_rate, 4)
+        return (fbp_rate + Decimal("0.01")).quantize(_Q4, rounding=ROUND_HALF_UP)
+    return fbp_rate.quantize(_Q4, rounding=ROUND_HALF_UP)
 
 
 async def fetch_commission_category(
@@ -67,20 +70,20 @@ async def fetch_commission_category(
     if row is None:
         return None
     return {
-        "rfbs_tier1_rate": float(row.rfbs_tier1_rate or 0),
-        "rfbs_tier2_rate": float(row.rfbs_tier2_rate or 0),
-        "rfbs_tier3_rate": float(row.rfbs_tier3_rate or 0),
-        "fbp_tier1_rate": float(row.fbp_tier1_rate or 0),
-        "fbp_tier2_rate": float(row.fbp_tier2_rate or 0),
-        "fbp_tier3_rate": float(row.fbp_tier3_rate or 0),
+        "rfbs_tier1_rate": row.rfbs_tier1_rate or Decimal("0"),
+        "rfbs_tier2_rate": row.rfbs_tier2_rate or Decimal("0"),
+        "rfbs_tier3_rate": row.rfbs_tier3_rate or Decimal("0"),
+        "fbp_tier1_rate": row.fbp_tier1_rate or Decimal("0"),
+        "fbp_tier2_rate": row.fbp_tier2_rate or Decimal("0"),
+        "fbp_tier3_rate": row.fbp_tier3_rate or Decimal("0"),
     }
 
 
 def select_commission_rate_from_category(
     category: dict,
     fulfillment_type: str,
-    price_rub: float,
-) -> float:
+    price_rub: Decimal,
+) -> Decimal:
     """根据fulfillment_type和price_rub从category dict选择佣金率。
 
     纯同步函数，无DB操作。
@@ -92,4 +95,4 @@ def select_commission_rate_from_category(
         tier = "tier2"
     else:
         tier = "tier3"
-    return category.get(f"{prefix}_{tier}_rate", 0)
+    return category.get(f"{prefix}_{tier}_rate", Decimal("0"))

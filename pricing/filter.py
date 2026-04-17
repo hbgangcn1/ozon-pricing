@@ -1,5 +1,6 @@
 import math
 import re
+from decimal import Decimal
 
 
 def _parse_continue_unit_filter(continue_unit_raw):
@@ -162,12 +163,12 @@ def _filter_calc_fee(logistic, w):
     continue_unit = _parse_continue_unit_filter(continue_unit_raw)
     if fee_mode in ("base_weight", "base_plus_continue"):
         units = math.ceil(w / continue_unit)
-        base_fee_val = float(logistic.get("base_fee", 0))
-        continue_fee_val = float(logistic.get("continue_fee", 0))
+        base_fee_val = logistic.get("base_fee", Decimal("0"))
+        continue_fee_val = logistic.get("continue_fee", Decimal("0"))
         return base_fee_val + continue_fee_val * units
-    first_w = float(logistic.get("first_weight_g", 0))
-    first_cost = float(logistic.get("first_fee", 0))
-    continue_fee_val = float(logistic.get("continue_fee", 0))
+    first_w = logistic.get("first_weight_g", 0)
+    first_cost = logistic.get("first_fee", Decimal("0"))
+    continue_fee_val = logistic.get("continue_fee", Decimal("0"))
     if w <= first_w:
         return first_cost
     return first_cost + math.ceil((w - first_w) / continue_unit) * continue_fee_val
@@ -178,16 +179,17 @@ def _filter_check_price_limits(logistic, product, w):
         try:
             from exchange_service import get_fallback_exchange_rate
         except ImportError:
-
-            def get_fallback_exchange_rate():
-                return 0.0904
-
-        rate = get_fallback_exchange_rate()
-        unit_price = float(product.get("unit_price", 0))
-        labeling_fee = float(product.get("labeling_fee", 0))
-        shipping_fee = float(product.get("shipping_fee", 0))
+            rate = Decimal("0.0904")
+        else:
+            raw_rate = get_fallback_exchange_rate()
+            rate = raw_rate if isinstance(raw_rate, Decimal) else Decimal(str(raw_rate))
+        unit_price = product.get("unit_price", Decimal("0"))
+        labeling_fee = product.get("labeling_fee", Decimal("0"))
+        shipping_fee = product.get("shipping_fee", Decimal("0"))
         cost = _filter_calc_fee(logistic, w)
-        total_cny = unit_price + labeling_fee + shipping_fee + 15 * rate + cost
+        total_cny = (
+            unit_price + labeling_fee + shipping_fee + Decimal("15") * rate + cost
+        )
         denominator = (
             1
             - product.get("target_profit_margin", 0)
@@ -199,8 +201,8 @@ def _filter_check_price_limits(logistic, product, w):
         if denominator == 0:
             return "费率参数异常导致除以 0"
         rough_cny = total_cny / denominator
-        limit_value = float(logistic.get("price_limit_cny", 0) or 0)
-        min_value = float(logistic.get("price_min_cny", 0) or 0)
+        limit_value = logistic.get("price_limit_cny") or Decimal("0")
+        min_value = logistic.get("price_min_cny") or Decimal("0")
         if limit_value > 0 and rough_cny > limit_value:
             return f"估算售价 {rough_cny:.2f} CNY 超过价格上限 {limit_value:.2f} CNY"
         if min_value > 0 and rough_cny < min_value:
@@ -210,7 +212,7 @@ def _filter_check_price_limits(logistic, product, w):
     return None
 
 
-def _debug_filter_reason(logistic: dict, product: dict) -> str:
+def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: ignore[reportUnusedFunction]
     w, err = _filter_check_weight(logistic, product)
     if err:
         return err
