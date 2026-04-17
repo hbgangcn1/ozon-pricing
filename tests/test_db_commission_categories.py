@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import time
+from decimal import Decimal
 
 import pytest
 
@@ -39,12 +40,12 @@ def _category_data(name: str, **overrides) -> dict:
     data = {
         "name": name,
         "user_id": _TEST_USER_ID,
-        "rfbs_tier1_rate": 1.51,
-        "rfbs_tier2_rate": 2.51,
-        "rfbs_tier3_rate": 3.51,
-        "fbp_tier1_rate": 1.5,
-        "fbp_tier2_rate": 2.5,
-        "fbp_tier3_rate": 3.5,
+        "rfbs_tier1_rate": Decimal("1.51"),
+        "rfbs_tier2_rate": Decimal("2.51"),
+        "rfbs_tier3_rate": Decimal("3.51"),
+        "fbp_tier1_rate": Decimal("1.5"),
+        "fbp_tier2_rate": Decimal("2.5"),
+        "fbp_tier3_rate": Decimal("3.5"),
         "is_active": 1,
     }
     data.update(overrides)
@@ -63,7 +64,7 @@ def test_create_category_returns_id_and_persists_values():
         row = await get_by_id(session, category_id, _TEST_USER_ID)
         assert row is not None
         assert row["name"] == name
-        assert row["fbp_tier1_rate"] == pytest.approx(1.5)
+        assert row["fbp_tier1_rate"] == Decimal("1.5")
         assert row["is_active"] == 1
 
     _run(_in_session(scenario))
@@ -74,7 +75,10 @@ def test_create_category_returns_none_for_duplicate_name():
         name = _unique_name("duplicate")
 
         first_id = await create(session, _category_data(name))
-        second_id = await create(session, _category_data(name, rfbs_tier1_rate=9.9))
+        second_id = await create(
+            session,
+            _category_data(name, rfbs_tier1_rate=Decimal("9.9")),
+        )
 
         assert first_id is not None
         assert second_id is None
@@ -158,7 +162,7 @@ def test_update_category_changes_allowed_fields_only():
             category_id,
             {
                 "name": _unique_name("updated"),
-                "rfbs_tier2_rate": 8.8,
+                "rfbs_tier2_rate": Decimal("8.8"),
                 "not_a_field": "ignored",
             },
             _TEST_USER_ID,
@@ -169,7 +173,7 @@ def test_update_category_changes_allowed_fields_only():
         row = await get_by_id(session, category_id, _TEST_USER_ID)
         assert row is not None
         assert row["name"].startswith("test_commission_updated_")
-        assert row["rfbs_tier2_rate"] == pytest.approx(8.8)
+        assert row["rfbs_tier2_rate"] == Decimal("8.8")
         assert "not_a_field" not in row
 
     _run(_in_session(scenario))

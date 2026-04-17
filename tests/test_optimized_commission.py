@@ -2,7 +2,9 @@
 测试优化后的浮动代理费筛选策略
 """
 
-from logic import calculate_pricing
+from decimal import Decimal
+
+from pricing import calculate_pricing
 
 
 class TestOptimizedCommission:
@@ -12,37 +14,37 @@ class TestOptimizedCommission:
         """测试浮动代理费计算的收敛性"""
         # 创建一个高价产品，确保代理费会达到最高200卢布
         product = {
-            "unit_price": 1000,  # 高价产品
-            "labeling_fee": 0,
-            "shipping_fee": 0,
-            "target_profit_margin": 0.1,  # 低利润率
-            "promotion_cost_rate": 0,
-            "commission_rate": 0.08,
-            "withdrawal_fee_rate": 0.02,
-            "payment_processing_fee": 0,
+            "unit_price": Decimal("1000"),  # 高价产品
+            "labeling_fee": Decimal("0"),
+            "shipping_fee": Decimal("0"),
+            "target_profit_margin": Decimal("0.1"),  # 低利润率
+            "promotion_cost_rate": Decimal("0"),
+            "commission_rate": Decimal("0.08"),
+            "withdrawal_fee_rate": Decimal("0.02"),
+            "payment_processing_fee": Decimal("0"),
         }
 
         # 创建多个物流规则，包含不同的价格限制
         logistics = [
             {
                 "name": "cheap_logistic",
-                "base_cost": 50,
-                "continue_cost": 0,
+                "base_cost": Decimal("50"),
+                "continue_cost": Decimal("0"),
                 "first_weight": 1,
                 "continue_weight": 0,
                 "fee_mode": "base_plus",
-                "price_limit_rub": 5000,  # 较低限价
-                "price_min_rub": 0,
+                "price_limit_rub": Decimal("5000"),  # 较低限价
+                "price_min_rub": Decimal("0"),
             },
             {
                 "name": "expensive_logistic",
-                "base_cost": 200,
-                "continue_cost": 0,
+                "base_cost": Decimal("200"),
+                "continue_cost": Decimal("0"),
                 "first_weight": 1,
                 "continue_weight": 0,
                 "fee_mode": "base_plus",
-                "price_limit_rub": 20000,  # 较高限价
-                "price_min_rub": 0,
+                "price_limit_rub": Decimal("20000"),  # 较高限价
+                "price_min_rub": Decimal("0"),
             },
         ]
 
@@ -78,27 +80,27 @@ class TestOptimizedCommission:
         """测试代理费上限对筛选的影响"""
         # 创建一个中等价格产品
         product = {
-            "unit_price": 500,
-            "labeling_fee": 0,
-            "shipping_fee": 0,
-            "target_profit_margin": 0.15,
-            "promotion_cost_rate": 0,
-            "commission_rate": 0.08,
-            "withdrawal_fee_rate": 0.02,
-            "payment_processing_fee": 0,
+            "unit_price": Decimal("500"),
+            "labeling_fee": Decimal("0"),
+            "shipping_fee": Decimal("0"),
+            "target_profit_margin": Decimal("0.15"),
+            "promotion_cost_rate": Decimal("0"),
+            "commission_rate": Decimal("0.08"),
+            "withdrawal_fee_rate": Decimal("0.02"),
+            "payment_processing_fee": Decimal("0"),
         }
 
         # 创建物流规则，设置一个接近代理费上限的价格限制
         logistics = [
             {
                 "name": "test_logistic",
-                "base_cost": 100,
-                "continue_cost": 0,
+                "base_cost": Decimal("100"),
+                "continue_cost": Decimal("0"),
                 "first_weight": 1,
                 "continue_weight": 0,
                 "fee_mode": "base_plus",
-                "price_limit_rub": 15000,  # 设置一个合理的限价
-                "price_min_rub": 0,
+                "price_limit_rub": Decimal("15000"),  # 设置一个合理的限价
+                "price_min_rub": Decimal("0"),
             }
         ]
 
@@ -115,26 +117,26 @@ class TestOptimizedCommission:
     def test_performance_optimization(self):
         """测试性能优化效果"""
         product = {
-            "unit_price": 200,
-            "labeling_fee": 0,
-            "shipping_fee": 0,
-            "target_profit_margin": 0.2,
-            "promotion_cost_rate": 0,
-            "commission_rate": 0.08,
-            "withdrawal_fee_rate": 0.02,
-            "payment_processing_fee": 0,
+            "unit_price": Decimal("200"),
+            "labeling_fee": Decimal("0"),
+            "shipping_fee": Decimal("0"),
+            "target_profit_margin": Decimal("0.2"),
+            "promotion_cost_rate": Decimal("0"),
+            "commission_rate": Decimal("0.08"),
+            "withdrawal_fee_rate": Decimal("0.02"),
+            "payment_processing_fee": Decimal("0"),
         }
 
         logistics = [
             {
                 "name": "test_logistic",
-                "base_cost": 80,
-                "continue_cost": 0,
+                "base_cost": Decimal("80"),
+                "continue_cost": Decimal("0"),
                 "first_weight": 1,
                 "continue_weight": 0,
                 "fee_mode": "base_plus",
-                "price_limit_rub": 10000,
-                "price_min_rub": 0,
+                "price_limit_rub": Decimal("10000"),
+                "price_min_rub": Decimal("0"),
             }
         ]
 
@@ -166,26 +168,26 @@ class TestOptimizedCommission:
 
         for test_case in test_cases:
             product = {
-                "unit_price": test_case["unit_price"],
-                "labeling_fee": 0,
-                "shipping_fee": 0,
-                "target_profit_margin": 0.2,
-                "promotion_cost_rate": 0,
-                "commission_rate": 0.08,
-                "withdrawal_fee_rate": 0.02,
-                "payment_processing_fee": 0,
+                "unit_price": Decimal(str(test_case["unit_price"])),
+                "labeling_fee": Decimal("0"),
+                "shipping_fee": Decimal("0"),
+                "target_profit_margin": Decimal("0.2"),
+                "promotion_cost_rate": Decimal("0"),
+                "commission_rate": Decimal("0.08"),
+                "withdrawal_fee_rate": Decimal("0.02"),
+                "payment_processing_fee": Decimal("0"),
             }
 
             logistics = [
                 {
                     "name": "test_logistic",
-                    "base_cost": 50,
-                    "continue_cost": 0,
+                    "base_cost": Decimal("50"),
+                    "continue_cost": Decimal("0"),
                     "first_weight": 1,
                     "continue_weight": 0,
                     "fee_mode": "base_plus",
-                    "price_limit_rub": 100000,
-                    "price_min_rub": 0,
+                    "price_limit_rub": Decimal("100000"),
+                    "price_min_rub": Decimal("0"),
                 }
             ]
 

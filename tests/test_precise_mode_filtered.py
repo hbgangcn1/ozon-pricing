@@ -1,5 +1,6 @@
 import os
 import sys
+from decimal import Decimal
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,16 +28,16 @@ EXPECTED_GROUP_KEY_SET = set(EXPECTED_GROUP_KEYS)
 
 def _product():
     return {
-        "unit_price": 100.0,
-        "labeling_fee": 0.5,
-        "shipping_fee": 1.0,
-        "commission_rate": 0.08,
-        "target_profit_margin": 0.2,
-        "promotion_cost_rate": 0.03,
-        "withdrawal_fee_rate": 0.01,
-        "payment_processing_fee": 0.02,
-        "return_rate": 0,
-        "vat_rate": 20,
+        "unit_price": Decimal("100.0"),
+        "labeling_fee": Decimal("0.5"),
+        "shipping_fee": Decimal("1.0"),
+        "commission_rate": Decimal("0.08"),
+        "target_profit_margin": Decimal("0.2"),
+        "promotion_cost_rate": Decimal("0.03"),
+        "withdrawal_fee_rate": Decimal("0.01"),
+        "payment_processing_fee": Decimal("0.02"),
+        "return_rate": Decimal("0"),
+        "vat_rate": Decimal("20"),
     }
 
 
@@ -405,15 +406,15 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
                 return {
                     "best_land": {"name": "old-price-land"},
                     "best_air": {"name": "old-price-air"},
-                    "land_cost": 999.0,
-                    "air_cost": 999.0,
+                    "land_cost": Decimal("999.0"),
+                    "air_cost": Decimal("999.0"),
                     "filtered_logistics": {"land": [], "air": []},
                 }
             return {
                 "best_land": {"name": "old-speed-land"},
                 "best_air": {"name": "old-speed-air"},
-                "land_cost": 888.0,
-                "air_cost": 888.0,
+                "land_cost": Decimal("888.0"),
+                "air_cost": Decimal("888.0"),
                 "filtered_logistics": {"land": [], "air": []},
             }
         return {"filtered_logistics": {"land": [], "air": []}}
@@ -454,8 +455,9 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
             # Stage 3 air: only kept air items
             assert names == {"CIS-Air-Price", "CIS-Air-Speed"}
         # Land calls (0, 2) use 9.0 base; Air calls (1, 3) use 8.0 base
-        base = 9.0 if call_num in (0, 2) else 8.0
-        return [(dict(lg), base + i * 3.0) for i, lg in enumerate(logistics_list)]
+        base = Decimal("9.0") if call_num in (0, 2) else Decimal("8.0")
+        step = Decimal("3.0")
+        return [(dict(lg), base + i * step) for i, lg in enumerate(logistics_list)]
 
     with (
         patch(
@@ -472,7 +474,7 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
         ) as mock_cost_filter,
         patch(
             "pricing.grouped_pricing._get_exchange_rates",
-            return_value=(0.0904, 7.2),
+            return_value=(Decimal("0.0904"), Decimal("7.2")),
         ),
     ):
         result = calculate_pricing_grouped(_product(), logistics, mode="precise")
@@ -497,10 +499,10 @@ def test_fbp_cis_uses_stage2_prefilter_and_stage3_selection():
     assert group["price_priority"]["best_air"]["name"] == "CIS-Air-Price"
     assert group["speed_priority"]["best_land"]["name"] == "CIS-Land-Speed"
     assert group["speed_priority"]["best_air"]["name"] == "CIS-Air-Speed"
-    assert group["price_priority"]["land_cost"] == 9.0
-    assert group["price_priority"]["air_cost"] == 8.0
-    assert group["speed_priority"]["land_cost"] == 12.0
-    assert group["speed_priority"]["air_cost"] == 11.0
+    assert group["price_priority"]["land_cost"] == Decimal("9.0")
+    assert group["price_priority"]["air_cost"] == Decimal("8.0")
+    assert group["speed_priority"]["land_cost"] == Decimal("12.0")
+    assert group["speed_priority"]["air_cost"] == Decimal("11.0")
 
     # Verify eliminated items appear in filtered_logistics
     filtered_names = {

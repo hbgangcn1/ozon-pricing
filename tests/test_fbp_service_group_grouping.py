@@ -8,6 +8,7 @@ A service group containing any KZ/BY record must send all its records
 
 import os
 import sys
+from decimal import Decimal
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,16 +21,16 @@ _FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
 
 def _product():
     return {
-        "unit_price": 100.0,
-        "labeling_fee": 0.5,
-        "shipping_fee": 1.0,
-        "commission_rate": 0.08,
-        "target_profit_margin": 0.2,
-        "promotion_cost_rate": 0.03,
-        "withdrawal_fee_rate": 0.01,
-        "payment_processing_fee": 0.02,
-        "return_rate": 0,
-        "vat_rate": 20,
+        "unit_price": Decimal("100.0"),
+        "labeling_fee": Decimal("0.5"),
+        "shipping_fee": Decimal("1.0"),
+        "commission_rate": Decimal("0.08"),
+        "target_profit_margin": Decimal("0.2"),
+        "promotion_cost_rate": Decimal("0.03"),
+        "withdrawal_fee_rate": Decimal("0.01"),
+        "payment_processing_fee": Decimal("0.02"),
+        "return_rate": Decimal("0"),
+        "vat_rate": Decimal("20"),
     }
 
 
@@ -49,8 +50,8 @@ def _recording_calculate(_product, land, air, mode="fast", priority="低价优�
 def _passthrough_run_filters(
     _prod, land, air, _up, _lf, _sf, _rate, _filt, _prio, _mode
 ):
-    land_cands = [(r, 0.0) for r in land]
-    air_cands = [(r, 0.0) for r in air]
+    land_cands = [(r, Decimal("0")) for r in land]
+    air_cands = [(r, Decimal("0")) for r in air]
     return land_cands, air_cands, [], [], []
 
 
@@ -59,7 +60,7 @@ def _run(logistics):
     with (
         patch(
             "pricing.calculate_pricing._get_exchange_rates",
-            return_value=(1.0, None),
+            return_value=(Decimal("1.0"), None),
         ),
         patch(
             "pricing.calculate_pricing._run_filters",
@@ -293,7 +294,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
             "destination": "RU",
             "fbp_company": "CEL",
             "fbp_service_level": "standard",
-            "base_fee": 100,
+            "base_fee": Decimal("100"),
         },
         {
             "name": "L-fbp-CEL-KZ",
@@ -302,7 +303,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
             "destination": "KZ",
             "fbp_company": "CEL",
             "fbp_service_level": "standard",
-            "base_fee": 200,
+            "base_fee": Decimal("200"),
         },
         {
             "name": "L-fbp-UNI-RU",
@@ -311,7 +312,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
             "destination": "RU",
             "fbp_company": "UNI",
             "fbp_service_level": "standard",
-            "base_fee": 150,
+            "base_fee": Decimal("150"),
         },
     ]
 
@@ -327,7 +328,7 @@ def test_post_pricing_fbp_filter_applied_only_for_cis():
     with (
         patch(
             "pricing.calculate_pricing._get_exchange_rates",
-            return_value=(1.0, None),
+            return_value=(Decimal("1.0"), None),
         ),
         patch(
             "pricing.calculate_pricing._run_filters",

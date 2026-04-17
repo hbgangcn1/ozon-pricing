@@ -1,3 +1,4 @@
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -72,7 +73,7 @@ async def test_add_product_full_data(db_session, test_user):
         russian_name="Полный продукт",
         category="electronics",
         model="X100",
-        unit_price=29.99,
+        unit_price=Decimal("29.99"),
         weight_g=500,
         length_cm=20,
         width_cm=10,
@@ -82,7 +83,7 @@ async def test_add_product_full_data(db_session, test_user):
     assert row is not None
     assert row["name"] == "Full Product"
     assert row["russian_name"] == "Полный продукт"
-    assert row["unit_price"] == pytest.approx(29.99)
+    assert row["unit_price"] == Decimal("29.99")
     assert row["weight_g"] == 500
 
 
@@ -185,13 +186,13 @@ async def test_update_product_success(db_session, test_user):
         db_session,
         pid,
         test_user["id"],
-        {"name": "Updated Name", "unit_price": 99.0},
+        {"name": "Updated Name", "unit_price": Decimal("99.0")},
     )
     assert result is True
     row = await get_product_by_id(db_session, pid, test_user["id"])
     assert row is not None
     assert row["name"] == "Updated Name"
-    assert row["unit_price"] == pytest.approx(99.0)
+    assert row["unit_price"] == Decimal("99.0")
 
 
 async def test_update_product_disallowed_field_ignored(db_session, test_user):
@@ -228,15 +229,15 @@ async def test_batch_update_pricing_params_updates_all_products(db_session, test
     result = await batch_update_pricing_params(
         db_session,
         test_user["id"],
-        {"commission_rate": 0.20, "vat_rate": 0.10},
+        {"commission_rate": Decimal("0.20"), "vat_rate": Decimal("0.10")},
     )
     assert result >= 2
     row1 = await get_product_by_id(db_session, p1, test_user["id"])
     row2 = await get_product_by_id(db_session, p2, test_user["id"])
     assert row1 is not None
     assert row2 is not None
-    assert row1["commission_rate"] == pytest.approx(0.20)
-    assert row2["vat_rate"] == pytest.approx(0.10)
+    assert row1["commission_rate"] == Decimal("0.20")
+    assert row2["vat_rate"] == Decimal("0.10")
 
 
 async def test_cleanup_test_products_with_user_id(db_session, test_user):
@@ -378,7 +379,7 @@ async def test_product_to_dict_has_all_columns(db_session, test_user):
         test_user["id"],
         {
             "name": "DictTest",
-            "unit_price": 10.0,
+            "unit_price": Decimal("10.0"),
             "weight_g": 200,
             "is_cylinder": False,
             "has_battery": True,

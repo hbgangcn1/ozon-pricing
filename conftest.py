@@ -264,12 +264,8 @@ def pytest_sessionfinish(session, exitstatus):
                 "user_login_log",
                 "user_behavior_log",
                 "subscription_upgrade_history",
-                "logistics_pricing_rules",
-                "pricing_plans",
-                "orders",
-                "session_security_audit_log",
-                "user_sessions",
-                "rate_limit_log",
+                "trusted_devices",
+                "commission_category",
             ]:
                 try:
                     c.execute(

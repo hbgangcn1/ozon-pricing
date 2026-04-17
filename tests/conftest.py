@@ -6,17 +6,30 @@ import os
 import sys
 import time
 import warnings
+from pathlib import Path
 
 import bcrypt
 import pytest
 
-os.environ["DB_TYPE"] = "postgresql"
-os.environ["POSTGRES_HOST"] = "localhost"
-os.environ["POSTGRES_PORT"] = "5432"
-os.environ["POSTGRES_DB"] = "logistics"
-os.environ["POSTGRES_USER"] = "postgres"
+# 从项目根目录 .env 加载环境变量（不覆盖已有值）
+_project_root = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(_project_root / ".env")
+except ImportError:
+    pass  # python-dotenv 不可用时依赖系统环境变量
+
+os.environ.setdefault("DB_TYPE", "postgresql")
+os.environ.setdefault("POSTGRES_HOST", "localhost")
+os.environ.setdefault("POSTGRES_PORT", "5432")
+os.environ.setdefault("POSTGRES_DB", "logistics")
+os.environ.setdefault("POSTGRES_USER", "postgres")
+
 if "POSTGRES_PASSWORD" not in os.environ:
-    os.environ["POSTGRES_PASSWORD"] = "***REMOVED-PG-PWD***"
+    raise EnvironmentError(
+        "POSTGRES_PASSWORD 环境变量未设置。请在 .env 文件或系统环境变量中配置。"
+    )
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

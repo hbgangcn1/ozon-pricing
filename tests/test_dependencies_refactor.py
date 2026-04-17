@@ -114,6 +114,7 @@ class TestExtractToken:
         from api.dependencies import _extract_token
 
         request = MagicMock()
+        request.method = "GET"
         request.cookies = {"access_token": "cookie-token"}
         assert _extract_token(None, request) == "cookie-token"
 
@@ -132,6 +133,7 @@ class TestExtractToken:
         api_key = MagicMock()
         api_key.credentials = ""
         request = MagicMock()
+        request.method = "GET"
         request.cookies = {"access_token": "cookie-token"}
         assert _extract_token(api_key, request) == "cookie-token"
 

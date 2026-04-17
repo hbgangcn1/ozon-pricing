@@ -11,6 +11,7 @@ Verifies that when the three-stage pipeline runs (Stage1→Stage2→Stage3):
 
 import os
 import sys
+from decimal import Decimal
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,16 +24,16 @@ _FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
 
 def _product(weight_g=379):
     return {
-        "unit_price": 100.0,
-        "labeling_fee": 0.5,
-        "shipping_fee": 1.0,
-        "commission_rate": 0.08,
-        "target_profit_margin": 0.2,
-        "promotion_cost_rate": 0.03,
-        "withdrawal_fee_rate": 0.01,
-        "payment_processing_fee": 0.02,
-        "return_rate": 0,
-        "vat_rate": 20,
+        "unit_price": Decimal("100.0"),
+        "labeling_fee": Decimal("0.5"),
+        "shipping_fee": Decimal("1.0"),
+        "commission_rate": Decimal("0.08"),
+        "target_profit_margin": Decimal("0.2"),
+        "promotion_cost_rate": Decimal("0.03"),
+        "withdrawal_fee_rate": Decimal("0.01"),
+        "payment_processing_fee": Decimal("0.02"),
+        "return_rate": Decimal("0"),
+        "vat_rate": Decimal("20"),
         "weight_g": weight_g,
         "length_cm": 10,
         "width_cm": 5,
@@ -89,7 +90,7 @@ def test_weight_fail_shows_weight_reason_not_secondary():
             "destination": "KZ",
             "fbp_company": "GUOO",
             "fbp_service_level": "standard",
-            "base_fee": 100,
+            "base_fee": Decimal("100"),
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -100,13 +101,13 @@ def test_weight_fail_shows_weight_reason_not_secondary():
             "destination": "KZ",
             "fbp_company": "GUOO",
             "fbp_service_level": "standard",
-            "base_fee": 50,
+            "base_fee": Decimal("50"),
             "min_weight": 5001,
             "max_weight": 999999,
         },
     ]
 
-    small_only = [(dict(logistics[0]), 5.0)]
+    small_only = [(dict(logistics[0]), Decimal("5.0"))]
     weight_fail = [
         {"name": "GUOO-FBP-Std-Big-KZ", "reason": "重量 379 g 低于下限 5001 g"}
     ]
@@ -131,7 +132,7 @@ def test_weight_fail_shows_weight_reason_not_secondary():
         ),
         patch(
             "pricing.grouped_pricing._get_exchange_rates",
-            return_value=(0.09, 7.2),
+            return_value=(Decimal("0.09"), Decimal("7.2")),
         ),
         patch(
             "pricing.calculate_pricing.calculate_pricing",
@@ -162,7 +163,7 @@ def test_secondary_only_shows_secondary_reason():
             "destination": "KZ",
             "fbp_company": "CEL",
             "fbp_service_level": "economy",
-            "base_fee": 100,
+            "base_fee": Decimal("100"),
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -173,7 +174,7 @@ def test_secondary_only_shows_secondary_reason():
             "destination": "KZ",
             "fbp_company": "CEL",
             "fbp_service_level": "economy",
-            "base_fee": 30,
+            "base_fee": Decimal("30"),
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -194,7 +195,10 @@ def test_secondary_only_shows_secondary_reason():
         filtered_logistics,
         all_costs_debug,
     ):
-        cost_map = {"CEL-FBP-Eco-High-KZ": 1.0, "CEL-FBP-Eco-Low-KZ": 2.0}
+        cost_map = {
+            "CEL-FBP-Eco-High-KZ": Decimal("1.0"),
+            "CEL-FBP-Eco-Low-KZ": Decimal("2.0"),
+        }
         result = []
         for lg in logistic_list:
             d = lg if isinstance(lg, dict) else dict(lg)
@@ -214,7 +218,7 @@ def test_secondary_only_shows_secondary_reason():
         ),
         patch(
             "pricing.grouped_pricing._get_exchange_rates",
-            return_value=(0.09, 7.2),
+            return_value=(Decimal("0.09"), Decimal("7.2")),
         ),
         patch(
             "pricing.calculate_pricing.calculate_pricing",
@@ -244,7 +248,7 @@ def test_selected_logistics_not_in_eliminated():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_fee": 100,
+            "base_fee": Decimal("100"),
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -255,7 +259,7 @@ def test_selected_logistics_not_in_eliminated():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_fee": 50,
+            "base_fee": Decimal("50"),
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -276,7 +280,10 @@ def test_selected_logistics_not_in_eliminated():
         filtered_logistics,
         all_costs_debug,
     ):
-        cost_map = {"RETS-FBP-Std-Best-BY": 1.0, "RETS-FBP-Std-Other-BY": 2.0}
+        cost_map = {
+            "RETS-FBP-Std-Best-BY": Decimal("1.0"),
+            "RETS-FBP-Std-Other-BY": Decimal("2.0"),
+        }
         result = []
         for lg in logistic_list:
             d = lg if isinstance(lg, dict) else dict(lg)
@@ -296,7 +303,7 @@ def test_selected_logistics_not_in_eliminated():
         ),
         patch(
             "pricing.grouped_pricing._get_exchange_rates",
-            return_value=(0.09, 7.2),
+            return_value=(Decimal("0.09"), Decimal("7.2")),
         ),
         patch(
             "pricing.calculate_pricing.calculate_pricing",
@@ -328,7 +335,7 @@ def test_dimension_fail_shows_dimension_reason():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_fee": 100,
+            "base_fee": Decimal("100"),
             "min_weight": 0,
             "max_weight": 999999,
         },
@@ -339,14 +346,14 @@ def test_dimension_fail_shows_dimension_reason():
             "destination": "BY",
             "fbp_company": "RETS",
             "fbp_service_level": "standard",
-            "base_fee": 40,
+            "base_fee": Decimal("40"),
             "min_weight": 0,
             "max_weight": 999999,
             "max_longest_side": 5,
         },
     ]
 
-    wide_only = [(dict(logistics[0]), 3.0)]
+    wide_only = [(dict(logistics[0]), Decimal("3.0"))]
     dim_fail = [
         {"name": "RETS-FBP-Std-Narrow-BY", "reason": "最长边 10 cm 超过限制 5 cm"}
     ]
@@ -371,7 +378,7 @@ def test_dimension_fail_shows_dimension_reason():
         ),
         patch(
             "pricing.grouped_pricing._get_exchange_rates",
-            return_value=(0.09, 7.2),
+            return_value=(Decimal("0.09"), Decimal("7.2")),
         ),
         patch(
             "pricing.calculate_pricing.calculate_pricing",

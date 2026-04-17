@@ -1,4 +1,5 @@
 # tests/test_logic_coverage_part2.py
+from decimal import Decimal
 import sys
 import os
 import pytest
@@ -9,21 +10,55 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 calculate_pricing = pricing.calculate_pricing
 _debug_filter_reason = getattr(pricing, "_debug_filter_reason")
 
+PRODUCT_DECIMAL_FIELDS = {
+    "unit_price",
+    "shipping_fee",
+    "labeling_fee",
+    "promotion_discount",
+    "promotion_cost_rate",
+    "target_profit_margin",
+    "commission_rate",
+    "withdrawal_fee_rate",
+    "payment_processing_fee",
+    "return_rate",
+    "vat_rate",
+}
+
+LOGISTICS_DECIMAL_FIELDS = {
+    "price_limit",
+    "price_limit_rub",
+    "price_min",
+    "price_min_rub",
+    "price_limit_cny",
+    "price_min_cny",
+    "base_fee",
+    "first_fee",
+    "continue_fee",
+}
+
+
+def _decimalize_fields(data, decimal_fields):
+    for field in decimal_fields:
+        value = data.get(field)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            data[field] = Decimal(str(value))
+    return data
+
 
 def mk_log(**kw):
     d = {
         "name": "L",
         "fee_mode": "base_plus_continue",
-        "base_fee": 5.0,
+        "base_fee": Decimal("5.0"),
         "continue_unit": 100,
-        "continue_fee": 1.0,
+        "continue_fee": Decimal("1.0"),
         "min_weight": 0,
         "max_weight": 0,
         "volume_mode": "none",
         "volume_coefficient": 5000,
     }
     d.update(kw)
-    return d
+    return _decimalize_fields(d, LOGISTICS_DECIMAL_FIELDS)
 
 
 def mk_prod(**kw):
@@ -32,19 +67,20 @@ def mk_prod(**kw):
         "length_cm": 10,
         "width_cm": 10,
         "height_cm": 5,
-        "unit_price": 20.0,
-        "labeling_fee": 0.0,
-        "shipping_fee": 0.0,
-        "target_profit_margin": 0.2,
-        "commission_rate": 0.08,
-        "withdrawal_fee_rate": 0.02,
-        "promotion_cost_rate": 0.0,
-        "payment_processing_fee": 0.0,
-        "return_rate": 0.0,
-        "vat_rate": 0.0,
+        "unit_price": Decimal("20.0"),
+        "labeling_fee": Decimal("0.0"),
+        "shipping_fee": Decimal("0.0"),
+        "promotion_discount": Decimal("0.0"),
+        "target_profit_margin": Decimal("0.2"),
+        "commission_rate": Decimal("0.08"),
+        "withdrawal_fee_rate": Decimal("0.02"),
+        "promotion_cost_rate": Decimal("0.0"),
+        "payment_processing_fee": Decimal("0.0"),
+        "return_rate": Decimal("0.0"),
+        "vat_rate": Decimal("0.0"),
     }
     d.update(kw)
-    return d
+    return _decimalize_fields(d, PRODUCT_DECIMAL_FIELDS)
 
 
 def dfr_log(**kw):
@@ -53,12 +89,12 @@ def dfr_log(**kw):
         "max_weight": 10**9,
         "volume_mode": "none",
         "fee_mode": "base_weight",
-        "base_fee": 5,
-        "continue_fee": 1,
+        "base_fee": Decimal("5"),
+        "continue_fee": Decimal("1"),
         "continue_unit": 100,
     }
     d.update(kw)
-    return d
+    return _decimalize_fields(d, LOGISTICS_DECIMAL_FIELDS)
 
 
 def dfr_prod(**kw):
@@ -67,16 +103,20 @@ def dfr_prod(**kw):
         "length_cm": 5,
         "width_cm": 5,
         "height_cm": 5,
-        "unit_price": 10,
-        "labeling_fee": 0,
-        "shipping_fee": 0,
-        "target_profit_margin": 0,
-        "commission_rate": 0,
-        "withdrawal_fee_rate": 0,
-        "payment_processing_fee": 0,
+        "unit_price": Decimal("10"),
+        "labeling_fee": Decimal("0"),
+        "shipping_fee": Decimal("0"),
+        "promotion_discount": Decimal("0"),
+        "target_profit_margin": Decimal("0"),
+        "commission_rate": Decimal("0"),
+        "withdrawal_fee_rate": Decimal("0"),
+        "promotion_cost_rate": Decimal("0"),
+        "payment_processing_fee": Decimal("0"),
+        "return_rate": Decimal("0"),
+        "vat_rate": Decimal("0"),
     }
     d.update(kw)
-    return d
+    return _decimalize_fields(d, PRODUCT_DECIMAL_FIELDS)
 
 
 def test_dfr_max_sum():
@@ -294,7 +334,8 @@ def test_dfr_cny_min_high_threshold():
 
 def test_dfr_denom_zero():
     assert isinstance(
-        _debug_filter_reason(dfr_log(), dfr_prod(target_profit_margin=1.0)), str
+        _debug_filter_reason(dfr_log(), dfr_prod(target_profit_margin=Decimal("1.0"))),
+        str,
     )
 
 
@@ -340,15 +381,15 @@ def test_dfr_fpc_over():
 
 
 def test_pr_none_prod():
-    assert calculate_pricing(None, [], [])["best_land"] is None
+    assert calculate_pricing(None, [], [])["best_land"] is None  # type: ignore[arg-type]
 
 
 def test_pr_none_land():
-    assert calculate_pricing(mk_prod(), None, [])["best_land"] is None
+    assert calculate_pricing(mk_prod(), None, [])["best_land"] is None  # type: ignore[arg-type]
 
 
 def test_pr_none_air():
-    assert calculate_pricing(mk_prod(), [], None)["best_land"] is None
+    assert calculate_pricing(mk_prod(), [], None)["best_land"] is None  # type: ignore[arg-type]
 
 
 def test_pr_empty():
@@ -357,7 +398,7 @@ def test_pr_empty():
 
 def test_pr_bad_prod_raises():
     with pytest.raises(AttributeError):
-        calculate_pricing("x", [], [])
+        calculate_pricing("x", [], [])  # type: ignore[arg-type]
 
 
 def test_pr_land():

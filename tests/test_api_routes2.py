@@ -1,5 +1,6 @@
 import sys
 import os
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -459,8 +460,8 @@ class TestExchange:
     @patch("api.routes.exchange.get_fallback_exchange_rate")
     @patch("api.routes.exchange.get_fallback_usd_rate")
     def test_get_rates(self, mock_usd, mock_rub):
-        mock_rub.return_value = 0.085
-        mock_usd.return_value = 7.2
+        mock_rub.return_value = Decimal("0.085")
+        mock_usd.return_value = Decimal("7.2")
         r = client.get("/api/exchange/rates")
         assert r.status_code == 200
         body = r.json()

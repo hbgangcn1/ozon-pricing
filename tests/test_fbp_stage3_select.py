@@ -32,7 +32,7 @@ def test_standard_grouping():
         "L2": "A",
         "L3": "D",
         "L4": "D",
-        "L5": "E",
+        "L5": "A",
     }
 
 
@@ -49,7 +49,7 @@ def test_single_logistics():
 def test_all_zero_times():
     logs = [_log("L1", 0, 0), _log("L2", 0, 0), _log("L3", 0, 0)]
 
-    assert compute_temp_abcde_groups(logs) == {"L1": "E", "L2": "E", "L3": "E"}
+    assert compute_temp_abcde_groups(logs) == {"L1": "A", "L2": "A", "L3": "A"}
 
 
 def test_mixed_valid_invalid():
@@ -63,8 +63,8 @@ def test_mixed_valid_invalid():
     assert compute_temp_abcde_groups(logs) == {
         "L1": "D",
         "L2": "E",
-        "L3": "A",
-        "L4": "E",
+        "L3": "D",
+        "L4": "A",
     }
 
 

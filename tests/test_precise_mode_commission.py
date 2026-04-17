@@ -4,6 +4,7 @@
 
 import os
 import sys
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -32,28 +33,28 @@ def _execute_result(category):
 def _sample_category():
     """Return a representative commission category payload."""
     return {
-        "rfbs_tier1_rate": 0.12,
-        "rfbs_tier2_rate": 0.18,
-        "rfbs_tier3_rate": 0.18,
-        "fbp_tier1_rate": 0.11,
-        "fbp_tier2_rate": 0.17,
-        "fbp_tier3_rate": 0.17,
+        "rfbs_tier1_rate": Decimal("0.12"),
+        "rfbs_tier2_rate": Decimal("0.18"),
+        "rfbs_tier3_rate": Decimal("0.18"),
+        "fbp_tier1_rate": Decimal("0.11"),
+        "fbp_tier2_rate": Decimal("0.17"),
+        "fbp_tier3_rate": Decimal("0.17"),
     }
 
 
 def _sample_product():
     """Return a representative product for pricing tests."""
     return {
-        "unit_price": 100.0,
-        "labeling_fee": 0.5,
-        "shipping_fee": 1.0,
-        "commission_rate": 0.08,
-        "target_profit_margin": 0.2,
-        "promotion_cost_rate": 0.03,
-        "withdrawal_fee_rate": 0.01,
-        "payment_processing_fee": 0.02,
-        "return_rate": 0,
-        "vat_rate": 20,
+        "unit_price": Decimal("100.0"),
+        "labeling_fee": Decimal("0.5"),
+        "shipping_fee": Decimal("1.0"),
+        "commission_rate": Decimal("0.08"),
+        "target_profit_margin": Decimal("0.2"),
+        "promotion_cost_rate": Decimal("0.03"),
+        "withdrawal_fee_rate": Decimal("0.01"),
+        "payment_processing_fee": Decimal("0.02"),
+        "return_rate": Decimal("0"),
+        "vat_rate": Decimal("20"),
     }
 
 
@@ -61,19 +62,19 @@ def test_select_commission_rate_from_category_uses_rates_by_fulfillment_type():
     """RFBS and FBP should use their own rate prefixes."""
     category = _sample_category()
 
-    rfbs_rate = select_commission_rate_from_category(category, "rfbs", 1000)
-    fbp_rate = select_commission_rate_from_category(category, "fbp", 1000)
+    rfbs_rate = select_commission_rate_from_category(category, "rfbs", Decimal("1000"))
+    fbp_rate = select_commission_rate_from_category(category, "fbp", Decimal("1000"))
 
-    assert rfbs_rate == pytest.approx(0.12)
-    assert fbp_rate == pytest.approx(0.11)
+    assert rfbs_rate == Decimal("0.12")
+    assert fbp_rate == Decimal("0.11")
 
 
 @pytest.mark.parametrize(
     ("price_rub", "expected_rate"),
     [
-        (1500, 0.11),
-        (5000, 0.17),
-        (5000.01, 0.17),
+        (Decimal("1500"), Decimal("0.11")),
+        (Decimal("5000"), Decimal("0.17")),
+        (Decimal("5000.01"), Decimal("0.17")),
     ],
 )
 def test_select_commission_rate_from_category_uses_correct_price_tier(
@@ -85,14 +86,14 @@ def test_select_commission_rate_from_category_uses_correct_price_tier(
 
     result = select_commission_rate_from_category(category, "fbp", price_rub)
 
-    assert result == pytest.approx(expected_rate)
+    assert result == expected_rate
 
 
 def test_select_commission_rate_from_category_returns_zero_for_missing_key():
     """Missing rate keys should fall back to zero."""
-    result = select_commission_rate_from_category({}, "rfbs", 9999)
+    result = select_commission_rate_from_category({}, "rfbs", Decimal("9999"))
 
-    assert result == 0
+    assert result == Decimal("0")
 
 
 def test_estimate_price_rub_returns_reasonable_positive_value():
@@ -101,25 +102,28 @@ def test_estimate_price_rub_returns_reasonable_positive_value():
 
     with patch(
         "pricing.grouped_pricing._get_exchange_rates",
-        return_value=(0.1, 7.2),
+        return_value=(Decimal("0.1"), Decimal("7.2")),
     ):
         result = _estimate_price_rub(product)
 
     assert result > 0
-    assert result == pytest.approx(1450.0)
+    assert result == Decimal("1450.0")
 
 
 def test_estimate_and_select_rate_passes_expected_args_to_select_fn():
     """Rate selector should receive category, fulfillment type, and RUB estimate."""
     product = _sample_product()
     category = _sample_category()
-    select_fn = MagicMock(return_value=0.17)
+    select_fn = MagicMock(return_value=Decimal("0.17"))
 
-    with patch("pricing.grouped_pricing._estimate_price_rub", return_value=2345.67):
+    with patch(
+        "pricing.grouped_pricing._estimate_price_rub",
+        return_value=Decimal("2345.67"),
+    ):
         result = _estimate_and_select_rate(product, category, "fbp", select_fn)
 
-    assert result == pytest.approx(0.17)
-    select_fn.assert_called_once_with(category, "fbp", 2345.67)
+    assert result == Decimal("0.17")
+    select_fn.assert_called_once_with(category, "fbp", Decimal("2345.67"))
 
 
 def test_calculate_pricing_grouped_precise_mode_uses_commission_category_rate():
@@ -144,8 +148,8 @@ def test_calculate_pricing_grouped_precise_mode_uses_commission_category_rate():
     ]
 
     assert commission_rates
-    assert set(commission_rates) == {0.17, 0.18}
-    assert product["commission_rate"] == pytest.approx(0.08)
+    assert set(commission_rates) == {Decimal("0.17"), Decimal("0.18")}
+    assert product["commission_rate"] == Decimal("0.08")
 
 
 def test_calculate_pricing_grouped_fast_mode_ignores_commission_category():
@@ -170,7 +174,7 @@ def test_calculate_pricing_grouped_fast_mode_ignores_commission_category():
     ]
 
     assert commission_rates
-    assert all(rate == pytest.approx(0.08) for rate in commission_rates)
+    assert all(rate == Decimal("0.08") for rate in commission_rates)
 
 
 def test_calculate_pricing_grouped_without_category_falls_back_to_product_rate():
@@ -189,7 +193,7 @@ def test_calculate_pricing_grouped_without_category_falls_back_to_product_rate()
     ]
 
     assert commission_rates
-    assert all(rate == pytest.approx(0.08) for rate in commission_rates)
+    assert all(rate == Decimal("0.08") for rate in commission_rates)
 
 
 @pytest.mark.asyncio
@@ -197,12 +201,12 @@ async def test_fetch_commission_category_returns_dict_when_found():
     """Fetching a category should normalize the DB row into a dict."""
     session = AsyncMock()
     row = SimpleNamespace(
-        rfbs_tier1_rate=0.12,
-        rfbs_tier2_rate=0.18,
-        rfbs_tier3_rate=0.18,
-        fbp_tier1_rate=0.11,
-        fbp_tier2_rate=0.17,
-        fbp_tier3_rate=0.17,
+        rfbs_tier1_rate=Decimal("0.12"),
+        rfbs_tier2_rate=Decimal("0.18"),
+        rfbs_tier3_rate=Decimal("0.18"),
+        fbp_tier1_rate=Decimal("0.11"),
+        fbp_tier2_rate=Decimal("0.17"),
+        fbp_tier3_rate=Decimal("0.17"),
     )
     session.execute.return_value = _execute_result(row)
 

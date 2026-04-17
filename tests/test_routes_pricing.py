@@ -5,7 +5,7 @@ Targeting missing lines: 30, 35-43, 47-52, 56-61, 75-125, 153-173, 221-223, 233-
 
 import sys
 import os
-import decimal
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,13 +16,12 @@ from fastapi.testclient import TestClient  # noqa: E402
 from api.main import app  # noqa: E402
 from api import dependencies  # noqa: E402
 from database import get_db  # noqa: E402
-from api.routes.pricing import (  # noqa: E402
-    convert_decimals,
+from api.routes._pricing_helpers import (  # noqa: E402
+    build_breakdown,
+    format_combo,
+    format_result,
     get_fallback_exchange_rate,
     get_fallback_usd_rate,
-    build_breakdown,
-    format_result,
-    format_combo,
     get_user_logistics,
 )
 from api.models.schemas import (  # noqa: E402
@@ -86,41 +85,6 @@ def _minimal_product():
 
 
 # ===========================================================================
-# Unit tests: convert_decimals (lines 24-31)
-# ===========================================================================
-
-
-class TestConvertDecimals:
-    def test_dict_branch(self):
-        data = {"price": decimal.Decimal("9.99")}
-        result: dict = convert_decimals(data)
-        assert result == {"price": 9.99}
-        assert isinstance(result["price"], float)
-
-    def test_list_branch_line30(self):
-        # Exercises the list branch AND the Decimal leaf (line 30)
-        data = [decimal.Decimal("1.5"), decimal.Decimal("2.75")]
-        result = convert_decimals(data)
-        assert result == [1.5, 2.75]
-        assert all(isinstance(v, float) for v in result)
-
-    def test_decimal_leaf(self):
-        result = convert_decimals(decimal.Decimal("3.14"))
-        assert isinstance(result, float)
-        assert abs(result - 3.14) < 1e-9
-
-    def test_passthrough(self):
-        assert convert_decimals("hello") == "hello"
-        assert convert_decimals(42) == 42
-        assert convert_decimals(None) is None
-
-    def test_nested_dict_list(self):
-        data = {"items": [decimal.Decimal("1.0"), decimal.Decimal("2.0")]}
-        result = convert_decimals(data)
-        assert result == {"items": [1.0, 2.0]}
-
-
-# ===========================================================================
 # Unit tests: get_user_logistics (lines 35-43)
 # ===========================================================================
 
@@ -166,18 +130,18 @@ class TestGetUserLogistics:
 
 
 class TestGetFallbackExchangeRate:
-    def test_returns_float_from_exchange_service(self):
+    def test_returns_decimal_from_exchange_service(self):
         mock_module = MagicMock()
         mock_module.get_fallback_exchange_rate.return_value = 0.09
         with patch.dict("sys.modules", {"exchange_service": mock_module}):
             result = get_fallback_exchange_rate()
-        assert result == round(0.09, 4)
+        assert result == Decimal("0.0900")
 
     def test_import_error_fallback_line51_52(self):
         broken = MagicMock(spec=[])
         with patch.dict("sys.modules", {"exchange_service": broken}):
             result = get_fallback_exchange_rate()
-        assert result == round(0.0904, 4)
+        assert result == Decimal("0.0904")
 
 
 # ===========================================================================
@@ -186,18 +150,18 @@ class TestGetFallbackExchangeRate:
 
 
 class TestGetFallbackUsdRate:
-    def test_returns_float_from_exchange_service(self):
+    def test_returns_decimal_from_exchange_service(self):
         mock_module = MagicMock()
         mock_module.get_fallback_usd_rate.return_value = 7.1
         with patch.dict("sys.modules", {"exchange_service": mock_module}):
             result = get_fallback_usd_rate()
-        assert result == round(7.1, 4)
+        assert result == Decimal("7.1000")
 
     def test_import_error_fallback_line60_61(self):
         broken = MagicMock(spec=[])
         with patch.dict("sys.modules", {"exchange_service": broken}):
             result = get_fallback_usd_rate()
-        assert result == round(7.2, 4)
+        assert result == Decimal("7.2000")
 
 
 # ===========================================================================
@@ -255,7 +219,7 @@ class TestBuildBreakdown:
         # commission = 200 * 0.10 = 20 → should appear
         commission_item = next((i for i in items if i.label == "佣金"), None)
         assert commission_item is not None
-        assert abs(commission_item.value - 20.0) < 0.01
+        assert abs(commission_item.value - Decimal("20")) < Decimal("0.01")
 
     def test_to_rate_passes_small_value_unchanged(self):
         """to_rate: if val < 1 → val is returned as-is (already a rate)."""
@@ -265,7 +229,7 @@ class TestBuildBreakdown:
         commission_item = next((i for i in items if i.label == "佣金"), None)
         # 200 * 0.05 = 10.0 → should appear
         assert commission_item is not None
-        assert abs(commission_item.value - 10.0) < 0.01
+        assert abs(commission_item.value - Decimal("10")) < Decimal("0.01")
 
     def test_zero_fees_excluded(self):
         """Items with abs(value) <= 0.01 are excluded (except 运营利润)."""
@@ -297,14 +261,14 @@ class TestBuildBreakdown:
         items = self._call(product=product, price_cny=100.0)
         vat_item = next((i for i in items if i.label == "增值税"), None)
         assert vat_item is not None
-        assert abs(vat_item.value - 20.0) < 0.01
+        assert abs(vat_item.value - Decimal("20")) < Decimal("0.01")
 
     def test_agency_fee_from_commission_rub(self):
         """agency_cny = commission_rub * rate."""
         items = self._call(commission_rub=100.0, rate=0.085)
         agency_item = next((i for i in items if i.label == "代理费"), None)
         assert agency_item is not None
-        assert abs(agency_item.value - round(100.0 * 0.085, 2)) < 0.01
+        assert abs(agency_item.value - Decimal("8.5")) < Decimal("0.01")
 
     def test_zero_commission_rub_no_agency(self):
         """When commission_rub=0, agency_cny=0 so 代理费 is excluded."""
@@ -367,7 +331,7 @@ class TestFormatResult:
         assert item.days_max == 7
         assert item.pricing_mode == "cost_plus"
         assert item.profit_cny == 20.0
-        assert abs(item.profit_margin_pct - 0.2) < 0.01
+        assert abs(item.profit_margin_pct - Decimal("0.2")) < Decimal("0.01")
 
     def test_available_is_land_false_lines153_173(self):
         """Exercises lines 153-173: is_land=False path."""
@@ -379,7 +343,7 @@ class TestFormatResult:
     def test_price_rub_calculated(self):
         res = self._good_res(is_land=True)
         item = format_result(res, _minimal_product(), rate=0.1, is_land=True)
-        assert abs(item.price_rub - round(100.0 / 0.1, 2)) < 0.01
+        assert abs(item.price_rub - Decimal("1000")) < Decimal("0.01")
 
     def test_zero_rate_no_division_error(self):
         res = self._good_res(is_land=True)
@@ -444,5 +408,3 @@ def _default_calc_return():
         "suggested_price": None,
         "filtered_logistics": {"land": [], "air": []},
     }
-
-

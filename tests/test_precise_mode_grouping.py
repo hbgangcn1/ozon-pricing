@@ -7,6 +7,7 @@ are completely isolated from each other.
 
 import os
 import sys
+from decimal import Decimal
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,16 +17,16 @@ from pricing.calculate_pricing import calculate_pricing_grouped  # noqa: E402
 
 def _product():
     return {
-        "unit_price": 100.0,
-        "labeling_fee": 0.5,
-        "shipping_fee": 1.0,
-        "commission_rate": 0.08,
-        "target_profit_margin": 0.2,
-        "promotion_cost_rate": 0.03,
-        "withdrawal_fee_rate": 0.01,
-        "payment_processing_fee": 0.02,
-        "return_rate": 0,
-        "vat_rate": 20,
+        "unit_price": Decimal("100.0"),
+        "labeling_fee": Decimal("0.5"),
+        "shipping_fee": Decimal("1.0"),
+        "commission_rate": Decimal("0.08"),
+        "target_profit_margin": Decimal("0.2"),
+        "promotion_cost_rate": Decimal("0.03"),
+        "withdrawal_fee_rate": Decimal("0.01"),
+        "payment_processing_fee": Decimal("0.02"),
+        "return_rate": Decimal("0"),
+        "vat_rate": Decimal("20"),
     }
 
 
@@ -271,12 +272,12 @@ def test_commission_applied_per_group_fulfillment_type():
         return {"filtered_logistics": {"land": [], "air": []}}
 
     commission_cat = {
-        "rfbs_tier1_rate": 0.12,
-        "rfbs_tier2_rate": 0.18,
-        "rfbs_tier3_rate": 0.18,
-        "fbp_tier1_rate": 0.11,
-        "fbp_tier2_rate": 0.17,
-        "fbp_tier3_rate": 0.17,
+        "rfbs_tier1_rate": Decimal("0.12"),
+        "rfbs_tier2_rate": Decimal("0.18"),
+        "rfbs_tier3_rate": Decimal("0.18"),
+        "fbp_tier1_rate": Decimal("0.11"),
+        "fbp_tier2_rate": Decimal("0.17"),
+        "fbp_tier3_rate": Decimal("0.17"),
     }
 
     with (
@@ -300,7 +301,7 @@ def test_commission_applied_per_group_fulfillment_type():
 
     for i, p in enumerate(products_seen):
         rate = p["commission_rate"]
-        if rate != 0.08:
+        if rate != Decimal("0.08"):
             if i < 4:
                 pass
 

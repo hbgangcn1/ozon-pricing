@@ -1,5 +1,7 @@
 # pyright: reportPrivateUsage=false, reportOptionalSubscript=false, reportUnusedVariable=false
 
+from decimal import Decimal
+
 import pytest
 from models.logistics import Logistics
 from db.logistics_crud import (
@@ -175,8 +177,8 @@ class TestCreateLogistics:
             "type": "air",
             "min_days": 1,
             "max_days": 3,
-            "price_limit_cny": 88.8,
-            "price_min_cny": 12.3,
+            "price_limit_cny": Decimal("88.8"),
+            "price_min_cny": Decimal("12.3"),
         }
         new_id = await create_logistics(db_session, test_user["id"], data)
         result = await get_logistics_by_id(db_session, new_id, test_user["id"])
@@ -184,8 +186,8 @@ class TestCreateLogistics:
         assert result["type"] == "air"
         assert result["min_days"] == 1
         assert result["max_days"] == 3
-        assert result["price_limit_cny"] == pytest.approx(88.8)
-        assert result["price_min_cny"] == pytest.approx(12.3)
+        assert result["price_limit_cny"] == Decimal("88.8")
+        assert result["price_min_cny"] == Decimal("12.3")
 
     async def test_user_id_set_correctly(self, db_session, test_user):
         new_id = await create_logistics(db_session, test_user["id"], {})
@@ -283,25 +285,25 @@ class TestUpdateLogistics:
             test_user["id"],
             {
                 "name": "CNY only",
-                "price_limit": 999.0,
-                "price_limit_rub": 888.0,
-                "price_min": 777.0,
-                "price_min_rub": 666.0,
+                "price_limit": Decimal("999.0"),
+                "price_limit_rub": Decimal("888.0"),
+                "price_min": Decimal("777.0"),
+                "price_min_rub": Decimal("666.0"),
                 "price_limit_currency": "USD",
                 "price_min_currency": "RUB",
-                "price_limit_cny": 123.0,
-                "price_min_cny": 45.0,
+                "price_limit_cny": Decimal("123.0"),
+                "price_min_cny": Decimal("45.0"),
             },
         )
 
         result = await get_logistics_by_id(db_session, new_id, test_user["id"])
 
-        assert result["price_limit_cny"] == pytest.approx(123.0)
-        assert result["price_min_cny"] == pytest.approx(45.0)
+        assert result["price_limit_cny"] == Decimal("123.0")
+        assert result["price_min_cny"] == Decimal("45.0")
         assert result["price_limit"] is None
         assert result["price_limit_rub"] is None
-        assert result["price_min"] == pytest.approx(0.0)
-        assert result["price_min_rub"] == pytest.approx(0.0)
+        assert result["price_min"] == Decimal("0.0")
+        assert result["price_min_rub"] == Decimal("0.0")
         assert result["price_limit_currency"] == "RUB"
         assert result["price_min_currency"] == "RUB"
 

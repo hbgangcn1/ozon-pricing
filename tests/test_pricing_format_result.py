@@ -1,5 +1,6 @@
 import os
 import sys
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -174,7 +175,7 @@ def test_format_result_air_uses_air_profit_margin():
     }
     item = format_result(res, _product(), rate=0.085, is_land=False)
     assert item.is_available is True
-    assert item.profit_margin_pct == 0.18
+    assert item.profit_margin_pct == Decimal("0.18")
 
 
 def test_format_result_land_uses_land_profit_margin():
@@ -203,4 +204,4 @@ def test_format_result_land_uses_land_profit_margin():
     }
     item = format_result(res, _product(), rate=0.085, is_land=True)
     assert item.is_available is True
-    assert item.profit_margin_pct == 0.22
+    assert item.profit_margin_pct == Decimal("0.22")

@@ -1,5 +1,6 @@
 import sys
 import os
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -525,8 +526,8 @@ class TestCalculateBreakevenResponses:
             assert body["breakeven_price_priority"]["land"]["price_cny"] == 88.0
             assert body["breakeven_speed_priority"]["air"]["price_cny"] == 88.0
             assert body["product"]["target_profit_margin"] == 0.35
-            assert 0.35 in seen_margins
-            assert 0 in seen_margins
+            assert Decimal("0.35") in seen_margins
+            assert Decimal("0") in seen_margins
         finally:
             del app.dependency_overrides[get_db]
 
@@ -595,7 +596,7 @@ class TestCalculateBreakevenResponses:
                 body["breakeven_fbp_cis"]["speed_priority"]["air"]["price_cny"] == 90.0
             )
             assert body["product"]["target_profit_margin"] == 0.4
-            assert 0.4 in seen_margins
-            assert 0 in seen_margins
+            assert Decimal("0.4") in seen_margins
+            assert Decimal("0") in seen_margins
         finally:
             del app.dependency_overrides[get_db]

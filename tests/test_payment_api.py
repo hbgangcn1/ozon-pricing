@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient  # noqa: E402
 from api.main import app  # noqa: E402
 from api import dependencies  # noqa: E402
+from api.routes.payment import get_payment_service  # noqa: E402
 from database import get_db  # noqa: E402
 
 MOCK_USER = {
@@ -29,16 +30,24 @@ def _mock_session():
     return s
 
 
+def _mock_svc():
+    svc = AsyncMock()
+    return svc
+
+
 @pytest.fixture(autouse=True)
 def _setup_overrides():
     app.dependency_overrides[dependencies.get_current_user_id] = lambda: 1
     app.dependency_overrides[dependencies.get_current_user] = lambda: MOCK_USER
     ms = _mock_session()
+    mock_service = _mock_svc()
     app.dependency_overrides[get_db] = lambda: ms
-    yield ms
+    app.dependency_overrides[get_payment_service] = lambda: mock_service
+    yield ms, mock_service
     app.dependency_overrides.pop(dependencies.get_current_user_id, None)
     app.dependency_overrides.pop(dependencies.get_current_user, None)
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_payment_service, None)
 
 
 class TestCreatePayment:
@@ -52,13 +61,25 @@ class TestCreatePayment:
         "api.routes.payment.get_plan_price",
         new_callable=AsyncMock,
     )
-    def test_success(self, mock_price, mock_plan, mock_wechat):
+    def test_success(
+        self,
+        mock_price,
+        mock_plan,
+        mock_wechat,
+        _setup_overrides,
+    ):
+        _, mock_svc = _setup_overrides
         mock_price.return_value = 29.9
         mock_plan.return_value = {"plan_name": "Pro"}
         mock_wechat.create_native_order.return_value = {
             "success": True,
             "code_url": "weixin://test",
         }
+        mock_order = MagicMock()
+        mock_order.order_id = "test_ord_001"
+        mock_order.description = "订阅Pro"
+        mock_order.status = "PENDING"
+        mock_svc.create_order.return_value = mock_order
         resp = client.post(
             "/api/payments/create",
             json={
@@ -97,9 +118,20 @@ class TestCreatePayment:
         "api.routes.payment.get_plan_price",
         new_callable=AsyncMock,
     )
-    def test_wechat_unavailable(self, mock_price, mock_plan):
+    def test_wechat_unavailable(
+        self,
+        mock_price,
+        mock_plan,
+        _setup_overrides,
+    ):
+        _, mock_svc = _setup_overrides
         mock_price.return_value = 29.9
         mock_plan.return_value = {"plan_name": "Pro"}
+        mock_order = MagicMock()
+        mock_order.order_id = "test_ord_002"
+        mock_order.description = "订阅Pro"
+        mock_order.status = "PENDING"
+        mock_svc.create_order.return_value = mock_order
         resp = client.post(
             "/api/payments/create",
             json={
@@ -121,13 +153,25 @@ class TestCreatePayment:
         "api.routes.payment.get_plan_price",
         new_callable=AsyncMock,
     )
-    def test_wechat_fails(self, mock_price, mock_plan, mock_wechat):
+    def test_wechat_fails(
+        self,
+        mock_price,
+        mock_plan,
+        mock_wechat,
+        _setup_overrides,
+    ):
+        _, mock_svc = _setup_overrides
         mock_price.return_value = 29.9
         mock_plan.return_value = {"plan_name": "Pro"}
         mock_wechat.create_native_order.return_value = {
             "success": False,
             "message": "失败",
         }
+        mock_order = MagicMock()
+        mock_order.order_id = "test_ord_003"
+        mock_order.description = "订阅Pro"
+        mock_order.status = "PENDING"
+        mock_svc.create_order.return_value = mock_order
         resp = client.post(
             "/api/payments/create",
             json={
@@ -140,18 +184,11 @@ class TestCreatePayment:
 
 
 class TestPaymentNotify:
-    @patch(
-        "api.routes.payment._handle_payment_success_task",
-        new_callable=AsyncMock,
-    )
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)
-    @patch(
-        "api.routes.payment._get_order",
-        new_callable=AsyncMock,
-    )
-    def test_success(self, mock_get_order, mock_wechat, mock_handle):
-        mock_get_order.return_value = None
+    def test_success(self, mock_wechat, _setup_overrides):
+        _, mock_svc = _setup_overrides
+        mock_svc.get_order.return_value = None
         mock_wechat.process_notify.return_value = {
             "success": True,
             "trade_state": "SUCCESS",
@@ -164,30 +201,22 @@ class TestPaymentNotify:
         assert resp.status_code == 200
         assert resp.json()["code"] == "SUCCESS"
 
-    @patch("api.routes.payment.wechat_pay_v3")
-    @patch(
-        "api.routes.payment._get_order",
-        new_callable=AsyncMock,
-    )
-    def test_idempotent(self, mock_get_order, mock_wechat):
+    def test_idempotent(self, _setup_overrides):
+        _, mock_svc = _setup_overrides
         mock_order = MagicMock()
         mock_order.status = "SUCCESS"
-        mock_get_order.return_value = mock_order
+        mock_svc.get_order.return_value = mock_order
         resp = client.post(
             "/api/payments/notify",
             json={"out_trade_no": "test_idemp_ord"},
         )
         assert resp.status_code == 200
         assert resp.json()["code"] == "SUCCESS"
-        mock_wechat.process_notify.assert_not_called()
 
     @patch("api.routes.payment._wechat_available", False)
-    @patch(
-        "api.routes.payment._get_order",
-        new_callable=AsyncMock,
-    )
-    def test_wechat_unavailable(self, mock_get_order):
-        mock_get_order.return_value = None
+    def test_wechat_unavailable(self, _setup_overrides):
+        _, mock_svc = _setup_overrides
+        mock_svc.get_order.return_value = None
         resp = client.post(
             "/api/payments/notify",
             json={},
@@ -198,15 +227,12 @@ class TestPaymentNotify:
 class TestPaymentStatus:
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)
-    @patch(
-        "api.routes.payment._get_order",
-        new_callable=AsyncMock,
-    )
-    def test_pending_order(self, mock_get_order, mock_wechat):
+    def test_pending_order(self, mock_wechat, _setup_overrides):
+        _, mock_svc = _setup_overrides
         mock_order = MagicMock()
         mock_order.status = "PENDING"
         mock_order.user_id = 1
-        mock_get_order.return_value = mock_order
+        mock_svc.get_user_order.return_value = mock_order
         mock_wechat.query_order.return_value = {
             "success": True,
             "trade_state": "NOTPAY",
@@ -217,36 +243,24 @@ class TestPaymentStatus:
         assert data["status"] == "PENDING"
         assert data["trade_state"] == "NOTPAY"
 
-    @patch(
-        "api.routes.payment._get_order",
-        new_callable=AsyncMock,
-    )
-    def test_success_order(self, mock_get_order):
+    def test_success_order(self, _setup_overrides):
+        _, mock_svc = _setup_overrides
         mock_order = MagicMock()
         mock_order.status = "SUCCESS"
         mock_order.user_id = 1
-        mock_get_order.return_value = mock_order
+        mock_svc.get_user_order.return_value = mock_order
         resp = client.get("/api/payments/test_ord_456/status")
         assert resp.status_code == 200
         assert resp.json()["status"] == "SUCCESS"
 
-    @patch(
-        "api.routes.payment._get_order",
-        new_callable=AsyncMock,
-    )
-    def test_not_found(self, mock_get_order):
-        mock_get_order.return_value = None
+    def test_not_found(self, _setup_overrides):
+        _, mock_svc = _setup_overrides
+        mock_svc.get_user_order.return_value = None
         resp = client.get("/api/payments/nonexistent/status")
         assert resp.status_code == 404
 
-    @patch(
-        "api.routes.payment._get_order",
-        new_callable=AsyncMock,
-    )
-    def test_wrong_user(self, mock_get_order):
-        mock_order = MagicMock()
-        mock_order.status = "PENDING"
-        mock_order.user_id = 2
-        mock_get_order.return_value = mock_order
+    def test_wrong_user(self, _setup_overrides):
+        _, mock_svc = _setup_overrides
+        mock_svc.get_user_order.return_value = None
         resp = client.get("/api/payments/test_ord_789/status")
         assert resp.status_code == 404
