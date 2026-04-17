@@ -1,5 +1,7 @@
+import asyncio
 import logging
-from typing import Any, cast
+from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -13,9 +15,7 @@ from api.models.schemas import (
     PricingRequest,
     PricingResponse,
 )
-from api.routes._pricing_helpers import (  # noqa: F401
-    build_breakdown,
-    convert_decimals,
+from api.routes._pricing_helpers import (
     format_combo,
     format_result,
     get_fallback_exchange_rate,
@@ -30,7 +30,46 @@ from pricing.commission import fetch_commission_category
 
 logger = logging.getLogger(__name__)
 
+_SSE_MAX_CONCURRENT = 50
+_sse_semaphore = asyncio.Semaphore(_SSE_MAX_CONCURRENT)
+
 router = APIRouter(prefix="/api/pricing", tags=["定价"])
+
+_DECIMAL_PRODUCT_FIELDS = frozenset(
+    {
+        "unit_price",
+        "labeling_fee",
+        "shipping_fee",
+        "target_profit_margin",
+        "promotion_cost_rate",
+        "commission_rate",
+        "withdrawal_fee_rate",
+        "payment_processing_fee",
+        "return_rate",
+        "vat_rate",
+    }
+)
+
+
+def _ensure_decimal_fields(product: dict) -> dict:
+    """JSON floats → Decimal for pricing arithmetic safety."""
+    result = dict(product)
+    for field in _DECIMAL_PRODUCT_FIELDS:
+        val = result.get(field)
+        if val is not None and not isinstance(val, Decimal):
+            result[field] = Decimal(str(val))
+    return result
+
+
+def _product_for_response(product: dict | None) -> dict | None:
+    """Decimal → float for JSON-safe API response."""
+    if product is None:
+        return None
+    result = dict(product)
+    for key, val in result.items():
+        if isinstance(val, Decimal):
+            result[key] = float(val)
+    return result
 
 
 def _fmt_grouped_result(dual_res, product, rate):
@@ -90,9 +129,12 @@ def _make_grouped_response(grouped, breakeven_grouped, rate, product, mode):
         "breakeven_rfbs_ru": _fmt_be("rfbs_ru"),
         "breakeven_fbp_ru": _fmt_be("fbp_ru"),
         "breakeven_fbp_cis": _fmt_be("fbp_cis"),
-        "exchange_rates": {"rub_cny": rate, "usd_cny": get_fallback_usd_rate()},
+        "exchange_rates": {
+            "rub_cny": float(rate),
+            "usd_cny": float(get_fallback_usd_rate()),
+        },
         "filtered_logistics": top_filtered,
-        "product": product if mode != "fast" else None,
+        "product": _product_for_response(product) if mode != "fast" else None,
     }
     for code in _CIS_CODES:
         key = f"rfbs_{code}"
@@ -145,12 +187,9 @@ async def calculate(
                 detail="请提供产品数据或选择已有产品",
             )
 
-    product = cast(dict[str, Any], convert_decimals(product))
+    product = _ensure_decimal_fields(product)
 
-    all_logistics = cast(
-        list[dict[str, Any]],
-        convert_decimals(await get_user_logistics(session, user_id)),
-    )
+    all_logistics = await get_user_logistics(session, user_id)
     logger.info(
         "用户 %s 加载了 %d 条物流: %s",
         user_id,
@@ -173,7 +212,7 @@ async def calculate(
     breakeven_results = None
     if mode == "precise":
         breakeven_product = dict(product)
-        breakeven_product["target_profit_margin"] = 0
+        breakeven_product["target_profit_margin"] = Decimal("0")
         breakeven_results = calculate_combo_results(
             breakeven_product,
             mode,
@@ -198,11 +237,11 @@ async def calculate(
             format_combo(breakeven_results["速度优先"]) if breakeven_results else None
         ),
         exchange_rates={
-            "rub_cny": rate,
-            "usd_cny": get_fallback_usd_rate(),
+            "rub_cny": float(rate),
+            "usd_cny": float(get_fallback_usd_rate()),
         },
         filtered_logistics=filtered_logistics,
-        product=product if mode != "fast" else None,
+        product=_product_for_response(product) if mode != "fast" else None,
     )
 
 
@@ -236,11 +275,9 @@ async def calculate_grouped(
                 detail="请提供产品数据或选择已有产品",
             )
 
-    product = cast(dict[str, Any], convert_decimals(product))
-    all_logistics = cast(
-        list[dict[str, Any]],
-        convert_decimals(await get_user_logistics(session, user_id)),
-    )
+    product = _ensure_decimal_fields(product)
+
+    all_logistics = await get_user_logistics(session, user_id)
     logger.info(
         "用户 %s (grouped) 加载了 %d 条物流: %s",
         user_id,
@@ -260,34 +297,24 @@ async def calculate_grouped(
                 user_id=user_id,
             )
 
-    grouped = cast(
-        dict[str, Any],
-        convert_decimals(
-            calculate_pricing_grouped(
-                product,
-                all_logistics,
-                mode=mode,
-                priority=priority,
-                commission_category=commission_category,
-            )
-        ),
+    grouped = calculate_pricing_grouped(
+        product,
+        all_logistics,
+        mode=mode,
+        priority=priority,
+        commission_category=commission_category,
     )
 
     breakeven_grouped: dict[str, Any] | None = None
     if mode == "precise":
         breakeven_product = dict(product)
-        breakeven_product["target_profit_margin"] = 0
-        breakeven_grouped = cast(
-            dict[str, Any],
-            convert_decimals(
-                calculate_pricing_grouped(
-                    breakeven_product,
-                    all_logistics,
-                    mode=mode,
-                    priority=priority,
-                    commission_category=commission_category,
-                )
-            ),
+        breakeven_product["target_profit_margin"] = Decimal("0")
+        breakeven_grouped = calculate_pricing_grouped(
+            breakeven_product,
+            all_logistics,
+            mode=mode,
+            priority=priority,
+            commission_category=commission_category,
         )
 
     return _make_grouped_response(grouped, breakeven_grouped, rate, product, mode)
@@ -296,20 +323,20 @@ async def calculate_grouped(
 @router.get("/progress")
 async def pricing_progress(user_id: int = Depends(get_current_user_id)):
     async def event_generator():
-        import asyncio
         import json
 
-        progress_data = [
-            {"progress": 0, "message": "开始计算"},
-            {"progress": 20, "message": "正在筛选可用物流"},
-            {"progress": 50, "message": "计算陆运组合"},
-            {"progress": 80, "message": "计算空运组合"},
-            {"progress": 100, "message": "计算完成"},
-        ]
+        async with _sse_semaphore:
+            progress_data = [
+                {"progress": 0, "message": "开始计算"},
+                {"progress": 20, "message": "正在筛选可用物流"},
+                {"progress": 50, "message": "计算陆运组合"},
+                {"progress": 80, "message": "计算空运组合"},
+                {"progress": 100, "message": "计算完成"},
+            ]
 
-        for data in progress_data:
-            yield f"data: {json.dumps(data)}\n\n"
-            await asyncio.sleep(1)
+            for data in progress_data:
+                yield f"data: {json.dumps(data)}\n\n"
+                await asyncio.sleep(1)
 
     return StreamingResponse(
         event_generator(),

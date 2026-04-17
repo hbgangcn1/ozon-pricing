@@ -1,5 +1,7 @@
-from fastapi import APIRouter
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict
+
+from fastapi import APIRouter
 
 from enhanced_exchange_service import (
     get_fallback_exchange_rate,
@@ -7,6 +9,10 @@ from enhanced_exchange_service import (
 )
 
 router = APIRouter(prefix="/api/exchange", tags=["汇率"])
+
+_Q4 = Decimal("0.0001")
+_ONE = Decimal("1")
+_ZERO = Decimal("0")
 
 
 @router.get("/rates", response_model=Dict[str, float])
@@ -16,19 +22,21 @@ def get_exchange_rates():
     返回：RUB/CNY, CNY/RUB, USD/CNY, CNY/USD
     """
     rub_cny = get_fallback_exchange_rate()
-    cny_rub = 1.0 / rub_cny if rub_cny != 0 else 0.0
+    cny_rub = (
+        (_ONE / rub_cny).quantize(_Q4, rounding=ROUND_HALF_UP)
+        if rub_cny != _ZERO
+        else _ZERO
+    )
     usd_cny = get_fallback_usd_rate()
-    cny_usd = 1.0 / usd_cny if usd_cny != 0 else 0.0
-
-    # 四舍五入到4位小数
-    rub_cny_rounded = round(rub_cny, 4)
-    cny_rub_rounded = round(cny_rub, 4)
-    usd_cny_rounded = round(usd_cny, 4)
-    cny_usd_rounded = round(cny_usd, 4)
+    cny_usd = (
+        (_ONE / usd_cny).quantize(_Q4, rounding=ROUND_HALF_UP)
+        if usd_cny != _ZERO
+        else _ZERO
+    )
 
     return {
-        "RUB/CNY": rub_cny_rounded,
-        "CNY/RUB": cny_rub_rounded,
-        "USD/CNY": usd_cny_rounded,
-        "CNY/USD": cny_usd_rounded,
+        "RUB/CNY": float(rub_cny),
+        "CNY/RUB": float(cny_rub),
+        "USD/CNY": float(usd_cny),
+        "CNY/USD": float(cny_usd),
     }

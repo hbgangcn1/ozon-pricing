@@ -1,16 +1,18 @@
+from decimal import Decimal
 from loguru import logger
 from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import DateTime, and_, func, or_, select, text
+from sqlalchemy import Float, and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.user import User
 from models.log import UserLoginLog, AdminActionLog
 from db.statistics import (
+    _parse_user_created_at,
     count_paid_orders,
     count_total_users,
     count_users_by_type,
@@ -18,9 +20,21 @@ from db.statistics import (
     get_monthly_revenue,
     get_revenue_stats,
 )
+from api.models.schemas import DecimalField
 from api.dependencies import require_admin
 
 router = APIRouter(prefix="/api/statistics", tags=["统计"])
+
+_CENTS_DIVISOR = Decimal("100")
+_MONEY_PRECISION = Decimal("0.01")
+
+
+def _quantize_money(value: object) -> Decimal:
+    return Decimal(str(value or 0)).quantize(_MONEY_PRECISION)
+
+
+def _to_decimal_money(value: object) -> Decimal:
+    return _quantize_money(Decimal(str(value or 0)) / _CENTS_DIVISOR)
 
 
 class OverviewStats(BaseModel):
@@ -28,7 +42,7 @@ class OverviewStats(BaseModel):
     active_users: int
     new_users_today: int
     total_orders: int
-    total_revenue: float
+    total_revenue: DecimalField
     pro_users: int
     eff_users: int
     free_users: int
@@ -41,7 +55,7 @@ class RetentionData(BaseModel):
 
 class RevenueData(BaseModel):
     month: str
-    revenue: float
+    revenue: DecimalField
 
 
 class LoginLog(BaseModel):
@@ -75,7 +89,12 @@ class AdminLogPage(BaseModel):
 
 
 def _last_login_expr():
-    return func.nullif(func.trim(User.last_login), "").cast(DateTime)
+    trimmed = func.nullif(func.trim(User.last_login), "")
+    is_epoch = trimmed.op("~")(r"^\d+$")
+    return case(
+        (is_epoch, func.to_timestamp(trimmed.cast(Float))),
+        else_=None,
+    )
 
 
 def _format_trend(current: int, previous: int) -> str:
@@ -121,20 +140,26 @@ async def get_overview(
 
     total_orders = await count_paid_orders(session)
     rev = await get_revenue_stats(session)
-    total_revenue = float(rev.get("total_revenue", 0)) / 100.0
+    total_revenue = _to_decimal_money(rev.get("total_revenue", 0))
 
     try:
-        new_users_today = (
-            await session.scalar(
-                select(func.count(User.id)).where(
-                    func.date(func.nullif(func.trim(User.created_at), ""))
-                    == func.current_date()
+        today = datetime.now().date()
+        user_rows = (
+            await session.execute(
+                select(User.created_at).where(
+                    User.created_at.is_not(None),
+                    func.nullif(func.trim(User.created_at), "").is_not(None),
                 )
             )
-            or 0
+        ).all()
+        new_users_today = sum(
+            1
+            for (created_at,) in user_rows
+            if (dt := _parse_user_created_at(created_at)) is not None
+            and dt.date() == today
         )
     except Exception as e:
-        logger.error(f"查询今日新用户失败: {e}")
+        logger.exception(f"查询今日新用户失败: {e}")
         new_users_today = 0
 
     try:
@@ -147,7 +172,7 @@ async def get_overview(
             or 0
         )
     except Exception as e:
-        logger.error(f"查询活跃用户失败: {e}")
+        logger.exception(f"查询活跃用户失败: {e}")
         active_users = 0
 
     return OverviewStats(
@@ -179,7 +204,12 @@ async def get_revenue(
     months: int = Query(12, ge=1, le=24),
 ):
     data = await get_monthly_revenue(session, months=months)
-    return [RevenueData(**item) for item in data]
+    return [
+        RevenueData(
+            month=item["month"], revenue=_quantize_money(item.get("revenue", 0))
+        )
+        for item in data
+    ]
 
 
 @router.get("/login-logs", response_model=LoginLogPage)
@@ -313,7 +343,7 @@ async def get_active_users(
             or 0
         )
     except Exception as e:
-        logger.error(f"查询日活用户失败: {e}")
+        logger.exception(f"查询日活用户失败: {e}")
         daily = 0
 
     try:
@@ -326,7 +356,7 @@ async def get_active_users(
             or 0
         )
     except Exception as e:
-        logger.error(f"查询周活用户失败: {e}")
+        logger.exception(f"查询周活用户失败: {e}")
         weekly = 0
 
     try:
@@ -340,7 +370,7 @@ async def get_active_users(
             or 0
         )
     except Exception as e:
-        logger.error(f"查询昨日日活失败: {e}")
+        logger.exception(f"查询昨日日活失败: {e}")
         yesterday_daily = 0
 
     try:
@@ -354,7 +384,7 @@ async def get_active_users(
             or 0
         )
     except Exception as e:
-        logger.error(f"查询上周周活失败: {e}")
+        logger.exception(f"查询上周周活失败: {e}")
         last_week_weekly = 0
 
     return {

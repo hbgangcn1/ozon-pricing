@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI):
     try:
         await run_migrations()
     except Exception as e:
-        logger.error("数据库迁移失败: %s", e)
+        logger.exception("数据库迁移失败: %s", e)
         raise
 
     try:
@@ -109,7 +109,7 @@ async def lifespan(app: FastAPI):
         start_backup_service()
         logger.info("自动备份服务已启动")
     except Exception as e:
-        logger.warning("启动备份服务失败: %s", e)
+        logger.warning("启动备份服务失败: %s", e, exc_info=True)
 
     yield
 
@@ -119,14 +119,14 @@ async def lifespan(app: FastAPI):
 
         stop_backup_service()
     except Exception as e:
-        logger.warning("停止备份服务失败: %s", e)
+        logger.warning("停止备份服务失败: %s", e, exc_info=True)
 
     try:
         from payment_callback_enhanced import stop_payment_callback_monitor
 
         stop_payment_callback_monitor()
     except Exception as e:
-        logger.warning("停止支付回调监控失败: %s", e)
+        logger.warning("停止支付回调监控失败: %s", e, exc_info=True)
 
     try:
         from redis_cache import get_redis_client
@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI):
         if client:
             client.close()
     except Exception:
-        pass
+        logger.warning("关闭Redis客户端失败", exc_info=True)
 
     await engine.dispose()
 

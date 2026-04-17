@@ -1,20 +1,16 @@
 import json
 import logging
-import time
-import uuid
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user_id
 from database import get_db
 from db.plans import get_plan_by_code, get_plan_price
-from models.order import PaymentOrder
-from payment_handler import PaymentHandler
+from services.payment_service import PaymentService
 
 try:
     from wechat_pay_v3_api import wechat_pay_v3
@@ -26,6 +22,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/payments", tags=["payment"])
+
+
+async def get_payment_service(
+    session: AsyncSession = Depends(get_db),
+) -> PaymentService:
+    return PaymentService(session)
 
 
 class CreatePaymentRequest(BaseModel):
@@ -65,23 +67,12 @@ def _extract_order_id_from_body(body: str) -> Optional[str]:
     if isinstance(out_trade_no, str):
         return out_trade_no
     resource = payload.get("resource")
-    if isinstance(resource, dict) and isinstance(resource.get("out_trade_no"), str):
+    if isinstance(resource, dict) and isinstance(
+        resource.get("out_trade_no"),
+        str,
+    ):
         return resource["out_trade_no"]
     return None
-
-
-async def _get_order(session: AsyncSession, order_id: str) -> Optional[PaymentOrder]:
-    result = await session.execute(
-        select(PaymentOrder).where(PaymentOrder.order_id == order_id)
-    )
-    return result.scalar_one_or_none()
-
-
-async def _handle_payment_success_task(order_id: str) -> None:
-    try:
-        await PaymentHandler.handle_payment_success(order_id)
-    except Exception:
-        logger.exception("异步处理支付成功失败: %s", order_id)
 
 
 @router.post("/create", response_model=CreatePaymentResponse)
@@ -89,37 +80,40 @@ async def create_payment(
     req: CreatePaymentRequest,
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
+    svc: PaymentService = Depends(get_payment_service),
 ):
     plan_price = await get_plan_price(session, req.plan_code, req.billing_cycle)
     if plan_price is None or _to_cents(plan_price) != _to_cents(req.amount):
-        return JSONResponse(status_code=400, content={"error": "amount_mismatch"})
+        return JSONResponse(
+            status_code=400,
+            content={"error": "amount_mismatch"},
+        )
 
     plan = await get_plan_by_code(session, req.plan_code)
     plan_name = plan.get("plan_name", req.plan_code) if plan else req.plan_code
-    order_id = uuid.uuid4().hex
+    description = f"订阅{plan_name}"
     amount_cents = _to_cents(req.amount)
-    order = PaymentOrder(
-        order_id=order_id,
+
+    order = await svc.create_order(
         user_id=user_id,
-        amount=amount_cents,
-        description=f"订阅{plan_name}",
-        duration=req.billing_cycle,
-        status="PENDING",
+        amount_cents=amount_cents,
+        description=description,
+        billing_cycle=req.billing_cycle,
         order_type=req.plan_code,
-        created_at=int(time.time()),
     )
-    session.add(order)
-    await session.flush()
 
     if not _wechat_available or wechat_pay_v3 is None:
         order.status = "FAILED"
         return JSONResponse(
             status_code=502,
-            content={"error": "wechat_error", "message": "微信支付模块不可用"},
+            content={
+                "error": "wechat_error",
+                "message": "微信支付模块不可用",
+            },
         )
 
     result = wechat_pay_v3.create_native_order(
-        order_id,
+        order.order_id,
         amount_cents,
         order.description,
     )
@@ -134,7 +128,7 @@ async def create_payment(
         )
 
     return CreatePaymentResponse(
-        order_id=order_id,
+        order_id=order.order_id,
         code_url=result.get("code_url"),
     )
 
@@ -142,21 +136,33 @@ async def create_payment(
 @router.post("/notify", response_model=NotifyResponse)
 async def payment_notify(
     request: Request,
-    session: AsyncSession = Depends(get_db),
+    svc: PaymentService = Depends(get_payment_service),
 ):
     body = (await request.body()).decode("utf-8")
     request_data = {
         "headers": {
-            "Wechatpay-Timestamp": request.headers.get("Wechatpay-Timestamp", ""),
-            "Wechatpay-Nonce": request.headers.get("Wechatpay-Nonce", ""),
-            "Wechatpay-Signature": request.headers.get("Wechatpay-Signature", ""),
-            "Wechatpay-Serial": request.headers.get("Wechatpay-Serial", ""),
+            "Wechatpay-Timestamp": request.headers.get(
+                "Wechatpay-Timestamp",
+                "",
+            ),
+            "Wechatpay-Nonce": request.headers.get(
+                "Wechatpay-Nonce",
+                "",
+            ),
+            "Wechatpay-Signature": request.headers.get(
+                "Wechatpay-Signature",
+                "",
+            ),
+            "Wechatpay-Serial": request.headers.get(
+                "Wechatpay-Serial",
+                "",
+            ),
         },
         "body": body,
     }
     known_order_id = _extract_order_id_from_body(body)
     if known_order_id:
-        existing_order = await _get_order(session, known_order_id)
+        existing_order = await svc.get_order(known_order_id)
         if existing_order and existing_order.status != "PENDING":
             return NotifyResponse(code="SUCCESS", message="成功")
 
@@ -177,12 +183,15 @@ async def payment_notify(
 
     out_trade_no = result.get("out_trade_no") or known_order_id
     if out_trade_no:
-        order = await _get_order(session, out_trade_no)
+        order = await svc.get_order(out_trade_no)
         if order and order.status != "PENDING":
             return NotifyResponse(code="SUCCESS", message="成功")
 
     if result.get("trade_state") == "SUCCESS" and out_trade_no:
-        await _handle_payment_success_task(out_trade_no)
+        try:
+            await svc.handle_payment_success(out_trade_no)
+        except Exception:
+            logger.exception("处理支付成功失败: %s", out_trade_no)
 
     return NotifyResponse(code="SUCCESS", message="成功")
 
@@ -191,28 +200,31 @@ async def payment_notify(
 async def get_payment_status(
     order_id: str,
     user_id: int = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db),
+    svc: PaymentService = Depends(get_payment_service),
 ):
-    order = await _get_order(session, order_id)
-    if order is None or order.user_id != user_id:
+    order = await svc.get_user_order(order_id, user_id)
+    if order is None:
         raise HTTPException(status_code=404, detail="订单不存在")
 
     if order.status != "PENDING":
         return PaymentStatusResponse(
-            order_id=order_id, status=order.status or "PENDING"
+            order_id=order_id,
+            status=order.status or "PENDING",
         )
 
     if not _wechat_available or wechat_pay_v3 is None:
         return PaymentStatusResponse(
-            order_id=order_id, status=order.status or "PENDING"
+            order_id=order_id,
+            status=order.status or "PENDING",
         )
 
     result = wechat_pay_v3.query_order(order_id)
     trade_state = result.get("trade_state") if result.get("success") else None
     if trade_state == "SUCCESS":
-        order.status = "SUCCESS"
-        order.updated_at = int(time.time())
-        await PaymentHandler.handle_payment_success(order_id)
+        try:
+            await svc.handle_payment_success(order_id)
+        except Exception:
+            logger.exception("查询时处理支付成功失败: %s", order_id)
 
     return PaymentStatusResponse(
         order_id=order_id,

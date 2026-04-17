@@ -1,5 +1,13 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from typing import Optional, List
+from decimal import Decimal
+from typing import Annotated, List, Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, PlainSerializer
+
+
+DecimalField = Annotated[
+    Decimal,
+    PlainSerializer(lambda x: float(x), return_type=float),
+]
 
 
 class UserBase(BaseModel):
@@ -32,7 +40,7 @@ class ProductBase(BaseModel):
     russian_name: Optional[str] = None
     category: Optional[str] = None
     model: Optional[str] = None
-    unit_price: float = 0
+    unit_price: DecimalField = Decimal("0")
     weight_g: int = 0
     length_cm: int = 0
     width_cm: int = 0
@@ -44,18 +52,18 @@ class ProductBase(BaseModel):
     battery_capacity_wh: float = 0
     has_msds: bool = False
     has_liquid: bool = False
-    labeling_fee: float = 0
-    shipping_fee: float = 0
+    labeling_fee: DecimalField = Decimal("0")
+    shipping_fee: DecimalField = Decimal("0")
     battery_capacity_mah: int = 0
     battery_voltage: float = 0
-    commission_rate: float = Field(default=0, ge=0, le=100)
+    commission_rate: DecimalField = Field(default=Decimal("0"), ge=0, le=100)
     commission_category_id: Optional[int] = None
-    target_profit_margin: float = Field(default=0, ge=0, le=100)
-    promotion_cost_rate: float = Field(default=0, ge=0, le=100)
-    withdrawal_fee_rate: float = Field(default=0, ge=0, le=100)
-    payment_processing_fee: float = Field(default=0, ge=0, le=100)
-    return_rate: float = Field(default=0, ge=0, le=100)
-    vat_rate: float = Field(default=0, ge=0, le=100)
+    target_profit_margin: DecimalField = Field(default=Decimal("0"), ge=0, le=100)
+    promotion_cost_rate: DecimalField = Field(default=Decimal("0"), ge=0, le=100)
+    withdrawal_fee_rate: DecimalField = Field(default=Decimal("0"), ge=0, le=100)
+    payment_processing_fee: DecimalField = Field(default=Decimal("0"), ge=0, le=100)
+    return_rate: DecimalField = Field(default=Decimal("0"), ge=0, le=100)
+    vat_rate: DecimalField = Field(default=Decimal("0"), ge=0, le=100)
 
 
 class ProductCreate(ProductBase):
@@ -67,7 +75,7 @@ class ProductUpdate(BaseModel):
     russian_name: Optional[str] = None
     category: Optional[str] = None
     model: Optional[str] = None
-    unit_price: Optional[float] = None
+    unit_price: Optional[DecimalField] = None
     weight_g: Optional[int] = None
     length_cm: Optional[int] = None
     width_cm: Optional[int] = None
@@ -79,18 +87,18 @@ class ProductUpdate(BaseModel):
     battery_capacity_wh: Optional[float] = None
     has_msds: Optional[bool] = None
     has_liquid: Optional[bool] = None
-    labeling_fee: Optional[float] = None
-    shipping_fee: Optional[float] = None
+    labeling_fee: Optional[DecimalField] = None
+    shipping_fee: Optional[DecimalField] = None
     battery_capacity_mah: Optional[int] = None
     battery_voltage: Optional[float] = None
-    commission_rate: Optional[float] = None
+    commission_rate: Optional[DecimalField] = None
     commission_category_id: Optional[int] = None
-    target_profit_margin: Optional[float] = None
-    promotion_cost_rate: Optional[float] = None
-    withdrawal_fee_rate: Optional[float] = None
-    payment_processing_fee: Optional[float] = None
-    return_rate: Optional[float] = None
-    vat_rate: Optional[float] = None
+    target_profit_margin: Optional[DecimalField] = None
+    promotion_cost_rate: Optional[DecimalField] = None
+    withdrawal_fee_rate: Optional[DecimalField] = None
+    payment_processing_fee: Optional[DecimalField] = None
+    return_rate: Optional[DecimalField] = None
+    vat_rate: Optional[DecimalField] = None
 
 
 class ProductResponse(ProductBase):
@@ -105,9 +113,9 @@ class LogisticsBase(BaseModel):
     type: str = "land"
     min_days: int = 1
     max_days: int = 30
-    price_limit_cny: float = 0
-    price_min_cny: float = 0
-    base_fee: float = 0
+    price_limit_cny: DecimalField = Decimal("0")
+    price_min_cny: DecimalField = Decimal("0")
+    base_fee: DecimalField = Decimal("0")
     min_weight: int = 0
     max_weight: int = 100000
     max_sum_of_sides: int = 0
@@ -128,9 +136,9 @@ class LogisticsBase(BaseModel):
     battery_capacity_limit_wh: float = 0
     require_msds: bool = False
     fee_mode: str = "base_weight"
-    first_fee: float = 0
+    first_fee: DecimalField = Decimal("0")
     first_weight_g: int = 0
-    continue_fee: float = 0
+    continue_fee: DecimalField = Decimal("0")
     continue_unit: str = "g"
     volume_coefficient: float = 5000
     delivery_method: Optional[str] = None
@@ -152,9 +160,9 @@ class LogisticsUpdate(BaseModel):
     type: Optional[str] = None
     min_days: Optional[int] = None
     max_days: Optional[int] = None
-    price_limit_cny: Optional[float] = None
-    price_min_cny: Optional[float] = None
-    base_fee: Optional[float] = None
+    price_limit_cny: Optional[DecimalField] = None
+    price_min_cny: Optional[DecimalField] = None
+    base_fee: Optional[DecimalField] = None
     min_weight: Optional[int] = None
     max_weight: Optional[int] = None
     max_sum_of_sides: Optional[int] = None
@@ -175,9 +183,9 @@ class LogisticsUpdate(BaseModel):
     battery_capacity_limit_wh: Optional[float] = None
     require_msds: Optional[bool] = None
     fee_mode: Optional[str] = None
-    first_fee: Optional[float] = None
+    first_fee: Optional[DecimalField] = None
     first_weight_g: Optional[int] = None
-    continue_fee: Optional[float] = None
+    continue_fee: Optional[DecimalField] = None
     continue_unit: Optional[str] = None
     volume_coefficient: Optional[float] = None
     delivery_method: Optional[str] = None
@@ -201,26 +209,26 @@ class BreakdownItem(BaseModel):
     """价格构成分解项"""
 
     label: str
-    value: float
+    value: DecimalField
     color: str
 
 
 class PricingResultItem(BaseModel):
     """单个物流计算结果"""
 
-    price_cny: float = 0
-    price_rub: float = 0
+    price_cny: DecimalField = Decimal("0")
+    price_rub: DecimalField = Decimal("0")
     logistics_name: str = ""
-    logistics_cost: float = 0
+    logistics_cost: DecimalField = Decimal("0")
     days_min: int = 0
     days_max: int = 0
-    profit_cny: float = 0
-    profit_margin_pct: float = 0
+    profit_cny: DecimalField = Decimal("0")
+    profit_margin_pct: DecimalField = Decimal("0")
     priority_group: str = ""
     is_available: bool = False
     pricing_mode: str = ""
-    avg_cost: float = 0
-    saved_cost: float = 0
+    avg_cost: DecimalField = Decimal("0")
+    saved_cost: DecimalField = Decimal("0")
     avg_days: float = 0
     saved_days: float = 0
     is_smart: int = 0
@@ -280,28 +288,28 @@ class MessageResponse(BaseModel):
 
 class CommissionCategoryCreate(BaseModel):
     name: str
-    rfbs_tier1_rate: float
-    rfbs_tier2_rate: float
-    rfbs_tier3_rate: float
+    rfbs_tier1_rate: DecimalField
+    rfbs_tier2_rate: DecimalField
+    rfbs_tier3_rate: DecimalField
 
 
 class CommissionCategoryUpdate(BaseModel):
     name: Optional[str] = None
-    rfbs_tier1_rate: Optional[float] = None
-    rfbs_tier2_rate: Optional[float] = None
-    rfbs_tier3_rate: Optional[float] = None
+    rfbs_tier1_rate: Optional[DecimalField] = None
+    rfbs_tier2_rate: Optional[DecimalField] = None
+    rfbs_tier3_rate: Optional[DecimalField] = None
     is_active: Optional[int] = None
 
 
 class CommissionCategoryResponse(BaseModel):
     id: int
     name: str
-    rfbs_tier1_rate: float
-    rfbs_tier2_rate: float
-    rfbs_tier3_rate: float
-    fbp_tier1_rate: float
-    fbp_tier2_rate: float
-    fbp_tier3_rate: float
+    rfbs_tier1_rate: DecimalField
+    rfbs_tier2_rate: DecimalField
+    rfbs_tier3_rate: DecimalField
+    fbp_tier1_rate: DecimalField
+    fbp_tier2_rate: DecimalField
+    fbp_tier3_rate: DecimalField
     is_active: int = 1
 
     model_config = ConfigDict(from_attributes=True)
@@ -313,9 +321,9 @@ class LogisticsPoolItem(BaseModel):
     type: Optional[str] = None
     min_days: Optional[int] = None
     max_days: Optional[int] = None
-    price_limit_cny: Optional[float] = 0
-    price_min_cny: Optional[float] = 0
-    base_fee: Optional[float] = 0
+    price_limit_cny: Optional[DecimalField] = Decimal("0")
+    price_min_cny: Optional[DecimalField] = Decimal("0")
+    base_fee: Optional[DecimalField] = Decimal("0")
     min_weight: Optional[int] = None
     max_weight: Optional[int] = None
     max_sum_of_sides: Optional[int] = None
@@ -336,9 +344,9 @@ class LogisticsPoolItem(BaseModel):
     battery_capacity_limit_wh: Optional[float] = 0
     require_msds: Optional[bool] = False
     fee_mode: Optional[str] = "base_weight"
-    first_fee: Optional[float] = 0
+    first_fee: Optional[DecimalField] = Decimal("0")
     first_weight_g: Optional[int] = 0
-    continue_fee: Optional[float] = 0
+    continue_fee: Optional[DecimalField] = Decimal("0")
     continue_unit: Optional[str] = "g"
     volume_coefficient: Optional[float] = 5000
     delivery_method: Optional[str] = "pickup"

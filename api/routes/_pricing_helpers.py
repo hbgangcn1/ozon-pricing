@@ -1,5 +1,5 @@
-import decimal
 import logging
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,15 +9,28 @@ from models.logistics import Logistics
 
 logger = logging.getLogger(__name__)
 
+_FALLBACK_RUB_CNY_RATE: Decimal = Decimal("0.0904")
+_FALLBACK_USD_CNY_RATE: Decimal = Decimal("7.2")
+_ZERO: Decimal = Decimal("0")
+_MONEY_PRECISION: Decimal = Decimal("0.01")
+_RATE_PRECISION: Decimal = Decimal("0.0001")
+_COST_PRECISION: Decimal = Decimal("0.0001")
 
-def convert_decimals(obj):
-    if isinstance(obj, dict):
-        return {k: convert_decimals(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_decimals(v) for v in obj]
-    elif isinstance(obj, decimal.Decimal):
-        return float(obj)
-    return obj
+
+def _to_decimal(value, default=_ZERO):
+    if value is None:
+        return default
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def _quantize(value, precision):
+    return _to_decimal(value).quantize(precision)
+
+
+def _quantize_float(value, precision):
+    return float(_quantize(value, precision))
 
 
 async def get_user_logistics(session: AsyncSession, user_id, logistics_type=None):
@@ -36,18 +49,18 @@ def get_fallback_exchange_rate():
     try:
         from exchange_service import get_fallback_exchange_rate as _get_rate
 
-        return round(_get_rate(), 4)
+        return _quantize(_get_rate(), _RATE_PRECISION)
     except ImportError:
-        return round(0.0904, 4)
+        return _quantize(_FALLBACK_RUB_CNY_RATE, _RATE_PRECISION)
 
 
 def get_fallback_usd_rate():
     try:
         from exchange_service import get_fallback_usd_rate as _get_rate
 
-        return round(_get_rate(), 4)
+        return _quantize(_get_rate(), _RATE_PRECISION)
     except ImportError:
-        return round(7.2, 4)
+        return _quantize(_FALLBACK_USD_CNY_RATE, _RATE_PRECISION)
 
 
 def build_breakdown(
@@ -61,16 +74,21 @@ def build_breakdown(
     profit_margin_pct,
     rate,
 ):
-    unit_price_cny = product.get("unit_price", 0)
-    labeling_fee_cny = product.get("labeling_fee", 0)
-    shipping_fee_cny = product.get("shipping_fee", 0)
+    rate = _to_decimal(rate)
+    commission_rub = _to_decimal(commission_rub)
+    logistics_cost_cny = _to_decimal(logistics_cost_cny)
+    expected_profit = _to_decimal(expected_profit)
+    unit_price_cny = _to_decimal(product.get("unit_price", _ZERO))
+    labeling_fee_cny = _to_decimal(product.get("labeling_fee", _ZERO))
+    shipping_fee_cny = _to_decimal(product.get("shipping_fee", _ZERO))
 
-    agency_cny = round(commission_rub * rate, 2) if commission_rub is not None else 0
+    agency_cny = _quantize(commission_rub * rate, _MONEY_PRECISION)
 
     def to_rate(val):
-        return (
-            val / 100 if (val is not None and val >= 1) else (0 if val is None else val)
-        )
+        decimal_val = _to_decimal(val)
+        if decimal_val >= Decimal("1"):
+            return decimal_val / Decimal("100")
+        return decimal_val
 
     promotion_rate = to_rate(product.get("promotion_cost_rate", 0))
     commission_rate = to_rate(product.get("commission_rate", 0))
@@ -79,25 +97,16 @@ def build_breakdown(
     return_rate = to_rate(product.get("return_rate", 0))
     vat_rate = to_rate(product.get("vat_rate", 0))
 
-    promotion_cny = (
-        round(price_cny * promotion_rate, 2) if promotion_rate is not None else 0
-    )
-    commission_cny = (
-        round(price_cny * commission_rate, 2) if commission_rate is not None else 0
-    )
-    withdrawal_cny = (
-        round(price_cny * withdrawal_rate, 2) if withdrawal_rate is not None else 0
-    )
+    price_cny_decimal = _to_decimal(price_cny)
+    promotion_cny = _quantize(price_cny_decimal * promotion_rate, _MONEY_PRECISION)
+    commission_cny = _quantize(price_cny_decimal * commission_rate, _MONEY_PRECISION)
+    withdrawal_cny = _quantize(price_cny_decimal * withdrawal_rate, _MONEY_PRECISION)
     if payment_fixed:
-        payment_cny = round(10 * rate, 2)
+        payment_cny = _quantize(Decimal("10") * rate, _MONEY_PRECISION)
     else:
-        payment_cny = (
-            round(price_cny * payment_rate, 2) if payment_rate is not None else 0
-        )
-    return_loss_cny = (
-        round(price_cny * return_rate, 2) if return_rate is not None else 0
-    )
-    vat_cny = round(price_cny * vat_rate, 2) if vat_rate is not None else 0
+        payment_cny = _quantize(price_cny_decimal * payment_rate, _MONEY_PRECISION)
+    return_loss_cny = _quantize(price_cny_decimal * return_rate, _MONEY_PRECISION)
+    vat_cny = _quantize(price_cny_decimal * vat_rate, _MONEY_PRECISION)
 
     items = [
         ("进货单价", unit_price_cny, "#FF6B6B"),
@@ -111,30 +120,30 @@ def build_breakdown(
         ("收单费", payment_cny, "#F8B739"),
         ("退货损失", return_loss_cny, "#EB984E"),
         ("增值税", vat_cny, "#A569BD"),
-        ("运营利润", round(expected_profit, 2), "#52BE80"),
+        ("运营利润", _quantize(expected_profit, _MONEY_PRECISION), "#52BE80"),
     ]
     return [
-        BreakdownItem(label=label, value=round(val, 2), color=col)
+        BreakdownItem(label=label, value=_quantize(val, _MONEY_PRECISION), color=col)
         for label, val, col in items
-        if abs(val) > 0.01 or label == "运营利润"
+        if abs(_to_decimal(val)) > _MONEY_PRECISION or label == "运营利润"
     ]
 
 
 def format_result(res, product, rate, is_land=True):
     _unavailable = PricingResultItem(
         is_available=False,
-        price_cny=0,
-        price_rub=0,
+        price_cny=_ZERO,
+        price_rub=_ZERO,
         logistics_name="",
-        logistics_cost=0,
+        logistics_cost=_ZERO,
         days_min=0,
         days_max=0,
-        profit_cny=0,
-        profit_margin_pct=0,
+        profit_cny=_ZERO,
+        profit_margin_pct=_ZERO,
         priority_group="",
         pricing_mode="",
-        avg_cost=0,
-        saved_cost=0,
+        avg_cost=_ZERO,
+        saved_cost=_ZERO,
         avg_days=0,
         saved_days=0,
         is_smart=0,
@@ -150,45 +159,55 @@ def format_result(res, product, rate, is_land=True):
     cost = res.get("land_cost") if is_land else res.get("air_cost")
     best_log = res.get("best_land") if is_land else res.get("best_air")
     expected_profit = res.get(
-        "land_expected_profit" if is_land else "air_expected_profit", 0
+        "land_expected_profit" if is_land else "air_expected_profit", _ZERO
     )
-    profit_margin = res.get("land_profit_margin" if is_land else "air_profit_margin", 0)
+    profit_margin = res.get(
+        "land_profit_margin" if is_land else "air_profit_margin", _ZERO
+    )
     pricing_mode = res.get("land_pricing_mode" if is_land else "air_pricing_mode", "")
     commission_rub = res.get(
-        "land_commission_info" if is_land else "air_commission_info", 0
+        "land_commission_info" if is_land else "air_commission_info", _ZERO
     )
-    payment_rub = res.get("land_payment_info" if is_land else "air_payment_info", 0)
+    payment_rub = res.get("land_payment_info" if is_land else "air_payment_info", _ZERO)
     payment_fixed = res.get(
         "land_payment_fixed" if is_land else "air_payment_fixed", False
     )
-    avg_cost = res.get("avg_land_cost" if is_land else "avg_air_cost", 0)
+    avg_cost = res.get("avg_land_cost" if is_land else "avg_air_cost", _ZERO)
     avg_days = res.get("avg_land_days" if is_land else "avg_air_days", 0)
-    saved_cost = res.get("saved_land_cost" if is_land else "saved_air_cost", 0)
+    saved_cost = res.get("saved_land_cost" if is_land else "saved_air_cost", _ZERO)
     saved_days = res.get("saved_land_days" if is_land else "saved_air_days", 0)
 
     return PricingResultItem(
         is_available=True,
-        price_cny=price,
-        price_rub=round(price / rate, 2) if rate else 0,
+        price_cny=_to_decimal(price),
+        price_rub=_quantize(price / rate, _MONEY_PRECISION) if rate else _ZERO,
         logistics_name=best_log.get("name", "") if best_log else "",
-        logistics_cost=round(cost, 4) if cost is not None else 0,
+        logistics_cost=_quantize(cost, _COST_PRECISION) if cost is not None else _ZERO,
         days_min=best_log.get("min_days", 0) if best_log else 0,
         days_max=best_log.get("max_days", 0) if best_log else 0,
         priority_group=best_log.get("priority_group", "") if best_log else "",
         pricing_mode=pricing_mode,
-        profit_cny=round(expected_profit, 2),
-        profit_margin_pct=round(profit_margin, 2),
-        avg_cost=round(avg_cost, 4) if avg_cost is not None else 0,
-        saved_cost=round(saved_cost, 4) if saved_cost is not None else 0,
-        avg_days=round(avg_days, 2) if avg_days is not None else 0,
-        saved_days=round(saved_days, 2) if saved_days is not None else 0,
+        profit_cny=_quantize(expected_profit, _MONEY_PRECISION),
+        profit_margin_pct=_quantize(profit_margin, _MONEY_PRECISION),
+        avg_cost=_quantize(avg_cost, _COST_PRECISION)
+        if avg_cost is not None
+        else _ZERO,
+        saved_cost=_quantize(saved_cost, _COST_PRECISION)
+        if saved_cost is not None
+        else _ZERO,
+        avg_days=_quantize_float(avg_days, _MONEY_PRECISION)
+        if avg_days is not None
+        else 0,
+        saved_days=_quantize_float(saved_days, _MONEY_PRECISION)
+        if saved_days is not None
+        else 0,
         is_smart=best_log.get("is_smart", 0) if best_log else 0,
         breakdown=build_breakdown(
             product,
-            0 if cost is None else cost,
+            _ZERO if cost is None else cost,
             price,
-            0 if commission_rub is None else commission_rub,
-            0 if payment_rub is None else payment_rub,
+            _ZERO if commission_rub is None else commission_rub,
+            _ZERO if payment_rub is None else payment_rub,
             payment_fixed,
             expected_profit,
             profit_margin,

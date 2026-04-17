@@ -110,7 +110,7 @@ async def get_plans_route(
     try:
         plans = await get_plans(session, active_only=active_only)
     except Exception as e:
-        logger.error(f"获取套餐列表失败: {e}")
+        logger.exception(f"获取套餐列表失败: {e}")
         return []
     return [_to_plan_response(plan) for plan in plans]
 

@@ -28,7 +28,10 @@ def _check_csrf_origin(request: Request) -> None:
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return
     if not _ALLOWED_ORIGINS:
-        return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="服务器未配置允许的来源，禁止 cookie 认证的状态变更请求",
+        )
     origin = request.headers.get("origin")
     if not origin:
         referer = request.headers.get("referer")

@@ -84,6 +84,8 @@ async def import_logistics_pool(
     user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="仅支持 .xlsx 格式文件")
     _ensure_enterprise_excel_access(user)
     temp_path = ""
     try:
@@ -110,7 +112,7 @@ async def import_logistics_pool(
             except Exception as exc:
                 skipped += 1
                 errors.append(f"第 {index} 行导入失败")
-                logger.warning("物流池导入第 %d 行失败: %s", index, exc)
+                logger.warning("物流池导入第 %d 行失败: %s", index, exc, exc_info=True)
         return {"imported": imported, "skipped": skipped, "errors": errors}
     except HTTPException:
         raise
