@@ -54,6 +54,8 @@
 | B25 | ✅ | `api/models/schemas.py`, `frontend/src/pages/PricingPage.jsx` | 精准模式保存产品佣金类目后重新打开产品列表或重新选择产品时，佣金类目始终显示"选择佣金类目"而非已保存的值 — 根因：`commission_category_id` 字段在 Pydantic schemas (`ProductBase`/`ProductUpdate`) 中完全缺失，前端发送的值被静默丢弃 — 已修复: (1) `schemas.py` 的 `ProductBase` 和 `ProductUpdate` 添加 `commission_category_id: Optional[int] = None` (2) `PricingPage.jsx` 的 `productForm` 初始状态和 `handleOpenProductDialog` 添加 `commission_category_id` 初始化 — 测试: 后端单元测试3个 + 集成测试3个 + 前端单元测试2个 + E2E测试1个，全部通过 |
 | B26 | ✅ | `pricing/_result_helpers.py`, `pricing/calculate_pricing.py`, `api/routes/pricing.py` | 精准模式空运计算结果的利润率(profit_margin)始终显示0，陆运正确 — 根因：(1) `_phase2_profit_build` 用 `_` 丢弃了 `_compute_profits` 返回的 `air_profit_margin` (2) `_pick_suggested` 当 suggested=air 时硬编码 margin=0 (3) `format_result` 取统一的 `profit_margin` 而非按运输方式区分 — 已修复: (1) `_phase2_profit_build` 保留 `air_profit_margin` 并传递给 `_build_result` (2) `_pick_suggested` 新增 `air_profit_margin` 参数，不再硬编码 (3) `_build_result` 结果字典新增 `land_profit_margin`/`air_profit_margin` 键 (4) `format_result` 按 `is_land` 分别取对应的 margin 值 — 测试: 后端新增5个单元测试 + 更新1个已有测试，全量1375 passed + 前端201 passed + E2E 12/12 passed |
 | B27 | ✅ | `api/routes/pricing.py` | 精准模式空运卡片显示陆运价格（如"水卫士洗碗块"空运应显示¥65.04却显示¥53.57） — 根因：`format_result()` 使用统一的 `res.get("suggested_price")` 获取价格，`_pick_suggested()` 优先选 `land_price` 作为 `suggested_price`，导致 `is_land=False` 时仍返回陆运价格 — 已修复: `format_result()` 改为 `res.get("land_price") if is_land else res.get("air_price")`，availability 检查也按运输方式分别判断 — 测试: 后端 1375 passed (1 pre-existing failure) + 前端 201 passed + E2E 12/12 passed |
+| B28 | ✅ | `postgres_backup_service_db.py` | 备份恢复失败: `_reset_public_schema()` 执行 `DROP SCHEMA public CASCADE` 报"必须是模式 public 的属主"— 根因: PostgreSQL 15+ 中 `public` schema 的 owner 是 `pg_database_owner`，非 superuser 无法 DROP — 已修复: 新增 `_can_drop_public_schema()` 检测 owner/superuser 权限，非 owner 时使用 `DROP OWNED BY <user> CASCADE` fallback。同时修复 `_reinitialize_connection_pool()` 中已废弃的 `db_adapter` 导入，改为 `database.engine.sync_engine.dispose()` |
+| B29 | ✅ | `api/routes/statistics.py` | 统计页面 `GET /api/statistics/overview` 报 `DatetimeFieldOverflowError` — 根因: `User.created_at` 和 `User.last_login` 存储为 epoch 字符串(如"1775470954")，但 SQL 查询对其直接 `func.date()` 或 `.cast(DateTime)` 转换失败 — 已修复: (1) `new_users_today` 改为 Python 侧安全解析 (复用 `db/statistics.py._parse_user_created_at`) (2) `_last_login_expr()` 改为 `CASE WHEN ~ '^\d+$' THEN to_timestamp(::float) ELSE NULL END` 安全转换 — 测试: 1610 passed, 0 failed |
 
 ---
 
@@ -68,7 +70,7 @@
 | 0.2 | ✅ | 修复所有 20 张表的 id 序列默认值（根因：`CREATE TABLE IF NOT EXISTS` 跳过 `SERIAL` 转换） |
 | 0.3 | ✅ | 在 `init_db()` 中添加 `_ensure_serial_columns()` 防护函数，防止序列问题复发 |
 | 0.4 | ✅ | 修复 `calculate_logistic_cost` 不处理负数重量的逻辑 bug |
-| 0.5 | ⬜ | 硬编码DB密码改为环境变量 (B08) — 推迟到 Phase 6 |
+| 0.5 | ✅ | 硬编码DB密码改为环境变量 (B08) — `tests/conftest.py` 改用 `load_dotenv()` + `EnvironmentError` |
 
 **结果**：74 failed + 14 errors → **870 passed, 0 failed, 0 errors, 1 skipped** → Phase 1 后 **897 passed** → Phase 2 (PaymentHandler) 后 **928 passed** → Phase 4 后 **1393 passed, 1 skipped, 0 failed**
 
@@ -86,17 +88,18 @@
 
 **结果**：897 passed, 1 skipped, 0 failed; flake8 clean on all modified files
 
-### Phase 2: PaymentHandler & 服务层实现 🔄
+### Phase 2: PaymentHandler & 服务层实现 ✅
 
 | 任务 | 状态 | 描述 |
 |------|------|------|
 | 2.1 | ✅ | 编写 PaymentHandler 测试 (RED) — `tests/test_payment_handler.py` 31 tests |
 | 2.2 | ✅ | 实现 payment_handler.py (GREEN) — 224 行，4 方法 + module-level 实例 |
-| 2.3 | ⬜ | 编写服务层测试 (RED) |
-| 2.4 | ⬜ | 实现真正的服务层 (GREEN) |
-| 2.5 | ⬜ | 验证支付生态集成 |
+| 2.3 | ✅ | 编写 PaymentService 测试 (RED) — `tests/test_services_payment.py` 18 tests，定义完整接口 |
+| 2.4 | ✅ | 实现 `services/payment_service.py` (GREEN) — PaymentService 类，5 个方法 + 2 个 helper，Unit of Work 模式 |
+| 2.5 | ✅ | 重构 + 路由集成 — 移除 service 层 commit()（UoW 模式）；重写 `api/routes/payment.py` 使用 `get_payment_service` 依赖注入；重写 `tests/test_payment_api.py` 使用 mock_svc 覆盖 |
 
 **PaymentHandler 结果**：928 passed, 1 skipped, 0 failed; flake8 clean
+**PaymentService 结果**：1610 passed, 0 failed, 1 warning; flake8 clean; vitest 234 passed; vite build ✅
 
 #### 微信支付后端接口集成（wechat-payment-integration）
 
@@ -258,13 +261,13 @@ frontend/tests/
 
 ## 完成标准
 
-- [x] `python -m pytest --tb=short` — **1375 passed**, 1 pre-existing failure, 0 errors, 0 warnings
+- [x] `python -m pytest --tb=short` — **1610 passed**, 0 failed, 1 warning
 - [x] `python -m coverage run + report` — **94%** 总覆盖率，23个核心模块均90%+
 - [x] `python -m flake8` — 0 errors, 0 warnings
-- [x] `npx vitest run` (frontend/) — **201 tests**, 0 failures (24 test files)
+- [x] `npx vitest run` (frontend/) — **234 tests**, 0 failures (26 test files)
 - [x] `npm run build` (frontend/) — 构建成功
 - [x] Playwright E2E — **287 passed**, 1 skipped, 0 failures (288 tests, 27 spec files)
-- [ ] 无硬编码密码或秘钥 (B08 conftest.py 密码仍硬编码，低优先级)
+- [x] 无硬编码密码或秘钥 (B08 已修复: Phase 0.5 迁移至 load_dotenv + EnvironmentError)
 - [x] 无 Streamlit 引用
 - [x] 无调试脚本在根目录
 - [x] 所有前端 API 调用使用 JWT auth
@@ -653,7 +656,7 @@ frontend/tests/
 | 18.3 | ✅ | `api/routes/statistics.py` — active-users 趋势改为今日 vs 昨日、近7日 vs 上7日真实差值 |
 | 18.4 | ✅ | `db/statistics.py` + `api/routes/statistics.py` — revenue 改为基于 `payment_orders` 成功订单的真实月度收入（元） |
 | 18.5 | ✅ | `tests/test_db_statistics.py`, `tests/test_integration_orders_stats.py` — 补充 Group 6 后端统计测试 |
-| 18.6 | 🔄 | 验证 — 定向 pytest + changed files LSP diagnostics |
+| 18.6 | ✅ | 验证 — 定向 pytest 63 passed + changed files LSP diagnostics clean |
 
 ### Phase 18: Group 4 订阅等级门控 ✅
 
@@ -685,3 +688,30 @@ frontend/tests/
 **新增/修改文件**：
 - 新建: `api/middleware/login_limiter.py`, `tests/test_login_limiter.py`, `tests/test_password_migration.py`, `tests/test_integration_security.py`, `tests/test_logic_coverage_part2.py`, `tests/test_routes_pricing_part2.py`
 - 修改: `api/dependencies.py`, `api/routes/auth.py`, `api/routes/payment.py`, `api/routes/subscriptions.py`, `api/routes/statistics.py`, `api/main.py`, `api/middleware/rate_limit.py`, `db/users.py`, `db/statistics.py`, `security/tokens.py`, `frontend/src/services/api.js`, `frontend/src/stores/authStore.js`, `frontend/src/__tests__/authStore.test.js`
+
+### Phase 20: float→Decimal 货币计算全量迁移 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 20.1 | ✅ | ORM 模型层 — 所有货币字段 Float→Numeric(12,4)，Alembic 迁移脚本执行 |
+| 20.2 | ✅ | DB CRUD 层 — `db/products.py`, `db/statistics.py`, `db/exchange.py` 返回值改为 Decimal |
+| 20.3 | ✅ | 汇率服务 — `exchange_service.py`, `enhanced_exchange_service.py` 全量 Decimal |
+| 20.4 | ✅ | Pricing 核心 — `pricing/*.py` 所有 10 个模块全量 Decimal 运算 |
+| 20.5 | ✅ | API 层 — `api/routes/pricing.py` 入口 `_ensure_decimal_fields` + 出口 `_product_for_response`；`api/routes/exchange.py` 除法修复 |
+| 20.6 | ✅ | 测试全量更新 — 所有 mock 数据从 float 改为 Decimal，断言对齐 |
+| 20.7 | ✅ | E2E 验证 — Products, Logistics, Statistics, CommissionCategories, Pricing, Exchange 全部 API 返回 JSON number ✅ |
+
+**关键发现**：
+- `Decimal ± float` → TypeError，但 `Decimal ± int` 合法
+- FastAPI 默认将 Decimal 序列化为 JSON string，需在响应出口显式转 float
+- JSON 请求体经 Pydantic 反序列化后为 float，ORM 查询为 Decimal → 两条数据路径类型不一致是根因
+
+**最终数据**：
+- 后端 pytest: **1592 passed**, 0 failed, 1 warning
+- 前端 vitest: **234 passed**, 0 failed
+- flake8: 0 errors
+- 前端 build: ✅
+
+### Phase 21: 套餐编辑"无限"开关 UI ✅
+
+已在 Phase 18 开发周期中实现完成。`PlanManagementPage.jsx` 的 PlanEditForm 已包含 calcLimit 和 logisticsTemplate 的 Switch 无限切换（-1）+ 恢复上次数值（_prev 临时字段）+ handleSubmit 剔除临时字段。
