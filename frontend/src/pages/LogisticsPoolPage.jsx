@@ -76,8 +76,27 @@ export default function LogisticsPoolPage() {
   }, [])
 
   useEffect(() => {
-    fetchLogistics()
-  }, [fetchLogistics])
+    const controller = new AbortController()
+    const loadLogistics = async () => {
+      setIsLoading(true)
+      try {
+        const data = await logisticsPoolAPI.getAll({ limit: 1000 })
+        if (!controller.signal.aborted) {
+          setLogistics(Array.isArray(data) ? data : (data?.items || []))
+        }
+      } catch (error) {
+        if (!controller.signal.aborted && error?.response?.status !== 404) {
+          toast.error('获取物流池数据失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false)
+        }
+      }
+    }
+    loadLogistics()
+    return () => controller.abort()
+  }, [])
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0]

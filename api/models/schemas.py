@@ -232,7 +232,7 @@ class PricingResultItem(BaseModel):
     avg_days: float = 0
     saved_days: float = 0
     is_smart: int = 0
-    breakdown: List[BreakdownItem] = []
+    breakdown: List[BreakdownItem] = Field(default_factory=list)
 
 
 class PricingComboResult(BaseModel):
@@ -258,8 +258,8 @@ class PricingResponse(BaseModel):
     speed_priority: PricingComboResult
     breakeven_price_priority: Optional[PricingComboResult] = None
     breakeven_speed_priority: Optional[PricingComboResult] = None
-    exchange_rates: dict
-    filtered_logistics: dict = {}
+    exchange_rates: dict = Field(default_factory=dict)
+    filtered_logistics: dict = Field(default_factory=dict)
     product: Optional[dict] = None
 
 
@@ -375,27 +375,27 @@ class ProductImportConfirm(BaseModel):
 
 
 class PricingGroupResult(BaseModel):
-    land: PricingResultItem = PricingResultItem()
-    air: PricingResultItem = PricingResultItem()
+    land: PricingResultItem = Field(default_factory=PricingResultItem)
+    air: PricingResultItem = Field(default_factory=PricingResultItem)
 
 
 class PricingDualPriorityGroupResult(BaseModel):
-    price_priority: PricingGroupResult = PricingGroupResult()
-    speed_priority: PricingGroupResult = PricingGroupResult()
-    filtered_logistics: dict = {}
+    price_priority: PricingGroupResult = Field(default_factory=PricingGroupResult)
+    speed_priority: PricingGroupResult = Field(default_factory=PricingGroupResult)
+    filtered_logistics: dict = Field(default_factory=dict)
 
 
 class PricingGroupedResponse(BaseModel):
     calculation_mode: str
-    rfbs_ru: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    rfbs_KZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    rfbs_BY: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    rfbs_KGZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    rfbs_UZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    rfbs_GE: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    rfbs_AZ: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    fbp_ru: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
-    fbp_cis: PricingDualPriorityGroupResult = PricingDualPriorityGroupResult()
+    rfbs_ru: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    rfbs_KZ: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    rfbs_BY: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    rfbs_KGZ: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    rfbs_UZ: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    rfbs_GE: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    rfbs_AZ: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    fbp_ru: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    fbp_cis: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
     breakeven_rfbs_ru: Optional[PricingDualPriorityGroupResult] = None
     breakeven_rfbs_KZ: Optional[PricingDualPriorityGroupResult] = None
     breakeven_rfbs_BY: Optional[PricingDualPriorityGroupResult] = None
@@ -405,6 +405,6 @@ class PricingGroupedResponse(BaseModel):
     breakeven_rfbs_AZ: Optional[PricingDualPriorityGroupResult] = None
     breakeven_fbp_ru: Optional[PricingDualPriorityGroupResult] = None
     breakeven_fbp_cis: Optional[PricingDualPriorityGroupResult] = None
-    exchange_rates: dict = {}
-    filtered_logistics: dict = {}
+    exchange_rates: dict = Field(default_factory=dict)
+    filtered_logistics: dict = Field(default_factory=dict)
     product: Optional[dict] = None

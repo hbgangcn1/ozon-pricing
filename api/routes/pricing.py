@@ -325,7 +325,8 @@ async def pricing_progress(user_id: int = Depends(get_current_user_id)):
     async def event_generator():
         import json
 
-        async with _sse_semaphore:
+        await _sse_semaphore.acquire()
+        try:
             progress_data = [
                 {"progress": 0, "message": "开始计算"},
                 {"progress": 20, "message": "正在筛选可用物流"},
@@ -337,6 +338,8 @@ async def pricing_progress(user_id: int = Depends(get_current_user_id)):
             for data in progress_data:
                 yield f"data: {json.dumps(data)}\n\n"
                 await asyncio.sleep(1)
+        finally:
+            _sse_semaphore.release()
 
     return StreamingResponse(
         event_generator(),

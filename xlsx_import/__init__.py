@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import tempfile
@@ -7,6 +8,8 @@ import openpyxl
 
 from xlsx_import.detector import detect_format
 from xlsx_import.parsers import china_post, cis_rfbs, fbp, scoring_rfbs
+
+logger = logging.getLogger(__name__)
 
 PARSERS = {
     "china_post": china_post.parse,
@@ -43,6 +46,7 @@ def _open_workbook_with_retry(filepath: str):
                 delay *= 2
         raise last_error or PermissionError(filepath)
     except Exception:
+        logger.debug("清理临时Excel文件失败", exc_info=True)
         if temp_path and os.path.exists(temp_path):
             os.unlink(temp_path)
         raise

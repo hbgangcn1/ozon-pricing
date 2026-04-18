@@ -129,15 +129,16 @@ async def lifespan(app: FastAPI):
         logger.warning("停止支付回调监控失败: %s", e, exc_info=True)
 
     try:
-        from redis_cache import get_redis_client
+        from redis_cache import close_redis_client
 
-        client = get_redis_client()
-        if client:
-            client.close()
+        close_redis_client()
     except Exception:
         logger.warning("关闭Redis客户端失败", exc_info=True)
 
-    await engine.dispose()
+    try:
+        await engine.dispose()
+    except Exception:
+        logger.warning("engine.dispose() failed", exc_info=True)
 
 
 app = FastAPI(
@@ -151,7 +152,21 @@ app = FastAPI(
 _cors_origins_env = os.environ.get("ALLOWED_ORIGINS")
 if _is_production and not _cors_origins_env:
     logger.warning("ALLOWED_ORIGINS not set in production, defaulting to localhost")
-_cors_origins = (_cors_origins_env or "http://localhost:5173").split(",")
+_cors_origins = [o.strip() for o in (_cors_origins_env or "http://localhost:5173").split(",")]
+
+# Security: wildcard origins with allow_credentials=True is insecure (browsers reject it anyway,
+# but it signals a misconfiguration). Fail fast in production; warn in development.
+if "*" in _cors_origins:
+    if _is_production:
+        raise RuntimeError(
+            "ALLOWED_ORIGINS='*' is not allowed with allow_credentials=True in production. "
+            "Set ALLOWED_ORIGINS to explicit origin(s), e.g. 'https://yourdomain.com'."
+        )
+    else:
+        logger.warning(
+            "ALLOWED_ORIGINS contains '*' — this is insecure with allow_credentials=True. "
+            "Use explicit origins in production."
+        )
 
 app.add_middleware(
     CORSMiddleware,
@@ -229,12 +244,14 @@ async def health_check():
     except Exception:
         checks["db_status"] = "error"
         checks["db_error"] = "database connection failed"
+        logger.warning("健康检查数据库连接失败", exc_info=True)
 
     try:
         checks.update(_check_redis_health())
     except Exception:
         checks["redis_status"] = "unavailable"
         checks["redis_error"] = "service check failed"
+        logger.warning("健康检查Redis连接失败", exc_info=True)
 
     redis_ok = checks.get("redis_status") in ("ok", "not_configured", "unavailable")
     status = "healthy" if checks.get("db_status") == "ok" and redis_ok else "degraded"

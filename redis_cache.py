@@ -121,7 +121,7 @@ def close_redis_client() -> None:
         try:
             _redis_client.close()
         except Exception:
-            pass
+            _logger.warning("关闭Redis客户端异常", exc_info=True)
         _redis_client = None
 
 

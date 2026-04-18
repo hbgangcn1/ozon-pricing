@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 
@@ -13,6 +14,7 @@ from db.config import get_all_config, set_system_config
 from api.models.schemas import MessageResponse
 from api.dependencies import require_admin
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["设置"])
 
 _SAFE_BACKUP_NAME = re.compile(r"^[a-zA-Z0-9_.\-]+\.dump$")
@@ -161,9 +163,10 @@ async def create_backup(admin: int = Depends(require_admin)):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("备份异常: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"备份异常: {str(e)}",
+            detail="备份失败，请联系管理员",
         )
 
 
@@ -181,6 +184,7 @@ async def get_backup_settings(admin: int = Depends(require_admin)):
                 datetime.now() + timedelta(hours=settings.get("interval_hours", 6))
             ).strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
+            logger.debug("计算下次备份时间失败", exc_info=True)
             pass
 
     return BackupSettingsResponse(
@@ -219,9 +223,10 @@ async def update_backup_settings(
         update_auto_backup_settings(**kwargs)
         return MessageResponse(message="备份设置已更新")
     except Exception as e:
+        logger.exception("备份设置更新失败: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"更新失败: {str(e)}",
+            detail="更新失败，请联系管理员",
         )
 
 
@@ -277,7 +282,8 @@ async def download_backup(filename: str, admin: int = Depends(require_admin)):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="备份文件不存在")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取文件失败: {str(e)}")
+        logger.exception("读取备份文件失败: %s", e)
+        raise HTTPException(status_code=500, detail="读取文件失败，请联系管理员")
 
     return StreamingResponse(
         iter([data]),
@@ -310,9 +316,10 @@ async def delete_backup(filename: str, admin: int = Depends(require_admin)):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("删除备份失败: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"删除失败: {str(e)}",
+            detail="删除失败，请联系管理员",
         )
 
 
@@ -335,7 +342,10 @@ async def restore_backup(
             create_snapshot=req.create_snapshot,
         )
         if success:
-            await engine.dispose()
+            try:
+                await engine.dispose()
+            except Exception:
+                logger.warning("恢复后重置连接池失败", exc_info=True)
             return MessageResponse(message=f"已从 {filename} 恢复数据库")
         else:
             raise HTTPException(
@@ -345,7 +355,8 @@ async def restore_backup(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("数据库恢复异常: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"恢复异常: {str(e)}",
+            detail="恢复失败，请联系管理员",
         )

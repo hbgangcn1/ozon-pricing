@@ -234,18 +234,21 @@ def _calc_fee(logistic, w, debug_info):
     fee_mode = logistic.get("fee_mode", "base_plus_continue")
     continue_unit_raw = logistic.get("continue_unit", 100)
     continue_unit = _parse_continue_unit(continue_unit_raw)
-    continue_fee = logistic.get("continue_fee", Decimal("0"))
+    continue_fee_raw = logistic.get("continue_fee")
+    continue_fee = Decimal(str(continue_fee_raw)) if continue_fee_raw is not None else Decimal("0")
     debug_info.append(
         f"计费方式: {fee_mode}, 续重单位: {continue_unit}g, 续重费用: {continue_fee:.5f}"
     )
     if fee_mode in ("base_weight", "base_plus_continue"):
         units = math.ceil(w / continue_unit)
-        base_fee = logistic.get("base_fee", Decimal("0"))
+        base_fee_raw = logistic.get("base_fee")
+        base_fee = Decimal(str(base_fee_raw)) if base_fee_raw is not None else Decimal("0")
         cost = base_fee + continue_fee * units
         debug_info.append(f"基础费用: {base_fee}, 单位数: {units}, 运费: {cost}")
     else:
         first_weight = logistic.get("first_weight_g", 0)
-        first_fee = logistic.get("first_fee", Decimal("0"))
+        first_fee_raw = logistic.get("first_fee")
+        first_fee = Decimal(str(first_fee_raw)) if first_fee_raw is not None else Decimal("0")
         if w <= first_weight:
             cost = first_fee
             debug_info.append(f"首重费用: {first_fee}，在首重范围内")

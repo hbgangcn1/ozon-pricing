@@ -138,6 +138,8 @@ describe('PaymentPage', () => {
     })
     expect(ordersAPI.getAll).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByLabelText('刷新'))
-    expect(ordersAPI.getAll).toHaveBeenCalledTimes(2)
+    await waitFor(() => {
+      expect(ordersAPI.getAll).toHaveBeenCalledTimes(2)
+    })
   })
 })

@@ -23,21 +23,30 @@ function ProductsPage() {
     weight_g: ''
   })
 
-  const fetchProducts = useCallback(async () => {
-    setLoading(true)
-    try {
-      const response = await productsAPI.getAll()
-      setProducts(response)
-    } catch (error) {
-      toast.error('获取产品列表失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [setProducts])
-
   useEffect(() => {
+    const controller = new AbortController()
+
+    const fetchProducts = async () => {
+      setLoading(true)
+      try {
+        const response = await productsAPI.getAll()
+        if (!controller.signal.aborted) {
+          setProducts(response)
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          toast.error('获取产品列表失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+
     fetchProducts()
-  }, [fetchProducts])
+    return () => controller.abort()
+  }, [setProducts])
 
   const handleAdd = useCallback(() => {
     setEditingProduct(null)

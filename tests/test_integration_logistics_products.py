@@ -241,6 +241,42 @@ class TestLogisticsCRUD:
         finally:
             _clear_overrides()
 
+    async def test_toggle_transport_success(self, client, test_user):
+        uid = test_user["id"]
+        _user_override(uid)
+        created_id = None
+        try:
+            create_resp = await client.post("/api/logistics", json=LOGISTICS_DATA)
+            assert create_resp.status_code == 201
+            created = create_resp.json()
+            created_id = created["id"]
+            assert created["type"] == "land"
+
+            toggle_resp = await client.patch(
+                f"/api/logistics/{created_id}/toggle-transport"
+            )
+            assert toggle_resp.status_code == 200
+            assert toggle_resp.json()["type"] == "air"
+        finally:
+            _clear_overrides()
+            if created_id:
+                _user_override(uid)
+                await client.delete(f"/api/logistics/{created_id}")
+                _clear_overrides()
+
+    async def test_toggle_transport_nonexistent_returns_404(self, client, test_user):
+        uid = test_user["id"]
+        _user_override(uid)
+        try:
+            resp = await client.patch("/api/logistics/999999999/toggle-transport")
+            assert resp.status_code == 404
+        finally:
+            _clear_overrides()
+
+    async def test_toggle_transport_unauthenticated_returns_401(self, client):
+        resp = await client.patch("/api/logistics/1/toggle-transport")
+        assert resp.status_code == 401
+
 
 # ---------------------------------------------------------------------------
 # POST /api/logistics/batch-delete

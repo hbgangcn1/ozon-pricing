@@ -396,8 +396,9 @@ def test_vol_longest_below():
 
 @pytest.mark.parametrize("u", ["kg", "g", "50g", "500g", "1kg", "0.5kg", "invalid"])
 def test_cu_string(u):
+    from decimal import Decimal
     assert isinstance(
-        cc(mk_log(continue_unit=u, base_fee=0.0), mk_prod()), (int, float)
+        cc(mk_log(continue_unit=u, base_fee=0.0), mk_prod()), Decimal
     )
 
 

@@ -56,7 +56,29 @@ function UserManagementPage() {
   }
 
   useEffect(() => {
-    fetchUsers()
+    const controller = new AbortController()
+    const loadUsers = async () => {
+      setLoading(true)
+      try {
+        const response = await adminAPI.getUsers(1, 20, '')
+        if (!controller.signal.aborted) {
+          setUsers(response.users || [])
+          setTotal(response.total || 0)
+          setCurrentPage(response.page || 1)
+          setTotalPages(Math.ceil((response.total || 0) / 20))
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          toast.error(error.userMessage || error.response?.data?.detail || '获取用户列表失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+    loadUsers()
+    return () => controller.abort()
   }, [])
 
   const filteredUsers = useMemo(() => users.filter(u =>

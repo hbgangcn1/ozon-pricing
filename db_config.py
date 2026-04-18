@@ -48,6 +48,17 @@ CONNECTION_POOL_SIZE = int(os.getenv('DB_POOL_SIZE', '20'))
 CONNECTION_POOL_MAX = int(os.getenv('DB_POOL_MAX', '50'))
 CONNECTION_TIMEOUT = int(os.getenv('DB_TIMEOUT', '30'))
 
+# 连接池参数安全验证
+if CONNECTION_POOL_SIZE < 1:
+    raise ValueError(
+        f"DB_POOL_SIZE 必须 >= 1，当前值: {CONNECTION_POOL_SIZE}"
+    )
+if CONNECTION_POOL_MAX < CONNECTION_POOL_SIZE:
+    raise ValueError(
+        f"DB_POOL_MAX ({CONNECTION_POOL_MAX}) 必须 >= "
+        f"DB_POOL_SIZE ({CONNECTION_POOL_SIZE})"
+    )
+
 
 def get_db_url() -> str:
     """获取数据库连接URL"""

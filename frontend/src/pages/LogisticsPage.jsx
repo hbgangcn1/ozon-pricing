@@ -193,15 +193,30 @@ export default function LogisticsPage() {
   }, [currentPage, pageSize, activeTab, filterFulfillment, filterDestination, setLogistics])
 
   useEffect(() => {
-    let cancelled = false
-    const doFetch = async () => {
-      if (!cancelled) {
-        await fetchLogistics()
+    const controller = new AbortController()
+    ;(async () => {
+      setLoading(true)
+      try {
+        const params = {
+          limit: pageSize,
+          offset: (currentPage - 1) * pageSize,
+          type: activeTab
+        }
+        if (filterFulfillment !== 'all') params.fulfillment_type = filterFulfillment
+        if (filterDestination !== 'all') params.destination = filterDestination
+        const response = await logisticsAPI.getAll(params)
+        if (controller.signal.aborted) return
+        setLogistics(response?.items || [])
+        setTotal(response?.total || 0)
+      } catch (error) {
+        if (controller.signal.aborted) return
+        toast.error(getApiError(error) || '获取物流规则列表失败')
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
       }
-    }
-    doFetch()
-    return () => { cancelled = true }
-  }, [fetchLogistics])
+    })()
+    return () => controller.abort()
+  }, [currentPage, pageSize, activeTab, filterFulfillment, filterDestination, setLogistics])
 
   const handleAdd = () => {
     setEditingItem(null)

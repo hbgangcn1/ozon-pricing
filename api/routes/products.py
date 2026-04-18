@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import tempfile
@@ -32,6 +33,7 @@ from api.dependencies import (
 )
 
 router = APIRouter(prefix="/api/products", tags=["产品"])
+logger = logging.getLogger(__name__)
 
 
 def _ensure_excel_access(user: dict) -> int:
@@ -149,20 +151,24 @@ async def preview_product_import(
 ):
     _ensure_excel_access(user)
     suffix = os.path.splitext(file.filename or "")[1].lower()
-    if suffix != ".xlsx":
-        raise HTTPException(status_code=400, detail="仅支持 xlsx 文件")
+    if suffix not in (".xlsx", ".xls"):
+        raise HTTPException(status_code=400, detail="仅支持 .xlsx 或 .xls 文件")
 
     temp_path = ""
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_file.write(await file.read())
             temp_path = temp_file.name
 
-        workbook = openpyxl.load_workbook(temp_path, data_only=True)
-        sheet = workbook.active
-        if sheet is None:
-            raise HTTPException(status_code=400, detail="xlsx 缺少可用工作表")
-        rows = list(sheet.iter_rows(values_only=True))
+        if suffix == ".xlsx":
+            workbook = openpyxl.load_workbook(temp_path, data_only=True)
+            sheet = workbook.active
+            rows = list(sheet.iter_rows(values_only=True))
+        else:
+            import xlrd
+            workbook = xlrd.open_workbook(temp_path)
+            sheet = workbook.sheet_by_index(0)
+            rows = [sheet.row_values(row_idx) for row_idx in range(sheet.nrows)]
         if not rows:
             return ProductImportPreview(columns=[], preview_rows=[])
 
@@ -178,8 +184,13 @@ async def preview_product_import(
                     )
             preview_rows.append(row_dict)
         return ProductImportPreview(columns=headers, preview_rows=preview_rows)
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"解析 xlsx 失败: {exc}") from exc
+        logger.exception("xlsx 解析失败: %s", exc)
+        raise HTTPException(
+            status_code=400, detail="解析 xlsx 失败，请检查文件格式"
+        ) from exc
     finally:
         await file.close()
         if temp_path and os.path.exists(temp_path):
@@ -243,6 +254,7 @@ async def confirm_product_import(
                 continue
             imported += 1
         except Exception as exc:
-            errors.append(f"第 {index} 行处理失败: {exc}")
+            logger.warning("产品导入第 %d 行处理失败: %s", index, exc, exc_info=True)
+            errors.append(f"第 {index} 行处理失败")
 
     return {"imported": imported, "skipped": skipped, "errors": errors}

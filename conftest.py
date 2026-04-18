@@ -215,14 +215,13 @@ def pytest_sessionfinish(session, exitstatus):
     try:
         import psycopg2
 
-        conn = psycopg2.connect(
+        with psycopg2.connect(
             host="localhost",
             port=5432,
             dbname="logistics",
             user="postgres",
             password=os.environ.get("POSTGRES_PASSWORD", ""),
-        )
-        try:
+        ) as conn:
             conn.autocommit = False
             c = conn.cursor()
 
@@ -307,7 +306,5 @@ def pytest_sessionfinish(session, exitstatus):
                     f"\n[pytest_sessionfinish] Cleaned up {deleted}"
                     " orphaned test user(s)."
                 )
-        finally:
-            conn.close()
     except Exception as exc:
         print(f"[pytest_sessionfinish] global cleanup FAILED: {exc}")

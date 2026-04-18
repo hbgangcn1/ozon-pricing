@@ -129,34 +129,41 @@ function StatisticsPage() {
     return () => window.clearTimeout(timer)
   }, [adminSearchInput])
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [overviewRes, retentionRes, revenueRes, loginRes, adminRes, activeRes] = await Promise.all([
-        statisticsAPI.getOverview(),
-        statisticsAPI.getRetention(),
-        statisticsAPI.getRevenue(),
-        statisticsAPI.getLoginLogs(loginPage, PAGE_SIZE, loginSearch, loginDateFrom, loginDateTo),
-        statisticsAPI.getAdminLogs(adminPage, PAGE_SIZE, adminSearch, adminDateFrom, adminDateTo),
-        statisticsAPI.getActiveUsers(),
-      ])
-
-      setStatsData(overviewRes)
-      setRetentionData(retentionRes)
-      setRevenueData(revenueRes)
-      setLoginLogsPage(loginRes)
-      setAdminLogsPage(adminRes)
-      setActiveData(activeRes)
-    } catch (err) {
-      console.error('Failed to fetch statistics:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [adminDateFrom, adminDateTo, adminPage, adminSearch, loginDateFrom, loginDateTo, loginPage, loginSearch])
-
   useEffect(() => {
+    const controller = new AbortController()
+
+    const fetchData = async () => {
+      setLoading(true)
+      try {
+        const [overviewRes, retentionRes, revenueRes, loginRes, adminRes, activeRes] = await Promise.all([
+          statisticsAPI.getOverview(),
+          statisticsAPI.getRetention(),
+          statisticsAPI.getRevenue(),
+          statisticsAPI.getLoginLogs(loginPage, PAGE_SIZE, loginSearch, loginDateFrom, loginDateTo),
+          statisticsAPI.getAdminLogs(adminPage, PAGE_SIZE, adminSearch, adminDateFrom, adminDateTo),
+          statisticsAPI.getActiveUsers(),
+        ])
+
+        if (!controller.signal.aborted) {
+          setStatsData(overviewRes)
+          setRetentionData(retentionRes)
+          setRevenueData(revenueRes)
+          setLoginLogsPage(loginRes)
+          setAdminLogsPage(adminRes)
+          setActiveData(activeRes)
+        }
+      } catch {
+        // initial load failure is handled by existing empty-state UI
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+
     void fetchData()
-  }, [fetchData])
+    return () => controller.abort()
+  }, [adminDateFrom, adminDateTo, adminPage, adminSearch, loginDateFrom, loginDateTo, loginPage, loginSearch])
 
   const loginLogs = useMemo(() => loginLogsPage.items ?? [], [loginLogsPage.items])
   const adminLogs = useMemo(() => adminLogsPage.items ?? [], [adminLogsPage.items])

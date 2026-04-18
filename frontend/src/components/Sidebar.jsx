@@ -29,23 +29,33 @@ function ExchangeRatePanel() {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const fetchRates = useCallback(async () => {
+  const fetchRates = useCallback(async (signal) => {
+    if (signal?.aborted) return;
     setLoading(true);
     try {
       const data = await apiClient.get('/exchange/rates');
-      setRates(data);
-      setLastUpdated(new Date());
+      if (!signal?.aborted) {
+        setRates(data);
+        setLastUpdated(new Date());
+      }
     } catch {
       // silently fail — rate widget is non-critical
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchRates();
-    const interval = setInterval(fetchRates, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+
+    fetchRates(controller.signal);
+    const interval = setInterval(() => fetchRates(controller.signal), 5 * 60 * 1000);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
   }, [fetchRates]);
 
   return (
@@ -57,7 +67,7 @@ function ExchangeRatePanel() {
         </div>
         <button
           type="button"
-          onClick={fetchRates}
+          onClick={() => fetchRates()}
           disabled={loading}
           className="flex items-center text-xs text-text-muted hover:text-text-secondary transition-colors"
           aria-label="刷新汇率"

@@ -64,11 +64,10 @@ class TestCookieAuth:
         cookie_val = login_resp.cookies.get("access_token")
         assert cookie_val
 
+        client.cookies.update({"access_token": cookie_val})
+
         # Use cookie only — no Authorization header
-        resp = await client.get(
-            "/api/products",
-            cookies={"access_token": cookie_val},
-        )
+        resp = await client.get("/api/products")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -96,6 +95,55 @@ class TestCookieAuth:
     @pytest.mark.asyncio
     async def test_no_credentials_returns_401(self, client: AsyncClient):
         resp = await client.get("/api/products")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_expired_jwt_token_returns_401(
+        self,
+        client: AsyncClient,
+        test_user,
+    ):
+        from datetime import timedelta
+        from security.tokens import create_access_token
+
+        token = create_access_token(
+            user_id=test_user["id"],
+            username=test_user["username"],
+            expires_delta=timedelta(seconds=-1),
+        )
+
+        resp = await client.get(
+            "/api/products",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_invalid_signature_jwt_token_returns_401(
+        self,
+        client: AsyncClient,
+        test_user,
+    ):
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            {"sub": str(test_user["id"]), "username": test_user["username"]},
+            "wrong-secret-that-is-long-enough-for-hmac-sha256",
+            algorithm="HS256",
+        )
+
+        resp = await client.get(
+            "/api/products",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_malformed_token_returns_401(self, client: AsyncClient):
+        resp = await client.get(
+            "/api/products",
+            headers={"Authorization": "Bearer definitely-not-a-jwt"},
+        )
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
@@ -309,12 +357,16 @@ class TestPasswordMigration:
             assert new_hash != sha_hash
         finally:
             from database import AsyncSessionLocal
-            from tests.conftest import _delete_test_user_async
+            import tests.conftest as conftest
 
             await db_session.rollback()
             async with AsyncSessionLocal() as cleanup:
                 try:
-                    await _delete_test_user_async(
+                    delete_test_user_async = getattr(
+                        conftest,
+                        "_delete_test_user_async",
+                    )
+                    await delete_test_user_async(
                         cleanup,
                         user_id,
                         username,

@@ -1,4 +1,5 @@
 from pathlib import Path
+import socket
 import time
 from uuid import uuid4
 
@@ -13,6 +14,20 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = 'q]j@tFp:q>EUC;9"'
 TIMEOUT = 120.0
 RETRYABLE_EXCEPTIONS = (httpx.ConnectError, httpx.ReadTimeout)
+
+
+def _backend_available() -> bool:
+    try:
+        with socket.create_connection(("localhost", 8003), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _backend_available(),
+    reason="后端服务未运行（localhost:8003 不可达），跳过 E2E 测试",
+)
 
 
 @pytest.fixture(scope="module")

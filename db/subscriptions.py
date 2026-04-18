@@ -1,4 +1,5 @@
 import math
+import logging
 import time
 from datetime import date, datetime
 from typing import Optional
@@ -7,6 +8,8 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 async def get_user_subscription_info(
@@ -138,6 +141,7 @@ async def reset_free_users_daily_calculations(
         )
         return int(getattr(result, "rowcount", 0) or 0)
     except Exception:
+        logger.warning("重置免费用户每日计算次数失败", exc_info=True)
         return 0
 
 
@@ -268,7 +272,7 @@ async def _check_new_tier_free(
                 update(User).where(User.id == user_id).values(remaining_calculations=10)
             )
         except Exception:
-            pass
+            logger.debug("更新新套餐免费用户计算次数失败", exc_info=True)
         remaining_calculations = 10
     calculations_display = f"{remaining_calculations}次"
     return {

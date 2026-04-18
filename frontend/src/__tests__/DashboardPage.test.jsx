@@ -103,8 +103,6 @@ describe('DashboardPage', () => {
   });
 
   it('handles API error gracefully', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    
     productsAPI.getAll.mockRejectedValueOnce(new Error('Network error'));
     logisticsAPI.getAll.mockResolvedValueOnce([]);
     
@@ -114,8 +112,5 @@ describe('DashboardPage', () => {
       expect(screen.getAllByText('0').length).toBeGreaterThan(0);
       expect(screen.queryByTestId('skeleton')).not.toBeInTheDocument();
     });
-    
-    expect(consoleErrorSpy).toHaveBeenCalled();
-    consoleErrorSpy.mockRestore();
   });
 });

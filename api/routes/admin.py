@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +44,16 @@ class CalculationsAdjustRequest(BaseModel):
 
 class UserTypeUpdateRequest(BaseModel):
     user_type: str
+
+
+class PasswordResetResponse(MessageResponse):
+    message: str = Field(
+        default="密码已重置，新密码已通过安全渠道发送",
+        description=(
+            "接口不会返回临时密码明文。管理员应通过安全渠道传递，"
+            "并要求用户首次登录后立即修改密码。"
+        ),
+    )
 
 
 def _format_to_user_response(user: dict) -> UserResponse:
@@ -132,7 +142,10 @@ async def update_user(
     )
 
 
-@router.post("/users/{user_id}/reset-password", response_model=MessageResponse)
+@router.post(
+    "/users/{user_id}/reset-password",
+    response_model=PasswordResetResponse,
+)
 async def reset_user_password(
     user_id: int,
     admin: int = Depends(require_admin),
@@ -141,7 +154,7 @@ async def reset_user_password(
     reset_password = await db_admin.reset_user_password(session, user_id, admin)
     if not reset_password:
         raise HTTPException(status_code=404, detail="用户不存在")
-    return MessageResponse(message="密码已重置，新密码已通过安全渠道发送")
+    return PasswordResetResponse()
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)

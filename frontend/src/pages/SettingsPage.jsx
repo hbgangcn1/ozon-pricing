@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Trash2, Download, PlayCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '../components/ui/button'
@@ -40,50 +40,41 @@ function SettingsPage() {
   // ---------------------------------------------------------------------------
   // 数据加载
   // ---------------------------------------------------------------------------
-  const loadBackups = useCallback(async () => {
-    setBackupsLoading(true)
-    try {
-      const data = await settingsAPI.getBackups()
-      setBackups(data)
-    } catch (e) {
-      console.error('加载备份列表失败', e)
-      toast.error('加载备份列表失败')
-    } finally {
-      setBackupsLoading(false)
-    }
-  }, [])
-
-  const loadBackupSettings = useCallback(async () => {
-    setSettingsLoading(true)
-    try {
-      const [settings, stats] = await Promise.all([
-        settingsAPI.getBackupSettings(),
-        settingsAPI.getBackupStats(),
-      ])
-      setBackupSettings(settings)
-      setBackupStats(stats)
-    } catch (e) {
-      console.error('加载备份设置失败', e)
-      toast.error('加载备份设置失败')
-    } finally {
-      setSettingsLoading(false)
-    }
-  }, [])
-
-  const loadSystemSettings = useCallback(async () => {
-    try {
-      const data = await settingsAPI.get()
-      setOpenRegistration(data.open_registration)
-    } catch (e) {
-      console.error('加载系统设置失败', e)
-    }
-  }, [])
-
   useEffect(() => {
-    loadBackups()
-    loadBackupSettings()
-    loadSystemSettings()
-  }, [loadBackups, loadBackupSettings, loadSystemSettings])
+    const controller = new AbortController()
+
+    const loadAll = async () => {
+      setBackupsLoading(true)
+      setSettingsLoading(true)
+      try {
+        const [backupsData, settingsData, statsData, systemData] = await Promise.all([
+          settingsAPI.getBackups(),
+          settingsAPI.getBackupSettings(),
+          settingsAPI.getBackupStats(),
+          settingsAPI.get(),
+        ])
+
+        if (!controller.signal.aborted) {
+          setBackups(backupsData)
+          setBackupSettings(settingsData)
+          setBackupStats(statsData)
+          setOpenRegistration(systemData.open_registration)
+        }
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          toast.error('加载系统设置失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setBackupsLoading(false)
+          setSettingsLoading(false)
+        }
+      }
+    }
+
+    loadAll()
+    return () => controller.abort()
+  }, [])
 
   // ---------------------------------------------------------------------------
   // 手动备份

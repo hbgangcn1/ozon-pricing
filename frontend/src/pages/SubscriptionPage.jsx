@@ -50,9 +50,36 @@ function SubscriptionPage() {
   }, [])
 
   useEffect(() => {
-    fetchSubscription()
-    fetchPlans()
-  }, [fetchSubscription, fetchPlans])
+    const controller = new AbortController()
+    const loadInitial = async () => {
+      setLoading(true)
+      try {
+        const [subData, plansData] = await Promise.all([
+          subscriptionsAPI.getCurrent().catch(() => ({
+            plan_code: user?.user_type || 'free',
+            calc_limit: -1,
+            logistics_limit: 1,
+          })),
+          subscriptionsAPI.getPlans(),
+        ])
+        if (!controller.signal.aborted) {
+          setCurrentPlan(subData)
+          setPlans(Array.isArray(plansData) ? plansData : [])
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setError('获取套餐列表失败')
+          toast.error('获取套餐列表失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+    loadInitial()
+    return () => controller.abort()
+  }, [user])
 
   const handleUpgrade = useCallback((plan) => {
     setSelectedPlan(plan)

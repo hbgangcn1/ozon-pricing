@@ -1,3 +1,5 @@
+# pyright: reportUnusedFunction=false
+
 import sys
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -222,6 +224,30 @@ class TestPaymentNotify:
             json={},
         )
         assert resp.status_code == 400
+
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    def test_handle_payment_success_exception_still_returns_success(
+        self,
+        mock_wechat,
+        _setup_overrides,
+    ):
+        _, mock_svc = _setup_overrides
+        mock_svc.get_order.return_value = None
+        mock_svc.handle_payment_success.side_effect = RuntimeError("boom")
+        mock_wechat.process_notify.return_value = {
+            "success": True,
+            "trade_state": "SUCCESS",
+            "out_trade_no": "test_notify_exception_ord",
+        }
+
+        resp = client.post(
+            "/api/payments/notify",
+            json={"out_trade_no": "test_notify_exception_ord"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"code": "SUCCESS", "message": "成功"}
 
 
 class TestPaymentStatus:

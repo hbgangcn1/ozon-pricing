@@ -12,6 +12,7 @@ import os
 import sys
 
 import psycopg2
+from psycopg2 import sql
 
 DB_CONFIG = {
     "host": os.environ.get("POSTGRES_HOST", "localhost"),
@@ -41,90 +42,119 @@ def main():
     )
     args = parser.parse_args()
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    c = conn.cursor()
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        c = conn.cursor()
 
-    c.execute(f"SELECT COUNT(*) FROM users WHERE {CONDITION}")
-    count = c.fetchone()[0]
-    print(f"Found {count} test user(s) to purge")
-
-    if count == 0:
-        print("Nothing to do.")
-        conn.close()
-        return
-
-    if not args.execute:
         c.execute(
-            "SELECT id, username, role, is_test_user"
-            f" FROM users WHERE {CONDITION}"
-            " ORDER BY id LIMIT 20"
+            sql.SQL("SELECT COUNT(*) FROM {} WHERE {}").format(
+                sql.Identifier("users"),
+                sql.SQL(CONDITION),
+            )
         )
-        print("\nSample (first 20):")
-        for row in c.fetchall():
-            print(f"  id={row[0]}, user={row[1]}, role={row[2]}, is_test={row[3]}")
-        remaining = count - min(count, 20)
-        if remaining > 0:
-            print(f"  ... and {remaining} more")
-        print("\nDry-run mode. Use --execute to delete.")
-        conn.close()
-        return
+        count = c.fetchone()[0]
+        print(f"Found {count} test user(s) to purge")
 
-    id_sub = f"SELECT id FROM users WHERE {CONDITION}"
-    name_sub = f"SELECT username FROM users WHERE {CONDITION}"
+        if count == 0:
+            print("Nothing to do.")
+            return
 
-    for table in [
-        "products",
-        "logistics",
-        "payment_orders",
-        "active_sessions",
-        "subscription_upgrade_history",
-        "user_login_log",
-        "user_behavior_log",
-    ]:
+        if not args.execute:
+            c.execute(
+                sql.SQL("SELECT id, username, role, is_test_user FROM {} WHERE {} ORDER BY id LIMIT 20").format(
+                    sql.Identifier("users"),
+                    sql.SQL(CONDITION),
+                )
+            )
+            print("\nSample (first 20):")
+            for row in c.fetchall():
+                print(f"  id={row[0]}, user={row[1]}, role={row[2]}, is_test={row[3]}")
+            remaining = count - min(count, 20)
+            if remaining > 0:
+                print(f"  ... and {remaining} more")
+            print("\nDry-run mode. Use --execute to delete.")
+            return
+
+        id_sub = sql.SQL("SELECT id FROM {} WHERE {}").format(
+            sql.Identifier("users"),
+            sql.SQL(CONDITION),
+        )
+        name_sub = sql.SQL("SELECT username FROM {} WHERE {}").format(
+            sql.Identifier("users"),
+            sql.SQL(CONDITION),
+        )
+
+        for table in [
+            "products",
+            "logistics",
+            "payment_orders",
+            "active_sessions",
+            "subscription_upgrade_history",
+            "user_login_log",
+            "user_behavior_log",
+        ]:
+            try:
+                c.execute(
+                    sql.SQL("DELETE FROM {} WHERE user_id IN ({})").format(
+                        sql.Identifier(table),
+                        id_sub,
+                    )
+                )
+                if c.rowcount > 0:
+                    print(f"  {table}: {c.rowcount} rows deleted")
+            except Exception as e:
+                conn.rollback()
+                print(f"  {table}: skipped ({e})")
+
+        for table in ["login_attempts", "user_lockouts"]:
+            try:
+                c.execute(
+                    sql.SQL("DELETE FROM {} WHERE identifier IN ({})").format(
+                        sql.Identifier(table),
+                        name_sub,
+                    )
+                )
+                if c.rowcount > 0:
+                    print(f"  {table}: {c.rowcount} rows deleted")
+            except Exception as e:
+                conn.rollback()
+                print(f"  {table}: skipped ({e})")
+
         try:
-            c.execute(f"DELETE FROM {table} WHERE user_id IN ({id_sub})")
+            c.execute(
+                sql.SQL("DELETE FROM {} WHERE admin_id IN ({}) OR target_user_id IN ({})").format(
+                    sql.Identifier("admin_action_log"),
+                    id_sub,
+                    id_sub,
+                )
+            )
             if c.rowcount > 0:
-                print(f"  {table}: {c.rowcount} rows deleted")
+                print(f"  admin_action_log: {c.rowcount} rows deleted")
         except Exception as e:
             conn.rollback()
-            print(f"  {table}: skipped ({e})")
+            print(f"  admin_action_log: skipped ({e})")
 
-    for table in ["login_attempts", "user_lockouts"]:
-        try:
-            c.execute(f"DELETE FROM {table} WHERE identifier IN ({name_sub})")
-            if c.rowcount > 0:
-                print(f"  {table}: {c.rowcount} rows deleted")
-        except Exception as e:
-            conn.rollback()
-            print(f"  {table}: skipped ({e})")
-
-    try:
         c.execute(
-            "DELETE FROM admin_action_log"
-            f" WHERE admin_id IN ({id_sub})"
-            f" OR target_user_id IN ({id_sub})"
+            sql.SQL("DELETE FROM {} WHERE {}").format(
+                sql.Identifier("users"),
+                sql.SQL(CONDITION),
+            )
         )
-        if c.rowcount > 0:
-            print(f"  admin_action_log: {c.rowcount} rows deleted")
-    except Exception as e:
-        conn.rollback()
-        print(f"  admin_action_log: skipped ({e})")
+        deleted = c.rowcount
+        conn.commit()
+        print(f"\nDeleted {deleted} test user(s).")
 
-    c.execute(f"DELETE FROM users WHERE {CONDITION}")
-    deleted = c.rowcount
-    conn.commit()
-    print(f"\nDeleted {deleted} test user(s).")
+        c.execute(
+            sql.SQL("SELECT COUNT(*) FROM {} WHERE {}").format(
+                sql.Identifier("users"),
+                sql.SQL(CONDITION),
+            )
+        )
+        remaining = c.fetchone()[0]
+        print(f"Remaining test users: {remaining}")
 
-    c.execute(f"SELECT COUNT(*) FROM users WHERE {CONDITION}")
-    remaining = c.fetchone()[0]
-    print(f"Remaining test users: {remaining}")
-
-    c.execute("SELECT COUNT(*) FROM users")
-    total = c.fetchone()[0]
-    print(f"Total users in database: {total}")
-
-    c.close()
-    conn.close()
+        c.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier("users")))
+        total = c.fetchone()[0]
+        print(f"Total users in database: {total}")
 
     if remaining > 0:
         print("WARNING: Some test users were not deleted!")

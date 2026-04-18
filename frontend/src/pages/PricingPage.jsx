@@ -260,36 +260,59 @@ export default function PricingPage() {
   const preciseLabel = isPreciseDisabled ? '精准模式（限专业版/企业版）' : '精准模式'
 
   const refreshCommissionCategories = useCallback(() => {
-    commissionCategoriesAPI.getAll().then(data => setCommissionCategories(Array.isArray(data) ? data : [])).catch(err => { console.error(err) })
+    commissionCategoriesAPI.getAll().then(data => setCommissionCategories(Array.isArray(data) ? data : [])).catch(() => {})
   }, [])
 
   const refreshProducts = useCallback(() => {
-    productsAPI.getAll().then(data => setProducts(Array.isArray(data) ? data : [])).catch(err => { console.error(err) })
+    productsAPI.getAll().then(data => setProducts(Array.isArray(data) ? data : [])).catch(() => {})
   }, [])
 
   useEffect(() => {
-    refreshProducts()
-    refreshCommissionCategories()
+    const controller = new AbortController()
+
+    const loadData = async () => {
+      try {
+        const [productData, commissionData] = await Promise.all([
+          productsAPI.getAll(),
+          commissionCategoriesAPI.getAll(),
+        ])
+        if (!controller.signal.aborted) {
+          setProducts(Array.isArray(productData) ? productData : [])
+          setCommissionCategories(Array.isArray(commissionData) ? commissionData : [])
+        }
+      } catch {
+        // keep silent on initial load failures
+      }
+    }
+
+    loadData()
+    return () => controller.abort()
   }, [refreshCommissionCategories, refreshProducts])
 
   useEffect(() => {
-    if (productListDialogOpen) {
-      refreshProducts()
-    }
+    if (!productListDialogOpen) return
+    refreshProducts()
   }, [productListDialogOpen, refreshProducts])
 
   useEffect(() => {
+    const controller = new AbortController()
+
     const checkLogistics = async () => {
       try {
         const rules = await logisticsAPI.getAll()
         const list = Array.isArray(rules) ? rules : (rules?.items || [])
-        setHasLogisticsRules(list.length > 0)
+        if (!controller.signal.aborted) {
+          setHasLogisticsRules(list.length > 0)
+        }
       } catch {
         // fail-open: don't show alert on API failure
-        setHasLogisticsRules(true)
+        if (!controller.signal.aborted) {
+          setHasLogisticsRules(true)
+        }
       }
     }
     checkLogistics()
+    return () => controller.abort()
   }, [])
 
   const handleEditProduct = (product) => {

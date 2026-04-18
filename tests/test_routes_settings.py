@@ -270,7 +270,7 @@ class TestCreateBackupFailure:
             headers={"Authorization": "Bearer faketoken"},
         )
         assert r.status_code == 500
-        assert "disk full" in r.json()["detail"]
+        assert "备份失败，请联系管理员" == r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +377,7 @@ class TestUpdateBackupSettings:
             headers={"Authorization": "Bearer faketoken"},
         )
         assert r.status_code == 500
-        assert "db error" in r.json()["detail"]
+        assert "更新失败，请联系管理员" == r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -519,7 +519,7 @@ class TestDownloadBackupErrors:
             headers={"Authorization": "Bearer faketoken"},
         )
         assert r.status_code == 500
-        assert "permission denied" in r.json()["detail"]
+        assert "读取文件失败，请联系管理员" == r.json()["detail"]
 
     @patch("api.routes.settings._load_backup_service")
     def test_download_non_dump_extension_rejected(self, mock_bs):
@@ -562,7 +562,7 @@ class TestDeleteBackupFailure:
             headers={"Authorization": "Bearer faketoken"},
         )
         assert r.status_code == 500
-        assert "io error" in r.json()["detail"]
+        assert "删除失败，请联系管理员" == r.json()["detail"]
 
     @patch("api.routes.settings._load_backup_service")
     def test_delete_non_dump_extension(self, mock_bs):
@@ -620,7 +620,7 @@ class TestRestoreBackupFailure:
             headers={"Authorization": "Bearer faketoken"},
         )
         assert r.status_code == 500
-        assert "restore crashed" in r.json()["detail"]
+        assert "恢复失败，请联系管理员" == r.json()["detail"]
 
     @patch("api.routes.settings._load_backup_service")
     def test_restore_success_with_snapshot(self, mock_bs):

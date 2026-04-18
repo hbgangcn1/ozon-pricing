@@ -134,6 +134,7 @@ class PostgresBackupDatabaseMixin:
 
             return False
         except Exception:
+            logger.debug("检查是否可删除 public schema 失败", exc_info=True)
             return False
 
     def _reset_public_schema(self) -> None:

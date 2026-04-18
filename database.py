@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
 
-from db_config import POSTGRES_CONFIG
+from db_config import (
+    POSTGRES_CONFIG,
+    CONNECTION_POOL_SIZE,
+    CONNECTION_POOL_MAX,
+    CONNECTION_TIMEOUT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +35,9 @@ _async_url = (
 
 engine = create_async_engine(
     _async_url,
-    pool_size=20,
-    max_overflow=10,
+    pool_size=CONNECTION_POOL_SIZE,
+    max_overflow=CONNECTION_POOL_MAX - CONNECTION_POOL_SIZE,
+    pool_timeout=CONNECTION_TIMEOUT,
     pool_recycle=3600,
     pool_pre_ping=True,
     echo=False,
@@ -51,16 +57,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
             await session.commit()
         except Exception as exc:
-            if _is_connection_dead(exc):
-                logger.warning(
-                    "数据库连接已断开，跳过 commit（%s）",
-                    type(exc).__name__,
-                )
-                return
             try:
                 await session.rollback()
             except Exception:
-                logger.warning("数据库连接已断开，跳过 rollback")
+                logger.warning(
+                    "数据库连接已断开，跳过 rollback（%s）",
+                    type(exc).__name__,
+                )
             raise
 
 

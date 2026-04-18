@@ -95,7 +95,11 @@ async def import_logistics_pool(
         try:
             result = parse_file(temp_path, source_file=file.filename or None)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            logger.warning("物流池导入解析失败: %s", exc)
+            raise HTTPException(
+                status_code=400,
+                detail="上传文件格式有误，请检查后重试",
+            )
         except PermissionError as exc:
             logger.warning("物流池导入文件被占用: %s", exc)
             raise HTTPException(
@@ -129,6 +133,7 @@ async def import_logistics_pool(
             detail="导入处理失败，请联系管理员",
         )
     finally:
+        await file.close()
         if temp_path and os.path.exists(temp_path):
             os.unlink(temp_path)
 

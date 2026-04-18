@@ -61,6 +61,7 @@ class SessionSecurityEnhanced:
                     await session.commit()
                     return True, "会话创建成功"
                 except Exception as e:
+                    logger.warning("会话创建失败", exc_info=True)
                     await session.rollback()
                     return False, f"会话创建失败: {str(e)}"
         finally:
@@ -81,6 +82,7 @@ class SessionSecurityEnhanced:
                     await session.commit()
                     return True
                 except Exception:
+                    logger.debug("更新会话活动失败", exc_info=True)
                     await session.rollback()
                     return False
         finally:
@@ -239,6 +241,7 @@ class SessionSecurityEnhanced:
             user = await verify_user(user_id, password)
             return user is not None
         except Exception:
+            logger.debug("验证敏感操作密码失败", exc_info=True)
             return False
 
 

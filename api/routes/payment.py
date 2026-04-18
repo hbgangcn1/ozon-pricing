@@ -191,7 +191,7 @@ async def payment_notify(
         try:
             await svc.handle_payment_success(out_trade_no)
         except Exception:
-            logger.exception("处理支付成功失败: %s", out_trade_no)
+            logger.warning("处理支付成功失败: %s", out_trade_no, exc_info=True)
 
     return NotifyResponse(code="SUCCESS", message="成功")
 
@@ -224,7 +224,7 @@ async def get_payment_status(
         try:
             await svc.handle_payment_success(order_id)
         except Exception:
-            logger.exception("查询时处理支付成功失败: %s", order_id)
+            logger.warning("查询时处理支付成功失败: %s", order_id, exc_info=True)
 
     return PaymentStatusResponse(
         order_id=order_id,

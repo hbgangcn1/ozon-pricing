@@ -56,8 +56,27 @@ export default function CommissionCategoriesPage() {
   }, [])
 
   useEffect(() => {
-    fetchCategories()
-  }, [fetchCategories])
+    const controller = new AbortController()
+    const loadCategories = async () => {
+      setIsLoading(true)
+      try {
+        const data = await commissionCategoriesAPI.getAll()
+        if (!controller.signal.aborted) {
+          setCategories(data || [])
+        }
+      } catch (error) {
+        if (!controller.signal.aborted && error?.response?.status !== 404) {
+          toast.error('获取佣金类目失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false)
+        }
+      }
+    }
+    loadCategories()
+    return () => controller.abort()
+  }, [])
 
   const handleOpenDialog = (category = null) => {
     setCurrentCategory(category)

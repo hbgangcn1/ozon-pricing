@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Download, Search, Maximize2, Minimize2, RefreshCw, Info } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -43,26 +43,36 @@ function PaymentPage() {
   const [fullscreen, setFullscreen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
   const pageSize = 10
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = { page: currentPage, page_size: pageSize }
-      if (statusFilter !== 'all') params.status = statusFilter
-      const data = await ordersAPI.getAll(params)
-      setOrders(data.orders || [])
-      setTotal(data.total || 0)
-    } catch (err) {
-      toast.error('获取订单失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [currentPage, statusFilter])
-
   useEffect(() => {
+    const controller = new AbortController()
+
+    const fetchOrders = async () => {
+      setLoading(true)
+      try {
+        const params = { page: currentPage, page_size: pageSize }
+        if (statusFilter !== 'all') params.status = statusFilter
+        const data = await ordersAPI.getAll(params)
+        if (!controller.signal.aborted) {
+          setOrders(data.orders || [])
+          setTotal(data.total || 0)
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          toast.error('获取订单失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+
     fetchOrders()
-  }, [fetchOrders])
+    return () => controller.abort()
+  }, [currentPage, statusFilter, refreshKey])
 
   const filteredOrders = orders.filter(o => 
     (o.order_id || '').toLowerCase().includes(searchText.toLowerCase()) ||
@@ -129,7 +139,7 @@ function PaymentPage() {
             </Select>
 
             <div className="flex items-center gap-2">
-              <Button aria-label="刷新" variant="outline" size="icon" onClick={() => { fetchOrders(); toast.success('刷新成功') }} className="transition-all duration-200">
+              <Button aria-label="刷新" variant="outline" size="icon" onClick={() => { setRefreshKey(k => k + 1); toast.success('刷新成功') }} className="transition-all duration-200">
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
               <Button variant="outline" onClick={handleExportCSV} className="transition-all duration-200">

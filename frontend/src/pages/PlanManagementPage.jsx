@@ -401,8 +401,30 @@ function PlanManagementPage() {
   }, [])
 
   useEffect(() => {
-    fetchPlans()
-  }, [fetchPlans])
+    const controller = new AbortController()
+    const loadPlans = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const data = await plansAPI.getAll(false)
+        if (!controller.signal.aborted) {
+          const list = Array.isArray(data) ? data : []
+          setPlans(list.map(apiPlanToLocal))
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setError('获取套餐列表失败')
+          toast.error('获取套餐列表失败')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+    loadPlans()
+    return () => controller.abort()
+  }, [])
 
   const handleEdit = (planId) => {
     setEditingPlan(planId)

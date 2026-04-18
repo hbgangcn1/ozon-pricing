@@ -27,7 +27,6 @@ function DashboardPage() {
         }
       } catch (error) {
         if (!controller.signal.aborted) {
-          console.error('获取数据失败:', error);
           setStats((prev) => ({ ...prev, loading: false }));
         }
       }

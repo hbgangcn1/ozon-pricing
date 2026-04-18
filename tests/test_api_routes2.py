@@ -133,8 +133,11 @@ class TestStatistics:
         mock_orders.return_value = 5
         mock_rev.return_value = {"total_revenue": 100000}
 
-        mock_session = AsyncMock()
-        mock_session.scalar.return_value = 1
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
+        mock_session.scalar = AsyncMock(return_value=1)
 
         async def override():
             yield mock_session
@@ -155,7 +158,7 @@ class TestStatistics:
         mock_retention.return_value = [
             {"month": "2025-01", "retention": 50},
         ]
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
 
         async def override():
             yield mock_session

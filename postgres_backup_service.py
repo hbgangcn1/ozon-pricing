@@ -47,6 +47,7 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
         self.max_backups = max_backups
         self.backup_thread: Optional[threading.Thread] = None
         self.is_running = False
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         Path(self.backup_dir).mkdir(parents=True, exist_ok=True)
 
@@ -300,6 +301,7 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
             logger.warning("自动备份已在运行中")
             return
         self.is_running = True
+        self._stop_event.clear()
         self.create_backup()
         target = self._build_auto_backup_target(load_schedule_module())
         self.backup_thread = threading.Thread(
@@ -333,7 +335,7 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
                 schedule_module.run_pending()  # type: ignore[attr-defined]
             except Exception as exc:  # noqa: B902
                 logger.exception("自动备份调度异常: {}", exc)
-            time.sleep(60)
+            self._stop_event.wait(60)
 
     def _run_without_schedule(self) -> None:
         interval = max(1, int(self.backup_interval_hours * 3600))
@@ -346,14 +348,15 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
                 except Exception as exc:  # noqa: B902
                     logger.exception("自动备份执行失败: {}", exc)
                 next_run = now + interval
-            time.sleep(60)
+            self._stop_event.wait(60)
 
     def stop_auto_backup(self) -> None:
         if not self.is_running:
             return
         self.is_running = False
+        self._stop_event.set()
         if self.backup_thread:
-            self.backup_thread.join()
+            self.backup_thread.join(timeout=10)
         self.backup_thread = None
         logger.info("⏹️ PostgreSQL 自动备份已停止")
 
