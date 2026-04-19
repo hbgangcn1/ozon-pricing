@@ -1,25 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 安全模块工具
-提供客户端信息访问等工具函数
+提供安全相关的工具函数
 """
 
 from typing import Any
 
-# Streamlit 上下文引用（供外部测试 monkeypatch）
-# 不直接依赖 streamlit，调用方可替换此值
-_streamlit: Any = None
-
 
 def get_client_headers() -> dict:
-    """获取当前请求头（从已注入的 _streamlit context 读取）"""
-    if _streamlit is None:
-        return {}
-    try:
-        if hasattr(_streamlit, "context") and hasattr(_streamlit.context, "headers"):
-            headers = _streamlit.context.headers
-            if headers:
-                return dict(headers)
-    except (AttributeError, TypeError):
-        pass
+    """获取当前请求头（placeholder 实现）"""
     return {}
+
+
+def mask_sensitive_value(value: str, visible_chars: int = 4) -> str:
+    """掩码敏感信息，仅显示前 N 个字符"""
+    if not value or len(value) <= visible_chars:
+        return "*" * len(value) if value else ""
+    return value[:visible_chars] + "*" * (len(value) - visible_chars)
