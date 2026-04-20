@@ -25,13 +25,16 @@ function SubscriptionPage() {
     try {
       const response = await subscriptionsAPI.getCurrent()
       setCurrentPlan(response)
+      return response
     } catch (error) {
       // Use mock data
-      setCurrentPlan({
+      const fallback = {
         plan_code: user?.user_type || 'free',
         calc_limit: -1,
         logistics_limit: 1,
-      })
+      }
+      setCurrentPlan(fallback)
+      return fallback
     }
   }, [user])
 
@@ -102,16 +105,25 @@ function SubscriptionPage() {
 
   const handlePaymentSuccess = useCallback(async () => {
     toast.success('支付成功，正在刷新订阅信息...')
-    await fetchSubscription()
+    const sub = await fetchSubscription()
     await fetchPlans()
-  }, [fetchSubscription, fetchPlans])
+    // Sync auth store so sidebar/header reflect the new plan
+    if (sub?.plan_code && user) {
+      useAuthStore.getState().setUser({
+        ...user,
+        user_type: sub.plan_code,
+        subscription_type: sub.plan_code,
+      })
+    }
+  }, [fetchSubscription, fetchPlans, user])
 
   const getCurrentPlanName = useCallback(() => {
-    if (user?.user_type === 'enterprise') return '企业版'
-    if (user?.user_type === 'professional') return '专业版'
-    if (user?.user_type === 'efficiency') return '效率版'
+    const code = currentPlan?.plan_code || user?.subscription_type || user?.user_type || 'free'
+    if (code === 'enterprise') return '企业版'
+    if (code === 'professional') return '专业版'
+    if (code === 'efficiency') return '效率版'
     return '免费版'
-  }, [user])
+  }, [currentPlan, user])
 
   const getCalcLimitText = useCallback((limit) => {
     return limit === -1 ? '无限次' : `${limit}次/月`
@@ -181,7 +193,8 @@ function SubscriptionPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
           {plans.map((plan) => {
-          const isCurrentPlan = user?.user_type === plan.code || (user?.role === 'admin' && plan.code === 'free')
+          const activePlanCode = currentPlan?.plan_code || user?.subscription_type || user?.user_type || 'free'
+          const isCurrentPlan = activePlanCode === plan.code || (user?.role === 'admin' && plan.code === 'free')
           return (
             <Card 
               key={plan.code} 
