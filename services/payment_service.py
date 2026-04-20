@@ -45,21 +45,28 @@ class PaymentService:
             raise ValueError(f"\u8ba2\u5355\u4e0d\u5b58\u5728: {order_id}")
 
         if order.status == "SUCCESS":
+            logger.info("订单已处理，跳过: %s", order_id)
             return
 
         current_time = int(time.time())
-        order.status = "SUCCESS"
-        order.updated_at = current_time
-
         plan_code = _extract_plan_code(order.description or "")
         duration_days = _parse_duration(order.duration or "\u6708")
         expiry = current_time + duration_days * 86400
 
         user = await self._session.get(User, order.user_id)
-        if user:
-            user.subscription_type = plan_code
-            user.subscription_expires = expiry
-            user.remaining_calculations = -1
+        if not user:
+            raise ValueError(f"用户不存在: user_id={order.user_id}")
+
+        order.status = "SUCCESS"
+        order.updated_at = current_time
+        user.subscription_type = plan_code
+        user.subscription_expires = expiry
+        user.remaining_calculations = -1
+        await self._session.commit()
+        logger.info(
+            "支付成功: order=%s user=%d plan=%s expires=%d",
+            order_id, order.user_id, plan_code, expiry,
+        )
 
     async def update_order_status(
         self,

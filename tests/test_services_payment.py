@@ -128,16 +128,17 @@ class TestHandlePaymentSuccess:
         assert user.subscription_type == "enterprise"
 
     @pytest.mark.asyncio
-    async def test_user_not_found_still_updates_order(self):
+    async def test_user_not_found_raises_value_error(self):
         session = _mock_session()
         order = _make_order()
         _setup_session_execute(session, order)
         session.get.return_value = None
 
         svc = PaymentService(session)
-        await svc.handle_payment_success("ord_nouser")
+        with pytest.raises(ValueError, match="用户不存在"):
+            await svc.handle_payment_success("ord_nouser")
 
-        assert order.status == "SUCCESS"
+        assert order.status == "PENDING"
 
     @pytest.mark.asyncio
     async def test_db_error_propagated(self):

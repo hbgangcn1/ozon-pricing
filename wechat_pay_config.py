@@ -20,7 +20,7 @@ except ImportError:
 try:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    load_dotenv(override=True)
 except ImportError:
     # 如果没有安装python-dotenv，定义一个占位符函数
     def load_dotenv(*args, **kwargs) -> bool:
@@ -155,7 +155,7 @@ def get_wechat_pay_config() -> WeChatPayConfig:
 
     # 回调地址
     config.notify_url = os.getenv(
-        "WECHAT_NOTIFY_URL", "https://www.cbprice.cn/wechat/notify"
+        "WECHAT_NOTIFY_URL", "https://www.cbprice.cn/api/payments/notify"
     )
     config.return_url = os.getenv(
         "WECHAT_RETURN_URL", "https://www.cbprice.cn/payment/success"
