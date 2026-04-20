@@ -104,7 +104,7 @@ export default function PaymentQRDialog({
   }, [state, countdown])
 
   const handleStatusUpdate = useCallback((res) => {
-    if (res.trade_state === 'SUCCESS') {
+    if (res.trade_state === 'SUCCESS' || res.status === 'SUCCESS') {
       setState('success')
       onSuccess?.()
       setTimeout(() => {

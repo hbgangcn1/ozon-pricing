@@ -215,6 +215,7 @@ async def get_payment_status(
         return PaymentStatusResponse(
             order_id=order_id,
             status=order.status or "PENDING",
+            trade_state=order.status if order.status == "SUCCESS" else None,
         )
 
     if not _wechat_available or wechat_pay_v3 is None:
