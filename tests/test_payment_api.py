@@ -63,14 +63,20 @@ class TestCreatePayment:
         "api.routes.payment.get_plan_price",
         new_callable=AsyncMock,
     )
+    @patch(
+        "api.routes.payment.is_registration_open",
+        new_callable=AsyncMock,
+    )
     def test_success(
         self,
+        mock_is_open,
         mock_price,
         mock_plan,
         mock_wechat,
         _setup_overrides,
     ):
         _, mock_svc = _setup_overrides
+        mock_is_open.return_value = True
         mock_price.return_value = 29.9
         mock_plan.return_value = {"plan_name": "Pro"}
         mock_wechat.create_native_order.return_value = {
@@ -99,7 +105,12 @@ class TestCreatePayment:
         "api.routes.payment.get_plan_price",
         new_callable=AsyncMock,
     )
-    def test_amount_mismatch(self, mock_price):
+    @patch(
+        "api.routes.payment.is_registration_open",
+        new_callable=AsyncMock,
+    )
+    def test_amount_mismatch(self, mock_is_open, mock_price):
+        mock_is_open.return_value = True
         mock_price.return_value = 99.9
         resp = client.post(
             "/api/payments/create",
@@ -120,13 +131,19 @@ class TestCreatePayment:
         "api.routes.payment.get_plan_price",
         new_callable=AsyncMock,
     )
+    @patch(
+        "api.routes.payment.is_registration_open",
+        new_callable=AsyncMock,
+    )
     def test_wechat_unavailable(
         self,
+        mock_is_open,
         mock_price,
         mock_plan,
         _setup_overrides,
     ):
         _, mock_svc = _setup_overrides
+        mock_is_open.return_value = True
         mock_price.return_value = 29.9
         mock_plan.return_value = {"plan_name": "Pro"}
         mock_order = MagicMock()
@@ -155,14 +172,20 @@ class TestCreatePayment:
         "api.routes.payment.get_plan_price",
         new_callable=AsyncMock,
     )
+    @patch(
+        "api.routes.payment.is_registration_open",
+        new_callable=AsyncMock,
+    )
     def test_wechat_fails(
         self,
+        mock_is_open,
         mock_price,
         mock_plan,
         mock_wechat,
         _setup_overrides,
     ):
         _, mock_svc = _setup_overrides
+        mock_is_open.return_value = True
         mock_price.return_value = 29.9
         mock_plan.return_value = {"plan_name": "Pro"}
         mock_wechat.create_native_order.return_value = {
@@ -203,11 +226,18 @@ class TestPaymentNotify:
         assert resp.status_code == 200
         assert resp.json()["code"] == "SUCCESS"
 
-    def test_idempotent(self, _setup_overrides):
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    def test_idempotent(self, mock_wechat, _setup_overrides):
         _, mock_svc = _setup_overrides
         mock_order = MagicMock()
         mock_order.status = "SUCCESS"
         mock_svc.get_order.return_value = mock_order
+        mock_wechat.process_notify.return_value = {
+            "success": True,
+            "trade_state": "SUCCESS",
+            "out_trade_no": "test_idemp_ord",
+        }
         resp = client.post(
             "/api/payments/notify",
             json={"out_trade_no": "test_idemp_ord"},

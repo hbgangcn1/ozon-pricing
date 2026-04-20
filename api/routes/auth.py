@@ -22,6 +22,7 @@ from api.models.schemas import (
     ChangePassword,
 )
 from security.tokens import create_access_token
+from security.csrf import generate_csrf_token
 from api.dependencies import (
     get_current_user_id,
     get_current_user as get_current_user_dep,
@@ -58,6 +59,15 @@ def _set_token_cookie(response: JSONResponse, token: str) -> None:
         key="access_token",
         value=token,
         httponly=True,
+        secure=_cookie_secure,
+        samesite="strict",
+        max_age=_COOKIE_MAX_AGE,
+        path="/",
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=generate_csrf_token(),
+        httponly=False,
         secure=_cookie_secure,
         samesite="strict",
         max_age=_COOKIE_MAX_AGE,
@@ -113,6 +123,13 @@ async def logout():
         key="access_token",
         path="/",
         httponly=True,
+        secure=_cookie_secure,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        key="csrf_token",
+        path="/",
+        httponly=False,
         secure=_cookie_secure,
         samesite="strict",
     )

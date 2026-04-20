@@ -17,9 +17,23 @@ client = TestClient(app, raise_server_exceptions=False)
 
 @pytest.fixture(autouse=True)
 def _patch_recalculate():
-    with patch(
-        "api.routes.logistics_pool.recalculate_priority_groups",
-        new=AsyncMock(),
+    with (
+        patch(
+            "api.routes.logistics_pool.recalculate_priority_groups",
+            new=AsyncMock(),
+        ),
+        patch(
+            "api.routes.logistics_pool._get_user_subscription",
+            new=AsyncMock(return_value=("admin", "free")),
+        ),
+        patch(
+            "api.routes.logistics_pool.get_plan_by_code",
+            new=AsyncMock(return_value={"logistics_limit": -1, "plan_name": "Unlimited"}),
+        ),
+        patch(
+            "api.routes.logistics_pool.get_logistics_by_filters",
+            new=AsyncMock(return_value=([], 0)),
+        ),
     ):
         yield
 

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import traceback
@@ -136,6 +137,13 @@ async def lifespan(app: FastAPI):
         logger.warning("关闭Redis客户端失败", exc_info=True)
 
     try:
+        from exchange_service_providers import ExchangeRateProvider
+
+        ExchangeRateProvider.close_shared_session()
+    except Exception:
+        logger.warning("关闭汇率服务HTTP会话失败", exc_info=True)
+
+    try:
         await engine.dispose()
     except Exception:
         logger.warning("engine.dispose() failed", exc_info=True)
@@ -173,18 +181,12 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
 )
 
 _skip_rate_limit = not _is_production and os.getenv("E2E_TEST")
 if not _skip_rate_limit:
     app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
-    if _is_production:
-        logger.warning(
-            "Rate limiter is per-process only. "
-            "With multiple Gunicorn workers, each worker has its own counter. "
-            "Consider Redis-backed rate limiting for accurate cross-worker limits."
-        )
 
 app.include_router(auth.router)
 app.include_router(products.router)
@@ -247,7 +249,7 @@ async def health_check():
         logger.warning("健康检查数据库连接失败", exc_info=True)
 
     try:
-        checks.update(_check_redis_health())
+        checks.update(await asyncio.to_thread(_check_redis_health))
     except Exception:
         checks["redis_status"] = "unavailable"
         checks["redis_error"] = "service check failed"

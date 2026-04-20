@@ -80,14 +80,14 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
 
     def _is_database_connectable(self) -> bool:
         try:
-            conn = psycopg2.connect(
+            with psycopg2.connect(
                 host=POSTGRES_CONFIG.get("host", "localhost"),
                 port=POSTGRES_CONFIG.get("port", 5432),
                 database=POSTGRES_CONFIG.get("database", "postgres"),
                 user=POSTGRES_CONFIG.get("user", "postgres"),
                 password=POSTGRES_CONFIG.get("password", ""),
-            )
-            conn.close()
+            ) as conn:
+                conn.cursor().close()
             return True
         except ImportError:
             return False
@@ -266,7 +266,10 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
         return self._filter_backup_files()
 
     def get_backup_file_path(self, backup_filename: str) -> str:
-        return os.path.join(self.backup_dir, backup_filename)
+        safe_name = os.path.basename(backup_filename)
+        if safe_name != backup_filename:
+            raise ValueError(f"非法备份文件名: {backup_filename}")
+        return os.path.join(self.backup_dir, safe_name)
 
     def read_backup_file(
         self,

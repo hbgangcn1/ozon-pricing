@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Package, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Package, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
-import { authAPI } from '../services/api';
+import { authAPI, settingsAPI } from '../services/api';
 import eulaContent from '../最终用户协议.md?raw';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -42,6 +42,23 @@ function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [agreedToEULA, setAgreedToEULA] = useState(false);
   const [eulaDialogOpen, setEulaDialogOpen] = useState(false);
+  const [openRegistration, setOpenRegistration] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    settingsAPI.get()
+      .then(data => {
+        if (!cancelled) {
+          setOpenRegistration(data.open_registration !== false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOpenRegistration(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const {
     register,
@@ -75,6 +92,38 @@ function RegisterPage() {
       setLoading(false);
     }
   };
+
+  if (openRegistration === false) {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4 fixed inset-0 z-50">
+        <div className="w-full max-w-lg bg-surface-container border border-surface-high shadow-xl shadow-black/40 rounded-2xl px-12 py-8 animate-fade-in-up">
+          <div className="text-center mb-8">
+            <div className="w-12 h-12 bg-status-warning/10 rounded-xl flex items-center justify-center mx-auto mb-4 border border-status-warning/20">
+              <AlertCircle className="w-6 h-6 text-status-warning" />
+            </div>
+            <h1 className="text-3xl font-headline font-bold text-text-primary tracking-tight mb-2">
+              物流定价系统
+            </h1>
+            <p className="text-text-secondary text-sm">
+              注册功能已关闭
+            </p>
+          </div>
+          <div className="bg-surface-high/50 border border-surface-highest rounded-xl px-6 py-5 text-center">
+            <p className="text-text-secondary text-sm mb-4">
+              抱歉，当前系统已关闭注册功能。<br />
+              如需帮助，请联系管理员。
+            </p>
+            <Link
+              to="/login"
+              className="inline-flex items-center justify-center gap-2 w-full bg-primary text-white rounded-lg py-2.5 hover:bg-primary-dim transition-all duration-200 ease-out font-medium"
+            >
+              返回登录
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4 fixed inset-0 z-50">

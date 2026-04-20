@@ -5,14 +5,23 @@ from typing import Optional
 import jwt
 
 
+_MIN_SECRET_LENGTH = 32  # 256-bit minimum for HS256
+
+
 def _get_jwt_secret() -> str:
     secret = os.environ.get("JWT_SECRET_KEY")
-    if secret:
-        return secret
-    raise RuntimeError(
-        "JWT_SECRET_KEY environment variable is required. "
-        "Set it in .env for development or system environment for production."
-    )
+    if not secret:
+        raise RuntimeError(
+            "JWT_SECRET_KEY environment variable is required. "
+            "Set it in .env for development or system environment for production."
+        )
+    if len(secret) < _MIN_SECRET_LENGTH:
+        raise RuntimeError(
+            f"JWT_SECRET_KEY is too short ({len(secret)} chars). "
+            f"Minimum {_MIN_SECRET_LENGTH} characters required for HS256 security. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
+    return secret
 
 
 _SECRET_KEY: Optional[str] = None

@@ -1,4 +1,5 @@
 import os
+import secrets
 from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, Request, status
@@ -45,12 +46,30 @@ def _check_csrf_origin(request: Request) -> None:
         )
 
 
+def _check_csrf_double_submit(request: Request) -> None:
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    cookie_csrf = request.cookies.get("csrf_token")
+    header_csrf = request.headers.get("x-csrf-token")
+    if not cookie_csrf or not header_csrf:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="缺少CSRF令牌",
+        )
+    if not secrets.compare_digest(cookie_csrf, header_csrf):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF令牌不匹配",
+        )
+
+
 def _extract_token(api_key, request: Request) -> str:
     if api_key and api_key.credentials:
         return api_key.credentials
     cookie_token = request.cookies.get("access_token")
     if cookie_token:
         _check_csrf_origin(request)
+        _check_csrf_double_submit(request)
         return cookie_token
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

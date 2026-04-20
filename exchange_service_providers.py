@@ -6,6 +6,7 @@
 
 import json
 import os
+import threading
 import time
 import logging
 from typing import Dict, Optional, Any
@@ -69,6 +70,7 @@ class ExchangeRateProvider:
     """汇率提供者基类"""
 
     _shared_session: Optional[Any] = None
+    _session_lock = threading.Lock()
 
     def __init__(self, provider_name: str, timeout: int = 10):
         self.name = provider_name
@@ -81,14 +83,25 @@ class ExchangeRateProvider:
     def _get_session(cls):
         if not REQUESTS_AVAILABLE or requests is None:
             return None
-        if cls._shared_session is None:
-            cls._shared_session = requests.Session()
-            cls._shared_session.headers.update(
-                {
-                    "Accept": "application/json",
-                }
-            )
-        return cls._shared_session
+        with cls._session_lock:
+            if cls._shared_session is None:
+                cls._shared_session = requests.Session()
+                cls._shared_session.headers.update(
+                    {
+                        "Accept": "application/json",
+                    }
+                )
+            return cls._shared_session
+
+    @classmethod
+    def close_shared_session(cls):
+        with cls._session_lock:
+            if cls._shared_session is not None:
+                try:
+                    cls._shared_session.close()
+                except Exception:
+                    pass
+                cls._shared_session = None
 
     def is_available(self) -> bool:
         """检查数据源是否可用"""

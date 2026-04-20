@@ -103,6 +103,7 @@ requirements_test.txt
 tests/test_ui_user_blocks.py
 
 # 临时调试和修复文件
+test_calc.py
 auto_fix_connections.py
 connection_wrapper.py
 coverage_report.txt
@@ -171,6 +172,9 @@ _ul
 !env.template
 !cert_env_config.template.txt
 setup.cfg
+
+# 部署配置（不忽略）
+!deploy/
 
 # Agent 临时文件
 .playwright-mcp/

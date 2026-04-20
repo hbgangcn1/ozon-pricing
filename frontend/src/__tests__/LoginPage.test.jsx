@@ -20,6 +20,9 @@ vi.mock('../services/api', () => ({
   authAPI: {
     login: vi.fn(),
   },
+  settingsAPI: {
+    get: vi.fn().mockResolvedValue({ open_registration: true }),
+  },
 }));
 
 const mockSetAuth = vi.fn();

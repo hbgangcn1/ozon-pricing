@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Eye, EyeOff, Package, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
-import { authAPI } from '../services/api';
+import { authAPI, settingsAPI } from '../services/api';
 
 const loginSchema = z.object({
   username: z.string().min(1, '请输入用户名'),
@@ -19,6 +19,23 @@ function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [openRegistration, setOpenRegistration] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    settingsAPI.get()
+      .then(data => {
+        if (!cancelled) {
+          setOpenRegistration(data.open_registration !== false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOpenRegistration(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const {
     register,
@@ -139,16 +156,18 @@ function LoginPage() {
           </button>
 
           {/* 注册链接 */}
-          <div className="text-center pt-2">
-            <span className="text-text-muted text-sm">没有账号？</span>
-            <button
-              type="button"
-              onClick={() => navigate('/register')}
-              className="text-primary hover:text-primary-dim text-sm ml-1.5 transition-colors font-medium"
-            >
-              去注册
-            </button>
-          </div>
+          {openRegistration && (
+            <div className="text-center pt-2">
+              <span className="text-text-muted text-sm">没有账号？</span>
+              <button
+                type="button"
+                onClick={() => navigate('/register')}
+                className="text-primary hover:text-primary-dim text-sm ml-1.5 transition-colors font-medium"
+              >
+                去注册
+              </button>
+            </div>
+          )}
         </form>
       </div>
 

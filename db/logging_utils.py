@@ -39,7 +39,7 @@ async def log_user_login(
         )
         session.add(record)
     except Exception:
-        logger.debug("记录用户登录失败", exc_info=True)
+        logger.warning("记录用户登录失败", exc_info=True)
 
 
 async def log_user_behavior(
@@ -58,7 +58,7 @@ async def log_user_behavior(
         )
         session.add(record)
     except Exception:
-        logger.debug("记录用户行为失败", exc_info=True)
+        logger.warning("记录用户行为失败", exc_info=True)
 
 
 async def log_admin_action(
@@ -81,7 +81,7 @@ async def log_admin_action(
         )
         session.add(record)
     except Exception:
-        logger.debug("记录管理员操作失败", exc_info=True)
+        logger.warning("记录管理员操作失败", exc_info=True)
 
 
 async def create_alert(
@@ -104,5 +104,5 @@ async def create_alert(
         await session.flush()
         return record.id
     except Exception:
-        logger.debug("创建告警失败", exc_info=True)
+        logger.warning("创建告警失败", exc_info=True)
         return None

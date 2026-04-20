@@ -5,8 +5,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.user import User
 
 from api.dependencies import (
     EXCEL_ALLOWED_TIERS,
@@ -15,7 +18,8 @@ from api.dependencies import (
     require_admin,
 )
 from database import get_db
-from db.logistics_crud import create_logistics
+from db.logistics_crud import create_logistics, get_logistics_by_filters
+from db.plans import get_plan_by_code
 from db.priority_group import recalculate_priority_groups
 from db.logistics_pool import delete_all, get_all, get_by_id, insert_row, set_active
 from xlsx_import import parse_file
@@ -46,6 +50,47 @@ def _sanitize_pool_data(data: dict) -> dict:
     if data.get("max_days") is None:
         data["max_days"] = 0
     return data
+
+
+async def _get_user_subscription(
+    session: AsyncSession,
+    user_id: int,
+) -> tuple[str, str]:
+    from sqlalchemy import text
+    result = await session.execute(
+        text("SELECT role, subscription_type FROM users WHERE id = :user_id"),
+        {"user_id": user_id}
+    )
+    row = result.one_or_none()
+    if not row:
+        return ("", "free")
+    return (row[0], row[1] or "free")
+
+
+async def _check_logistics_limit(
+    session: AsyncSession,
+    user_id: int,
+    import_count: int,
+) -> None:
+    user_role, subscription_type = await _get_user_subscription(session, user_id)
+
+    if user_role == "admin":
+        return
+
+    plan = await get_plan_by_code(session, subscription_type)
+    if not plan:
+        return
+
+    limit = plan.get("logistics_limit", -1)
+    if limit == -1:
+        return
+
+    _, current_count = await get_logistics_by_filters(session, user_id)
+    if current_count + import_count > limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"您的订阅等级（{plan.get('plan_name', subscription_type)}）最多只能添加 {limit} 条物流规则",
+        )
 
 
 class ActiveBody(BaseModel):
@@ -160,6 +205,7 @@ async def add_to_my_logistics(
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
+    await _check_logistics_limit(session, user_id, 1)
     item = await get_by_id(session, pool_id)
     if not item:
         raise HTTPException(status_code=404, detail="物流池条目不存在")
@@ -180,6 +226,7 @@ async def batch_add_to_my_logistics(
         raise HTTPException(status_code=400, detail="ids 不能为空")
     if len(body.ids) > 200:
         raise HTTPException(status_code=400, detail="单次最多添加 200 条")
+    await _check_logistics_limit(session, user_id, len(body.ids))
     added = []
     not_found = []
     errors: list[str] = []

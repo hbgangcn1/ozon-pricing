@@ -111,7 +111,7 @@ async def get_plans_route(
         plans = await get_plans(session, active_only=active_only)
     except Exception as e:
         logger.exception(f"获取套餐列表失败: {e}")
-        return []
+        raise HTTPException(status_code=500, detail="获取套餐列表失败")
     return [_to_plan_response(plan) for plan in plans]
 
 

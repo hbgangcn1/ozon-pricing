@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -307,12 +308,13 @@ class TestPricing:
         with client.stream("GET", "/api/pricing/progress") as r:
             assert r.status_code == 200
 
+    @patch("api.routes.pricing.decrement_user_calculations", new_callable=AsyncMock)
     @patch("api.routes.pricing.calculate_pricing")
     @patch("api.routes.pricing.get_user_logistics")
     @patch("api.routes.pricing.get_fallback_exchange_rate")
     @patch("api.routes.pricing.get_fallback_usd_rate")
     def test_calculate_detailed_with_product_data_no_id(
-        self, mock_usd, mock_rate, mock_logistics, mock_calc
+        self, mock_usd, mock_rate, mock_logistics, mock_calc, mock_decrement
     ):
         mock_rate.return_value = 0.085
         mock_usd.return_value = 7.2
@@ -321,6 +323,7 @@ class TestPricing:
             "suggested_price": None,
             "filtered_logistics": {"land": [], "air": []},
         }
+        mock_decrement.return_value = True
         payload = {
             "mode": "detailed",
             "product_data": {
@@ -336,7 +339,9 @@ class TestPricing:
         )
         assert r.status_code == 200
 
-    def test_calculate_detailed_no_product_data_no_id(self):
+    @patch("api.routes.pricing.decrement_user_calculations", new_callable=AsyncMock)
+    def test_calculate_detailed_no_product_data_no_id(self, mock_decrement):
+        mock_decrement.return_value = False
         payload = {
             "mode": "detailed",
         }
@@ -345,10 +350,16 @@ class TestPricing:
             json=payload,
             headers={"Authorization": "Bearer faketoken"},
         )
-        assert r.status_code == 400
+        assert r.status_code == 403
 
 
 class TestSettings:
+    @pytest.fixture(autouse=True)
+    def _ensure_admin_override(self):
+        app.dependency_overrides[dependencies.require_admin] = lambda: 1
+        yield
+        app.dependency_overrides.pop(dependencies.require_admin, None)
+
     @patch("api.routes.settings._load_backup_service")
     @patch("api.routes.settings.get_all_config", new_callable=AsyncMock)
     def test_get_settings(self, mock_config, mock_bs):
@@ -442,12 +453,21 @@ class TestSettings:
 
     @patch("api.routes.settings._load_backup_service")
     def test_download_backup(self, mock_bs):
-        mock_bs.return_value = _make_backup_service_tuple()
-        r = client.get(
-            "/api/settings/backup/myfile.dump/download",
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
+        fd, tmp_path = tempfile.mkstemp(suffix=".dump")
+        try:
+            os.write(fd, b"data")
+            os.close(fd)
+            tup = list(_make_backup_service_tuple())
+            tup[0].get_backup_file_path.return_value = tmp_path
+            mock_bs.return_value = tuple(tup)
+            r = client.get(
+                "/api/settings/backup/myfile.dump/download",
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert r.status_code == 200
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     @patch("api.routes.settings._load_backup_service")
     def test_download_backup_bad_extension(self, mock_bs):

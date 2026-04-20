@@ -19,7 +19,7 @@
 - **生产服务器**：`SERVER_IP` (`/var/www/ozon-pricing`)
 - **数据库**：PostgreSQL (logistics) - 36个真实用户，19张表
 - **部署方式**：git pull + systemd
-- **目标分支**：`release/v1`
+- **目标分支**：`main`
 
 ---
 
@@ -715,3 +715,50 @@ frontend/tests/
 ### Phase 21: 套餐编辑"无限"开关 UI ✅
 
 已在 Phase 18 开发周期中实现完成。`PlanManagementPage.jsx` 的 PlanEditForm 已包含 calcLimit 和 logisticsTemplate 的 Switch 无限切换（-1）+ 恢复上次数值（_prev 临时字段）+ handleSubmit 剔除临时字段。
+
+### Phase 22: 生产部署 🔄
+
+**目标**: 将新架构（FastAPI + React）部署到生产服务器 `SERVER_IP`，替换旧 Streamlit 架构
+
+#### 服务器环境概要
+
+| 项目 | 值 |
+|------|---|
+| 服务器 | SERVER_IP (腾讯云, Ubuntu 20.04, 2CPU, 3.6GB RAM) |
+| 域名 | cbprice.cn / www.cbprice.cn |
+| SSL | 自定义证书 /etc/nginx/ssl/ |
+| PostgreSQL | 12.22, localhost:5432, DB=logistics |
+| Python | venv 中 3.13 |
+| Node.js | 未安装（前端在本地构建后上传） |
+| 旧服务 | streamlit-app.service + pricing-api.service |
+
+#### 部署配置文件（已创建 ✅）
+
+| 文件 | 描述 |
+|------|------|
+| `deploy/fastapi-app.service` | systemd 服务（gunicorn+uvicorn 3 workers, 127.0.0.1:8003） |
+| `deploy/nginx-cbprice.conf` | nginx 配置（React 静态 + /api/ 反向代理 + SPA fallback） |
+| `deploy/deploy.sh` | 服务器端部署脚本（11 步: 预检→备份→拉代码→装依赖→停旧服务→启新服务→健康检查） |
+| `deploy/rollback.sh` | 回滚脚本（恢复 Streamlit 架构） |
+
+#### 部署步骤
+
+| 步骤 | 在哪执行 | 命令 | 状态 |
+|------|----------|------|------|
+| 1 | 本地 | `cd frontend && npm run build` | ⬜ |
+| 2 | 本地 | `git add . && git commit && git push origin main` | ⬜ |
+| 3 | 本地 | `scp -r frontend/dist/ SSH_USER@SERVER_IP:/var/www/ozon-pricing/frontend/dist/` | ⬜ |
+| 4 | 服务器 | 更新 `.env` 添加 JWT_SECRET_KEY, ALLOWED_ORIGINS, SESSION_SECRET 等 | ⬜ |
+| 5 | 服务器 | `bash deploy/deploy.sh` | ⬜ |
+| 6 | 服务器 | 验证 https://www.cbprice.cn 和 /api/docs | ⬜ |
+
+#### 服务器 .env 需新增
+
+```
+JWT_SECRET_KEY=<用 python -c "import secrets; print(secrets.token_urlsafe(64))" 生成>
+SESSION_SECRET=<用 python -c "import secrets; print(secrets.token_urlsafe(32))" 生成>
+SESSION_HMAC_SECRET=<用 python -c "import secrets; print(secrets.token_urlsafe(64))" 生成>
+ALLOWED_ORIGINS=https://cbprice.cn,https://www.cbprice.cn
+DB_POOL_SIZE=5
+DB_POOL_MAX=15
+```

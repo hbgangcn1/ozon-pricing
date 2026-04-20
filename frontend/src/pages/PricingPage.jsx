@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog'
 import { Badge } from '../components/ui/badge'
 import { toast } from 'sonner'
-import { pricingAPI, productsAPI, commissionCategoriesAPI, logisticsAPI } from '../services/api'
+import { pricingAPI, productsAPI, commissionCategoriesAPI, logisticsAPI, authAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { Settings2, ChevronDown } from 'lucide-react'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../components/ui/collapsible'
@@ -584,6 +584,12 @@ export default function PricingPage() {
       const response = await pricingAPI.calculate(null, 'fast', productData)
       setFastResult(response)
       toast.dismiss(); toast.success('计算完成')
+      if (['free', 'monthly'].includes(user?.user_type)) {
+        try {
+          const me = await authAPI.getMe()
+          useAuthStore.getState().setUser(me)
+        } catch {}
+      }
     } catch (error) {
       toast.error(getApiError(error) || '计算失败')
     } finally {
@@ -681,6 +687,12 @@ export default function PricingPage() {
       setPreciseResult(response)
       setGroupedResult(groupedResponse)
       toast.dismiss(); toast.success('计算完成')
+      if (['free', 'monthly'].includes(user?.user_type)) {
+        try {
+          const me = await authAPI.getMe()
+          useAuthStore.getState().setUser(me)
+        } catch {}
+      }
     } catch (error) {
       toast.error(getApiError(error) || '计算失败')
     } finally {
@@ -996,6 +1008,12 @@ export default function PricingPage() {
           <Link to="/logistics" className="ml-auto text-sm text-indigo-400 hover:text-indigo-300 underline">
             前往物流管理
           </Link>
+        </div>
+      )}
+
+      {['free', 'monthly'].includes(user?.user_type) && (
+        <div className="text-xs text-muted-foreground text-center mb-2">
+          剩余 {user?.remaining_calculations ?? 0} 次计算
         </div>
       )}
 

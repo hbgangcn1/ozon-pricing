@@ -12,11 +12,20 @@ const apiClient = axios.create({
   },
 })
 
+function getCsrfToken() {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
 if (import.meta.env.MODE !== 'test') {
   apiClient.interceptors.request.use((config) => {
     const token = useAuthStore.getState().token;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken
     }
     return config;
   });

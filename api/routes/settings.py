@@ -1,9 +1,10 @@
+import asyncio
 import logging
 import os
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, cast
 from datetime import datetime
@@ -117,7 +118,7 @@ async def update_open_registration(
 @router.get("/backups", response_model=List[BackupInfo])
 async def get_backups(admin: int = Depends(require_admin)):
     _, _, _, _, _, _, list_backup_files, _, _, _, _ = _load_backup_service()
-    records = list_backup_files()
+    records = await asyncio.to_thread(list_backup_files)
 
     backups = []
     for r in records:
@@ -152,7 +153,7 @@ async def create_backup(admin: int = Depends(require_admin)):
     _, _, _, create_manual_backup, _, _, _, _, _, _, _ = _load_backup_service()
 
     try:
-        success = create_manual_backup()
+        success = await asyncio.to_thread(create_manual_backup)
         if success:
             return MessageResponse(message="备份成功")
         else:
@@ -184,8 +185,7 @@ async def get_backup_settings(admin: int = Depends(require_admin)):
                 datetime.now() + timedelta(hours=settings.get("interval_hours", 6))
             ).strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
-            logger.debug("计算下次备份时间失败", exc_info=True)
-            pass
+            logger.warning("计算下次备份时间失败", exc_info=True)
 
     return BackupSettingsResponse(
         enabled=settings.get("enabled", True),
@@ -233,7 +233,7 @@ async def update_backup_settings(
 @router.get("/backup/stats", response_model=BackupStatsResponse)
 async def get_backup_stats(admin: int = Depends(require_admin)):
     _, _, _, _, _, _, _, get_backup_info, _, _, _ = _load_backup_service()
-    stats = get_backup_info()
+    stats = await asyncio.to_thread(get_backup_info)
 
     files = []
     for r in stats.get("files", []):
@@ -270,7 +270,7 @@ async def get_backup_stats(admin: int = Depends(require_admin)):
 
 @router.get("/backup/{filename}/download")
 async def download_backup(filename: str, admin: int = Depends(require_admin)):
-    _, _, _, _, _, _, _, _, _, read_backup_file, _ = _load_backup_service()
+    backup_system, _, _, _, _, _, _, _, _, _, _ = _load_backup_service()
 
     filename = _sanitize_backup_filename(filename)
 
@@ -278,21 +278,29 @@ async def download_backup(filename: str, admin: int = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="只允许下载 .dump 文件")
 
     try:
-        data = read_backup_file(filename)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="备份文件不存在")
-    except Exception as e:
-        logger.exception("读取备份文件失败: %s", e)
-        raise HTTPException(status_code=500, detail="读取文件失败，请联系管理员")
+        file_path = backup_system.get_backup_file_path(filename)
 
-    return StreamingResponse(
-        iter([data]),
-        media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Length": str(len(data)),
-        },
-    )
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=404, detail="备份文件不存在"
+            )
+
+        return FileResponse(
+            path=file_path,
+            media_type="application/octet-stream",
+            filename=filename,
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404, detail="备份文件不存在"
+        )
+    except Exception:
+        logger.exception("下载备份文件失败: %s", filename)
+        raise HTTPException(
+            status_code=500, detail="读取文件失败，请联系管理员"
+        )
 
 
 @router.delete("/backup/{filename}", response_model=MessageResponse)
@@ -305,7 +313,7 @@ async def delete_backup(filename: str, admin: int = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="只允许删除 .dump 文件")
 
     try:
-        success = delete_backup_file(filename)
+        success = await asyncio.to_thread(delete_backup_file, filename)
         if success:
             return MessageResponse(message=f"已删除: {filename}")
         else:
@@ -337,7 +345,8 @@ async def restore_backup(
         raise HTTPException(status_code=400, detail="只允许从 .dump 文件恢复")
 
     try:
-        success = restore_database(
+        success = await asyncio.to_thread(
+            restore_database,
             filename,
             create_snapshot=req.create_snapshot,
         )

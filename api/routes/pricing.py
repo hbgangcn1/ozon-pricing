@@ -27,6 +27,7 @@ from db.products import get_product_by_id
 from models.user import User
 from pricing.calculate_pricing import calculate_pricing, calculate_pricing_grouped
 from pricing.commission import fetch_commission_category
+from db.subscriptions import decrement_user_calculations
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,12 @@ async def calculate(
                 status_code=403, detail="免费版和效率版用户不能使用精准模式"
             )
 
+    allowed = await decrement_user_calculations(session, user_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=403, detail="今日计算次数已用完，请明天再来或升级套餐"
+        )
+
     if mode == "fast":
         product = request.product_data or {}
     else:
@@ -259,6 +266,12 @@ async def calculate_grouped(
             raise HTTPException(
                 status_code=403, detail="免费版和效率版用户不能使用精准模式"
             )
+
+    allowed = await decrement_user_calculations(session, user_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=403, detail="今日计算次数已用完，请明天再来或升级套餐"
+        )
 
     if mode == "fast":
         product = request.product_data or {}

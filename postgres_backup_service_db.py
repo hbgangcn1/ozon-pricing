@@ -233,8 +233,8 @@ class PostgresBackupDatabaseMixin:
                 )
                 dropped += 1
                 continue
-            except psycopg2.Error:
-                pass
+            except psycopg2.Error as e:
+                logger.debug("DROP TABLE %s 失败: %s", table, e)
 
             try:
                 cur.execute(
@@ -257,8 +257,8 @@ class PostgresBackupDatabaseMixin:
                         sql.Identifier(row[0])
                     )
                 )
-            except psycopg2.Error:
-                pass
+            except psycopg2.Error as e:
+                logger.debug("DROP SEQUENCE %s 失败: %s", row[0], e)
 
         cur.execute(
             "SELECT typname FROM pg_type t "
@@ -273,8 +273,8 @@ class PostgresBackupDatabaseMixin:
                         sql.Identifier(row[0])
                     )
                 )
-            except psycopg2.Error:
-                pass
+            except psycopg2.Error as e:
+                logger.debug("DROP TYPE %s 失败: %s", row[0], e)
 
         logger.info(
             "  对象清理: 删除 {} 个表, 清空 {} 个表, 失败 {} 个表",

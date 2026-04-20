@@ -11,6 +11,8 @@ from pathlib import Path
 os.environ["E2E_TEST"] = "1"
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-do-not-use-in-production")
 
+_original_import_module_fn = None
+
 
 def pytest_ignore_collect(collection_path, config):
     """忽略收集某些文件"""
@@ -70,6 +72,8 @@ def pytest_sessionstart(session):
 
     # 替换 importlib.import_module
     importlib.import_module = mock_import_module
+    global _original_import_module_fn
+    _original_import_module_fn = original_import_module
 
     # Mock redis_cache.get_redis_client 以防止 Redis 连接超时
     # 这必须在导入任何可能使用 Redis 的模块之前完成
@@ -212,6 +216,14 @@ def pytest_sessionstart(session):
 def pytest_sessionfinish(session, exitstatus):
     _ = session
     _ = exitstatus
+
+    # 恢复 importlib.import_module
+    import importlib
+    global _original_import_module_fn
+    if _original_import_module_fn is not None:
+        importlib.import_module = _original_import_module_fn
+        _original_import_module_fn = None
+
     try:
         import psycopg2
 

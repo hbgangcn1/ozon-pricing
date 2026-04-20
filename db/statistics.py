@@ -188,7 +188,7 @@ async def get_dashboard_stats(session: AsyncSession) -> dict:
         try:
             return json.loads(cached)
         except Exception:
-            logger.warning("统计缓存JSON解析失败: key=%s", cache_key, exc_info=True)
+            logger.error("统计缓存JSON解析失败: key=%s", cache_key, exc_info=True)
 
     try:
         current_time = int(time.time())
@@ -218,7 +218,7 @@ async def get_dashboard_stats(session: AsyncSession) -> dict:
         )
         return result
     except Exception:
-        logger.warning("获取总览数据失败", exc_info=True)
+        logger.error("获取总览数据失败", exc_info=True)
         return {}
 
 

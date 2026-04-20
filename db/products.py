@@ -112,8 +112,15 @@ async def add_product(
 async def get_all_products_for_user(
     session: AsyncSession,
     user_id: int,
+    *,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
 ) -> list:
     stmt = select(Product).where(Product.user_id == user_id).order_by(Product.id.desc())
+    if offset is not None:
+        stmt = stmt.offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     rows = result.scalars().all()
     return [_product_to_dict(p) for p in rows]

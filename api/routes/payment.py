@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Literal, Optional
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user_id
 from database import get_db
+from db.config import is_registration_open
 from db.plans import get_plan_by_code, get_plan_price
 from services.payment_service import PaymentService
 
@@ -82,7 +84,11 @@ async def create_payment(
     session: AsyncSession = Depends(get_db),
     svc: PaymentService = Depends(get_payment_service),
 ):
-    plan_price = await get_plan_price(session, req.plan_code, req.billing_cycle)
+    is_open = await is_registration_open(session)
+    use_test_price = not is_open
+    plan_price = await get_plan_price(
+        session, req.plan_code, req.billing_cycle, use_test_price=use_test_price
+    )
     if plan_price is None or _to_cents(plan_price) != _to_cents(req.amount):
         return JSONResponse(
             status_code=400,
@@ -112,7 +118,8 @@ async def create_payment(
             },
         )
 
-    result = wechat_pay_v3.create_native_order(
+    result = await asyncio.to_thread(
+        wechat_pay_v3.create_native_order,
         order.order_id,
         amount_cents,
         order.description,
@@ -161,10 +168,6 @@ async def payment_notify(
         "body": body,
     }
     known_order_id = _extract_order_id_from_body(body)
-    if known_order_id:
-        existing_order = await svc.get_order(known_order_id)
-        if existing_order and existing_order.status != "PENDING":
-            return NotifyResponse(code="SUCCESS", message="成功")
 
     if not _wechat_available or wechat_pay_v3 is None:
         return JSONResponse(
@@ -172,7 +175,9 @@ async def payment_notify(
             content={"code": "FAIL", "message": "签名验证失败"},
         )
 
-    result = wechat_pay_v3.process_notify(request_data)
+    result = await asyncio.to_thread(
+        wechat_pay_v3.process_notify, request_data,
+    )
     if not result.get("success"):
         message = result.get("message", "通知处理失败")
         logger.warning("微信支付通知处理失败: %s", message)
@@ -191,7 +196,7 @@ async def payment_notify(
         try:
             await svc.handle_payment_success(out_trade_no)
         except Exception:
-            logger.warning("处理支付成功失败: %s", out_trade_no, exc_info=True)
+            logger.error("处理支付成功失败: %s", out_trade_no, exc_info=True)
 
     return NotifyResponse(code="SUCCESS", message="成功")
 
@@ -218,13 +223,13 @@ async def get_payment_status(
             status=order.status or "PENDING",
         )
 
-    result = wechat_pay_v3.query_order(order_id)
+    result = await asyncio.to_thread(wechat_pay_v3.query_order, order_id)
     trade_state = result.get("trade_state") if result.get("success") else None
     if trade_state == "SUCCESS":
         try:
             await svc.handle_payment_success(order_id)
         except Exception:
-            logger.warning("查询时处理支付成功失败: %s", order_id, exc_info=True)
+            logger.error("查询时处理支付成功失败: %s", order_id, exc_info=True)
 
     return PaymentStatusResponse(
         order_id=order_id,

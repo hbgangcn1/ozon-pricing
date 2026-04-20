@@ -10,6 +10,9 @@ vi.mock('../services/api', () => ({
   authAPI: {
     register: vi.fn(),
   },
+  settingsAPI: {
+    get: vi.fn().mockResolvedValue({ open_registration: true }),
+  },
 }));
 
 vi.mock('../stores/authStore', () => ({

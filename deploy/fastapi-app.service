@@ -1,0 +1,47 @@
+[Unit]
+Description=CBPrice FastAPI Application (cbprice.cn)
+After=network.target postgresql@12-main.service
+Requires=postgresql@12-main.service
+
+[Service]
+Type=exec
+User=SSH_USER
+Group=SSH_USER
+WorkingDirectory=/var/www/ozon-pricing
+EnvironmentFile=/var/www/ozon-pricing/.env
+Environment=PRODUCTION_MODE=true
+
+# Gunicorn + Uvicorn workers
+# 3 workers 适合 2 CPU / 3.6GB RAM 的服务器
+# 绑定 127.0.0.1 — 仅通过 nginx 反向代理访问
+ExecStart=/var/www/ozon-pricing/venv/bin/gunicorn api.main:app \
+    -k uvicorn.workers.UvicornWorker \
+    -w 3 \
+    -b 127.0.0.1:8003 \
+    --access-logfile /var/log/cbprice/access.log \
+    --error-logfile /var/log/cbprice/error.log \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --max-requests 1000 \
+    --max-requests-jitter 50
+
+# 自动重启策略
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/ozon-pricing /var/log/cbprice
+PrivateTmp=true
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cbprice
+
+[Install]
+WantedBy=multi-user.target

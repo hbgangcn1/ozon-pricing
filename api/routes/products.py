@@ -71,8 +71,10 @@ async def get_products(
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
-    products = await get_all_products_for_user(session, user_id)
-    return products[offset : offset + limit]
+    products = await get_all_products_for_user(
+        session, user_id, limit=limit, offset=offset,
+    )
+    return products
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
@@ -154,10 +156,15 @@ async def preview_product_import(
     if suffix not in (".xlsx", ".xls"):
         raise HTTPException(status_code=400, detail="仅支持 .xlsx 或 .xls 文件")
 
+    MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="文件大小不能超过 10MB")
+
     temp_path = ""
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            temp_file.write(await file.read())
+            temp_file.write(contents)
             temp_path = temp_file.name
 
         if suffix == ".xlsx":

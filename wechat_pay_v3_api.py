@@ -66,6 +66,7 @@ class WeChatPayV3API:
                 else:
                     return None
         except (OSError, IOError, ValueError, TypeError):
+            logger.warning("加载商户私钥失败", exc_info=True)
             return None
 
     @staticmethod
@@ -213,6 +214,7 @@ class WeChatPayV3API:
                 }
 
         except Exception as e:
+            logger.error("JSAPI下单失败: %s", e, exc_info=True)
             return {"success": False, "message": f"网络请求失败: {str(e)}"}
 
     def create_native_order(
@@ -274,6 +276,7 @@ class WeChatPayV3API:
                 }
 
         except Exception as e:
+            logger.error("Native下单失败: %s", e, exc_info=True)
             return {"success": False, "message": f"网络请求失败: {str(e)}"}
 
     def query_order(self, order_id: str) -> Dict[str, Any]:
@@ -311,6 +314,7 @@ class WeChatPayV3API:
                 }
 
         except Exception as e:
+            logger.error("查询订单失败: %s", e, exc_info=True)
             return {"success": False, "message": f"网络请求失败: {str(e)}"}
 
     def verify_notify_signature(
@@ -391,7 +395,7 @@ class WeChatPayV3API:
             return decrypted_json
 
         except (ValueError, TypeError, KeyError, json.JSONDecodeError):
-            # 移除详细的解密失败信息输出
+            logger.warning("解密回调数据失败", exc_info=True)
             return {}
 
     def process_notify(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -483,6 +487,7 @@ class WeChatPayV3API:
                 return {"success": False, "message": "非支付成功通知"}
 
         except Exception as e:
+            logger.error("处理支付通知失败: %s", e, exc_info=True)
             return {"success": False, "message": f"通知处理失败: {str(e)}"}
 
     def verify_notify_signature_with_public_key(
@@ -534,6 +539,7 @@ class WeChatPayV3API:
             return True
 
         except (OSError, IOError, ValueError, TypeError):
+            logger.warning("验证回调签名失败", exc_info=True)
             return False
 
 

@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 
 MAX_TRACKED_KEYS = 10000
 MAX_TIMESTAMPS_PER_IP = 500
+_RATE_LIMIT_PREFIX = "ratelimit:"
+
+
+def _try_get_redis():
+    try:
+        from redis_cache import get_redis_client
+        return get_redis_client()
+    except Exception:
+        return None
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -40,6 +49,37 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return peer_ip
 
+    def _check_rate_limit_redis(self, client_ip: str, redis_client) -> bool:
+        key = f"{_RATE_LIMIT_PREFIX}{client_ip}"
+        pipe = redis_client.pipeline(transaction=True)
+        now = time.time()
+        window_start = now - self.window_seconds
+        pipe.zremrangebyscore(key, 0, window_start)
+        pipe.zcard(key)
+        pipe.zadd(key, {str(now): now})
+        pipe.expire(key, self.window_seconds)
+        results = pipe.execute()
+        current_count = results[1]
+        if current_count >= self.max_requests:
+            redis_client.zrem(key, str(now))
+            return False
+        return True
+
+    def _check_rate_limit_memory(self, client_ip: str) -> bool:
+        current_time = time.time()
+        self.requests[client_ip] = [
+            req_time
+            for req_time in self.requests[client_ip]
+            if current_time - req_time < self.window_seconds
+        ][-MAX_TIMESTAMPS_PER_IP:]
+
+        if len(self.requests[client_ip]) >= self.max_requests:
+            return False
+
+        self._evict_oldest_keys()
+        self.requests[client_ip].append(current_time)
+        return True
+
     def _evict_oldest_keys(self):
         if len(self.requests) >= MAX_TRACKED_KEYS:
             oldest_keys = sorted(
@@ -57,18 +97,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self._is_production and client_ip in self._LOCALHOST_IPS:
             return await call_next(request)
 
-        current_time = time.time()
+        redis_client = _try_get_redis()
+        if redis_client is not None:
+            try:
+                allowed = self._check_rate_limit_redis(client_ip, redis_client)
+            except Exception:
+                logger.warning("Redis限流检查失败，回退到内存限流", exc_info=True)
+                allowed = self._check_rate_limit_memory(client_ip)
+        else:
+            allowed = self._check_rate_limit_memory(client_ip)
 
-        self.requests[client_ip] = [
-            req_time
-            for req_time in self.requests[client_ip]
-            if current_time - req_time < self.window_seconds
-        ][-MAX_TIMESTAMPS_PER_IP:]
-
-        if len(self.requests[client_ip]) >= self.max_requests:
+        if not allowed:
             raise HTTPException(status_code=429, detail="Too many requests")
 
-        self._evict_oldest_keys()
-        self.requests[client_ip].append(current_time)
         response = await call_next(request)
         return response

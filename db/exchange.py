@@ -23,7 +23,7 @@ async def get_exchange_rate_fallback(
         value = result.scalar_one_or_none()
         return value if value is not None else None
     except Exception:
-        logger.warning("从数据库获取汇率失败", exc_info=True)
+        logger.error("从数据库获取汇率失败", exc_info=True)
         return None
 
 
@@ -53,4 +53,4 @@ async def update_exchange_rate_fallback(
             )
             session.add(record)
     except Exception:
-        logger.warning("更新汇率 fallback 失败", exc_info=True)
+        logger.error("更新汇率 fallback 失败", exc_info=True)

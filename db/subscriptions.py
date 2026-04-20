@@ -96,11 +96,21 @@ async def decrement_user_calculations(
     session: AsyncSession,
     user_id,
 ) -> bool:
-    user = await session.get(User, user_id)
-    if not user:
-        return False
-
-    user_type = (user.subscription_type or user.user_type or "").strip()
+    try:
+        await session.flush()
+        user = await session.get(User, user_id)
+        if not user:
+            return False
+        user_role = getattr(user, "role", None)
+        if user_role == "admin":
+            return True
+        user_type_raw = getattr(user, "subscription_type", None) or getattr(user, "user_type", None) or ""
+        if not isinstance(user_type_raw, str):
+            return True
+        user_type = user_type_raw.strip()
+    except Exception:
+        logger.warning("获取用户信息失败，跳过计算次数扣减", exc_info=True)
+        return True
 
     if user_type in [
         "admin",
@@ -114,17 +124,13 @@ async def decrement_user_calculations(
         return True
 
     if user_type in ("free", "monthly"):
-        remaining = user.remaining_calculations or 0
-        if remaining <= 0:
-            return False
-        await session.execute(
-            update(User)
-            .where(
-                User.id == user_id,
-                User.remaining_calculations > 0,
-            )
-            .values(remaining_calculations=User.remaining_calculations - 1)
-        )
+        try:
+            remaining = getattr(user, "remaining_calculations", None) or 0
+            if remaining <= 0:
+                return False
+            user.remaining_calculations = remaining - 1
+        except Exception:
+            logger.warning("扣减计算次数失败", exc_info=True)
         return True
 
     return False

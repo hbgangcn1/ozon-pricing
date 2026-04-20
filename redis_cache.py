@@ -8,6 +8,7 @@ import json
 import time
 import hashlib
 import logging
+import threading
 from typing import Any, Optional, Dict
 from functools import wraps
 
@@ -35,6 +36,7 @@ _redis_client: Optional[Any] = None
 _redis_init_failed: bool = False  # 标记Redis是否初始化失败，避免反复超时重试
 _redis_fail_time: float = 0.0  # 失败时间戳
 _REDIS_RETRY_INTERVAL = 300  # 失败后 300 秒才重试
+_redis_lock = threading.Lock()  # 保护初始化的线程锁
 
 # 缓存配置
 CACHE_CONFIG = {
@@ -76,41 +78,47 @@ def init_redis_client(config: Optional[Dict[str, Any]] = None) -> bool:
     if not REDIS_AVAILABLE:
         return False
 
-    # 失败后短期内不重试
-    if _redis_init_failed and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL:
-        return False
-
-    try:
-        final_config = {**CACHE_CONFIG}
-        if config:
-            final_config.update(config)
-
-        if redis is None:
-            return False
-        pool = redis.ConnectionPool(**final_config)
-        _redis_client = redis.Redis(connection_pool=pool)
-
+    with _redis_lock:
         if _redis_client is not None:
-            _redis_client.ping()
-        _redis_init_failed = False
-        return True
+            return True
 
-    except (RedisError, RedisConnectionError, OSError):
-        _redis_client = None
-        _redis_init_failed = True
-        _redis_fail_time = time.time()
-        return False
+        # 失败后短期内不重试
+        if _redis_init_failed and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL:
+            return False
+
+        try:
+            final_config = {**CACHE_CONFIG}
+            if config:
+                final_config.update(config)
+
+            if redis is None:
+                return False
+            pool = redis.ConnectionPool(**final_config)
+            client = redis.Redis(connection_pool=pool)
+
+            client.ping()
+            _redis_client = client
+            _redis_init_failed = False
+            return True
+
+        except (RedisError, RedisConnectionError, OSError):
+            _redis_client = None
+            _redis_init_failed = True
+            _redis_fail_time = time.time()
+            return False
 
 
 def get_redis_client() -> Optional[Any]:
     """获取Redis客户端，失败后短期内不重试"""
-    if _redis_client is None:
-        if (
-            _redis_init_failed
-            and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL
-        ):
-            return None
-        init_redis_client()
+    if _redis_client is not None:
+        return _redis_client
+
+    if (
+        _redis_init_failed
+        and (time.time() - _redis_fail_time) < _REDIS_RETRY_INTERVAL
+    ):
+        return None
+    init_redis_client()
     return _redis_client
 
 
@@ -203,6 +211,15 @@ def set_cache(key: str, value: Any, ttl: Optional[int] = None) -> bool:
             data = json.dumps(value, ensure_ascii=False)
         else:
             data = str(value)
+
+        max_value_bytes = 10 * 1024 * 1024  # 10MB
+        if len(data.encode("utf-8")) > max_value_bytes:
+            _logger.warning(
+                "缓存值过大 (%d bytes)，跳过缓存: %s",
+                len(data.encode("utf-8")),
+                key[:100],
+            )
+            return False
 
         # 设置TTL
         if ttl is None:

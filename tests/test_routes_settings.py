@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -497,9 +498,8 @@ class TestDownloadBackupErrors:
 
     @patch("api.routes.settings._load_backup_service")
     def test_download_file_not_found(self, mock_bs):
-        """FileNotFoundError from read_backup_file → 404."""
         tup = list(_make_tuple())
-        tup[9] = MagicMock(side_effect=FileNotFoundError("no such file"))
+        tup[0].get_backup_file_path.return_value = "/nonexistent/path.dump"
         mock_bs.return_value = tuple(tup)
         r = client.get(
             "/api/settings/backup/myfile.dump/download",
@@ -510,9 +510,11 @@ class TestDownloadBackupErrors:
 
     @patch("api.routes.settings._load_backup_service")
     def test_download_generic_exception(self, mock_bs):
-        """Generic Exception from read_backup_file → 500."""
+        """Generic Exception from get_backup_file_path → 500."""
         tup = list(_make_tuple())
-        tup[9] = MagicMock(side_effect=OSError("permission denied"))
+        tup[0].get_backup_file_path.side_effect = OSError(
+            "permission denied"
+        )
         mock_bs.return_value = tuple(tup)
         r = client.get(
             "/api/settings/backup/myfile.dump/download",
@@ -697,13 +699,22 @@ class TestSuccessPaths:
 
     @patch("api.routes.settings._load_backup_service")
     def test_download_backup_success(self, mock_bs):
-        mock_bs.return_value = _make_tuple(read_file_rv=b"binary_data")
-        r = client.get(
-            "/api/settings/backup/test.dump/download",
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
-        assert r.content == b"binary_data"
+        fd, tmp_path = tempfile.mkstemp(suffix=".dump")
+        try:
+            os.write(fd, b"binary_data")
+            os.close(fd)
+            tup = list(_make_tuple(read_file_rv=b"binary_data"))
+            tup[0].get_backup_file_path.return_value = tmp_path
+            mock_bs.return_value = tuple(tup)
+            r = client.get(
+                "/api/settings/backup/test.dump/download",
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert r.status_code == 200
+            assert r.content == b"binary_data"
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     @patch("api.routes.settings._load_backup_service")
     def test_delete_backup_success(self, mock_bs):

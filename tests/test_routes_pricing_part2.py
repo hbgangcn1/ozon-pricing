@@ -149,7 +149,7 @@ class TestCalculateEndpointPreciseMode:
     @patch("api.routes.pricing.get_user_logistics", new_callable=AsyncMock)
     @patch("api.routes.pricing.get_fallback_exchange_rate")
     @patch("api.routes.pricing.get_fallback_usd_rate")
-    def test_precise_mode_no_user_in_db_allowed(
+    def test_precise_mode_no_user_in_db_denied(
         self, mock_usd, mock_rate, mock_logistics, mock_calc
     ):
         mock_rate.return_value = 0.085
@@ -173,7 +173,7 @@ class TestCalculateEndpointPreciseMode:
                 },
                 headers={"Authorization": "Bearer faketoken"},
             )
-            assert r.status_code == 200
+            assert r.status_code == 403
         finally:
             del app.dependency_overrides[get_db]
 
