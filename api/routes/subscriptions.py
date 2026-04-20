@@ -142,7 +142,7 @@ async def get_current_subscription(
     if not info:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    plan_code = info.get("user_type") or "free"
+    plan_code = info.get("subscription_type") or info.get("user_type") or "free"
     plan = await get_plan_by_code(session, plan_code)
     calc_limit = plan.get("calc_limit", -1) if plan else -1
     logistics_limit = plan.get("logistics_limit", 1) if plan else 1

@@ -60,7 +60,9 @@ class PaymentService:
         order.status = "SUCCESS"
         order.updated_at = current_time
         user.subscription_type = plan_code
+        user.user_type = plan_code
         user.subscription_expires = expiry
+        user.subscription_start = current_time
         user.remaining_calculations = -1
         await self._session.commit()
         logger.info(
