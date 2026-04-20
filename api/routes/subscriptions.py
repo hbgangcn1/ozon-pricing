@@ -89,7 +89,10 @@ def _to_plan_response(
 ) -> PlanResponse:
     features = p.get("features", "")
     if isinstance(features, str):
-        features = features.split(",") if features else []
+        features = (
+            [f.strip() for f in features.split("|")]
+            if features else []
+        )
 
     actual_m = p.get("actual_price_month", 0)
     actual_y = p.get("actual_price_year", 0)
@@ -166,7 +169,7 @@ async def create_plan_route(
 ):
     del admin_id
     data = req.model_dump()
-    data["features"] = ",".join(data["features"])
+    data["features"] = "|".join(data["features"])
     plan_id = await create_plan(session, data)
     await session.commit()
     plan = await get_plan_by_id(session, plan_id)
@@ -185,7 +188,7 @@ async def update_plan_route(
     del admin_id
     data = req.model_dump(exclude_unset=True)
     if "features" in data:
-        data["features"] = ",".join(data["features"])
+        data["features"] = "|".join(data["features"])
     success = await update_plan(session, plan_id, data)
     if not success:
         raise HTTPException(status_code=404, detail="套餐不存在")

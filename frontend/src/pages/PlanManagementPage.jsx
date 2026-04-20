@@ -126,7 +126,7 @@ function PlanCard({ plan, onEdit, isEditing, onDelete, onToggle }) {
 
 function PlanEditForm({ plan, onSave, onCancel, isNew }) {
   const [formData, setFormData] = useState(() => {
-    const data = { ...plan, features: Array.isArray(plan.features) ? plan.features.join(', ') : '' }
+    const data = { ...plan, features: Array.isArray(plan.features) ? plan.features.join('|') : '' }
     for (const f of ['displayPriceMonth', 'displayPriceYear', 'actualPriceMonth', 'actualPriceYear', 'testPriceMonth', 'testPriceYear']) {
       data[f] = Number(data[f] || 0).toFixed(2)
     }
@@ -158,7 +158,7 @@ function PlanEditForm({ plan, onSave, onCancel, isNew }) {
   const handleSubmit = (e) => {
     e.preventDefault()
     const featuresArray = formData.features 
-      ? formData.features.split(',').map(f => f.trim()).filter(f => f)
+      ? formData.features.split('|').map(f => f.trim()).filter(f => f)
       : []
     const { _prevCalcLimit, _prevLogisticsTemplate, ...submitData } = formData
     onSave(plan.id, { ...submitData, features: featuresArray })
@@ -362,7 +362,7 @@ function PlanEditForm({ plan, onSave, onCancel, isNew }) {
           </div>
 
           <div className="space-y-2">
-            <Label>特性列表（用逗号分隔）</Label>
+            <Label>特性列表（用 | 分隔）</Label>
             <Textarea
               rows={2}
               value={formData.features}

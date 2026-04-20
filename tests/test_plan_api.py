@@ -61,7 +61,7 @@ PLAN_DB_ROW = {
     "calc_limit": -1,
     "logistics_limit": 3,
     "description": "测试描述",
-    "features": "功能A,功能B",
+                "features": "功能A|功能B",
     "is_active": 1,
     "sort_order": 99,
     "created_at": "2025-01-01",
@@ -71,7 +71,7 @@ PLAN_DB_ROW = {
 UPDATED_PLAN_DB_ROW = {
     **PLAN_DB_ROW,
     "plan_name": "新名称",
-    "features": "功能A,功能C",
+    "features": "功能A|功能C",
     "is_active": 0,
 }
 
@@ -124,7 +124,7 @@ class TestCreatePlan:
             _mock_session,
             {
                 **SAMPLE_PLAN,
-                "features": "功能A,功能B",
+    "features": "功能A|功能B",
             },
         )
         mock_get.assert_awaited_once_with(_mock_session, 999)
@@ -160,7 +160,7 @@ class TestUpdatePlan:
         mock_update.assert_awaited_once_with(
             _mock_session,
             999,
-            {"plan_name": "新名称", "features": "功能A,功能C"},
+            {"plan_name": "新名称", "features": "功能A|功能C"},
         )
         mock_get.assert_awaited_once_with(_mock_session, 999)
         _mock_session.commit.assert_awaited_once_with()
