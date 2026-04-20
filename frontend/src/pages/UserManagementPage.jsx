@@ -120,7 +120,7 @@ function UserManagementPage() {
       await adminAPI.deleteUser(user.id)
       toast.success(`用户 ${user.username} 已删除`)
       setSelectedUser(null)
-      fetchUsers(currentPage, pageSize, searchText)
+      await fetchUsers(currentPage, pageSize, searchText)
     } catch (error) {
       toast.error(error.response?.data?.detail || '删除用户失败')
     }
