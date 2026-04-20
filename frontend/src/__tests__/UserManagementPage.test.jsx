@@ -181,6 +181,7 @@ describe('UserManagementPage', () => {
   });
 
   it('resets password and shows toast', async () => {
+    adminAPI.resetPassword.mockResolvedValue({});
     render(<UserManagementPage />);
 
     await waitFor(() => {
@@ -197,7 +198,9 @@ describe('UserManagementPage', () => {
     });
 
     fireEvent.click(screen.getByText(/重置密码/));
-    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('密码已重置'));
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('密码已重置'));
+    });
   });
 
   it('shows error toast when getUsers fails', async () => {

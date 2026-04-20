@@ -106,13 +106,24 @@ function UserManagementPage() {
     }
   }
 
-  const handleResetPassword = (user) => {
-    toast.success(`密码已重置为默认密码: ${user.username}123`)
+  const handleResetPassword = async (user) => {
+    try {
+      await adminAPI.resetPassword(user.id)
+      toast.success(`密码已重置为默认密码: ${user.username}123`)
+    } catch (error) {
+      toast.error(error.response?.data?.detail || '重置密码失败')
+    }
   }
 
-  const handleDeleteUser = (user) => {
-    toast.success(`用户 ${user.username} 已删除`)
-    setSelectedUser(null)
+  const handleDeleteUser = async (user) => {
+    try {
+      await adminAPI.deleteUser(user.id)
+      toast.success(`用户 ${user.username} 已删除`)
+      setSelectedUser(null)
+      fetchUsers(currentPage, pageSize, searchText)
+    } catch (error) {
+      toast.error(error.response?.data?.detail || '删除用户失败')
+    }
   }
 
   const handleSyncLogistics = () => {
