@@ -312,6 +312,7 @@ def pytest_sessionfinish(session, exitstatus):
             )
             deleted = c.rowcount
             conn.commit()
+            c.close()
 
             if deleted > 0:
                 print(

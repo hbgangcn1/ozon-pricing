@@ -3,7 +3,7 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -208,7 +208,8 @@ async def calculate(
 
     rate = get_fallback_exchange_rate()
 
-    results = calculate_combo_results(
+    results = await asyncio.to_thread(
+        calculate_combo_results,
         product,
         mode,
         land_rules,
@@ -220,7 +221,8 @@ async def calculate(
     if mode == "precise":
         breakeven_product = dict(product)
         breakeven_product["target_profit_margin"] = Decimal("0")
-        breakeven_results = calculate_combo_results(
+        breakeven_results = await asyncio.to_thread(
+            calculate_combo_results,
             breakeven_product,
             mode,
             land_rules,
@@ -228,8 +230,10 @@ async def calculate(
             rate,
         )
 
-    all_res = calculate_pricing(
-        product, land_rules, air_rules, mode=mode, priority="低价优先"
+    all_res = await asyncio.to_thread(
+        calculate_pricing,
+        product, land_rules, air_rules,
+        mode=mode, priority="低价优先",
     )
     filtered_logistics = all_res.get("filtered_logistics", {"land": [], "air": []})
 
@@ -310,7 +314,8 @@ async def calculate_grouped(
                 user_id=user_id,
             )
 
-    grouped = calculate_pricing_grouped(
+    grouped = await asyncio.to_thread(
+        calculate_pricing_grouped,
         product,
         all_logistics,
         mode=mode,
@@ -322,7 +327,8 @@ async def calculate_grouped(
     if mode == "precise":
         breakeven_product = dict(product)
         breakeven_product["target_profit_margin"] = Decimal("0")
-        breakeven_grouped = calculate_pricing_grouped(
+        breakeven_grouped = await asyncio.to_thread(
+            calculate_pricing_grouped,
             breakeven_product,
             all_logistics,
             mode=mode,
@@ -334,7 +340,10 @@ async def calculate_grouped(
 
 
 @router.get("/progress")
-async def pricing_progress(user_id: int = Depends(get_current_user_id)):
+async def pricing_progress(
+    request: Request,
+    user_id: int = Depends(get_current_user_id),
+):
     async def event_generator():
         import json
 
@@ -349,6 +358,8 @@ async def pricing_progress(user_id: int = Depends(get_current_user_id)):
             ]
 
             for data in progress_data:
+                if await request.is_disconnected():
+                    break
                 yield f"data: {json.dumps(data)}\n\n"
                 await asyncio.sleep(1)
         finally:

@@ -9,7 +9,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     name: Mapped[Optional[str]] = mapped_column(String)
     russian_name: Mapped[Optional[str]] = mapped_column(String)
     category: Mapped[Optional[str]] = mapped_column(String)

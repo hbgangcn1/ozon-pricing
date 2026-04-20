@@ -271,12 +271,16 @@ def delete_cache_pattern(pattern: str) -> int:
         return 0
 
     try:
-        keys = list(client.scan_iter(match=pattern))
-        if not keys:
-            return 0
-
-        result = client.delete(*keys)
-        return result
+        deleted = 0
+        batch: list = []
+        for key in client.scan_iter(match=pattern):
+            batch.append(key)
+            if len(batch) >= 500:
+                deleted += client.delete(*batch)
+                batch = []
+        if batch:
+            deleted += client.delete(*batch)
+        return deleted
     except (RedisError, RedisConnectionError) as e:
         _logger.warning("按模式删除缓存失败: %s", e)
         return 0

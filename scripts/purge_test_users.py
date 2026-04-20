@@ -141,6 +141,7 @@ def main():
         )
         deleted = c.rowcount
         conn.commit()
+        c.close()
         print(f"\nDeleted {deleted} test user(s).")
 
         c.execute(

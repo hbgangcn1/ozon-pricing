@@ -9,7 +9,7 @@ class Logistics(Base):
     __tablename__ = "logistics"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     name: Mapped[Optional[str]] = mapped_column(String)
     type: Mapped[Optional[str]] = mapped_column(String)
     min_days: Mapped[Optional[int]] = mapped_column(Integer)

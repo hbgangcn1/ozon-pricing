@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncGenerator
 from urllib.parse import quote_plus
 
@@ -41,6 +42,13 @@ engine = create_async_engine(
     pool_recycle=3600,
     pool_pre_ping=True,
     echo=False,
+    connect_args={
+        "server_settings": {
+            "statement_timeout": os.environ.get(
+                "DB_STATEMENT_TIMEOUT", "30000"
+            ),
+        },
+    },
 )
 
 AsyncSessionLocal = async_sessionmaker(

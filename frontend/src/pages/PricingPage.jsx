@@ -260,11 +260,15 @@ export default function PricingPage() {
   const preciseLabel = isPreciseDisabled ? '精准模式（限专业版/企业版）' : '精准模式'
 
   const refreshCommissionCategories = useCallback(() => {
-    commissionCategoriesAPI.getAll().then(data => setCommissionCategories(Array.isArray(data) ? data : [])).catch(() => {})
+    commissionCategoriesAPI.getAll().then(data => setCommissionCategories(Array.isArray(data) ? data : [])).catch((err) => {
+      if (err?.name !== 'CanceledError') console.warn('加载佣金分类失败:', err?.message || err)
+    })
   }, [])
 
   const refreshProducts = useCallback(() => {
-    productsAPI.getAll().then(data => setProducts(Array.isArray(data) ? data : [])).catch(() => {})
+    productsAPI.getAll().then(data => setProducts(Array.isArray(data) ? data : [])).catch((err) => {
+      if (err?.name !== 'CanceledError') console.warn('加载产品列表失败:', err?.message || err)
+    })
   }, [])
 
   useEffect(() => {

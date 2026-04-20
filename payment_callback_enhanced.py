@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import logging.handlers
 import time
 import threading
 from typing import Dict, List, Any, Optional
@@ -22,6 +23,19 @@ except ImportError:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     logger = logging.getLogger(__name__)
+
+# 告警日志使用 RotatingFileHandler 防止无限增长
+_alert_logger = logging.getLogger("payment_alerts")
+_alert_handler = logging.handlers.RotatingFileHandler(
+    "payment_alerts.log",
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
+    encoding="utf-8",
+)
+_alert_handler.setFormatter(logging.Formatter("%(message)s"))
+_alert_logger.addHandler(_alert_handler)
+_alert_logger.setLevel(logging.INFO)
+_alert_logger.propagate = False
 
 
 @dataclass
@@ -372,13 +386,13 @@ class PaymentCallbackEnhanced:
     def send_alert_notification(alert: PaymentAlert):
         """发送告警通知"""
         try:
-            alert_file = "payment_alerts.log"
-            with open(alert_file, "a", encoding="utf-8") as f:
-                f.write(
-                    f"{datetime.fromtimestamp(alert.timestamp).isoformat()} "
-                    f"[{alert.level.upper()}] [{alert.alert_type}] "
-                    f"{alert.message}\n"
-                )
+            _alert_logger.info(
+                "%s [%s] [%s] %s",
+                datetime.fromtimestamp(alert.timestamp).isoformat(),
+                alert.level.upper(),
+                alert.alert_type,
+                alert.message,
+            )
         except Exception as e:
             logger.error(f"写入告警日志失败: {e}")
 

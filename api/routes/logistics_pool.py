@@ -26,6 +26,7 @@ from xlsx_import import parse_file
 
 router = APIRouter(prefix="/api/logistics-pool", tags=["物流池"])
 logger = logging.getLogger(__name__)
+_MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 _COPY_EXCLUDE = {"id", "source_file", "imported_at", "is_active"}
 _VALID_VOLUME_MODES = {"none", "max_actual_vs_volume", "longest_side", "sum_of_sides"}
 
@@ -134,8 +135,17 @@ async def import_logistics_pool(
     _ensure_enterprise_excel_access(user)
     temp_path = ""
     try:
+        content = await file.read()
+        if len(content) > _MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"文件大小超过限制"
+                    f"（最大 {_MAX_UPLOAD_SIZE // 1024 // 1024}MB）"
+                ),
+            )
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
-            temp_file.write(await file.read())
+            temp_file.write(content)
             temp_path = temp_file.name
         try:
             result = parse_file(temp_path, source_file=file.filename or None)
