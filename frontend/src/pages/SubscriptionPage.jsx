@@ -90,9 +90,9 @@ function SubscriptionPage() {
   const getSelectedPrice = useCallback(() => {
     if (!selectedPlan) return 0
     if (billingCycle === 'month') {
-      return Number(selectedPlan.actual_price_month || selectedPlan.display_price_month || 0)
+      return Number(selectedPlan.effective_price_month ?? selectedPlan.actual_price_month ?? 0)
     }
-    return Number(selectedPlan.actual_price_year || selectedPlan.display_price_year || 0)
+    return Number(selectedPlan.effective_price_year ?? selectedPlan.actual_price_year ?? 0)
   }, [selectedPlan, billingCycle])
 
   const handleConfirmPayment = useCallback(() => {

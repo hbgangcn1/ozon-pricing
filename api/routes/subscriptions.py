@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user_id, require_admin
 from database import get_db
+from db.config import is_registration_open
 from db.plans import (
     create_plan,
     delete_plan,
@@ -30,6 +31,9 @@ class PlanResponse(BaseModel):
     actual_price_year: float
     test_price_month: float
     test_price_year: float
+    effective_price_month: float
+    effective_price_year: float
+    use_test_price: bool
     calc_limit: int
     logistics_limit: int
     sort: int
@@ -79,20 +83,32 @@ class PlanUpdateRequest(BaseModel):
     is_active: Optional[int] = None
 
 
-def _to_plan_response(p: dict) -> PlanResponse:
+def _to_plan_response(
+    p: dict,
+    use_test_price: bool = False,
+) -> PlanResponse:
     features = p.get("features", "")
     if isinstance(features, str):
         features = features.split(",") if features else []
+
+    actual_m = p.get("actual_price_month", 0)
+    actual_y = p.get("actual_price_year", 0)
+    test_m = p.get("test_price_month", 0)
+    test_y = p.get("test_price_year", 0)
+
     return PlanResponse(
         id=p["id"],
         code=p["plan_code"],
         name=p["plan_name"],
         display_price_month=p.get("display_price_month", 0),
         display_price_year=p.get("display_price_year", 0),
-        actual_price_month=p.get("actual_price_month", 0),
-        actual_price_year=p.get("actual_price_year", 0),
-        test_price_month=p.get("test_price_month", 0),
-        test_price_year=p.get("test_price_year", 0),
+        actual_price_month=actual_m,
+        actual_price_year=actual_y,
+        test_price_month=test_m,
+        test_price_year=test_y,
+        effective_price_month=test_m if use_test_price else actual_m,
+        effective_price_year=test_y if use_test_price else actual_y,
+        use_test_price=use_test_price,
         calc_limit=p.get("calc_limit", -1),
         logistics_limit=p.get("logistics_limit", 1),
         sort=p.get("sort_order", 0),
@@ -108,11 +124,13 @@ async def get_plans_route(
     session: AsyncSession = Depends(get_db),
 ):
     try:
+        is_open = await is_registration_open(session)
+        use_test = not is_open
         plans = await get_plans(session, active_only=active_only)
     except Exception as e:
         logger.exception(f"获取套餐列表失败: {e}")
         raise HTTPException(status_code=500, detail="获取套餐列表失败")
-    return [_to_plan_response(plan) for plan in plans]
+    return [_to_plan_response(plan, use_test_price=use_test) for plan in plans]
 
 
 @router.get("/current", response_model=SubscriptionResponse)

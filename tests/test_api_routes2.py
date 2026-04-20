@@ -68,8 +68,10 @@ def _make_backup_service_tuple():
 
 
 class TestSubscriptions:
+    @patch("api.routes.subscriptions.is_registration_open", new_callable=AsyncMock)
     @patch("api.routes.subscriptions.get_plans", new_callable=AsyncMock)
-    def test_get_plans(self, mock_get):
+    def test_get_plans(self, mock_get, mock_is_open):
+        mock_is_open.return_value = True
         mock_get.return_value = [
             {
                 "id": 1,
