@@ -20,7 +20,7 @@
 ### 架构约定
 - 数据库：PostgreSQL（仅）
 - 后端：FastAPI
-- 前端：React + Ant Design + Zustand + Tailwind
+- 前端：React + shadcn/ui (Radix Primitives) + Tailwind + Zustand + react-hook-form + sonner + lucide-react
 - 认证：JWT（security/tokens.py + api/dependencies.py）
 - 安全模块：security/
 
