@@ -7,9 +7,10 @@ from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from db.sessions_crud import get_session
 from models.user import User
 from security.tokens import (
-    get_user_id_from_token,
+    decode_access_token,
     TokenExpiredError,
     TokenInvalidError,
 )
@@ -81,18 +82,36 @@ def _extract_token(api_key, request: Request) -> str:
     )
 
 
-def _resolve_user_id(token: str) -> int:
+async def _get_user(token: str, session: AsyncSession) -> User:
     try:
-        return get_user_id_from_token(token)
+        payload = decode_access_token(token)
     except (TokenExpiredError, TokenInvalidError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="无效的认证凭证",
         )
-
-
-async def _get_user(token: str, session: AsyncSession) -> User:
-    user_id = _resolve_user_id(token)
+    try:
+        sub = payload.get("sub")
+        user_id = int(sub) if sub is not None else None
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭证",
+        )
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭证",
+        )
+    sid = payload.get("sid")
+    if sid:
+        active_session = await get_session(session, sid)
+        if not active_session or not active_session.is_active:
+            reason = active_session.inactive_reason if active_session else None
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "会话已失效", "reason": reason},
+            )
     user = await session.get(User, user_id)
     if not user:
         raise HTTPException(
