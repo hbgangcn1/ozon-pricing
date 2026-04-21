@@ -5,6 +5,7 @@
 """
 
 import os
+import sys
 import types
 from pathlib import Path
 
@@ -13,164 +14,222 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-do-not-use-in-productio
 
 
 def pytest_ignore_collect(collection_path, config):
-    """忽略收集某些文件"""
-    _ = config  # 保留参数占位，便于未来扩展
+    _ = config
     if isinstance(collection_path, Path):
         if collection_path.suffix == ".txt":
             return True
     else:
-        # 兼容旧版本pytest的py.path.local
         if str(collection_path).endswith(".txt"):
             return True
     return None
 
 
-def pytest_sessionstart(session):
-    _ = session
-    import sys
-
-    # Mock redis_cache.get_redis_client 以防止 Redis 连接超时
-    # 这必须在导入任何可能使用 Redis 的模块之前完成
-    # 注意：不在根 conftest.py 中预插入假的 redis_cache 模块
-    # 因为这会影响 test_redis_cache.py 的导入
-    # 实际的 mock 会在 tests/conftest.py 的 pytest_runtest_setup 中处理
-    #
-    # 但是，我们需要在 pytest_sessionstart 中就尝试 mock redis_cache（如果它已经被导入）
-    # 以防止在完整测试套件中，某些模块在导入时尝试连接 Redis
+def _mock_redis_cache_module() -> None:
     try:
-        if "redis_cache" in sys.modules:
-            redis_cache_mod = sys.modules["redis_cache"]
-            # 保存原始函数（如果还没有保存）
-            if not hasattr(redis_cache_mod, "_original_get_redis_client"):
-                setattr(
-                    redis_cache_mod,
-                    "_original_get_redis_client",
-                    getattr(redis_cache_mod, "get_redis_client", None),
-                )
-            if not hasattr(redis_cache_mod, "_original_init_redis_client"):
-                setattr(
-                    redis_cache_mod,
-                    "_original_init_redis_client",
-                    getattr(redis_cache_mod, "init_redis_client", None),
-                )
-            # Mock get_redis_client 返回 None，避免连接尝试
-            setattr(redis_cache_mod, "get_redis_client", lambda: None)
-            # 确保 REDIS_AVAILABLE 为 False，避免其他代码尝试使用 Redis
-            setattr(redis_cache_mod, "REDIS_AVAILABLE", False)
-            # Mock init_redis_client 返回 False，避免初始化尝试
-            setattr(redis_cache_mod, "init_redis_client", lambda *args, **kwargs: False)
-            # 确保 _redis_client 为 None
-            if hasattr(redis_cache_mod, "_redis_client"):
-                setattr(redis_cache_mod, "_redis_client", None)
+        if "redis_cache" not in sys.modules:
+            return
+        mod = sys.modules["redis_cache"]
+        if not hasattr(mod, "_original_get_redis_client"):
+            setattr(
+                mod,
+                "_original_get_redis_client",
+                getattr(mod, "get_redis_client", None),
+            )
+        if not hasattr(mod, "_original_init_redis_client"):
+            setattr(
+                mod,
+                "_original_init_redis_client",
+                getattr(mod, "init_redis_client", None),
+            )
+        setattr(mod, "get_redis_client", lambda: None)
+        setattr(mod, "REDIS_AVAILABLE", False)
+        setattr(mod, "init_redis_client", lambda *a, **k: False)
+        if hasattr(mod, "_redis_client"):
+            setattr(mod, "_redis_client", None)
     except (KeyError, AttributeError):
-        # redis_cache 模块不存在或无法访问，跳过
         pass
-    # 创建 mock 的备份系统对象，包含所有必需的属性和方法
-    fake_backup_system = types.SimpleNamespace(
+
+
+def _build_fake_backup_system(backup_dir: str = "backups") -> types.SimpleNamespace:
+    return types.SimpleNamespace(
         is_running=False,
-        backup_dir="backups",  # 必需的属性
-        db_path="pricing_system.db",  # 必需的属性
-        backup_interval_hours=6,  # 必需的属性
-        max_backups=28,  # 必需的属性
-        backup_thread=None,  # 必需的属性
+        backup_dir=backup_dir,
+        db_path="pricing_system.db",
+        backup_interval_hours=6,
+        max_backups=28,
+        backup_thread=None,
         create_backup=lambda: True,
         restore_from_backup=lambda *a, **k: True,
         delete_backup=lambda *a, **k: True,
         verify_backup=lambda *a, **k: True,
         read_backup_file=lambda *a, **k: b"fake_backup_data",
         get_backup_stats=lambda: None,
-        cleanup_old_backups=lambda: None,  # 必需的方法
-        get_backup_file_path=lambda *a, **k: "fake_path",  # 必需的方法
-        start_auto_backup=lambda: None,  # 必需的方法
-        stop_auto_backup=lambda: None,  # 必需的方法
-        manual_backup=lambda: True,  # 必需的方法
-        list_backups=lambda: [],  # 必需的方法（PostgreSQL）
+        cleanup_old_backups=lambda: None,
+        get_backup_file_path=lambda *a, **k: "fake_path",
+        start_auto_backup=lambda: None,
+        stop_auto_backup=lambda: None,
+        manual_backup=lambda: True,
+        list_backups=lambda: [],
     )
 
-    # Mock auto_backup 模块的所有函数和对象
+
+def _mock_auto_backup_module() -> None:
     try:
         import auto_backup
-
-        auto_backup.backup_system = fake_backup_system
-        auto_backup.create_manual_backup = lambda: True
-        auto_backup.restore_database = lambda *a, **k: True
-        auto_backup.delete_backup_file = lambda *a, **k: True
-        auto_backup.verify_backup_file = lambda *a, **k: True
-        auto_backup.read_backup_file = lambda *a, **k: b"fake_data"
-        auto_backup.list_backup_files = lambda: []
-        auto_backup.get_auto_backup_settings = lambda: {
-            "enabled": False,
-            "interval_hours": 24,
-            "max_backups": 10,
-        }
-        auto_backup.get_backup_info = lambda: None
-        auto_backup.update_auto_backup_settings = lambda *a, **k: None
-        # Mock start/stop 函数
-        auto_backup.start_backup_service = lambda: None
-        auto_backup.stop_backup_service = lambda: None
     except ImportError:
-        auto_backup = None  # noqa: F841
+        return
+    auto_backup.backup_system = _build_fake_backup_system()
+    auto_backup.create_manual_backup = lambda: True
+    auto_backup.restore_database = lambda *a, **k: True
+    auto_backup.delete_backup_file = lambda *a, **k: True
+    auto_backup.verify_backup_file = lambda *a, **k: True
+    auto_backup.read_backup_file = lambda *a, **k: b"fake_data"
+    auto_backup.list_backup_files = lambda: []
+    auto_backup.get_auto_backup_settings = lambda: {
+        "enabled": False,
+        "interval_hours": 24,
+        "max_backups": 10,
+    }
+    auto_backup.get_backup_info = lambda: None
+    auto_backup.update_auto_backup_settings = lambda *a, **k: None
+    auto_backup.start_backup_service = lambda: None
+    auto_backup.stop_backup_service = lambda: None
 
-    # 如果使用 PostgreSQL，也需要 mock postgres_backup_service
+
+def _mock_postgres_backup_service_module() -> None:
     try:
         import postgres_backup_service
-
-        # Mock postgres_backup_service 的 backup_system 对象
+    except (ImportError, AttributeError):
+        return
+    try:
         if hasattr(postgres_backup_service, "backup_system"):
-            pg_fake_system = types.SimpleNamespace(
-                restore_from_backup=lambda *a, **k: True,
-                create_backup=lambda: True,
-                delete_backup=lambda *a, **k: True,
-                verify_backup=lambda *a, **k: True,
-                read_backup_file=lambda *a, **k: b"fake_data",
-                get_backup_stats=lambda: None,
-                is_running=False,
-                backup_dir="backups/postgres",  # 必需的属性
-                backup_interval_hours=6,  # 必需的属性
-                max_backups=28,  # 必需的属性
-                backup_thread=None,  # 必需的属性
-                cleanup_old_backups=lambda: None,  # 必需的方法
-                get_backup_file_path=lambda *a, **k: "fake_path",  # 必需的方法
-                list_backups=lambda: [],  # 必需的方法
+            postgres_backup_service.backup_system = _build_fake_backup_system(
+                backup_dir="backups/postgres"
             )
-            postgres_backup_service.backup_system = pg_fake_system
 
-        # Mock postgres_backup_service 模块级别的函数
-        if hasattr(postgres_backup_service, "restore_database"):
-            postgres_backup_service.restore_database = lambda *a, **k: True
-        if hasattr(postgres_backup_service, "create_manual_backup"):
-            postgres_backup_service.create_manual_backup = lambda: True
-        if hasattr(postgres_backup_service, "delete_backup_file"):
-            postgres_backup_service.delete_backup_file = lambda *a, **k: True
-        if hasattr(postgres_backup_service, "verify_backup_file"):
-            postgres_backup_service.verify_backup_file = lambda *a, **k: True
-        if hasattr(postgres_backup_service, "read_backup_file"):
-            postgres_backup_service.read_backup_file = lambda *a, **k: b"fake_data"
-        if hasattr(postgres_backup_service, "list_backup_files"):
-            postgres_backup_service.list_backup_files = lambda: []
-        if hasattr(postgres_backup_service, "get_auto_backup_settings"):
-            postgres_backup_service.get_auto_backup_settings = lambda: {
+        function_overrides = {
+            "restore_database": lambda *a, **k: True,
+            "create_manual_backup": lambda: True,
+            "delete_backup_file": lambda *a, **k: True,
+            "verify_backup_file": lambda *a, **k: True,
+            "read_backup_file": lambda *a, **k: b"fake_data",
+            "list_backup_files": lambda: [],
+            "get_auto_backup_settings": lambda: {
                 "enabled": False,
                 "interval_hours": 24,
                 "max_backups": 10,
-            }
-        if hasattr(postgres_backup_service, "get_backup_info"):
-            postgres_backup_service.get_backup_info = lambda: None
-        if hasattr(postgres_backup_service, "update_auto_backup_settings"):
-            postgres_backup_service.update_auto_backup_settings = lambda *a, **k: None
-        # Mock start/stop 函数
-        if hasattr(postgres_backup_service, "start_backup_service"):
-            postgres_backup_service.start_backup_service = lambda: None
-        if hasattr(postgres_backup_service, "stop_backup_service"):
-            postgres_backup_service.stop_backup_service = lambda: None
-    except (ImportError, AttributeError):
-        postgres_backup_service = None  # noqa: F841
+            },
+            "get_backup_info": lambda: None,
+            "update_auto_backup_settings": lambda *a, **k: None,
+            "start_backup_service": lambda: None,
+            "stop_backup_service": lambda: None,
+        }
+        for name, fn in function_overrides.items():
+            if hasattr(postgres_backup_service, name):
+                setattr(postgres_backup_service, name, fn)
+    except AttributeError:
+        pass
+
+
+def pytest_sessionstart(session):
+    _ = session
+    _mock_redis_cache_module()
+    _mock_auto_backup_module()
+    _mock_postgres_backup_service_module()
+
+
+_TEST_USER_ID_SUBQUERY = (
+    "SELECT id FROM users "
+    "WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
+    " OR username LIKE 'e2e%%') AND id != 1"
+)
+_TEST_USER_NAME_SUBQUERY = (
+    "SELECT username FROM users "
+    "WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
+    " OR username LIKE 'e2e%%') AND id != 1"
+)
+
+
+def _delete_by_user_id(cursor, conn, table: str) -> None:
+    try:
+        cursor.execute(
+            f"DELETE FROM {table} WHERE user_id IN ({_TEST_USER_ID_SUBQUERY})"
+        )
+    except Exception as exc:
+        print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
+        conn.rollback()
+
+
+def _delete_by_identifier(cursor, conn, table: str) -> None:
+    try:
+        cursor.execute(
+            f"DELETE FROM {table} WHERE identifier IN ({_TEST_USER_NAME_SUBQUERY})"
+        )
+    except Exception as exc:
+        print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
+        conn.rollback()
+
+
+def _cleanup_admin_audit_tables(cursor, conn) -> None:
+    try:
+        cursor.execute(
+            f"DELETE FROM admin_action_log"
+            f" WHERE admin_id IN ({_TEST_USER_ID_SUBQUERY})"
+            f" OR target_user_id IN ({_TEST_USER_ID_SUBQUERY})"
+        )
+    except Exception as exc:
+        print(f"[pytest_sessionfinish] cleanup admin_action_log failed: {exc}")
+        conn.rollback()
+
+    try:
+        cursor.execute(
+            f"DELETE FROM audit_logs WHERE admin_id IN ({_TEST_USER_ID_SUBQUERY})"
+        )
+    except Exception as exc:
+        print(f"[pytest_sessionfinish] cleanup audit_logs failed: {exc}")
+        conn.rollback()
+
+
+def _cleanup_test_users(conn) -> None:
+    cursor = conn.cursor()
+
+    for table in ["products", "logistics", "payment_orders", "active_sessions"]:
+        _delete_by_user_id(cursor, conn, table)
+
+    for table in ["login_attempts", "user_lockouts"]:
+        _delete_by_identifier(cursor, conn, table)
+
+    for table in [
+        "user_login_log",
+        "user_behavior_log",
+        "subscription_upgrade_history",
+        "trusted_devices",
+        "commission_category",
+    ]:
+        _delete_by_user_id(cursor, conn, table)
+
+    _cleanup_admin_audit_tables(cursor, conn)
+
+    cursor.execute(
+        "DELETE FROM users"
+        " WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
+        " OR username LIKE 'e2e%%') AND id != 1"
+        " RETURNING id"
+    )
+    deleted = cursor.rowcount
+    conn.commit()
+    cursor.close()
+
+    if deleted > 0:
+        print(
+            f"\n[pytest_sessionfinish] Cleaned up {deleted}"
+            " orphaned test user(s)."
+        )
 
 
 def pytest_sessionfinish(session, exitstatus):
     _ = session
     _ = exitstatus
-
     try:
         import psycopg2
 
@@ -182,89 +241,6 @@ def pytest_sessionfinish(session, exitstatus):
             password=os.environ.get("POSTGRES_PASSWORD", ""),
         ) as conn:
             conn.autocommit = False
-            c = conn.cursor()
-
-            test_user_subquery = (
-                "SELECT id FROM users "
-                "WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
-                " OR username LIKE 'e2e%%') AND id != 1"
-            )
-            test_name_subquery = (
-                "SELECT username FROM users "
-                "WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
-                " OR username LIKE 'e2e%%') AND id != 1"
-            )
-
-            for table in [
-                "products",
-                "logistics",
-                "payment_orders",
-                "active_sessions",
-            ]:
-                try:
-                    c.execute(
-                        f"DELETE FROM {table} WHERE user_id IN ({test_user_subquery})"
-                    )
-                except Exception as exc:
-                    print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
-                    conn.rollback()
-
-            for table in ["login_attempts", "user_lockouts"]:
-                try:
-                    c.execute(
-                        f"DELETE FROM {table} WHERE identifier IN ({test_name_subquery})"
-                    )
-                except Exception as exc:
-                    print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
-                    conn.rollback()
-
-            for table in [
-                "user_login_log",
-                "user_behavior_log",
-                "subscription_upgrade_history",
-                "trusted_devices",
-                "commission_category",
-            ]:
-                try:
-                    c.execute(
-                        f"DELETE FROM {table} WHERE user_id IN ({test_user_subquery})"
-                    )
-                except Exception as exc:
-                    print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
-                    conn.rollback()
-
-            try:
-                c.execute(
-                    f"DELETE FROM admin_action_log"
-                    f" WHERE admin_id IN ({test_user_subquery})"
-                    f" OR target_user_id IN ({test_user_subquery})"
-                )
-            except Exception as exc:
-                print(f"[pytest_sessionfinish] cleanup admin_action_log failed: {exc}")
-                conn.rollback()
-
-            try:
-                c.execute(
-                    f"DELETE FROM audit_logs WHERE admin_id IN ({test_user_subquery})"
-                )
-            except Exception as exc:
-                print(f"[pytest_sessionfinish] cleanup audit_logs failed: {exc}")
-                conn.rollback()
-
-            c.execute(
-                "DELETE FROM users"
-                " WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
-                " OR username LIKE 'e2e%%') AND id != 1"
-                " RETURNING id"
-            )
-            deleted = c.rowcount
-            conn.commit()
-            c.close()
-
-            if deleted > 0:
-                print(
-                    f"\n[pytest_sessionfinish] Cleaned up {deleted}"
-                    " orphaned test user(s)."
-                )
+            _cleanup_test_users(conn)
     except Exception as exc:
         print(f"[pytest_sessionfinish] global cleanup FAILED: {exc}")
