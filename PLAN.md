@@ -772,3 +772,13 @@ DB_POOL_MAX=15
 | 23.3 | ✅ | `api/routes/payment.py` — 回调路由传递 raw body；下单响应验签失败时保持订单 `PENDING`，立即走受信 `query_order` 对账，仍不确定返回 502 |
 | 23.4 | ✅ | 测试补充 — 新增 `tests/test_wechat_signature_verification.py`，更新 `tests/test_payment_api.py` 覆盖验签失败 502 与签名头场景 |
 | 23.5 | ✅ | 验证 — `python -m flake8`、定向支付测试 59 passed、全量 `pytest --tb=short -q` 1827 passed / 4 skipped |
+
+### Phase 24: postgres_backup_service_db.py 拆分 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 24.1 | ✅ | `postgres_backup_service_db.py` 拆分为聚合类，保留 `PostgresBackupDatabaseMixin` 导入路径不变 |
+| 24.2 | ✅ | 新建 `postgres_backup_service_schema_reset.py`，提取 schema reset 相关 5 个方法 |
+| 24.3 | ✅ | 新建 `postgres_backup_service_connection.py`，提取 connection management 相关 3 个方法 |
+| 24.4 | ✅ | 新建 `postgres_backup_service_restore.py`，提取 restore flow 相关 15 个方法 |
+| 24.5 | ✅ | 验证 — flake8 零违规、全量 `pytest --tb=short -q` 2147 passed / 4 skipped、引用点保持兼容 |
