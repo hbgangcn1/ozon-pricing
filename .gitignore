@@ -185,6 +185,9 @@ openspec/
 browser-snapshot-*.yml
 browser-test-*.png
 e2e-*.png
+*-verification.png
+*-verified.png
+verification-*.png
 
 # 数据文件（xlsx 导入源）
 xlsx/
