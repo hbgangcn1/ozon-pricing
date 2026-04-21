@@ -30,16 +30,13 @@ except ImportError:
 
 CACHE_AVAILABLE = _cache_available
 
-# 导入数据库工具（用于动态 fallback）
-try:
-    from db_utils import get_exchange_rate_fallback, update_exchange_rate_fallback
-except ImportError:
 
-    def get_exchange_rate_fallback(currency_pair):
-        return None
+def get_exchange_rate_fallback(currency_pair):
+    return None
 
-    def update_exchange_rate_fallback(currency_pair, rate, source=""):
-        pass
+
+def update_exchange_rate_fallback(currency_pair, rate, source=""):
+    pass
 
 
 # 尝试导入aiohttp用于异步请求（当前未使用，保留用于未来扩展）

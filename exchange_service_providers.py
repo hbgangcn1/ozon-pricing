@@ -13,16 +13,13 @@ from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 
-# 导入数据库工具（用于动态 fallback）
-try:
-    from db_utils import get_exchange_rate_fallback, update_exchange_rate_fallback
-except ImportError:
-    # 兼容：db_utils 可能尚未加载
-    def get_exchange_rate_fallback(currency_pair):
-        return None
 
-    def update_exchange_rate_fallback(currency_pair, rate, source=""):
-        pass
+def get_exchange_rate_fallback(currency_pair):
+    return None
+
+
+def update_exchange_rate_fallback(currency_pair, rate, source=""):
+    pass
 
 
 # 导入requests

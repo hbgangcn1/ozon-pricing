@@ -82,12 +82,7 @@ def build_postgres_dsn(database: Optional[str] = None) -> str:
 
 
 def try_get_system_config():
-    try:
-        from db_utils import get_system_config  # type: ignore
-
-        return get_system_config
-    except ImportError:
-        return None
+    return None
 
 
 def parse_positive_int(raw_value, default_value: int) -> int:
@@ -99,22 +94,4 @@ def parse_positive_int(raw_value, default_value: int) -> int:
 
 
 def persist_backup_settings(settings: AutoBackupSettings) -> None:
-    try:
-        from db_utils import set_system_config  # type: ignore
-    except ImportError:
-        return
-    set_system_config(
-        "auto_backup_enabled",
-        "true" if settings["enabled"] else "false",
-        "是否启用自动备份",
-    )
-    set_system_config(
-        "auto_backup_interval_hours",
-        str(settings["interval_hours"]),
-        "自动备份间隔（小时）",
-    )
-    set_system_config(
-        "auto_backup_max_backups",
-        str(settings["max_backups"]),
-        "最多保留备份数量",
-    )
+    return
