@@ -5,6 +5,7 @@ import { useLogisticsStore } from './logisticsStore'
 const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/about']
 const PROFESSIONAL_TIERS = ['professional', 'enterprise', 'gratitude', 'test']
 const ENTERPRISE_TIERS = ['enterprise', 'gratitude', 'test']
+const initialSessionKicked = { open: false, reason: null }
 
 const normalizeSubscriptionType = (user) => {
   if (!user) return user
@@ -14,12 +15,36 @@ const normalizeSubscriptionType = (user) => {
   }
 }
 
+const clearPersistedAuth = () => {
+  localStorage.removeItem('api_user')
+  localStorage.removeItem('api_token')
+}
+
+const resetLinkedStores = () => {
+  useProductStore.getState().reset()
+  useLogisticsStore.getState().reset()
+}
+
+const buildClearedAuthState = () => ({
+  user: null,
+  token: null,
+  isAuthenticated: false,
+  sessionKicked: initialSessionKicked,
+})
+
+const clearAuthState = (set) => {
+  clearPersistedAuth()
+  resetLinkedStores()
+  set(buildClearedAuthState())
+}
+
 export const useAuthStore = create((set, get) => ({
   user: null,
   token: null,
   isAuthenticated: false,
   isLoading: true,
   calcMode: 'fast', // 'fast' | 'detailed'
+  sessionKicked: initialSessionKicked,
 
   setCalcMode: (mode) => set({ calcMode: mode }),
 
@@ -29,10 +54,15 @@ export const useAuthStore = create((set, get) => ({
     if (userStr) {
       try {
         const user = normalizeSubscriptionType(JSON.parse(userStr))
-        set({ user, token: token || null, isAuthenticated: true, isLoading: false })
+        set({
+          user,
+          token: token || null,
+          isAuthenticated: true,
+          isLoading: false,
+          sessionKicked: initialSessionKicked,
+        })
       } catch {
-        localStorage.removeItem('api_user')
-        localStorage.removeItem('api_token')
+        clearPersistedAuth()
         set({ isLoading: false })
       }
     } else {
@@ -51,7 +81,12 @@ export const useAuthStore = create((set, get) => ({
     }
     
     const tokenToSet = import.meta.env.MODE === 'test' ? null : (token || null)
-    set({ user: normalizedUser, token: tokenToSet, isAuthenticated: true })
+    set({
+      user: normalizedUser,
+      token: tokenToSet,
+      isAuthenticated: true,
+      sessionKicked: initialSessionKicked,
+    })
   },
 
   setToken: (token) => {
@@ -60,11 +95,15 @@ export const useAuthStore = create((set, get) => ({
   },
 
   logout: () => {
-    localStorage.removeItem('api_user')
-    localStorage.removeItem('api_token')
-    useProductStore.getState().reset()
-    useLogisticsStore.getState().reset()
-    set({ user: null, token: null, isAuthenticated: false })
+    clearAuthState(set)
+  },
+
+  setSessionKicked: ({ reason }) => set({
+    sessionKicked: { open: true, reason: reason ?? null },
+  }),
+
+  clearSessionKicked: () => {
+    clearAuthState(set)
   },
 
   setUser: (user) => set({ user: normalizeSubscriptionType(user) }),
