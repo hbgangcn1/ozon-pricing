@@ -49,6 +49,38 @@ vi.mock('../components/ui/badge', () => ({
   Badge: ({ children, className }) => <span className={className}>{children}</span>,
 }));
 
+vi.mock('../components/ui/virtual-table', () => ({
+  VirtualTable: ({ items, columns, loading, loadingContent, emptyContent }) => {
+    if (loading && items.length === 0) {
+      return <div>{loadingContent}</div>
+    }
+    if (!loading && items.length === 0) {
+      return <div>{emptyContent}</div>
+    }
+    return (
+      <table>
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key}>{column.header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={item.id ?? index}>
+              {columns.map((column) => (
+                <td key={column.key}>{column.render(item, index)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  },
+  useVirtualRows: () => ({}),
+}))
+
 const mockLogistics = [
   {
     id: 1,

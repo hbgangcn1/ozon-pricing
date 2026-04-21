@@ -1,15 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Plus, Upload, Loader2, Eye, Trash2, Truck, X } from 'lucide-react'
 import { toast } from 'sonner'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
-} from '../components/ui/table'
 import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Checkbox } from '../components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog'
+import { VirtualTable } from '../components/ui/virtual-table'
 import { logisticsPoolAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 
@@ -135,7 +133,7 @@ export default function LogisticsPoolPage() {
     }
   }
 
-  const handleAddToMyLogistics = async (id) => {
+  const handleAddToMyLogistics = useCallback(async (id) => {
     setAddingId(id)
     try {
       await logisticsPoolAPI.addToMyLogistics(id)
@@ -145,9 +143,9 @@ export default function LogisticsPoolPage() {
     } finally {
       setAddingId(null)
     }
-  }
+  }, [])
 
-  const toggleSelect = (id) => {
+  const toggleSelect = useCallback((id) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) {
@@ -157,15 +155,15 @@ export default function LogisticsPoolPage() {
       }
       return next
     })
-  }
+  }, [])
 
-  const handleSelectAll = () => {
+  const handleSelectAll = useCallback(() => {
     if (selectedIds.size === logistics.length && logistics.length > 0) {
       setSelectedIds(new Set())
     } else {
       setSelectedIds(new Set(logistics.map(item => item.id)))
     }
-  }
+  }, [logistics, selectedIds])
 
   const handleClearSelection = () => {
     setSelectedIds(new Set())
@@ -200,6 +198,102 @@ export default function LogisticsPoolPage() {
       setIsBatchAdding(false)
     }
   }
+
+  const columns = useMemo(() => [
+    {
+      key: 'select',
+      header: (
+        <Checkbox
+          checked={logistics.length > 0 && selectedIds.size === logistics.length}
+          onCheckedChange={handleSelectAll}
+          aria-label="全选"
+        />
+      ),
+      width: '40px',
+      render: (item) => (
+        <Checkbox
+          checked={selectedIds.has(item.id)}
+          onCheckedChange={() => toggleSelect(item.id)}
+          aria-label={`选择 ${item.name}`}
+        />
+      ),
+    },
+    {
+      key: 'name',
+      header: '名称',
+      width: '1.4fr',
+      cellClassName: 'font-medium',
+      render: (item) => item.name,
+    },
+    {
+      key: 'fulfillment_type',
+      header: '履约类型',
+      width: '1fr',
+      render: (item) => item.fulfillment_type,
+    },
+    {
+      key: 'destination',
+      header: '目的地',
+      width: '1fr',
+      render: (item) => item.destination,
+    },
+    {
+      key: 'fbp_service_level',
+      header: 'FBP服务等级',
+      width: '1fr',
+      render: (item) => item.fbp_service_level || '-',
+    },
+    {
+      key: 'is_smart',
+      header: '标签',
+      width: '1fr',
+      render: (item) => item.is_smart ? (
+        <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20">
+          智能分配
+        </Badge>
+      ) : '-',
+    },
+    {
+      key: 'is_active',
+      header: '状态',
+      width: '1fr',
+      render: (item) => item.is_active ? (
+        <Badge variant="default" className="bg-green-500 hover:bg-green-600">生效中</Badge>
+      ) : (
+        <Badge variant="secondary">已停用</Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      width: '220px',
+      render: (item) => (
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setDetailItem(item); setDetailOpen(true) }}
+          >
+            <Eye className="w-3 h-3 mr-1" />
+            查看
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => handleAddToMyLogistics(item.id)}
+            disabled={addingId === item.id}
+          >
+            {addingId === item.id ? (
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            ) : (
+              <Plus className="w-3 h-3 mr-1" />
+            )}
+            添加到我的
+          </Button>
+        </div>
+      ),
+    },
+  ], [addingId, handleAddToMyLogistics, handleSelectAll, logistics, selectedIds, toggleSelect])
 
   return (
     <div className="space-y-6">
@@ -265,90 +359,17 @@ export default function LogisticsPoolPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[40px]">
-                  <Checkbox
-                    checked={logistics.length > 0 && selectedIds.size === logistics.length}
-                    onCheckedChange={handleSelectAll}
-                    aria-label="全选"
-                  />
-                </TableHead>
-                <TableHead>名称</TableHead>
-                <TableHead>履约类型</TableHead>
-                <TableHead>目的地</TableHead>
-                <TableHead>FBP服务等级</TableHead>
-                <TableHead>标签</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="w-[150px]">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">加载中...</TableCell>
-                </TableRow>
-              ) : logistics.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-text-muted">暂无物流数据</TableCell>
-                </TableRow>
-              ) : (
-                logistics.map((item) => (
-                  <TableRow key={item.id} className={selectedIds.has(item.id) ? 'bg-primary/5' : ''}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedIds.has(item.id)}
-                        onCheckedChange={() => toggleSelect(item.id)}
-                        aria-label={`选择 ${item.name}`}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.fulfillment_type}</TableCell>
-                    <TableCell>{item.destination}</TableCell>
-                    <TableCell>{item.fbp_service_level || '-'}</TableCell>
-                    <TableCell>
-                      {item.is_smart ? (
-                        <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20">
-                          智能分配
-                        </Badge>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {item.is_active ? (
-                        <Badge variant="default" className="bg-green-500 hover:bg-green-600">生效中</Badge>
-                      ) : (
-                        <Badge variant="secondary">已停用</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => { setDetailItem(item); setDetailOpen(true) }}
-                      >
-                        <Eye className="w-3 h-3 mr-1" />
-                        查看
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        variant="secondary"
-                        onClick={() => handleAddToMyLogistics(item.id)}
-                        disabled={addingId === item.id}
-                      >
-                        {addingId === item.id ? (
-                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        ) : (
-                          <Plus className="w-3 h-3 mr-1" />
-                        )}
-                        添加到我的
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <VirtualTable
+            items={logistics}
+            columns={columns}
+            getItemKey={(item) => item.id}
+            rowHeight={53}
+            maxHeight="calc(100vh - 280px)"
+            loading={isLoading}
+            loadingContent={<span>加载中...</span>}
+            emptyContent={<span className="text-text-muted">暂无物流数据</span>}
+            rowClassName={(item) => selectedIds.has(item.id) ? 'bg-primary/5' : ''}
+          />
         </CardContent>
       </Card>
 
