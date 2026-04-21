@@ -128,6 +128,35 @@ class TestHandlePaymentSuccess:
         assert user.subscription_type == "enterprise"
 
     @pytest.mark.asyncio
+    async def test_english_year_billing_cycle_grants_365_days(self):
+        session = _mock_session()
+        order = _make_order(description="专业版套餐", duration="year")
+        user = _make_user()
+        _setup_session_execute(session, order)
+        session.get.return_value = user
+
+        svc = PaymentService(session)
+        await svc.handle_payment_success("ord_en_year")
+
+        expected_min = int(time.time()) + 365 * 86400 - 5
+        assert user.subscription_expires >= expected_min
+
+    @pytest.mark.asyncio
+    async def test_english_month_billing_cycle_grants_30_days(self):
+        session = _mock_session()
+        order = _make_order(description="专业版套餐", duration="month")
+        user = _make_user()
+        _setup_session_execute(session, order)
+        session.get.return_value = user
+
+        svc = PaymentService(session)
+        await svc.handle_payment_success("ord_en_month")
+
+        expected_max = int(time.time()) + 30 * 86400 + 5
+        expected_min = int(time.time()) + 30 * 86400 - 5
+        assert expected_min <= user.subscription_expires <= expected_max
+
+    @pytest.mark.asyncio
     async def test_user_not_found_raises_value_error(self):
         session = _mock_session()
         order = _make_order()

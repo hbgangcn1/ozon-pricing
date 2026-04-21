@@ -315,6 +315,15 @@ class TestHelpers(unittest.TestCase):
     def test_parse_year_takes_priority(self):
         self.assertEqual(_parse_duration("1年12月"), 365)
 
+    def test_parse_english_month(self):
+        self.assertEqual(_parse_duration("month"), 30)
+
+    def test_parse_english_year(self):
+        self.assertEqual(_parse_duration("year"), 365)
+
+    def test_parse_english_year_priority(self):
+        self.assertEqual(_parse_duration("Year-Month"), 365)
+
 
 class TestDbUnavailablePaths(unittest.TestCase):
     @patch("payment_handler.AsyncSessionLocal")

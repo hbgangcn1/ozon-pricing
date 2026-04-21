@@ -35,9 +35,10 @@ def _extract_plan_code(description: str) -> str:
 
 
 def _parse_duration(duration: str) -> int:
-    if "\u5e74" in duration:
+    text = (duration or "").lower()
+    if "\u5e74" in text or "year" in text:
         return 365
-    elif "\u6708" in duration:
+    if "\u6708" in text or "month" in text:
         return 30
     return 30
 

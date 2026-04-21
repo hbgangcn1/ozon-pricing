@@ -35,9 +35,10 @@ def _extract_plan_code(description: str) -> str:
 
 
 def _parse_duration(duration: str) -> int:
-    if "年" in duration:
+    text = (duration or "").lower()
+    if "年" in text or "year" in text:
         return 365
-    elif "月" in duration:
+    if "月" in text or "month" in text:
         return 30
     return 30
 
