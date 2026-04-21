@@ -14,7 +14,7 @@ from db.products import (
     add_product,
     get_all_products_for_user,
     get_product_by_id,
-    get_product_by_name,
+    get_products_by_names,
     update_product,
     delete_product,
 )
@@ -34,6 +34,28 @@ from api.dependencies import (
 
 router = APIRouter(prefix="/api/products", tags=["产品"])
 logger = logging.getLogger(__name__)
+
+
+async def _get_existing_products_for_import(
+    session: AsyncSession,
+    user_id: int,
+    rows: list[dict],
+    column_mapping: dict[str, str],
+) -> dict[str, dict]:
+    name_column = column_mapping.get("name")
+    if not name_column:
+        return {}
+    names = []
+    for row in rows:
+        name = row.get(name_column)
+        if isinstance(name, str):
+            stripped = name.strip()
+            if stripped:
+                names.append(stripped)
+        elif name:
+            names.append(str(name))
+    unique_names = list(dict.fromkeys(names))
+    return await get_products_by_names(session, user_id, unique_names)
 
 
 def _ensure_excel_access(user: dict) -> int:
@@ -170,6 +192,8 @@ async def preview_product_import(
         if suffix == ".xlsx":
             workbook = openpyxl.load_workbook(temp_path, data_only=True)
             sheet = workbook.active
+            if sheet is None:
+                return ProductImportPreview(columns=[], preview_rows=[])
             rows = list(sheet.iter_rows(values_only=True))
         else:
             import xlrd
@@ -217,6 +241,12 @@ async def confirm_product_import(
     imported = 0
     skipped = 0
     errors = []
+    existing_products = await _get_existing_products_for_import(
+        session,
+        user_id,
+        payload.rows,
+        payload.column_mapping,
+    )
 
     for index, row in enumerate(payload.rows, start=1):
         transformed = {
@@ -230,9 +260,12 @@ async def confirm_product_import(
         if not name:
             errors.append(f"第 {index} 行缺少 name")
             continue
+        if isinstance(name, str):
+            name = name.strip()
+            transformed["name"] = name
 
         try:
-            existing = await get_product_by_name(session, user_id, name)
+            existing = existing_products.get(name)
             product_data = {k: v for k, v in transformed.items() if k != "user_id"}
 
             for key in ["is_cylinder", "has_battery", "has_liquid", "has_msds"]:
@@ -252,6 +285,7 @@ async def confirm_product_import(
                 if not success:
                     errors.append(f"第 {index} 行覆盖失败: {name}")
                     continue
+                existing_products[name] = {**existing, **product_data}
                 imported += 1
                 continue
 
@@ -259,6 +293,7 @@ async def confirm_product_import(
             if not product_id:
                 errors.append(f"第 {index} 行导入失败: {name}")
                 continue
+            existing_products[name] = {"id": product_id, **product_data, "user_id": user_id}
             imported += 1
         except Exception as exc:
             logger.warning("产品导入第 %d 行处理失败: %s", index, exc, exc_info=True)

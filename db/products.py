@@ -156,6 +156,26 @@ async def get_product_by_name(
     return _product_to_dict(row) if row else None
 
 
+async def get_products_by_names(
+    session: AsyncSession,
+    user_id: int,
+    names: list[str],
+) -> dict[str, dict]:
+    if not names:
+        return {}
+    stmt = select(Product).where(
+        Product.user_id == user_id,
+        Product.name.in_(names),
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    return {
+        product.name: _product_to_dict(product)
+        for product in rows
+        if product.name is not None
+    }
+
+
 async def delete_product(
     session: AsyncSession,
     product_id: int,
