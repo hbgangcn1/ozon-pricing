@@ -1,10 +1,10 @@
+# pyright: reportUnusedImport=false, reportUnusedVariable=false
 """
 测试 session_security.py 安全关键路径的异常处理
 覆盖 create_session、check_concurrent_sessions、
 check_suspicious_ip、force_logout_session 的异常处理路径
 """
 
-import pytest
 import sys
 import os
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -162,6 +162,11 @@ class TestSessionSecurityCriticalErrorPaths:
 
         result = await SessionSecurity.force_logout_session("test_session", "测试原因")
         assert result is True
+        mock_deactivate.assert_awaited_once_with(
+            mock_session,
+            "test_session",
+            reason="测试原因",
+        )
 
     @patch("session_security.AsyncSessionLocal")
     async def test_force_logout_session_factory_error(self, mock_session_local):
@@ -218,3 +223,8 @@ class TestSessionSecurityCriticalErrorPaths:
         allowed, msg = await SessionSecurity.check_concurrent_sessions(1)
         assert allowed is True
         assert "超过最大并发会话数" in msg
+        mock_deactivate.assert_awaited_once_with(
+            mock_session,
+            "oldest_sess",
+            reason="kicked_by_max_concurrent",
+        )

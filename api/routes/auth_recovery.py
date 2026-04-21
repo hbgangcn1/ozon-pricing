@@ -158,7 +158,10 @@ async def reset_password_with_token(
             detail = INVALID_RESET_TOKEN_ERROR
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
-    await SessionSecurity.invalidate_user_sessions(user_id)
+    await SessionSecurity.invalidate_user_sessions(
+        user_id,
+        reason="password_reset",
+    )
     await purge_user_reset_tokens(user_id)
     await log_password_recovery_event(
         username=user.username,

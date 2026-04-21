@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedVariable=false
 # -*- coding: utf-8 -*-
 import sys
 import os
@@ -304,7 +305,7 @@ class TestCheckAndCreateSessionAtomic:
     async def test_success_at_max(
         self, mock_sl, mock_count, mock_oldest, mock_deact, mock_insert
     ):
-        mock_cm, _ = _make_async_session_cm()
+        mock_cm, mock_session = _make_async_session_cm()
         mock_sl.return_value = mock_cm
         mock_count.return_value = 5
         oldest = MagicMock()
@@ -317,6 +318,11 @@ class TestCheckAndCreateSessionAtomic:
                 1, "s", "ip", "ua"
             )
         assert ok is True
+        mock_deact.assert_awaited_once_with(
+            mock_session,
+            "old",
+            reason="kicked_by_max_concurrent",
+        )
 
     @patch("session_security.count_active_sessions", new_callable=AsyncMock)
     @patch("session_security.AsyncSessionLocal")
@@ -483,7 +489,7 @@ class TestCheckConcurrentSessions:
     async def test_at_max_deactivates_oldest(
         self, mock_sl, mock_count, mock_oldest, mock_deact
     ):
-        mock_cm, _ = _make_async_session_cm()
+        mock_cm, mock_session = _make_async_session_cm()
         mock_sl.return_value = mock_cm
         mock_count.return_value = 5
         oldest = MagicMock()
@@ -492,6 +498,11 @@ class TestCheckConcurrentSessions:
         mock_deact.return_value = None
         ok, msg = await SessionSecurityEnhanced.check_concurrent_sessions(1)
         assert ok is True and "超过" in msg
+        mock_deact.assert_awaited_once_with(
+            mock_session,
+            "old",
+            reason="kicked_by_max_concurrent",
+        )
 
     @patch("session_security.count_active_sessions", new_callable=AsyncMock)
     @patch("session_security.AsyncSessionLocal")
@@ -507,10 +518,11 @@ class TestForceLogoutSession:
     @patch("session_security.deactivate_session", new_callable=AsyncMock)
     @patch("session_security.AsyncSessionLocal")
     async def test_success(self, mock_sl, mock_deact):
-        mock_cm, _ = _make_async_session_cm()
+        mock_cm, mock_session = _make_async_session_cm()
         mock_sl.return_value = mock_cm
         mock_deact.return_value = None
         assert await SessionSecurityEnhanced.force_logout_session("s", "reason") is True
+        mock_deact.assert_awaited_once_with(mock_session, "s", reason="reason")
 
     @patch("session_security.deactivate_session", new_callable=AsyncMock)
     @patch("session_security.AsyncSessionLocal")
@@ -589,7 +601,7 @@ class TestInvalidateUserSessions:
     @patch("session_security.deactivate_all_sessions", new_callable=AsyncMock)
     @patch("session_security.AsyncSessionLocal")
     async def test_success_with_exclude(self, mock_sl, mock_deact):
-        mock_cm, _ = _make_async_session_cm()
+        mock_cm, mock_session = _make_async_session_cm()
         mock_sl.return_value = mock_cm
         mock_deact.return_value = None
         assert (
@@ -597,6 +609,35 @@ class TestInvalidateUserSessions:
                 1, exclude_session_id="keep"
             )
             == 1
+        )
+        mock_deact.assert_awaited_once_with(
+            mock_session,
+            1,
+            exclude_session_id="keep",
+            reason=None,
+        )
+
+    @patch("session_security.deactivate_all_sessions", new_callable=AsyncMock)
+    @patch("session_security.AsyncSessionLocal")
+    async def test_reason_passed_to_deactivate_all_sessions(
+        self,
+        mock_sl,
+        mock_deact,
+    ):
+        mock_cm, mock_session = _make_async_session_cm()
+        mock_sl.return_value = mock_cm
+        mock_deact.return_value = None
+        result = await SessionSecurityEnhanced.invalidate_user_sessions(
+            1,
+            exclude_session_id="keep",
+            reason="password_reset",
+        )
+        assert result == 1
+        mock_deact.assert_awaited_once_with(
+            mock_session,
+            1,
+            exclude_session_id="keep",
+            reason="password_reset",
         )
 
     @patch("session_security.AsyncSessionLocal")

@@ -1,13 +1,6 @@
-# -*- coding: utf-8 -*-
-"""
-Comprehensive tests for db/sessions_crud.py
-Covers all 16 functions with all branches.
-"""
-
 import time
 from uuid import uuid4
 
-import pytest
 from sqlalchemy import delete
 
 from db.sessions_crud import (
@@ -34,7 +27,6 @@ _FLOAT_TOL = 64
 
 
 def _sid():
-    """Return a unique session_id string."""
     return uuid4().hex
 
 
@@ -43,7 +35,6 @@ def _now():
 
 
 async def _make_session(db_session, user_id, last_activity=None, session_id=None):
-    """Insert an active session and flush."""
     sid = session_id or _sid()
     ts = last_activity if last_activity is not None else _now()
     await insert_session(
@@ -59,7 +50,6 @@ async def _make_session(db_session, user_id, last_activity=None, session_id=None
 
 
 async def _cleanup_login_data(db_session, identifier):
-    """Remove login_attempts and user_lockouts for identifier."""
     await db_session.execute(
         delete(LoginAttempt).where(LoginAttempt.identifier == identifier)
     )
@@ -78,16 +68,10 @@ async def _cleanup_login_data(db_session, identifier):
 
 
 async def _cleanup_trusted_devices(db_session, user_id):
-    """Remove all trusted_devices for a user."""
     await db_session.execute(
         delete(TrustedDevice).where(TrustedDevice.user_id == user_id)
     )
     await db_session.flush()
-
-
-# ===========================================================================
-# 1. count_active_sessions
-# ===========================================================================
 
 
 async def test_count_active_sessions_zero(db_session, test_user):
@@ -120,9 +104,6 @@ async def test_count_active_sessions_excludes_inactive(db_session, test_user):
     assert count == 0
 
 
-# ===========================================================================
-# 2. get_oldest_active_session
-# ===========================================================================
 
 
 async def test_get_oldest_active_session_none(db_session, test_user):
@@ -151,9 +132,6 @@ async def test_get_oldest_active_session_single(db_session, test_user):
     assert result.session_id == sid
 
 
-# ===========================================================================
-# 3. deactivate_session
-# ===========================================================================
 
 
 async def test_deactivate_session_found(db_session, test_user):
@@ -180,9 +158,22 @@ async def test_deactivate_session_already_inactive(db_session, test_user):
     assert record.is_active is False
 
 
-# ===========================================================================
-# 4. insert_session
-# ===========================================================================
+async def test_deactivate_session_sets_reason_when_provided(db_session, test_user):
+    sid = await _make_session(db_session, test_user["id"])
+    await deactivate_session(db_session, sid, reason="manual_logout")
+    await db_session.flush()
+    record = await db_session.get(ActiveSession, sid)
+    assert record.is_active is False
+    assert record.inactive_reason == "manual_logout"
+
+
+async def test_deactivate_session_none_reason_leaves_column_null(db_session, test_user):
+    sid = await _make_session(db_session, test_user["id"])
+    await deactivate_session(db_session, sid)
+    await db_session.flush()
+    record = await db_session.get(ActiveSession, sid)
+    assert record is not None
+    assert record.inactive_reason is None
 
 
 async def test_insert_session_creates_record(db_session, test_user):
@@ -209,9 +200,6 @@ async def test_insert_session_creates_record(db_session, test_user):
     assert record.is_active is True
 
 
-# ===========================================================================
-# 5. get_session
-# ===========================================================================
 
 
 async def test_get_session_found(db_session, test_user):
@@ -228,9 +216,6 @@ async def test_get_session_not_found(db_session):
     assert result is None
 
 
-# ===========================================================================
-# 6. get_session_with_user
-# ===========================================================================
 
 
 async def test_get_session_with_user_found(db_session, test_user):
@@ -259,9 +244,6 @@ async def test_get_session_with_user_not_found(db_session):
     assert result is None
 
 
-# ===========================================================================
-# 7. update_session_activity
-# ===========================================================================
 
 
 async def test_update_session_activity_updates_timestamp(db_session, test_user):
@@ -282,9 +264,6 @@ async def test_update_session_activity_nonexistent(db_session):
     await update_session_activity(db_session, "nonexistent_sid", _now())
 
 
-# ===========================================================================
-# 8. deactivate_all_sessions
-# ===========================================================================
 
 
 async def test_deactivate_all_sessions_without_exclude(db_session, test_user):
@@ -324,9 +303,17 @@ async def test_deactivate_all_sessions_no_active_sessions(db_session, test_user)
     await deactivate_all_sessions(db_session, uid)
 
 
-# ===========================================================================
-# 9. get_login_attempts
-# ===========================================================================
+async def test_deactivate_all_sessions_sets_reason(db_session, test_user):
+    uid = test_user["id"]
+    sids = [await _make_session(db_session, uid) for _ in range(2)]
+    await db_session.flush()
+    await deactivate_all_sessions(db_session, uid, reason="password_reset")
+    await db_session.flush()
+    db_session.expire_all()
+    for sid in sids:
+        record = await db_session.get(ActiveSession, sid)
+        assert record.is_active is False
+        assert record.inactive_reason == "password_reset"
 
 
 async def test_get_login_attempts_empty(db_session, test_user):
@@ -386,9 +373,6 @@ async def test_get_login_attempts_filters_old(db_session, test_user):
     assert result[0].success is True
 
 
-# ===========================================================================
-# 10. add_login_attempt
-# ===========================================================================
 
 
 async def test_add_login_attempt_creates_record(db_session, test_user):
@@ -432,9 +416,6 @@ async def test_add_login_attempt_success_flag(db_session, test_user):
     assert result[0].success is True
 
 
-# ===========================================================================
-# 11. get_lockout
-# ===========================================================================
 
 
 async def test_get_lockout_not_found(db_session, test_user):
@@ -459,9 +440,6 @@ async def test_get_lockout_found(db_session, test_user):
     assert result.attempt_count == 5
 
 
-# ===========================================================================
-# 12. set_lockout
-# ===========================================================================
 
 
 async def test_set_lockout_creates_new(db_session, test_user):
@@ -497,9 +475,6 @@ async def test_set_lockout_updates_existing(db_session, test_user):
     assert abs(record.locked_until - second_time) < _FLOAT_TOL
 
 
-# ===========================================================================
-# 13. remove_lockout
-# ===========================================================================
 
 
 async def test_remove_lockout_removes_record(db_session, test_user):
@@ -523,9 +498,6 @@ async def test_remove_lockout_nonexistent_is_safe(db_session, test_user):
     await remove_lockout(db_session, identifier)
 
 
-# ===========================================================================
-# 14. get_trusted_device
-# ===========================================================================
 
 
 async def test_get_trusted_device_not_found(db_session, test_user):
@@ -572,9 +544,6 @@ async def test_get_trusted_device_wrong_fingerprint(db_session, test_user):
     assert result is None
 
 
-# ===========================================================================
-# 15. add_trusted_device
-# ===========================================================================
 
 
 async def test_add_trusted_device_creates_record(db_session, test_user):
@@ -603,9 +572,6 @@ async def test_add_trusted_device_creates_record(db_session, test_user):
     assert record.last_used >= before
 
 
-# ===========================================================================
-# 16. deactivate_trusted_device
-# ===========================================================================
 
 
 async def test_deactivate_trusted_device_found(db_session, test_user):
@@ -655,9 +621,6 @@ async def test_deactivate_trusted_device_already_inactive(db_session, test_user)
     await deactivate_trusted_device(db_session, uid, fp)
 
 
-# ===========================================================================
-# Additional edge-case / integration tests
-# ===========================================================================
 
 
 async def test_insert_and_count_and_deactivate_flow(db_session, test_user):

@@ -52,7 +52,11 @@ class SessionSecurityEnhanced:
                     if active_count >= max_sessions:
                         oldest = await get_oldest_active_session(session, user_id)
                         if oldest:
-                            await deactivate_session(session, oldest.session_id)
+                            await deactivate_session(
+                                session,
+                                oldest.session_id,
+                                reason="kicked_by_max_concurrent",
+                            )
                             await session.commit()
                     now = time.time()
                     await insert_session(
@@ -148,7 +152,11 @@ class SessionSecurityEnhanced:
                 if count >= SessionSecurityEnhanced.MAX_CONCURRENT_SESSIONS:
                     oldest = await get_oldest_active_session(session, user_id)
                     if oldest:
-                        await deactivate_session(session, oldest.session_id)
+                        await deactivate_session(
+                            session,
+                            oldest.session_id,
+                            reason="kicked_by_max_concurrent",
+                        )
                         await session.commit()
                     return True, "超过最大并发会话数，已自动下线最旧会话"
                 return True, ""
@@ -160,7 +168,7 @@ class SessionSecurityEnhanced:
     async def force_logout_session(session_id: str, reason: str) -> bool:
         try:
             async with AsyncSessionLocal() as session:
-                await deactivate_session(session, session_id)
+                await deactivate_session(session, session_id, reason=reason)
                 await session.commit()
                 return True
         except Exception as e:
@@ -190,12 +198,17 @@ class SessionSecurityEnhanced:
 
     @staticmethod
     async def invalidate_user_sessions(
-        user_id: int, exclude_session_id: Optional[str] = None
+        user_id: int,
+        exclude_session_id: Optional[str] = None,
+        reason: Optional[str] = None,
     ) -> int:
         try:
             async with AsyncSessionLocal() as session:
                 await deactivate_all_sessions(
-                    session, user_id, exclude_session_id=exclude_session_id
+                    session,
+                    user_id,
+                    exclude_session_id=exclude_session_id,
+                    reason=reason,
                 )
                 await session.commit()
                 return 1

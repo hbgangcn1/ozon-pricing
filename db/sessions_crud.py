@@ -1,5 +1,5 @@
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import delete as sa_delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,10 +39,13 @@ async def get_oldest_active_session(
 async def deactivate_session(
     session: AsyncSession,
     session_id: str,
+    reason: Optional[str] = None,
 ) -> None:
     record = await session.get(ActiveSession, session_id)
     if record:
         record.is_active = False
+        if reason is not None:
+            record.inactive_reason = reason
 
 
 async def insert_session(
@@ -119,14 +122,18 @@ async def deactivate_all_sessions(
     session: AsyncSession,
     user_id: int,
     exclude_session_id: Optional[str] = None,
+    reason: Optional[str] = None,
 ) -> None:
+    update_values: dict[str, Any] = {"is_active": False}
+    if reason is not None:
+        update_values["inactive_reason"] = reason
     stmt = (
         update(ActiveSession)
         .where(
             ActiveSession.user_id == user_id,
             ActiveSession.is_active.is_(True),
         )
-        .values(is_active=False)
+        .values(**update_values)
     )
     if exclude_session_id:
         stmt = (
@@ -136,7 +143,7 @@ async def deactivate_all_sessions(
                 ActiveSession.is_active.is_(True),
                 ActiveSession.session_id != exclude_session_id,
             )
-            .values(is_active=False)
+            .values(**update_values)
         )
     await session.execute(stmt)
 
