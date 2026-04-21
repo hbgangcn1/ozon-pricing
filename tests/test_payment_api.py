@@ -37,6 +37,7 @@ def _mock_session():
     s = MagicMock()
     s.flush = AsyncMock()
     s.commit = AsyncMock()
+    s.rollback = AsyncMock()
     return s
 
 
@@ -329,7 +330,7 @@ class TestPaymentNotify:
         mock_wechat,
         _setup_overrides,
     ):
-        _, mock_svc = _setup_overrides
+        mock_session, mock_svc = _setup_overrides
         mock_svc.apply_wechat_payment_success.side_effect = (
             SuspiciousWechatNotifyError("test")
         )
@@ -350,6 +351,7 @@ class TestPaymentNotify:
 
         assert resp.status_code == 200
         assert resp.json() == {"code": "SUCCESS", "message": "成功"}
+        mock_session.rollback.assert_awaited_once()
 
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)
@@ -377,7 +379,7 @@ class TestPaymentNotify:
         mock_wechat,
         _setup_overrides,
     ):
-        _, mock_svc = _setup_overrides
+        mock_session, mock_svc = _setup_overrides
         mock_svc.apply_wechat_payment_success.side_effect = RuntimeError("boom")
         mock_wechat.process_notify.return_value = {
             "success": True,
@@ -396,6 +398,7 @@ class TestPaymentNotify:
 
         assert resp.status_code == 500
         assert resp.json() == {"code": "FAIL", "message": "系统错误"}
+        mock_session.rollback.assert_awaited_once()
 
 
 class TestPaymentStatus:

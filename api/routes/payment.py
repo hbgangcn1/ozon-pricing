@@ -159,6 +159,7 @@ async def create_payment(
 @router.post("/notify", response_model=NotifyResponse)
 async def payment_notify(
     request: Request,
+    session: AsyncSession = Depends(get_db),
     svc: PaymentService = Depends(get_payment_service),
 ):
     body = await request.body()
@@ -212,9 +213,13 @@ async def payment_notify(
         )
         return NotifyResponse(code="SUCCESS", message="成功")
     except SuspiciousWechatNotifyError as exc:
+        # Suspicious 异常时 CAS UPDATE 已写入但校验失败：必须显式
+        # rollback 以撤销脏状态，再返回 SUCCESS 阻止微信无限重试。
+        await session.rollback()
         logger.error("wechat notify rejected as suspicious: %s", exc)
         return NotifyResponse(code="SUCCESS", message="成功")
     except Exception:
+        await session.rollback()
         logger.error("wechat notify processing failed unexpectedly", exc_info=True)
         return JSONResponse(
             status_code=500,
