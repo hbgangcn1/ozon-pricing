@@ -299,7 +299,7 @@ async def register(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户名已存在",
+            detail="该用户名不可用",
         )
 
     user_id = await create_user(

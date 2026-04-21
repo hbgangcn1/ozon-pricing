@@ -252,6 +252,30 @@ class TestAuth:
         assert "Max-Age=604800" in set_cookie
         mock_insert_session.assert_awaited_once()
 
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    @patch("api.routes.auth.is_registration_open", new_callable=AsyncMock)
+    def test_register_username_conflict_uses_generic_message(
+        self,
+        mock_open,
+        mock_find,
+    ):
+        mock_open.return_value = True
+        mock_find.return_value = {"id": 9, "username": "validuser"}
+        r = client.post(
+            "/api/auth/register",
+            json={
+                "username": "validuser",
+                "password": "StrongP@ss123!",
+                "security_question": "q",
+                "security_answer": "a",
+            },
+        )
+        assert r.status_code == 400
+        body = r.json()
+        assert body["detail"] == "该用户名不可用"
+        assert "已存在" not in body["detail"]
+        assert "占用" not in body["detail"]
+
     @patch("api.routes.auth.update_user_password", new_callable=AsyncMock)
     def test_change_password_success(self, mock_update):
         mock_update.return_value = True
