@@ -31,6 +31,7 @@ class ActiveSession(Base):
         Boolean,
         server_default=text("true"),
     )
+    inactive_reason: Mapped[Optional[str]] = mapped_column(String(32))
     device_fingerprint: Mapped[Optional[str]] = mapped_column(String)
 
 
