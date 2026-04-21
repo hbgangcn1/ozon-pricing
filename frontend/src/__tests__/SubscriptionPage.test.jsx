@@ -116,10 +116,10 @@ describe('SubscriptionPage', () => {
     })
   })
 
-  it('enterprise shows "联系客服升级"', async () => {
+  it('enterprise shows "开发中……" text instead of button', async () => {
     render(<SubscriptionPage />)
     await waitFor(() => {
-      expect(screen.getByText('联系客服升级')).toBeInTheDocument()
+      expect(screen.getByText('开发中……')).toBeInTheDocument()
     })
   })
 })

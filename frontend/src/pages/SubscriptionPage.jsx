@@ -241,13 +241,9 @@ function SubscriptionPage() {
               
               <div className="p-6 pt-0 mt-auto">
                 {plan.code === 'enterprise' ? (
-                  <Button 
-                    className="w-full" 
-                    disabled={plan.developing}
-                    variant={plan.developing ? "secondary" : "default"}
-                  >
-                    联系客服升级
-                  </Button>
+                  <span className="block w-full text-center text-sm text-text-muted py-2">
+                    开发中……
+                  </span>
                 ) : isCurrentPlan ? (
                   <Button variant="outline" className="w-full" disabled>
                     当前套餐
