@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { toast } from 'sonner'
 import { useAuthStore } from '../stores/authStore'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
@@ -30,6 +31,21 @@ async function refreshAccessToken() {
     }
   )
   return response.data.access_token
+}
+
+function buildSessionExpiredLoginUrl() {
+  const returnTo = encodeURIComponent(`${window.location.pathname}${window.location.search || ''}`)
+  return `/login?returnTo=${returnTo}&reason=expired`
+}
+
+function redirectToExpiredLogin() {
+  useAuthStore.getState().logout()
+  if (import.meta.env.MODE === 'test') {
+    localStorage.removeItem('api_user')
+    localStorage.removeItem('api_token')
+  }
+  toast.error('会话已过期，您的填写内容已保存。请重新登录。')
+  window.location.href = buildSessionExpiredLoginUrl()
 }
 
 if (import.meta.env.MODE !== 'test') {
@@ -68,18 +84,14 @@ apiClient.interceptors.response.use(
         originalRequest.headers = originalRequest.headers || {}
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
         return apiClient(originalRequest)
-      } catch {
-        // fall through to the existing logout + redirect flow
+      } catch (refreshError) {
+        if (refreshError?.response?.status === 401 && window.location.pathname !== '/login') {
+          redirectToExpiredLogin()
+        }
+        return Promise.reject(error)
       }
     }
 
-    if (error.response?.status === 401 && window.location.pathname !== '/login') {
-      useAuthStore.getState().logout()
-      if (import.meta.env.MODE === 'test') {
-        localStorage.removeItem('api_user')
-      }
-      window.location.href = '/login'
-    }
     if (error.code === 'ECONNABORTED') {
       error.userMessage = '请求超时，请检查网络连接'
     } else if (!error.response) {

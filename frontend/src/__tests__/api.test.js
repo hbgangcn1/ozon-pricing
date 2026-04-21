@@ -138,22 +138,19 @@ describe('api.js', () => {
       expect(result).toBe(retriedResponse)
     })
 
-    it('refresh failure falls back to original 401 flow', async () => {
+    it('refresh failure without 401 keeps the original request rejection', async () => {
       await loadApiModule()
       const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
       const originalError = {
         response: { status: 401 },
         config: { url: '/products', headers: {} },
       }
-      localStorage.setItem('api_user', 'user')
-      window.location.pathname = '/dashboard'
       mocks.mockAxiosPost.mockRejectedValue(new Error('refresh failed'))
 
       await expect(resErrorInterceptor(originalError)).rejects.toBe(originalError)
 
-      expect(mocks.mockLogout).toHaveBeenCalledTimes(1)
-      expect(localStorage.getItem('api_user')).toBeNull()
-      expect(window.location.href).toBe('/login')
+      expect(mocks.mockLogout).not.toHaveBeenCalled()
+      expect(window.location.href).toBe('')
     })
 
     it('concurrent 401 requests share one refresh promise', async () => {

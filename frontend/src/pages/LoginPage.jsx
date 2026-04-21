@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -15,11 +15,28 @@ const loginSchema = z.object({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setAuth } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [openRegistration, setOpenRegistration] = useState(true);
+  const searchParams = new URLSearchParams(location.search);
+  const returnTo = searchParams.get('returnTo') || '';
+  const reason = searchParams.get('reason') || '';
+
+  const getSafeReturnTo = () => {
+    if (!returnTo || !returnTo.startsWith('/') || returnTo.startsWith('//')) {
+      return '/';
+    }
+    return returnTo;
+  };
+
+  useEffect(() => {
+    if (reason === 'expired') {
+      toast.info('您的会话已过期，登录后将恢复您的填写内容');
+    }
+  }, [reason]);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,7 +71,7 @@ function LoginPage() {
       const { access_token, user } = response;
       setAuth(user, access_token);
       toast.success('登录成功');
-      navigate('/pricing');
+      navigate(reason === 'expired' ? getSafeReturnTo() : '/pricing');
     } catch (error) {
       const msg = error.response?.data?.detail || '登录失败';
       toast.error(msg);
@@ -78,6 +95,12 @@ function LoginPage() {
             请登录您的账户以继续
           </p>
         </div>
+
+        {reason === 'expired' && (
+          <div className="mb-5 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
+            您的会话已过期，登录后将恢复您的填写内容
+          </div>
+        )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
           {/* 用户名输入 */}
