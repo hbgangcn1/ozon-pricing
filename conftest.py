@@ -11,8 +11,6 @@ from pathlib import Path
 os.environ["E2E_TEST"] = "1"
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-do-not-use-in-production")
 
-_original_import_module_fn = None
-
 
 def pytest_ignore_collect(collection_path, config):
     """忽略收集某些文件"""
@@ -28,52 +26,8 @@ def pytest_ignore_collect(collection_path, config):
 
 
 def pytest_sessionstart(session):
-    """
-    在测试会话开始时 mock 所有备份相关操作
-    避免测试中执行真实的数据库备份/恢复操作，大幅提升测试速度
-    """
-    _ = session  # 参数保留，用于未来扩展
-
-    # 在测试会话开始时立即设置 session_security_enhanced mock
-    # 这确保在任何模块导入之前就设置好 mock
+    _ = session
     import sys
-    from types import ModuleType
-    from unittest.mock import MagicMock
-
-    # 创建假的 SessionSecurityEnhanced 类
-    fake_enhanced_class = MagicMock()
-    fake_enhanced_class.check_and_create_session_atomic = MagicMock(
-        return_value=(False, "Mocked: enhanced module not available")
-    )
-
-    # 创建假的模块
-    fake_enhanced_module = ModuleType("session_security_enhanced")
-    setattr(fake_enhanced_module, "SessionSecurityEnhanced", fake_enhanced_class)
-
-    # 立即插入到 sys.modules（在任何导入之前）
-    sys.modules["session_security_enhanced"] = fake_enhanced_module
-    sys.modules["logistics.session_security_enhanced"] = fake_enhanced_module
-
-    # Mock importlib.import_module 来拦截所有导入尝试
-    import importlib
-
-    original_import_module = importlib.import_module
-
-    def mock_import_module(name, package=None):
-        if name == "session_security_enhanced" or (
-            package
-            and (
-                name.endswith(".session_security_enhanced")
-                or name == ".session_security_enhanced"
-            )
-        ):
-            return fake_enhanced_module
-        return original_import_module(name, package)
-
-    # 替换 importlib.import_module
-    importlib.import_module = mock_import_module
-    global _original_import_module_fn
-    _original_import_module_fn = original_import_module
 
     # Mock redis_cache.get_redis_client 以防止 Redis 连接超时
     # 这必须在导入任何可能使用 Redis 的模块之前完成
@@ -216,13 +170,6 @@ def pytest_sessionstart(session):
 def pytest_sessionfinish(session, exitstatus):
     _ = session
     _ = exitstatus
-
-    # 恢复 importlib.import_module
-    import importlib
-    global _original_import_module_fn
-    if _original_import_module_fn is not None:
-        importlib.import_module = _original_import_module_fn
-        _original_import_module_fn = None
 
     try:
         import psycopg2
