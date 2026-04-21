@@ -150,6 +150,21 @@ async def logout(request: Request):
     return response
 
 
+@router.get("/check-username")
+async def check_username(
+    username: str,
+    session: AsyncSession = Depends(get_db),
+):
+    # 不抛 4xx：前端 axios 拦截器会把 4xx 当全局错误，破坏注册表单的 inline 提示
+
+    if not re.match(r"^[a-zA-Z0-9_]{3,50}$", username):
+        return {"available": False, "reason": "用户名只能包含字母、数字和下划线，长度3-50位"}
+    existing = await find_by_username(session, username)
+    if existing:
+        return {"available": False, "reason": "用户名已被占用"}
+    return {"available": True, "reason": None}
+
+
 @router.post("/register")
 async def register(
     user_data: UserRegister,

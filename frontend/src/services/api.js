@@ -63,6 +63,8 @@ export const authAPI = {
   register: (data) => apiClient.post('/auth/register', data),
   loginAs: (username, password) =>
     apiClient.post('/auth/login', { username, password }),
+  checkUsername: (username) =>
+    apiClient.get('/auth/check-username', { params: { username } }),
 }
 
 export const logoutUser = () => {

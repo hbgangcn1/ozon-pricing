@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 vi.mock('../services/api', () => ({
   authAPI: {
     register: vi.fn(),
+    checkUsername: vi.fn().mockResolvedValue({ available: true, reason: null }),
   },
   settingsAPI: {
     get: vi.fn().mockResolvedValue({ open_registration: true }),
@@ -215,6 +216,83 @@ describe('RegisterPage', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('用户名已存在');
     });
+  });
+
+  it('renders password strength indicator when password is typed', async () => {
+    renderComponent();
+
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), {
+      target: { value: 'weakpass' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('password-strength')).toBeInTheDocument();
+      expect(screen.getByTestId('password-strength-label')).toBeInTheDocument();
+    });
+  });
+
+  it('blocks submit and shows error when username is taken', async () => {
+    authAPI.checkUsername.mockResolvedValueOnce({
+      available: false,
+      reason: '用户名已被占用',
+    });
+
+    renderComponent();
+
+    fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), {
+      target: { value: 'takenuser' },
+    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('username-taken')).toBeInTheDocument();
+        expect(screen.getByTestId('username-taken-msg')).toHaveTextContent('用户名已被占用');
+      },
+      { timeout: 2000 }
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/13位以上/), {
+      target: { value: 'ValidPassword123!' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), {
+      target: { value: 'ValidPassword123!' },
+    });
+    fireEvent.change(screen.getByRole('combobox'), {
+      target: { value: '您母亲的姓氏是什么？' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), {
+      target: { value: 'answer' },
+    });
+    fireEvent.click(screen.getByTestId('eula-checkbox'));
+
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('用户名已被占用');
+    });
+    expect(authAPI.register).not.toHaveBeenCalled();
+  });
+
+  it('debounces username checks to fire once across rapid input changes', async () => {
+    vi.useFakeTimers();
+    try {
+      renderComponent();
+      authAPI.checkUsername.mockClear();
+
+      const usernameInput = screen.getByPlaceholderText(/请输入用户名/);
+      fireEvent.change(usernameInput, { target: { value: 'abc' } });
+      fireEvent.change(usernameInput, { target: { value: 'abcd' } });
+      fireEvent.change(usernameInput, { target: { value: 'abcde' } });
+
+      vi.advanceTimersByTime(399);
+      expect(authAPI.checkUsername).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(2);
+      expect(authAPI.checkUsername).toHaveBeenCalledTimes(1);
+      expect(authAPI.checkUsername).toHaveBeenCalledWith('abcde');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('submit button shows "注册中..." when loading', async () => {

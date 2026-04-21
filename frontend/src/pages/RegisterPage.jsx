@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Package, Loader2, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Package, Loader2, AlertCircle, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
 import { authAPI, settingsAPI } from '../services/api';
@@ -12,6 +12,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Checkbox } from '../components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import PasswordStrengthIndicator from '../components/PasswordStrengthIndicator';
 
 const registerSchema = z.object({
   username: z.string().min(3, '用户名至少3位').max(50, '用户名最多50位'),
@@ -63,14 +64,50 @@ function RegisterPage() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(registerSchema),
+    mode: 'onChange',
   });
+
+  const passwordValue = watch('password') || '';
+  const usernameValue = watch('username') || '';
+  const [usernameStatus, setUsernameStatus] = useState({ state: 'idle', reason: null });
+  const usernameCheckRef = useRef(0);
+
+  useEffect(() => {
+    const trimmed = usernameValue.trim();
+    if (trimmed.length < 3) {
+      setUsernameStatus({ state: 'idle', reason: null });
+      return;
+    }
+    setUsernameStatus({ state: 'checking', reason: null });
+    const requestId = ++usernameCheckRef.current;
+    const handle = setTimeout(async () => {
+      try {
+        const result = await authAPI.checkUsername(trimmed);
+        if (requestId !== usernameCheckRef.current) return;
+        if (result.available) {
+          setUsernameStatus({ state: 'available', reason: null });
+        } else {
+          setUsernameStatus({ state: 'taken', reason: result.reason || '该用户名不可用' });
+        }
+      } catch {
+        if (requestId !== usernameCheckRef.current) return;
+        setUsernameStatus({ state: 'idle', reason: null });
+      }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [usernameValue]);
 
   const onSubmit = async (data) => {
     if (!agreedToEULA) {
       toast.error('请阅读并同意最终用户协议');
+      return;
+    }
+    if (usernameStatus.state === 'taken') {
+      toast.error(usernameStatus.reason || '用户名已被占用');
       return;
     }
     setLoading(true);
@@ -145,17 +182,46 @@ function RegisterPage() {
             <label htmlFor="username" className="text-sm font-medium text-text-secondary block">
               用户名
             </label>
-            <input
-              id="username"
-              {...register('username')}
-              type="text"
-              className="w-full bg-surface-high/50 border border-surface-highest rounded-lg px-3.5 py-2.5 text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-surface-high hover:border-surface-bright transition-all duration-200 ease-out"
-              placeholder="请输入用户名（至少3位）"
-            />
+            <div className="relative">
+              <input
+                id="username"
+                {...register('username')}
+                type="text"
+                className="w-full bg-surface-high/50 border border-surface-highest rounded-lg px-3.5 py-2.5 pr-10 text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-surface-high hover:border-surface-bright transition-all duration-200 ease-out"
+                placeholder="请输入用户名（至少3位）"
+                autoComplete="username"
+              />
+              {usernameStatus.state === 'checking' && (
+                <Loader2
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted animate-spin"
+                  data-testid="username-checking"
+                />
+              )}
+              {usernameStatus.state === 'available' && (
+                <Check
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-status-success"
+                  data-testid="username-available"
+                />
+              )}
+              {usernameStatus.state === 'taken' && (
+                <X
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-status-error"
+                  data-testid="username-taken"
+                />
+              )}
+            </div>
             {errors.username && (
               <p className="text-status-error text-xs mt-1">
                 {errors.username.message}
               </p>
+            )}
+            {!errors.username && usernameStatus.state === 'taken' && (
+              <p className="text-status-error text-xs mt-1" data-testid="username-taken-msg">
+                {usernameStatus.reason}
+              </p>
+            )}
+            {!errors.username && usernameStatus.state === 'available' && (
+              <p className="text-status-success text-xs mt-1">用户名可用</p>
             )}
           </div>
 
@@ -189,6 +255,7 @@ function RegisterPage() {
                 {errors.password.message}
               </p>
             )}
+            <PasswordStrengthIndicator password={passwordValue} />
           </div>
 
           <div className="space-y-1.5">

@@ -198,6 +198,40 @@ class TestAuth:
         )
         assert r.status_code == 401
 
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    def test_check_username_available(self, mock_find):
+        mock_find.return_value = None
+        r = client.get("/api/auth/check-username", params={"username": "newuser"})
+        assert r.status_code == 200
+        assert r.json() == {"available": True, "reason": None}
+
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    def test_check_username_taken(self, mock_find):
+        mock_find.return_value = {"id": 1, "username": "taken"}
+        r = client.get("/api/auth/check-username", params={"username": "taken"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["available"] is False
+        assert "占用" in body["reason"]
+
+    def test_check_username_invalid_format(self):
+        r = client.get("/api/auth/check-username", params={"username": "ab"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["available"] is False
+        assert body["reason"] is not None
+
+    def test_check_username_invalid_chars(self):
+        r = client.get(
+            "/api/auth/check-username",
+            params={"username": "bad name!"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["available"] is False
+        assert body["reason"] is not None
+
+
 
 class TestProducts:
     @patch("api.routes.products.get_all_products_for_user", new_callable=AsyncMock)
