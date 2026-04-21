@@ -63,45 +63,51 @@ logistics/
 ├── security/             # 安全模块
 │   ├── tokens.py         # JWT令牌生成/验证
 │   └── utils.py          # 安全工具函数
-├── frontend/             # React前端（Vite + Ant Design + Zustand）
+├── models/               # SQLAlchemy ORM模型（user, product, logistics, order, session, config, cache, log）
+├── db/                   # 数据库CRUD操作层（users, products, logistics_crud, orders, subscriptions, statistics, admin, sessions_crud, exchange, config, plans）
+├── pricing/              # 定价计算模块（calculate_pricing, final_price, profit, logistic_cost, floating_price, exchange_rate, cost_filter, filter, select_best）
+├── services/             # 业务服务层
+├── alembic/              # 数据库迁移（head: 87a840348f80）
+├── migrations/           # 历史迁移脚本
+├── scripts/              # 运维/工具脚本
+├── docs/                 # 项目文档
+├── frontend/             # React前端（Vite + shadcn/ui + Radix + Tailwind + Zustand）
 │   ├── src/
-│   │   ├── components/   # 通用组件（TopHeader, SideMenu, Sidebar等）
+│   │   ├── components/   # 共享组件（AppLayout, Sidebar, TopHeader, VirtualTable等）
 │   │   ├── pages/        # 14个页面
 │   │   ├── stores/       # Zustand状态管理（auth, logistics, product）
 │   │   ├── services/     # API调用层
 │   │   ├── lib/          # 工具库
 │   │   ├── styles/       # 样式
-│   │   ├── __tests__/    # 前端测试（21个文件，169个测试）
+│   │   ├── __tests__/    # 前端单元测试（32个文件，Vitest + Testing Library）
 │   │   └── App.jsx       # 路由入口
+│   ├── tests/            # Playwright E2E测试
 │   ├── vite.config.js
 │   └── vitest.config.js
-├── tests/                # 后端测试（984个测试）
-│   ├── conftest.py       # 测试夹具（PostgreSQL连接）
-│   ├── test_db_utils_coverage_*.py  # db_utils覆盖率测试（5个文件）
-│   ├── test_logic_coverage.py       # logic.py覆盖率测试
-│   ├── test_api_routes*.py          # API路由测试（2个文件）
-│   ├── test_api_main.py             # FastAPI主应用测试
+├── tests/                # 后端测试（111个文件，pytest + 真实PostgreSQL）
+│   ├── conftest.py       # 测试夹具（PostgreSQL连接 + 测试用户清理）
+│   ├── test_api_*.py     # API路由测试
 │   ├── test_jwt_tokens.py           # JWT令牌测试
 │   ├── test_auth_dependencies.py    # 认证依赖测试
 │   ├── test_payment_handler.py      # 支付处理测试
+│   ├── test_session_security*.py    # 会话安全测试
 │   └── ...                          # 其他测试文件
-├── db_utils.py           # 数据库工具（核心，~4250行）
-├── logic.py              # 业务逻辑（定价计算等）
-├── db_adapter.py         # 数据库适配器（SQL转换、连接池）
+├── database.py           # 数据库连接与会话管理（SQLAlchemy async）
 ├── db_config.py          # 数据库配置
+├── logic.py              # 业务逻辑入口
+├── exchange_service.py   # 汇率服务
+├── enhanced_exchange_service.py  # 增强汇率服务
 ├── payment_handler.py    # 支付处理（微信支付回调）
 ├── payment_callback_enhanced.py  # 增强支付回调
-├── conftest.py           # 根级pytest配置
-├── session_security.py   # 会话安全
-├── session_security_enhanced.py  # 增强会话安全
+├── postgres_backup_service.py    # PostgreSQL备份
+├── conftest.py           # 根级pytest配置（仅 redis/auto_backup/postgres_backup_service mock + 测试用户清理）
+├── session_security.py   # 会话安全（含 SessionSecurityEnhanced 类）
+├── session_security_helpers.py   # 会话安全辅助
 ├── password_recovery.py  # 密码恢复
 ├── password_utils.py     # 密码工具
 ├── security_questions.py # 安全问题
 ├── sql_security.py       # SQL安全检查
 ├── redis_cache.py        # Redis缓存
-├── exchange_service.py   # 汇率服务
-├── enhanced_exchange_service.py  # 增强汇率服务
-├── postgres_backup_service.py    # PostgreSQL备份
 ├── wechat_pay_config.py  # 微信支付配置
 ├── wechat_pay_v3_api.py  # 微信支付V3 API
 ├── logger_config.py      # 日志配置
@@ -109,6 +115,7 @@ logistics/
 ├── setup.cfg             # flake8配置
 ├── pytest.ini            # pytest配置
 ├── PLAN.md               # 执行计划（必须维护）
+├── README.md             # 项目说明
 └── AGENTS.md             # 本文件
 ```
 
