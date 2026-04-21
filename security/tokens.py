@@ -1,4 +1,5 @@
 import os
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -24,7 +25,7 @@ def _get_jwt_secret() -> str:
     return secret
 
 
-_SECRET_KEY: Optional[str] = None
+_secret_key_cache: Optional[str] = None
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.environ.get(
@@ -39,10 +40,10 @@ TOKEN_TYPE_REFRESH = "refresh"
 
 
 def _get_secret_key() -> str:
-    global _SECRET_KEY
-    if _SECRET_KEY is None:
-        _SECRET_KEY = _get_jwt_secret()
-    return _SECRET_KEY
+    global _secret_key_cache
+    if _secret_key_cache is None:
+        _secret_key_cache = _get_jwt_secret()
+    return _secret_key_cache
 
 
 def __getattr__(name: str) -> object:
@@ -74,6 +75,7 @@ def create_access_token(
     username: str,
     role: str = "user",
     expires_delta: Optional[timedelta] = None,
+    extra_claims: Optional[Mapping[str, object]] = None,
 ) -> str:
     if expires_delta is None:
         expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -87,6 +89,8 @@ def create_access_token(
         "iat": now,
         "exp": now + expires_delta,
     }
+    if extra_claims:
+        payload.update(dict(extra_claims))
     return jwt.encode(payload, _get_secret_key(), algorithm=ALGORITHM)
 
 
