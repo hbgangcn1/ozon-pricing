@@ -89,10 +89,10 @@ async def get_all_users(
     result = await session.execute(query)
     users = result.scalars().all()
 
-    user_logistics_counts = {}
-    for user in users:
-        cnt_stmt = select(func.count(Logistics.id)).where(Logistics.user_id == user.id)
-        user_logistics_counts[user.id] = await session.scalar(cnt_stmt) or 0
+    user_logistics_counts = await get_logistics_counts_for_users(
+        session,
+        [user.id for user in users],
+    )
 
     formatted = [format_user_row(u, user_logistics_counts) for u in users]
     return {
@@ -101,6 +101,20 @@ async def get_all_users(
         "total_pages": (total_count + per_page - 1) // per_page,
         "current_page": page,
     }
+
+
+async def get_logistics_counts_for_users(
+    session: AsyncSession,
+    user_ids: list[int],
+) -> dict[int, int]:
+    if not user_ids:
+        return {}
+    result = await session.execute(
+        select(Logistics.user_id, func.count(Logistics.id))
+        .where(Logistics.user_id.in_(user_ids))
+        .group_by(Logistics.user_id)
+    )
+    return {user_id: count for user_id, count in result.all()}
 
 
 async def get_user_detail(
