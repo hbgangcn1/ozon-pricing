@@ -5,10 +5,14 @@ import pytest
 
 from security.tokens import (
     create_access_token,
+    create_refresh_token,
     decode_access_token,
+    decode_refresh_token,
     get_user_id_from_token,
     TokenExpiredError,
     TokenInvalidError,
+    TOKEN_TYPE_ACCESS,
+    TOKEN_TYPE_REFRESH,
     SECRET_KEY,
     ALGORITHM,
 )
@@ -132,3 +136,84 @@ class TestTokenErrorHierarchy:
             raise TokenExpiredError("test")
         with pytest.raises(TokenError):
             raise TokenInvalidError("test")
+
+
+class TestCreateRefreshToken:
+    def test_returns_string(self):
+        token = create_refresh_token(user_id=1, sid="sid-123")
+        assert isinstance(token, str)
+        assert len(token) > 0
+
+    def test_payload_contains_required_fields(self):
+        token = create_refresh_token(user_id=42, sid="sid-abc")
+        payload = decode_refresh_token(token)
+        assert payload["sub"] == "42"
+        assert payload["sid"] == "sid-abc"
+        assert payload["type"] == TOKEN_TYPE_REFRESH
+        assert "iat" in payload
+        assert "exp" in payload
+
+    def test_default_expiry_is_days_not_minutes(self):
+        token = create_refresh_token(user_id=1, sid="sid")
+        payload = decode_refresh_token(token)
+        ttl = payload["exp"] - payload["iat"]
+        assert ttl >= 86400, f"Refresh token TTL should be ≥1 day, got {ttl}s"
+
+
+class TestDecodeRefreshToken:
+    def test_valid_refresh_token(self):
+        token = create_refresh_token(user_id=7, sid="sid-x")
+        payload = decode_refresh_token(token)
+        assert payload["sub"] == "7"
+
+    def test_expired_refresh_token_raises(self):
+        token = create_refresh_token(
+            user_id=1, sid="sid", expires_delta=timedelta(seconds=-1)
+        )
+        with pytest.raises(TokenExpiredError):
+            decode_refresh_token(token)
+
+    def test_access_token_rejected_as_refresh(self):
+        access = create_access_token(user_id=1, username="alice")
+        with pytest.raises(TokenInvalidError, match="refresh"):
+            decode_refresh_token(access)
+
+    def test_refresh_token_rejected_as_access(self):
+        refresh = create_refresh_token(user_id=1, sid="sid")
+        with pytest.raises(TokenInvalidError, match="[Rr]efresh"):
+            decode_access_token(refresh)
+
+    def test_missing_sid_raises(self):
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            {"sub": "1", "type": TOKEN_TYPE_REFRESH},
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        with pytest.raises(TokenInvalidError, match="sid"):
+            decode_refresh_token(token)
+
+    def test_wrong_type_raises(self):
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            {"sub": "1", "sid": "x", "type": "other"},
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        with pytest.raises(TokenInvalidError, match="refresh"):
+            decode_refresh_token(token)
+
+    def test_tampered_refresh_token_raises(self):
+        token = create_refresh_token(user_id=1, sid="sid")
+        tampered = token[:-4] + "XXXX"
+        with pytest.raises(TokenInvalidError):
+            decode_refresh_token(tampered)
+
+
+class TestAccessTokenTypeField:
+    def test_access_token_marked_with_type(self):
+        token = create_access_token(user_id=1, username="alice")
+        payload = decode_access_token(token)
+        assert payload["type"] == TOKEN_TYPE_ACCESS

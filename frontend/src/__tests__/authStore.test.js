@@ -91,6 +91,16 @@ describe('authStore.js', () => {
     })
   })
 
+  describe('setToken()', () => {
+    it('syncs state and localStorage', () => {
+      useAuthStore.getState().setToken('refreshed-token')
+
+      expect(useAuthStore.getState().token).toBe('refreshed-token')
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+      expect(localStorage.getItem('api_token')).toBe('refreshed-token')
+    })
+  })
+
   describe('logout()', () => {
     it('removes keys from localStorage and resets state', () => {
       useAuthStore.setState({

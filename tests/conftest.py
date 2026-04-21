@@ -25,6 +25,8 @@ os.environ.setdefault("POSTGRES_HOST", "localhost")
 os.environ.setdefault("POSTGRES_PORT", "5432")
 os.environ.setdefault("POSTGRES_DB", "logistics")
 os.environ.setdefault("POSTGRES_USER", "postgres")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-jwt-refresh-option-a-1234567890")
+os.environ.setdefault("ALLOWED_ORIGINS", "http://test")
 
 if "POSTGRES_PASSWORD" not in os.environ:
     raise EnvironmentError(

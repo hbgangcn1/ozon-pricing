@@ -54,6 +54,11 @@ export const useAuthStore = create((set, get) => ({
     set({ user: normalizedUser, token: tokenToSet, isAuthenticated: true })
   },
 
+  setToken: (token) => {
+    localStorage.setItem('api_token', token)
+    set({ token, isAuthenticated: true })
+  },
+
   logout: () => {
     localStorage.removeItem('api_user')
     localStorage.removeItem('api_token')

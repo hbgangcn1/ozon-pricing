@@ -2,6 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+let refreshPromise = null
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -15,6 +16,20 @@ const apiClient = axios.create({
 function getCsrfToken() {
   const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
   return match ? decodeURIComponent(match[1]) : null
+}
+
+async function refreshAccessToken() {
+  const csrfToken = getCsrfToken()
+  const response = await axios.post(
+    '/auth/refresh',
+    null,
+    {
+      baseURL: API_BASE_URL,
+      withCredentials: true,
+      headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+    }
+  )
+  return response.data.access_token
 }
 
 if (import.meta.env.MODE !== 'test') {
@@ -33,14 +48,36 @@ if (import.meta.env.MODE !== 'test') {
 
 apiClient.interceptors.response.use(
   (response) => response.data,
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config || {}
+    const isRefreshRequest = originalRequest.url?.includes('/auth/refresh')
+    const shouldRetry = error.response?.status === 401
+      && !originalRequest._retry
+      && !isRefreshRequest
+
+    if (shouldRetry) {
+      originalRequest._retry = true
+      try {
+        if (!refreshPromise) {
+          refreshPromise = refreshAccessToken().finally(() => {
+            refreshPromise = null
+          })
+        }
+        const newAccessToken = await refreshPromise
+        useAuthStore.getState().setToken(newAccessToken)
+        originalRequest.headers = originalRequest.headers || {}
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+        return apiClient(originalRequest)
+      } catch {
+        // fall through to the existing logout + redirect flow
+      }
+    }
+
     if (error.response?.status === 401 && window.location.pathname !== '/login') {
       useAuthStore.getState().logout()
-      // 测试环境额外清理 localStorage（部分测试不挂 store）
       if (import.meta.env.MODE === 'test') {
         localStorage.removeItem('api_user')
       }
-      // 无论环境，401 后都跳转登录页，避免用户停留在保护页面看空白
       window.location.href = '/login'
     }
     if (error.code === 'ECONNABORTED') {

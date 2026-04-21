@@ -63,13 +63,17 @@ def _check_csrf_double_submit(request: Request) -> None:
         )
 
 
+def validate_cookie_csrf(request: Request) -> None:
+    _check_csrf_origin(request)
+    _check_csrf_double_submit(request)
+
+
 def _extract_token(api_key, request: Request) -> str:
     if api_key and api_key.credentials:
         return api_key.credentials
     cookie_token = request.cookies.get("access_token")
     if cookie_token:
-        _check_csrf_origin(request)
-        _check_csrf_double_submit(request)
+        validate_cookie_csrf(request)
         return cookie_token
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

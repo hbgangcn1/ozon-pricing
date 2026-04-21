@@ -12,6 +12,7 @@
 import hashlib
 import os
 import time
+from typing import cast
 
 import pytest
 from httpx import AsyncClient
@@ -61,13 +62,21 @@ class TestCookieAuth:
             },
         )
         assert login_resp.status_code == 200
-        cookie_val = login_resp.cookies.get("access_token")
+        cookie_val = cast(str, login_resp.cookies.get("access_token"))
+        csrf_val = cast(str, login_resp.cookies.get("csrf_token"))
         assert cookie_val
 
         client.cookies.update({"access_token": cookie_val})
+        client.cookies.update({"csrf_token": csrf_val})
 
         # Use cookie only — no Authorization header
-        resp = await client.get("/api/products")
+        resp = await client.get(
+            "/api/products",
+            headers={
+                "origin": "http://test",
+                "x-csrf-token": csrf_val,
+            },
+        )
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -161,12 +170,21 @@ class TestCookieAuth:
         )
         assert login_resp.status_code == 200
 
-        logout_resp = await client.post("/api/auth/logout")
+        csrf_val = cast(str, login_resp.cookies.get("csrf_token"))
+        logout_resp = await client.post(
+            "/api/auth/logout",
+            headers={
+                "origin": "http://test",
+                "x-csrf-token": csrf_val,
+            },
+        )
         assert logout_resp.status_code == 200
         # Cookie should be cleared (max-age=0 or deleted)
         cookie = logout_resp.cookies.get("access_token")
         # After delete_cookie the value is empty or key absent
         assert cookie is None or cookie == ""
+        refresh_cookie = logout_resp.cookies.get("refresh_token")
+        assert refresh_cookie is None or refresh_cookie == ""
 
 
 # ------------------------------------------------------------------

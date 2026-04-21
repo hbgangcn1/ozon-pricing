@@ -1,10 +1,17 @@
-import sys
+"""Route smoke tests for API endpoints."""
+
+# pyright: reportUnusedFunction=false
+
 import os
+import sys
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+os.environ.setdefault("ALLOWED_ORIGINS", "http://testserver")
 
 from fastapi.testclient import TestClient  # noqa: E402
 from api.main import app  # noqa: E402
@@ -34,6 +41,11 @@ app.dependency_overrides[dependencies.require_admin] = lambda: 1
 app.dependency_overrides[dependencies.get_current_user] = lambda: MOCK_USER
 
 client = TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture(autouse=True)
+def _allow_testserver_origin(monkeypatch):
+    monkeypatch.setattr(dependencies, "_ALLOWED_ORIGINS", {"http://testserver"})
 
 
 def _logistics_row():
@@ -105,8 +117,16 @@ class TestRootEndpoints:
 
 class TestAuth:
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
+    @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
+    @patch("api.routes.auth.create_refresh_token")
     @patch("api.routes.auth.create_access_token")
-    def test_login_success(self, mock_token, mock_verify):
+    def test_login_success(
+        self,
+        mock_access_token,
+        mock_refresh_token,
+        mock_insert_session,
+        mock_verify,
+    ):
         mock_verify.return_value = {
             "id": 1,
             "username": "u",
@@ -114,10 +134,18 @@ class TestAuth:
             "user_type": "free",
             "remaining_calculations": 10,
         }
-        mock_token.return_value = "tok123"
+        mock_access_token.return_value = "tok123"
+        mock_refresh_token.return_value = "refresh123"
         r = client.post("/api/auth/login", json={"username": "u", "password": "p"})
         assert r.status_code == 200
         assert r.json()["access_token"] == "tok123"
+        set_cookie = r.headers["set-cookie"]
+        assert "access_token=tok123" in set_cookie
+        assert "refresh_token=refresh123" in set_cookie
+        assert "csrf_token=" in set_cookie
+        assert "Max-Age=900" in set_cookie
+        assert "Max-Age=604800" in set_cookie
+        mock_insert_session.assert_awaited_once()
 
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
     def test_login_bad_credentials(self, mock_verify):
@@ -125,10 +153,44 @@ class TestAuth:
         r = client.post("/api/auth/login", json={"username": "u", "password": "wrong"})
         assert r.status_code == 401
 
-    def test_logout(self):
-        r = client.post("/api/auth/logout")
+    @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
+    @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
+    @patch("api.routes.auth.create_refresh_token")
+    @patch("api.routes.auth.create_access_token")
+    def test_logout(
+        self,
+        mock_access_token,
+        mock_refresh_token,
+        mock_insert_session,
+        mock_verify,
+    ):
+        mock_verify.return_value = {
+            "id": 1,
+            "username": "u",
+            "role": "user",
+            "user_type": "free",
+            "remaining_calculations": 10,
+        }
+        mock_access_token.return_value = "tok123"
+        mock_refresh_token.return_value = "refresh123"
+        login_resp = client.post(
+            "/api/auth/login",
+            json={"username": "u", "password": "p"},
+        )
+        csrf_token = cast(str, login_resp.cookies.get("csrf_token"))
+        r = client.post(
+            "/api/auth/logout",
+            headers={
+                "origin": "http://testserver",
+                "x-csrf-token": csrf_token,
+            },
+        )
         assert r.status_code == 200
         assert "message" in r.json()
+        set_cookie = r.headers["set-cookie"]
+        assert "access_token=" in set_cookie
+        assert "refresh_token=" in set_cookie
+        assert "csrf_token=" in set_cookie
 
     def test_me(self):
         r = client.get("/api/auth/me", headers={"Authorization": "Bearer faketoken"})
@@ -151,15 +213,26 @@ class TestAuth:
         )
         assert r.status_code == 403
 
+    @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
+    @patch("api.routes.auth.create_refresh_token")
     @patch("api.routes.auth.create_access_token")
     @patch("api.routes.auth.create_user", new_callable=AsyncMock)
     @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
     @patch("api.routes.auth.is_registration_open", new_callable=AsyncMock)
-    def test_register_success(self, mock_open, mock_find, mock_create, mock_token):
+    def test_register_success(
+        self,
+        mock_open,
+        mock_find,
+        mock_create,
+        mock_access_token,
+        mock_refresh_token,
+        mock_insert_session,
+    ):
         mock_open.return_value = True
         mock_find.return_value = None
         mock_create.return_value = 42
-        mock_token.return_value = "newtoken"
+        mock_access_token.return_value = "newtoken"
+        mock_refresh_token.return_value = "newrefresh"
         r = client.post(
             "/api/auth/register",
             json={
@@ -171,6 +244,13 @@ class TestAuth:
         )
         assert r.status_code == 200
         assert r.json()["access_token"] == "newtoken"
+        set_cookie = r.headers["set-cookie"]
+        assert "access_token=newtoken" in set_cookie
+        assert "refresh_token=newrefresh" in set_cookie
+        assert "csrf_token=" in set_cookie
+        assert "Max-Age=900" in set_cookie
+        assert "Max-Age=604800" in set_cookie
+        mock_insert_session.assert_awaited_once()
 
     @patch("api.routes.auth.update_user_password", new_callable=AsyncMock)
     def test_change_password_success(self, mock_update):

@@ -1,11 +1,19 @@
 import os
 import re
+import secrets
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from db.sessions_crud import (
+    deactivate_session,
+    get_session,
+    insert_session,
+    update_session_activity,
+)
 from db.users import (
     verify_user,
     create_user,
@@ -18,14 +26,23 @@ from api.models.schemas import (
     UserResponse,
     TokenResponse,
     MessageResponse,
+    RefreshResponse,
     UserRegister,
     ChangePassword,
 )
-from security.tokens import create_access_token
+from models.user import User
+from security.tokens import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    TokenExpiredError,
+    TokenInvalidError,
+)
 from security.csrf import generate_csrf_token
 from api.dependencies import (
     get_current_user_id,
     get_current_user as get_current_user_dep,
+    validate_cookie_csrf,
 )
 from api.middleware.login_limiter import login_limiter
 from logger_config import logger
@@ -35,7 +52,8 @@ _cookie_secure = (
     os.environ.get("COOKIE_SECURE", "true" if _is_production else "false").lower()
     == "true"
 )
-_COOKIE_MAX_AGE = 8 * 3600  # 8 hours
+_ACCESS_COOKIE_MAX_AGE = 15 * 60
+_REFRESH_COOKIE_MAX_AGE = 7 * 24 * 3600
 
 
 def validate_password(password: str) -> bool:
@@ -55,14 +73,32 @@ def validate_password(password: str) -> bool:
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
 
-def _set_token_cookie(response: JSONResponse, token: str) -> None:
+def _get_request_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _get_request_user_agent(request: Request) -> str:
+    return request.headers.get("user-agent", "")
+
+
+def _normalize_user_identity(user: User) -> tuple[str, str]:
+    username = user.username or ""
+    role = user.role or "user"
+    return username, role
+
+
+def _set_token_cookie(
+    response: JSONResponse,
+    access_token: str,
+    refresh_token: str,
+) -> None:
     response.set_cookie(
         key="access_token",
-        value=token,
+        value=access_token,
         httponly=True,
         secure=_cookie_secure,
         samesite="strict",
-        max_age=_COOKIE_MAX_AGE,
+        max_age=_ACCESS_COOKIE_MAX_AGE,
         path="/",
     )
     response.set_cookie(
@@ -71,9 +107,78 @@ def _set_token_cookie(response: JSONResponse, token: str) -> None:
         httponly=False,
         secure=_cookie_secure,
         samesite="strict",
-        max_age=_COOKIE_MAX_AGE,
+        max_age=_REFRESH_COOKIE_MAX_AGE,
         path="/",
     )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=_cookie_secure,
+        samesite="strict",
+        max_age=_REFRESH_COOKIE_MAX_AGE,
+        path="/",
+    )
+
+
+def _clear_token_cookies(response: JSONResponse) -> None:
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        httponly=True,
+        secure=_cookie_secure,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        key="refresh_token",
+        path="/",
+        httponly=True,
+        secure=_cookie_secure,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        key="csrf_token",
+        path="/",
+        httponly=False,
+        secure=_cookie_secure,
+        samesite="strict",
+    )
+
+
+def _decode_refresh_cookie(token: str) -> dict:
+    try:
+        return decode_refresh_token(token)
+    except (TokenExpiredError, TokenInvalidError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的刷新令牌",
+        )
+
+
+async def _issue_auth_tokens(
+    session: AsyncSession,
+    request: Request,
+    user_id: int,
+    username: str,
+    role: str,
+) -> tuple[str, str]:
+    sid = secrets.token_urlsafe(32)
+    now = time.time()
+    await insert_session(
+        session,
+        session_id=sid,
+        user_id=user_id,
+        ip_address=_get_request_ip(request),
+        user_agent=_get_request_user_agent(request),
+        now=now,
+    )
+    access_token = create_access_token(
+        user_id=user_id,
+        username=username,
+        role=role,
+    )
+    refresh_token = create_refresh_token(user_id=user_id, sid=sid)
+    return access_token, refresh_token
 
 
 @router.post("/login")
@@ -82,7 +187,7 @@ async def login(
     request: Request,
     session: AsyncSession = Depends(get_db),
 ):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_request_ip(request)
     login_limiter.check(client_ip)
 
     user = await verify_user(session, credentials.username, credentials.password)
@@ -105,13 +210,15 @@ async def login(
         user["username"],
         client_ip,
     )
-    token = create_access_token(
+    access_token, refresh_token = await _issue_auth_tokens(
+        session=session,
+        request=request,
         user_id=user["id"],
         username=user["username"],
         role=user.get("role", "user"),
     )
     body = TokenResponse(
-        access_token=token,
+        access_token=access_token,
         user=UserResponse(
             id=user["id"],
             username=user["username"],
@@ -122,31 +229,30 @@ async def login(
         ),
     )
     response = JSONResponse(content=body.model_dump())
-    _set_token_cookie(response, token)
+    _set_token_cookie(response, access_token, refresh_token)
     return response
 
 
 @router.post("/logout")
-async def logout(request: Request):
-    client_ip = request.client.host if request.client else "unknown"
+async def logout(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    client_ip = _get_request_ip(request)
     logger.info("auth.logout ip=%s", client_ip)
+    if request.cookies.get("access_token") or request.cookies.get("refresh_token"):
+        validate_cookie_csrf(request)
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        try:
+            payload = decode_refresh_token(refresh_token)
+            await deactivate_session(session, payload["sid"])
+        except (TokenExpiredError, TokenInvalidError):
+            pass
     response = JSONResponse(
         content=MessageResponse(message="登出成功").model_dump(),
     )
-    response.delete_cookie(
-        key="access_token",
-        path="/",
-        httponly=True,
-        secure=_cookie_secure,
-        samesite="strict",
-    )
-    response.delete_cookie(
-        key="csrf_token",
-        path="/",
-        httponly=False,
-        secure=_cookie_secure,
-        samesite="strict",
-    )
+    _clear_token_cookies(response)
     return response
 
 
@@ -208,7 +314,7 @@ async def register(
             detail="创建用户失败",
         )
 
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_request_ip(request)
     logger.info(
         "auth.register.success user_id=%s username=%s ip=%s",
         user_id,
@@ -216,13 +322,15 @@ async def register(
         client_ip,
     )
 
-    token = create_access_token(
+    access_token, refresh_token = await _issue_auth_tokens(
+        session=session,
+        request=request,
         user_id=user_id,
         username=user_data.username,
         role="user",
     )
     body = TokenResponse(
-        access_token=token,
+        access_token=access_token,
         user=UserResponse(
             id=user_id,
             username=user_data.username,
@@ -233,7 +341,51 @@ async def register(
         ),
     )
     response = JSONResponse(content=body.model_dump())
-    _set_token_cookie(response, token)
+    _set_token_cookie(response, access_token, refresh_token)
+    return response
+
+
+@router.post("/refresh", response_model=RefreshResponse)
+async def refresh_token(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    validate_cookie_csrf(request)
+    refresh_token_value = request.cookies.get("refresh_token")
+    if not refresh_token_value:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="缺少刷新令牌",
+        )
+
+    payload = _decode_refresh_cookie(refresh_token_value)
+    sid = payload["sid"]
+    session_row = await get_session(session, sid)
+    if not session_row or not session_row.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="会话无效或已失效",
+        )
+
+    user = await session.get(User, int(payload["sub"]))
+    if not user or bool(user.is_frozen):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="会话无效或已失效",
+        )
+
+    now = time.time()
+    await update_session_activity(session, sid, now)
+    username, role = _normalize_user_identity(user)
+    access_token = create_access_token(
+        user_id=user.id,
+        username=username,
+        role=role,
+    )
+    new_refresh_token = create_refresh_token(user_id=user.id, sid=sid)
+    body = RefreshResponse(access_token=access_token)
+    response = JSONResponse(content=body.model_dump())
+    _set_token_cookie(response, access_token, new_refresh_token)
     return response
 
 
@@ -274,7 +426,7 @@ async def change_password(
         data.current_password,
         data.new_password,
     )
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_request_ip(request)
     if not success:
         logger.warning(
             "auth.change_password.failed user_id=%s ip=%s",
