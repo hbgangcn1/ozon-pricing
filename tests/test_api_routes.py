@@ -131,6 +131,7 @@ class TestRootEndpoints:
 
 class TestAuth:
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
+    @patch("api.routes.auth.deactivate_all_sessions", new_callable=AsyncMock)
     @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
     @patch("api.routes.auth.create_refresh_token")
     @patch("api.routes.auth.create_access_token")
@@ -139,6 +140,7 @@ class TestAuth:
         mock_access_token,
         mock_refresh_token,
         mock_insert_session,
+        mock_deactivate_all,
         mock_verify,
     ):
         mock_verify.return_value = {
@@ -160,6 +162,7 @@ class TestAuth:
         assert "Max-Age=900" in set_cookie
         assert "Max-Age=604800" in set_cookie
         mock_insert_session.assert_awaited_once()
+        mock_deactivate_all.assert_awaited_once()
 
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
     def test_login_bad_credentials(self, mock_verify):
@@ -168,6 +171,7 @@ class TestAuth:
         assert r.status_code == 401
 
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
+    @patch("api.routes.auth.deactivate_all_sessions", new_callable=AsyncMock)
     @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
     @patch("api.routes.auth.create_refresh_token")
     @patch("api.routes.auth.create_access_token")
@@ -176,6 +180,7 @@ class TestAuth:
         mock_access_token,
         mock_refresh_token,
         mock_insert_session,
+        mock_deactivate_all,
         mock_verify,
     ):
         mock_verify.return_value = {
@@ -228,6 +233,7 @@ class TestAuth:
         assert r.status_code == 403
 
     @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
+    @patch("api.routes.auth.deactivate_all_sessions", new_callable=AsyncMock)
     @patch("api.routes.auth.create_refresh_token")
     @patch("api.routes.auth.create_access_token")
     @patch("api.routes.auth.create_user", new_callable=AsyncMock)
@@ -240,6 +246,7 @@ class TestAuth:
         mock_create,
         mock_access_token,
         mock_refresh_token,
+        mock_deactivate_all,
         mock_insert_session,
     ):
         mock_open.return_value = True
@@ -265,6 +272,7 @@ class TestAuth:
         assert "Max-Age=900" in set_cookie
         assert "Max-Age=604800" in set_cookie
         mock_insert_session.assert_awaited_once()
+        mock_deactivate_all.assert_awaited_once()
 
     @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
     @patch("api.routes.auth.is_registration_open", new_callable=AsyncMock)

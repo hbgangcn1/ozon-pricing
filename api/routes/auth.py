@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from db.sessions_crud import (
+    deactivate_all_sessions,
     deactivate_session,
     get_session,
     insert_session,
@@ -118,10 +119,17 @@ async def _issue_auth_tokens(
         user_agent=get_request_user_agent(request.headers.get("user-agent")),
         now=now,
     )
+    await deactivate_all_sessions(
+        session,
+        user_id,
+        exclude_session_id=sid,
+        reason="kicked_by_new_login",
+    )
     access_token = create_access_token(
         user_id=user_id,
         username=username,
         role=role,
+        extra_claims={"sid": sid},
     )
     refresh_token = create_refresh_token(user_id=user_id, sid=sid)
     return access_token, refresh_token
@@ -192,7 +200,11 @@ async def logout(
     if refresh_token:
         try:
             payload = decode_refresh_token(refresh_token)
-            await deactivate_session(session, payload["sid"])
+            await deactivate_session(
+                session,
+                payload["sid"],
+                reason="manual_logout",
+            )
         except (TokenExpiredError, TokenInvalidError):
             pass
     response = JSONResponse(
@@ -340,6 +352,7 @@ async def refresh_token(
         user_id=user.id,
         username=username,
         role=role,
+        extra_claims={"sid": sid},
     )
     new_refresh_token = create_refresh_token(user_id=user.id, sid=sid)
     body = RefreshResponse(access_token=access_token)
