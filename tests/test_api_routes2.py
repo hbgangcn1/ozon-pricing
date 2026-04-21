@@ -306,10 +306,6 @@ class TestPricing:
         )
         assert r.status_code == 200
 
-    def test_pricing_progress_sse(self):
-        with client.stream("GET", "/api/pricing/progress") as r:
-            assert r.status_code == 200
-
     @patch("api.routes.pricing.decrement_user_calculations", new_callable=AsyncMock)
     @patch("api.routes.pricing.calculate_pricing")
     @patch("api.routes.pricing.get_user_logistics")

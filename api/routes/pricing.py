@@ -3,8 +3,7 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user_id
@@ -30,9 +29,6 @@ from pricing.commission import fetch_commission_category
 from db.subscriptions import decrement_user_calculations
 
 logger = logging.getLogger(__name__)
-
-_SSE_MAX_CONCURRENT = 50
-_sse_semaphore = asyncio.Semaphore(_SSE_MAX_CONCURRENT)
 
 router = APIRouter(prefix="/api/pricing", tags=["定价"])
 
@@ -337,40 +333,3 @@ async def calculate_grouped(
         )
 
     return _make_grouped_response(grouped, breakeven_grouped, rate, product, mode)
-
-
-@router.get("/progress")
-async def pricing_progress(
-    request: Request,
-    user_id: int = Depends(get_current_user_id),
-):
-    async def event_generator():
-        import json
-
-        await _sse_semaphore.acquire()
-        try:
-            progress_data = [
-                {"progress": 0, "message": "开始计算"},
-                {"progress": 20, "message": "正在筛选可用物流"},
-                {"progress": 50, "message": "计算陆运组合"},
-                {"progress": 80, "message": "计算空运组合"},
-                {"progress": 100, "message": "计算完成"},
-            ]
-
-            for data in progress_data:
-                if await request.is_disconnected():
-                    break
-                yield f"data: {json.dumps(data)}\n\n"
-                await asyncio.sleep(1)
-        finally:
-            _sse_semaphore.release()
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
