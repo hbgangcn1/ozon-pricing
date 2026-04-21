@@ -1,9 +1,11 @@
 import bcrypt
+from inspect import isawaitable
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.users import find_by_username, get_user_by_id
+from models.user import User
 from password_recovery import (
     get_user_security_questions,
     log_password_recovery_event,
@@ -61,7 +63,9 @@ async def verify_password_recovery(
     client_ip: str,
 ) -> str:
     user = await find_by_username(session, username)
-    if not user or not user.security_a1 or not user.security_a2:
+    if isawaitable(user):
+        user = await user
+    if not isinstance(user, User) or not user.security_a1 or not user.security_a2:
         _run_dummy_bcrypt_checks()
         await log_password_recovery_event(
             username=username,
