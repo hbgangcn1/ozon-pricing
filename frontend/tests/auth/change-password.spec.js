@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { TEST_ADMIN, TEST_USER, TEST_PASSWORD, URLS } from '../fixtures/test-data.js';
+import { TEST_ADMIN, TEST_USER, URLS } from '../fixtures/test-data.js';
 import { ACCOUNT_PAGE } from '../fixtures/selectors.js';
-import { apiLogin, apiCreateUser, apiGetUsers } from '../helpers/api-helpers.js';
+import { apiLogin, apiGetUsers } from '../helpers/api-helpers.js';
 
 test.describe('修改密码', () => {
   test.beforeEach(async ({ page }) => {
@@ -74,7 +74,7 @@ test.describe('修改密码 - 使用测试用户', () => {
     testUserExists = usersArray.some(u => u.username === TEST_USER.username);
   });
 
-  test('测试用户成功修改密码并可用新密码登录', async ({ page, browser }) => {
+  test('测试用户成功修改密码并可用新密码登录', async ({ page, _browser }) => {
     if (!testUserExists) {
       test.skip();
       return;

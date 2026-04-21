@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trash2, Download, PlayCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '../components/ui/button'
@@ -40,6 +40,22 @@ function SettingsPage() {
   // ---------------------------------------------------------------------------
   // 数据加载
   // ---------------------------------------------------------------------------
+  const loadBackups = useCallback(async (signal) => {
+    const backupsData = await settingsAPI.getBackups()
+    if (!signal?.aborted) {
+      setBackups(backupsData)
+    }
+    return backupsData
+  }, [])
+
+  const loadBackupSettings = useCallback(async (signal) => {
+    const settingsData = await settingsAPI.getBackupSettings()
+    if (!signal?.aborted) {
+      setBackupSettings(settingsData)
+    }
+    return settingsData
+  }, [])
+
   useEffect(() => {
     const controller = new AbortController()
 
@@ -47,16 +63,14 @@ function SettingsPage() {
       setBackupsLoading(true)
       setSettingsLoading(true)
       try {
-        const [backupsData, settingsData, statsData, systemData] = await Promise.all([
-          settingsAPI.getBackups(),
-          settingsAPI.getBackupSettings(),
+        const [, , statsData, systemData] = await Promise.all([
+          loadBackups(controller.signal),
+          loadBackupSettings(controller.signal),
           settingsAPI.getBackupStats(),
           settingsAPI.get(),
         ])
 
         if (!controller.signal.aborted) {
-          setBackups(backupsData)
-          setBackupSettings(settingsData)
           setBackupStats(statsData)
           setOpenRegistration(systemData.open_registration)
         }
@@ -74,7 +88,7 @@ function SettingsPage() {
 
     loadAll()
     return () => controller.abort()
-  }, [])
+  }, [loadBackups, loadBackupSettings])
 
   // ---------------------------------------------------------------------------
   // 手动备份

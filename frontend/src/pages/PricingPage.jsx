@@ -592,7 +592,9 @@ export default function PricingPage() {
         try {
           const me = await authAPI.getMe()
           useAuthStore.getState().setUser(me)
-        } catch {}
+        } catch (_err) {
+          // intentionally ignored: refresh is best-effort after successful calculation
+        }
       }
     } catch (error) {
       toast.error(getApiError(error) || '计算失败')
@@ -695,7 +697,9 @@ export default function PricingPage() {
         try {
           const me = await authAPI.getMe()
           useAuthStore.getState().setUser(me)
-        } catch {}
+        } catch (_err) {
+          // intentionally ignored: refresh is best-effort after successful calculation
+        }
       }
     } catch (error) {
       toast.error(getApiError(error) || '计算失败')

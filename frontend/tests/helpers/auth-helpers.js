@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 import { TEST_ADMIN, URLS } from '../fixtures/test-data.js';
-import { LOGIN_PAGE, NAV } from '../fixtures/selectors.js';
+import { LOGIN_PAGE } from '../fixtures/selectors.js';
 
 export async function loginAsAdmin(page) {
   await loginAsUser(page, TEST_ADMIN.username, TEST_ADMIN.password);

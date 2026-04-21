@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { TEST_ADMIN } from '../fixtures/test-data.js';
-import { apiLogin, apiCreateProduct, apiDeleteProduct, apiGetProducts } from '../helpers/api-helpers.js';
+import { apiLogin, apiCreateProduct, apiGetProducts } from '../helpers/api-helpers.js';
 
 test.describe('核心业务流程测试', () => {
   test.describe.configure({ mode: 'serial' });

@@ -33,7 +33,8 @@ async function fetchAllUsers(token) {
   let page = 1;
   const pageSize = 100;
 
-  while (true) {
+  let hasMore = true;
+  while (hasMore) {
     const resp = await fetch(
       `${API_BASE}/admin/users?page=${page}&page_size=${pageSize}`,
       { headers: { Authorization: `Bearer ${token}` } },
@@ -44,9 +45,7 @@ async function fetchAllUsers(token) {
     const users = data.users || [];
     allUsers.push(...users);
 
-    if (allUsers.length >= (data.total || 0) || users.length < pageSize) {
-      break;
-    }
+    hasMore = !(allUsers.length >= (data.total || 0) || users.length < pageSize);
     page++;
   }
 

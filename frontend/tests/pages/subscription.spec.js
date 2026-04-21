@@ -20,7 +20,6 @@ test.describe('订阅管理页面 — /subscription', () => {
   })
 
   test('套餐名称显示(管理员显示管理员)', async ({ page }) => {
-    const planCard = page.locator('[class*="card"], [class*="Card"]').first()
     await expect(page.locator('h2').filter({ hasText: /管理员|免费版|效率版|专业版|企业版/ })).toBeVisible({ timeout: 10000 })
   })
 

@@ -148,7 +148,9 @@ test.describe('Auth API - 注册', () => {
         await request.delete(`/api/admin/users/${uid}`, {
           headers: authHeaders(token),
         });
-      } catch { }
+      } catch (_err) {
+        // intentionally ignored: cleanup is best-effort after register tests
+      }
     }
   });
 

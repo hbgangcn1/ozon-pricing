@@ -1,7 +1,7 @@
+/* eslint-env node */
 import { test, expect } from '@playwright/test'
 import { TEST_ADMIN, API_BASE } from '../fixtures/test-data.js'
-import { apiLogin, apiGetProducts, apiDeleteProduct } from '../helpers/api-helpers.js'
-import path from 'path'
+import { apiLogin } from '../helpers/api-helpers.js'
 
 test.describe('产品批量导入流程', () => {
   test.setTimeout(90000)

@@ -66,7 +66,6 @@ test.describe('用户管理页面 — /users (admin)', () => {
     const searchInput = page.locator('input[placeholder="搜索用户名"]')
     await searchInput.fill('admin')
     // Clear button (X icon button) should appear
-    const clearBtn = page.locator('button').filter({ has: page.locator('svg') }).last()
     // Re-check table visible after clearing
     await searchInput.clear()
     await expect(page.locator('table tbody tr').first()).toBeVisible()

@@ -239,7 +239,6 @@ test.describe('精准模式定价计算', () => {
 
       if (optCount > 1) {
         // 选择第二个选项（跳过"不使用类目"）
-        const selectedText = await options.nth(1).textContent()
         await options.nth(1).click()
         await page.waitForTimeout(300)
 

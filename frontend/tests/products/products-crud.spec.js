@@ -9,8 +9,6 @@ test.describe('产品 CRUD 流程', () => {
   let productName
   let editedName
   let adminToken
-  let createdProductId
-
   test.beforeAll(async () => {
     const suffix = Date.now() % 100000
     productName = `TestProduct${suffix}`
@@ -36,8 +34,7 @@ test.describe('产品 CRUD 流程', () => {
     await page.waitForTimeout(600)
   }
 
-  test('创建产品', async ({ page }) => {
-    createdProductId = null
+  test('创建产品', async ({ _page }) => {
     const product = await apiCreateProduct(adminToken, {
       name: productName,
       unit_price: 49.9,
@@ -47,7 +44,6 @@ test.describe('产品 CRUD 流程', () => {
       height_cm: 10,
     })
     expect(product).toBeTruthy()
-    createdProductId = product.id || product.product_id
   })
 
   test('产品列表中可见新创建的产品', async ({ page }) => {
