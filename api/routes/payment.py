@@ -17,15 +17,39 @@ from services.payment_service import (
 )
 
 try:
-    from wechat_pay_v3_api import wechat_pay_v3
+    import wechat_pay_v3_api as wechat_pay_v3_api_module
 
+    wechat_pay_v3 = wechat_pay_v3_api_module.wechat_pay_v3
     _wechat_available = True
 except ImportError:
+    wechat_pay_v3_api_module = None
     wechat_pay_v3 = None
     _wechat_available = False
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/payments", tags=["payment"])
+
+
+def _is_wechat_response_signature_error(exc: Exception) -> bool:
+    if wechat_pay_v3_api_module is None:
+        return False
+    error_cls = getattr(wechat_pay_v3_api_module, "WechatResponseSignatureError", None)
+    return bool(error_cls) and isinstance(exc, error_cls)
+
+
+async def _reconcile_order_after_signature_failure(
+    order_id: str,
+    svc: PaymentService,
+) -> None:
+    if wechat_pay_v3 is None:
+        return
+    logger.error("微信下单响应验签失败，开始对账: %s", order_id)
+    query_result = await asyncio.to_thread(wechat_pay_v3.query_order, order_id)
+    if query_result.get("success") and query_result.get("trade_state") == "SUCCESS":
+        try:
+            await svc.handle_payment_success(order_id)
+        except Exception:
+            logger.error("验签失败后的对账补账失败: %s", order_id, exc_info=True)
 
 
 async def get_payment_service(
@@ -101,12 +125,21 @@ async def create_payment(
             },
         )
 
-    result = await asyncio.to_thread(
-        wechat_pay_v3.create_native_order,
-        order.order_id,
-        amount_cents,
-        order.description,
-    )
+    try:
+        result = await asyncio.to_thread(
+            wechat_pay_v3.create_native_order,
+            order.order_id,
+            amount_cents,
+            order.description,
+        )
+    except Exception as exc:
+        if _is_wechat_response_signature_error(exc):
+            await _reconcile_order_after_signature_failure(order.order_id, svc)
+            raise HTTPException(
+                status_code=502,
+                detail="微信支付订单创建状态未确认，请重试",
+            ) from exc
+        raise
     if not result.get("success"):
         order.status = "FAILED"
         return JSONResponse(
@@ -128,37 +161,14 @@ async def payment_notify(
     request: Request,
     svc: PaymentService = Depends(get_payment_service),
 ):
-    body = (await request.body()).decode("utf-8")
-    request_data = {
-        "headers": {
-            "Wechatpay-Timestamp": request.headers.get(
-                "Wechatpay-Timestamp",
-                "",
-            ),
-            "Wechatpay-Nonce": request.headers.get(
-                "Wechatpay-Nonce",
-                "",
-            ),
-            "Wechatpay-Signature": request.headers.get(
-                "Wechatpay-Signature",
-                "",
-            ),
-            "Wechatpay-Serial": request.headers.get(
-                "Wechatpay-Serial",
-                "",
-            ),
-        },
-        "body": body,
-    }
+    body = await request.body()
     if not _wechat_available or wechat_pay_v3 is None:
         return JSONResponse(
             status_code=400,
             content={"code": "FAIL", "message": "签名验证失败"},
         )
 
-    result = await asyncio.to_thread(
-        wechat_pay_v3.process_notify, request_data,
-    )
+    result = await asyncio.to_thread(wechat_pay_v3.process_notify, dict(request.headers), body)
     if not result.get("success"):
         message = result.get("message", "通知处理失败")
         logger.warning("微信支付通知处理失败: %s", message)

@@ -762,3 +762,13 @@ ALLOWED_ORIGINS=https://cbprice.cn,https://www.cbprice.cn
 DB_POOL_SIZE=5
 DB_POOL_MAX=15
 ```
+
+### Phase 23: 微信支付平台签名验证 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 23.1 | ✅ | `wechat_pay_config.py` — 微信支付启用态改为 `APP_ID + MCH_ID + PRIVATE_KEY_PATH` 条件 fail-fast；移除 `WECHAT_PUBLIC_KEY_PATH` 默认 fallback；新增 `platform_public_key_id` 与启动期公钥预加载缓存 |
+| 23.2 | ✅ | `wechat_pay_v3_api.py` — 新增统一平台签名校验 helper，覆盖入站回调与出站 API 响应；强制 4 个 header、5 分钟时间窗、serial 精确匹配、RSA 验签、重复 header 拒绝 |
+| 23.3 | ✅ | `api/routes/payment.py` — 回调路由传递 raw body；下单响应验签失败时保持订单 `PENDING`，立即走受信 `query_order` 对账，仍不确定返回 502 |
+| 23.4 | ✅ | 测试补充 — 新增 `tests/test_wechat_signature_verification.py`，更新 `tests/test_payment_api.py` 覆盖验签失败 502 与签名头场景 |
+| 23.5 | ✅ | 验证 — `python -m flake8`、定向支付测试 59 passed、全量 `pytest --tb=short -q` 1827 passed / 4 skipped |

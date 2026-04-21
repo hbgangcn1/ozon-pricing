@@ -14,6 +14,7 @@ from api import dependencies  # noqa: E402
 from api.routes.payment import get_payment_service  # noqa: E402
 from database import get_db  # noqa: E402
 from services.payment_service import SuspiciousWechatNotifyError  # noqa: E402
+from wechat_pay_v3_api import WechatResponseSignatureError  # noqa: E402
 
 MOCK_USER = {
     "id": 1,
@@ -24,6 +25,12 @@ MOCK_USER = {
 }
 
 client = TestClient(app, raise_server_exceptions=False)
+SIGNED_NOTIFY_HEADERS = {
+    "Wechatpay-Timestamp": "1700000000",
+    "Wechatpay-Nonce": "test-nonce",
+    "Wechatpay-Signature": "test-signature",
+    "Wechatpay-Serial": "test-serial",
+}
 
 
 def _mock_session():
@@ -161,7 +168,59 @@ class TestCreatePayment:
             },
         )
         assert resp.status_code == 502
-        assert resp.json().get("error") == "wechat_error"
+
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    @patch(
+        "api.routes.payment.get_plan_by_code",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "api.routes.payment.get_plan_price",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "api.routes.payment.is_registration_open",
+        new_callable=AsyncMock,
+    )
+    def test_signature_failure_returns_502_and_keeps_pending(
+        self,
+        mock_is_open,
+        mock_price,
+        mock_plan,
+        mock_wechat,
+        _setup_overrides,
+    ):
+        _, mock_svc = _setup_overrides
+        mock_is_open.return_value = True
+        mock_price.return_value = 29.9
+        mock_plan.return_value = {"plan_name": "Pro"}
+        mock_wechat.create_native_order.side_effect = WechatResponseSignatureError(
+            "平台签名验证失败"
+        )
+        mock_wechat.query_order.return_value = {
+            "success": False,
+            "message": "订单状态未确认",
+        }
+        mock_order = MagicMock()
+        mock_order.order_id = "test_ord_004"
+        mock_order.description = "订阅Pro"
+        mock_order.status = "PENDING"
+        mock_svc.create_order.return_value = mock_order
+
+        resp = client.post(
+            "/api/payments/create",
+            json={
+                "plan_code": "pro",
+                "billing_cycle": "month",
+                "amount": 29.9,
+            },
+        )
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "微信支付订单创建状态未确认，请重试"
+        assert mock_order.status == "PENDING"
+        mock_wechat.query_order.assert_called_once_with("test_ord_004")
 
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)
@@ -228,6 +287,7 @@ class TestPaymentNotify:
         resp = client.post(
             "/api/payments/notify",
             json={"out_trade_no": "test_notify_ord"},
+            headers=SIGNED_NOTIFY_HEADERS,
         )
         assert resp.status_code == 200
         assert resp.json()["code"] == "SUCCESS"
@@ -248,6 +308,7 @@ class TestPaymentNotify:
         resp = client.post(
             "/api/payments/notify",
             json={"out_trade_no": "test_idemp_ord"},
+            headers=SIGNED_NOTIFY_HEADERS,
         )
         assert resp.status_code == 200
         assert resp.json()["code"] == "SUCCESS"
@@ -257,6 +318,7 @@ class TestPaymentNotify:
         resp = client.post(
             "/api/payments/notify",
             json={},
+            headers=SIGNED_NOTIFY_HEADERS,
         )
         assert resp.status_code == 400
 
@@ -283,6 +345,7 @@ class TestPaymentNotify:
         resp = client.post(
             "/api/payments/notify",
             json={"out_trade_no": "test_notify_exception_ord"},
+            headers=SIGNED_NOTIFY_HEADERS,
         )
 
         assert resp.status_code == 200
@@ -301,6 +364,7 @@ class TestPaymentNotify:
         resp = client.post(
             "/api/payments/notify",
             json={"out_trade_no": "test_notify_missing_ord"},
+            headers=SIGNED_NOTIFY_HEADERS,
         )
 
         assert resp.status_code == 400
@@ -327,6 +391,7 @@ class TestPaymentNotify:
         resp = client.post(
             "/api/payments/notify",
             json={"out_trade_no": "test_notify_error_ord"},
+            headers=SIGNED_NOTIFY_HEADERS,
         )
 
         assert resp.status_code == 500
