@@ -29,6 +29,7 @@ from models.log import (  # noqa: E402, F401
     AuditLog,
 )
 from models.cache import StatisticsCache  # noqa: E402, F401
+from models.password_reset_token import PasswordResetToken  # noqa: E402, F401
 
 __all__ = [
     "Base",
@@ -54,4 +55,5 @@ __all__ = [
     "PasswordRecoveryLog",
     "AuditLog",
     "StatisticsCache",
+    "PasswordResetToken",
 ]
