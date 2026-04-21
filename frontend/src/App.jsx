@@ -8,6 +8,7 @@ import Layout from './components/AppLayout'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const PricingPage = lazy(() => import('./pages/PricingPage'))
 const LogisticsPage = lazy(() => import('./pages/LogisticsPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
@@ -64,6 +65,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route
               path="/"
               element={
