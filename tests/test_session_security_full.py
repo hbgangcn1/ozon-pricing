@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 import sys
 import os
-from unittest.mock import patch, AsyncMock, MagicMock
+from typing import Optional
+from unittest.mock import patch, AsyncMock, MagicMock, Mock
+
+from fastapi import Request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,24 +21,6 @@ def _make_async_session_cm(mock_session=None):
     mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
     mock_cm.__aexit__ = AsyncMock(return_value=None)
     return mock_cm, mock_session
-
-
-def _inject_security_module(mock_st):
-    fake_utils = MagicMock()
-    fake_utils._streamlit = mock_st
-    sys.modules["security"] = MagicMock(utils=fake_utils)
-    sys.modules["security.utils"] = fake_utils
-    return fake_utils
-
-
-def _restore_modules(saved):
-    # Only remove keys that were added (not in saved), then restore
-    # originals. Avoid sys.modules.clear() which breaks other tests'
-    # module references (e.g. app.dependency_overrides).
-    added = set(sys.modules) - set(saved)
-    for k in added:
-        del sys.modules[k]
-    sys.modules.update(saved)
 
 
 class TestDistributedLockRedis:
@@ -144,141 +129,145 @@ class TestDistributedLockRedis:
 
 
 class TestGetClientInfo:
-    def _run_with_headers(self, headers_map):
-        import session_security_helpers as sh
-
-        mock_headers = MagicMock()
-        mock_headers.get = lambda k, *a: headers_map.get(k)
-        mock_st = MagicMock()
-        mock_st.context.headers = mock_headers
-        saved = {k: v for k, v in sys.modules.items()}
-        _inject_security_module(mock_st)
-        try:
-            return sh.get_client_info()
-        finally:
-            _restore_modules(saved)
+    def _make_request(self, headers=None, host: Optional[str] = "127.0.0.1"):
+        request = Mock(spec=Request)
+        request.headers = headers if headers is not None else {}
+        request.client = Mock(host=host) if host is not None else None
+        return request
 
     def test_returns_dict_with_keys(self):
         from session_security_helpers import get_client_info
 
-        r = get_client_info()
+        r = get_client_info(None)
         assert "ip_address" in r and "user_agent" in r
 
-    def test_import_error_returns_unknown(self):
-        real_import = (
-            __builtins__.__import__
-            if hasattr(__builtins__, "__import__")
-            else __import__
-        )
+    def test_none_request_returns_unknown(self):
+        from session_security_helpers import get_client_info
 
-        def fake_import(name, *a, **kw):
-            if name == "security":
-                raise ImportError("no module")
-            return real_import(name, *a, **kw)
-
-        import builtins
-
-        with patch.object(builtins, "__import__", side_effect=fake_import):
-            from session_security_helpers import get_client_info
-
-            r = get_client_info()
+        r = get_client_info(None)
         assert r == {"ip_address": "unknown", "user_agent": "unknown"}
 
-    def test_no_streamlit_attr_returns_unknown(self):
+    def test_request_without_headers_attr_returns_unknown(self):
         import session_security_helpers as sh
 
-        saved = {k: v for k, v in sys.modules.items()}
-        fake_utils = MagicMock(spec=[])
-        sys.modules["security"] = MagicMock(utils=fake_utils)
-        sys.modules["security.utils"] = fake_utils
-        try:
-            assert sh.get_client_info()["ip_address"] == "unknown"
-        finally:
-            _restore_modules(saved)
+        request = Mock(spec=[])
+        assert sh.get_client_info(request)["ip_address"] == "unknown"
 
     def test_headers_falsy_returns_unknown(self):
         import session_security_helpers as sh
 
-        mock_st = MagicMock()
-        mock_st.context.headers = None
-        saved = {k: v for k, v in sys.modules.items()}
-        _inject_security_module(mock_st)
-        try:
-            assert sh.get_client_info()["ip_address"] == "unknown"
-        finally:
-            _restore_modules(saved)
+        request = self._make_request(headers={})
+        assert sh.get_client_info(request) == {
+            "ip_address": "127.0.0.1",
+            "user_agent": "unknown",
+        }
+
+    def test_empty_forwarded_for_uses_client_host(self):
+        import session_security_helpers as sh
+
+        request = self._make_request(
+            headers={"X-Forwarded-For": "", "User-Agent": "UA"},
+            host="198.51.100.7",
+        )
+        r = sh.get_client_info(request)
+        assert r["ip_address"] == "198.51.100.7"
 
     def test_x_forwarded_for_extracted_with_user_agent(self):
-        r = self._run_with_headers(
-            {
+        import session_security_helpers as sh
+
+        request = self._make_request(
+            headers={
                 "X-Forwarded-For": "192.168.1.1, 10.0.0.1",
-                "X-Real-IP": None,
                 "User-Agent": "TestUA",
-            }
+            },
+            host="10.10.10.10",
         )
+        r = sh.get_client_info(request)
         assert r["ip_address"] == "192.168.1.1" and r["user_agent"] == "TestUA"
 
-    def test_x_forwarded_for_none_uses_x_real_ip(self):
-        r = self._run_with_headers(
-            {"X-Forwarded-For": None, "X-Real-IP": "10.0.0.5", "User-Agent": None}
-        )
+    def test_no_forwarded_for_uses_client_host(self):
+        import session_security_helpers as sh
+
+        request = self._make_request(headers={"User-Agent": None}, host="10.0.0.5")
+        r = sh.get_client_info(request)
         assert r["ip_address"] == "10.0.0.5"
 
-    def test_x_forwarded_for_magicmock_guard(self):
-        r = self._run_with_headers(
-            {"X-Forwarded-For": "MagicMock-val", "X-Real-IP": None, "User-Agent": None}
-        )
-        assert r["ip_address"] == "unknown"
+    def test_x_forwarded_for_first_ip_is_trimmed(self):
+        import session_security_helpers as sh
 
-    def test_x_real_ip_magicmock_guard(self):
-        r = self._run_with_headers(
-            {"X-Forwarded-For": None, "X-Real-IP": "MagicMock-IP", "User-Agent": None}
+        request = self._make_request(
+            headers={"X-Forwarded-For": " 203.0.113.9 , 10.0.0.1 "},
+            host="10.0.0.5",
         )
-        assert r["ip_address"] == "unknown"
+        r = sh.get_client_info(request)
+        assert r["ip_address"] == "203.0.113.9"
 
-    def test_user_agent_magicmock_guard(self):
-        r = self._run_with_headers(
-            {"X-Forwarded-For": None, "X-Real-IP": None, "User-Agent": "MagicMock-UA"}
-        )
+    def test_lowercase_user_agent_header_supported(self):
+        import session_security_helpers as sh
+
+        request = self._make_request(headers={"user-agent": "LowerUA"})
+        r = sh.get_client_info(request)
+        assert r["user_agent"] == "LowerUA"
+
+    def test_missing_user_agent_returns_unknown(self):
+        import session_security_helpers as sh
+
+        request = self._make_request(headers={})
+        r = sh.get_client_info(request)
         assert r["user_agent"] == "unknown"
+
+    def test_client_none_returns_unknown_ip(self):
+        import session_security_helpers as sh
+
+        request = self._make_request(headers={"User-Agent": "UA"}, host=None)
+        r = sh.get_client_info(request)
+        assert r["ip_address"] == "unknown"
 
     def test_attribute_error_suppressed(self):
         import session_security_helpers as sh
 
-        fake_utils = MagicMock()
-        fake_utils._streamlit = MagicMock()
-        type(fake_utils._streamlit.context).headers = property(
+        request = Mock(spec=Request)
+        type(request).headers = property(
             lambda self: (_ for _ in ()).throw(AttributeError("no headers"))
         )
-        saved = {k: v for k, v in sys.modules.items()}
-        sys.modules["security"] = MagicMock(utils=fake_utils)
-        sys.modules["security.utils"] = fake_utils
-        try:
-            assert sh.get_client_info()["ip_address"] == "unknown"
-        finally:
-            _restore_modules(saved)
+        assert sh.get_client_info(request)["ip_address"] == "unknown"
 
-    def test_no_context_headers_attr(self):
+    def test_type_error_suppressed(self):
         import session_security_helpers as sh
 
-        mock_st = MagicMock(spec=["context"])
-        mock_st.context = MagicMock(spec=[])
-        saved = {k: v for k, v in sys.modules.items()}
-        _inject_security_module(mock_st)
-        try:
-            assert sh.get_client_info()["ip_address"] == "unknown"
-        finally:
-            _restore_modules(saved)
+        headers = Mock()
+        headers.get.side_effect = TypeError("bad headers")
+        request = self._make_request(headers=headers)
+        assert sh.get_client_info(request)["ip_address"] == "unknown"
+
+    def test_request_without_client_attr_returns_unknown(self):
+        import session_security_helpers as sh
+
+        request = Mock(spec=["headers"])
+        request.headers = {}
+        assert sh.get_client_info(request)["ip_address"] == "unknown"
+
+    def test_headers_none_returns_unknown(self):
+        import session_security_helpers as sh
+
+        request = Mock(spec=Request)
+        request.headers = None
+        request.client = Mock(host="127.0.0.1")
+        assert sh.get_client_info(request) == {
+            "ip_address": "unknown",
+            "user_agent": "unknown",
+        }
 
 
 class TestGetClientInfoStatic:
     def test_delegates_to_helper(self):
+        request = Mock(spec=Request)
         with patch(
             "session_security.get_client_info",
             return_value={"ip_address": "1.2.3.4", "user_agent": "UA"},
         ) as m:
-            r = SessionSecurityEnhanced.get_client_info()
-            m.assert_called_once()
+            r = SessionSecurityEnhanced.get_client_info(request)
+            m.assert_called_once_with(request)
             assert r["ip_address"] == "1.2.3.4"
 
 

@@ -4,6 +4,8 @@ import time
 import logging
 from typing import Tuple, Optional
 
+from fastapi import Request
+
 from database import AsyncSessionLocal
 from session_security_helpers import DistributedLock, get_client_info
 from db.sessions_crud import (
@@ -32,8 +34,8 @@ class SessionSecurityEnhanced:
     _hmac_secret_cache: Optional[str] = None
 
     @staticmethod
-    def get_client_info() -> dict:
-        return get_client_info()
+    def get_client_info(request: Optional[Request] = None) -> dict:
+        return get_client_info(request)
 
     @staticmethod
     async def check_and_create_session_atomic(

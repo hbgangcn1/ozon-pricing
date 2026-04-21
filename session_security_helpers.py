@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 import logging
 import threading
+from typing import Optional
+
+from fastapi import Request
 
 logger = logging.getLogger(__name__)
 
@@ -66,46 +69,26 @@ class DistributedLock:
         return False
 
 
-def get_client_info() -> dict:
-    ip_address = "unknown"
-    user_agent = "unknown"
+def get_client_info(request: Optional[Request] = None) -> dict:
+    if request is None:
+        return {"ip_address": "unknown", "user_agent": "unknown"}
 
     try:
-        from security import utils as security_utils
+        headers = request.headers
+        forwarded_for = headers.get("X-Forwarded-For")
+        if forwarded_for:
+            ip_address = forwarded_for.split(",")[0].strip()
+        else:
+            ip_address = request.client.host if request.client else "unknown"
 
-        st = getattr(security_utils, "_streamlit", None)
-        if st and hasattr(st, "context") and hasattr(st.context, "headers"):
-            headers = st.context.headers
-            if headers:
-                x_forwarded_for = headers.get("X-Forwarded-For")
-                if x_forwarded_for and not isinstance(x_forwarded_for, type(None)):
-                    if isinstance(x_forwarded_for, str) and "MagicMock" not in str(
-                        x_forwarded_for
-                    ):
-                        ip_address = x_forwarded_for.split(",")[0].strip()
-                    else:
-                        ip_address = "unknown"
-                else:
-                    x_real_ip = headers.get("X-Real-IP")
-                    if x_real_ip and not isinstance(x_real_ip, type(None)):
-                        if isinstance(x_real_ip, str) and "MagicMock" not in str(
-                            x_real_ip
-                        ):
-                            ip_address = x_real_ip
-                        else:
-                            ip_address = "unknown"
-                ua = headers.get("User-Agent")
-                if (
-                    ua
-                    and not isinstance(ua, type(None))
-                    and isinstance(ua, str)
-                    and "MagicMock" not in str(ua)
-                ):
-                    user_agent = ua
-    except (ImportError, AttributeError, TypeError):
-        pass
-
-    return {"ip_address": ip_address, "user_agent": user_agent}
+        user_agent = (
+            headers.get("user-agent")
+            or headers.get("User-Agent")
+            or "unknown"
+        )
+        return {"ip_address": ip_address, "user_agent": user_agent}
+    except (AttributeError, TypeError):
+        return {"ip_address": "unknown", "user_agent": "unknown"}
 
 
 __all__ = ["DistributedLock", "get_client_info", "REDIS_AVAILABLE", "get_redis_client"]
