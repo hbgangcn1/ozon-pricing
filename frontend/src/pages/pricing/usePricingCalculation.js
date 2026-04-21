@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { pricingAPI, productsAPI, commissionCategoriesAPI, logisticsAPI, authAPI } from '../../services/api'
 import { useAuthStore } from '../../stores/authStore'
+import { useDraftPersist } from '../../hooks/useDraftPersist'
 import { DEFAULT_FAST, DEFAULT_PRECISE, DEFAULT_PRODUCT_FORM } from './pricingConstants'
 import {
   buildFastPayload,
@@ -36,6 +37,8 @@ export function usePricingCalculation(user) {
   const [selectedProductIds, setSelectedProductIds] = useState(new Set())
   const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false)
   const [productForm, setProductForm] = useState(DEFAULT_PRODUCT_FORM)
+  const fastDraft = useDraftPersist('pricing-fast', fastForm, { enabled: !!user })
+  const preciseDraft = useDraftPersist('pricing-precise', preciseForm, { enabled: !!user })
 
   const refreshCommissionCategories = useCallback(async () => {
     try {
@@ -339,6 +342,8 @@ export function usePricingCalculation(user) {
     setBatchDeleteConfirmOpen,
     productForm,
     setProductForm,
+    fastDraft,
+    preciseDraft,
     allSelected,
     someSelected,
     handleEditProduct,

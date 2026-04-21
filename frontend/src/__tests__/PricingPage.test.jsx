@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import PricingPage from '../pages/PricingPage';
 import { pricingAPI, productsAPI, commissionCategoriesAPI } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
@@ -22,6 +23,12 @@ vi.mock('../services/api', () => ({
   },
   commissionCategoriesAPI: {
     getAll: vi.fn(),
+  },
+  logisticsAPI: {
+    getAll: vi.fn().mockResolvedValue([]),
+  },
+  authAPI: {
+    getMe: vi.fn(),
   },
 }));
 
@@ -237,8 +244,34 @@ const mockGroupedResult = {
 };
 
 describe('PricingPage', () => {
+  const sessionStorageMock = {
+    store: {},
+    getItem: vi.fn((key) => (key in sessionStorageMock.store ? sessionStorageMock.store[key] : null)),
+    setItem: vi.fn((key, value) => {
+      sessionStorageMock.store[key] = String(value);
+    }),
+    removeItem: vi.fn((key) => {
+      delete sessionStorageMock.store[key];
+    }),
+    clear: vi.fn(() => {
+      sessionStorageMock.store = {};
+    }),
+  };
+
+  const renderPage = () => render(
+    <MemoryRouter>
+      <PricingPage />
+    </MemoryRouter>
+  );
+
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorageMock.clear();
+    Object.defineProperty(window, 'sessionStorage', {
+      value: sessionStorageMock,
+      configurable: true,
+      writable: true,
+    });
     useAuthStore.mockReturnValue({ user: mockUser });
     productsAPI.getAll.mockResolvedValue([]);
     commissionCategoriesAPI.getAll.mockResolvedValue([]);
@@ -246,30 +279,30 @@ describe('PricingPage', () => {
   });
 
   it('renders pricing page heading', () => {
-    render(<PricingPage />);
+    renderPage();
     expect(screen.getByText('物流定价计算')).toBeInTheDocument();
   });
 
   it('renders fast mode tab content', () => {
-    render(<PricingPage />);
+    renderPage();
     expect(screen.getByText(/物流定价（快速模式）/)).toBeInTheDocument();
   });
 
   it('renders fast mode input fields', () => {
-    render(<PricingPage />);
+    renderPage();
     const zeroInputs = screen.getAllByPlaceholderText('0');
     expect(zeroInputs.length).toBeGreaterThanOrEqual(2);
   });
 
   it('calls productsAPI.getAll on mount', async () => {
-    render(<PricingPage />);
+    renderPage();
     await waitFor(() => {
       expect(productsAPI.getAll).toHaveBeenCalled();
     });
   });
 
   it('shows error when fast calculate called with empty fields', async () => {
-    render(<PricingPage />);
+    renderPage();
 
     const calcBtns = screen.getAllByText('开始计算');
     fireEvent.click(calcBtns[0]);
@@ -281,7 +314,7 @@ describe('PricingPage', () => {
 
   it('calls pricingAPI.calculate with fast mode data', async () => {
     pricingAPI.calculate.mockResolvedValue(mockPricingResult);
-    render(<PricingPage />);
+    renderPage();
 
     const zeroInputs = screen.getAllByPlaceholderText('0');
     fireEvent.change(zeroInputs[0], { target: { value: '50' } });
@@ -302,7 +335,7 @@ describe('PricingPage', () => {
 
   it('renders pricing results after successful calculation', async () => {
     pricingAPI.calculate.mockResolvedValue(mockPricingResult);
-    render(<PricingPage />);
+    renderPage();
 
     const zeroInputs = screen.getAllByPlaceholderText('0');
     fireEvent.change(zeroInputs[0], { target: { value: '50' } });
@@ -320,7 +353,7 @@ describe('PricingPage', () => {
 
   it('shows error toast when pricingAPI.calculate fails', async () => {
     pricingAPI.calculate.mockRejectedValue({ response: { data: { detail: '计算失败' } } });
-    render(<PricingPage />);
+    renderPage();
 
     const zeroInputs = screen.getAllByPlaceholderText('0');
     fireEvent.change(zeroInputs[0], { target: { value: '50' } });
@@ -337,18 +370,18 @@ describe('PricingPage', () => {
 
   it('shows precise mode disabled label for free users', () => {
     useAuthStore.mockReturnValue({ user: { ...mockUser, user_type: 'free' } });
-    render(<PricingPage />);
+    renderPage();
     expect(screen.getByText(/精准模式（限专业版\/企业版）/)).toBeInTheDocument();
   });
 
   it('shows precise mode enabled label for professional users', () => {
     useAuthStore.mockReturnValue({ user: { ...mockUser, user_type: 'professional' } });
-    render(<PricingPage />);
+    renderPage();
     expect(screen.getByText('精准模式')).toBeInTheDocument();
   });
 
   it('opens product list dialog when button clicked', async () => {
-    render(<PricingPage />);
+    renderPage();
     fireEvent.click(screen.getByText('精准模式'));
     const openBtn = screen.getByText('打开产品列表');
     fireEvent.click(openBtn);
@@ -359,7 +392,7 @@ describe('PricingPage', () => {
 
   it('shows empty product message in product list', async () => {
     productsAPI.getAll.mockResolvedValue([]);
-    render(<PricingPage />);
+    renderPage();
     fireEvent.click(screen.getByText('精准模式'));
     const openBtn = screen.getByText('打开产品列表');
     fireEvent.click(openBtn);
@@ -369,7 +402,7 @@ describe('PricingPage', () => {
   });
 
   it('shows validation error when creating product with missing fields', async () => {
-    render(<PricingPage />);
+    renderPage();
     fireEvent.click(screen.getByText('精准模式'));
     const openBtn = screen.getByText('打开产品列表');
     fireEvent.click(openBtn);
@@ -385,14 +418,14 @@ describe('PricingPage', () => {
   });
 
   it('does not render breakeven toggle before results exist', () => {
-    render(<PricingPage />);
+    renderPage();
     expect(screen.queryByText('盈亏平衡线模式')).not.toBeInTheDocument();
   });
 
   it('toggles precise result display between normal and breakeven without recalculating', async () => {
     pricingAPI.calculate.mockResolvedValue(mockPricingBreakevenResult);
 
-    render(<PricingPage />);
+    renderPage();
     fireEvent.click(screen.getByText('精准模式'));
 
     fireEvent.change(screen.getByPlaceholderText('必填'), { target: { value: '测试产品' } });
@@ -448,7 +481,7 @@ describe('PricingPage', () => {
     useAuthStore.mockReturnValue({ user: mockUser });
     productsAPI.create.mockResolvedValue({ id: 100, name: '佣金类目测试', commission_category_id: null });
 
-    render(<PricingPage />);
+    renderPage();
     fireEvent.click(screen.getByText('精准模式'));
 
     fireEvent.change(screen.getByPlaceholderText('必填'), { target: { value: '佣金类目测试' } });
@@ -487,11 +520,52 @@ describe('PricingPage', () => {
       { id: 5, name: 'Electronics', commission_rate: 15 },
     ]);
 
-    render(<PricingPage />);
+    renderPage();
     fireEvent.click(screen.getByText('精准模式'));
 
     await waitFor(() => {
       expect(productsAPI.getAll).toHaveBeenCalled();
     });
+  });
+
+  it('shows restore dialog when pricing drafts exist on mount', async () => {
+    sessionStorageMock.store['draft:pricing-fast'] = JSON.stringify({ unit_price: '88', weight_g: '500' });
+
+    renderPage();
+
+    expect(await screen.findByText('检测到未完成的填写')).toBeInTheDocument();
+    expect(screen.getByText('包含 2 个字段')).toBeInTheDocument();
+  });
+
+  it('restores fast and precise drafts after confirmation', async () => {
+    sessionStorageMock.store['draft:pricing-fast'] = JSON.stringify({ unit_price: '88', weight_g: '500' });
+    sessionStorageMock.store['draft:pricing-precise'] = JSON.stringify({ name: '恢复商品', unit_price: '66' });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '恢复' }));
+    fireEvent.click(screen.getByText('快速模式'));
+
+    expect(screen.getByDisplayValue('88')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('500')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('精准模式'));
+
+    expect(screen.getByDisplayValue('恢复商品')).toBeInTheDocument();
+    expect(screen.queryByText('检测到未完成的填写')).not.toBeInTheDocument();
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:pricing-fast');
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:pricing-precise');
+  });
+
+  it('discards pricing drafts and clears sessionStorage', async () => {
+    sessionStorageMock.store['draft:pricing-fast'] = JSON.stringify({ unit_price: '88' });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '丢弃' }));
+
+    expect(screen.queryByText('检测到未完成的填写')).not.toBeInTheDocument();
+    expect(sessionStorageMock.store['draft:pricing-fast']).toBeUndefined();
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:pricing-fast');
   });
 });

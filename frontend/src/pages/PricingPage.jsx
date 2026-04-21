@@ -1,19 +1,65 @@
-import React from 'react'
+import React, { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import DraftRestoreDialog from '../components/DraftRestoreDialog'
 import { useAuthStore } from '../stores/authStore'
 import PricingForm from './pricing/PricingForm'
 import ProductDialogs from './pricing/ProductDialogs'
 import PricingResultPanel from './pricing/PricingResultPanel'
+import { DEFAULT_FAST, DEFAULT_PRECISE } from './pricing/pricingConstants'
 import { usePricingCalculation } from './pricing/usePricingCalculation'
+
+function countDraftFields(draft) {
+  if (!draft) return 0
+  return Object.values(draft).filter((value) => {
+    if (typeof value === 'boolean') return value
+    return value !== '' && value !== null && value !== undefined
+  }).length
+}
 
 export default function PricingPage() {
   const { user } = useAuthStore()
   const pricing = usePricingCalculation(user)
   const isPreciseDisabled = user?.user_type === 'free' || user?.user_type === 'efficiency'
   const preciseLabel = isPreciseDisabled ? '精准模式（限专业版/企业版）' : '精准模式'
+  const [savedDrafts] = useState(() => ({
+    fast: pricing.fastDraft.loadDraft(),
+    precise: pricing.preciseDraft.loadDraft(),
+  }))
+  const [draftDialogOpen, setDraftDialogOpen] = useState(
+    () => Boolean(savedDrafts.fast || savedDrafts.precise),
+  )
+  const draftSummary = useMemo(() => {
+    const fieldCount = countDraftFields(savedDrafts.fast) + countDraftFields(savedDrafts.precise)
+    return fieldCount > 0 ? `包含 ${fieldCount} 个字段` : undefined
+  }, [savedDrafts.fast, savedDrafts.precise])
+
+  const handleRestoreDraft = () => {
+    if (savedDrafts.fast) {
+      pricing.setFastForm({ ...DEFAULT_FAST, ...savedDrafts.fast })
+      pricing.fastDraft.clearDraft()
+    }
+    if (savedDrafts.precise) {
+      pricing.setPreciseForm({ ...DEFAULT_PRECISE, ...savedDrafts.precise })
+      pricing.preciseDraft.clearDraft()
+    }
+    setDraftDialogOpen(false)
+  }
+
+  const handleDiscardDraft = () => {
+    pricing.fastDraft.clearDraft()
+    pricing.preciseDraft.clearDraft()
+    setDraftDialogOpen(false)
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      <DraftRestoreDialog
+        open={draftDialogOpen}
+        onRestore={handleRestoreDraft}
+        onDiscard={handleDiscardDraft}
+        summary={draftSummary}
+      />
+
       <h1 className="text-2xl font-bold font-headline tracking-tight mb-6">物流定价计算</h1>
 
       {pricing.hasLogisticsRules === false && (
