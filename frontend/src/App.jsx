@@ -1,10 +1,11 @@
 import { useEffect, Suspense, lazy } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuthStore } from './stores/authStore'
 import { Skeleton } from './components/ui/skeleton'
 import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/AppLayout'
+import SessionKickedDialog from './components/SessionKickedDialog'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
@@ -51,15 +52,28 @@ function AdminRoute({ children }) {
 }
 
 function App() {
-  const { initAuth } = useAuthStore()
+  const navigate = useNavigate()
+  const initAuth = useAuthStore((state) => state.initAuth)
+  const sessionKicked = useAuthStore((state) => state.sessionKicked)
+  const clearSessionKicked = useAuthStore((state) => state.clearSessionKicked)
 
   useEffect(() => {
     initAuth()
   }, [initAuth])
 
+  const handleSessionKickedConfirm = () => {
+    clearSessionKicked()
+    navigate('/login', { replace: true })
+  }
+
   return (
     <>
       <Toaster position="top-center" richColors />
+      <SessionKickedDialog
+        open={sessionKicked.open}
+        reason={sessionKicked.reason}
+        onConfirm={handleSessionKickedConfirm}
+      />
       <ErrorBoundary>
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Skeleton className="w-48 h-8" /></div>}>
           <Routes>
