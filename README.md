@@ -217,7 +217,7 @@ logistics/
 ├── frontend/                        # React 前端
 │   ├── src/
 │   │   ├── components/              # 共享组件（AppLayout, Sidebar, TopHeader 等）
-│   │   ├── pages/                   # 14 个页面
+│   │   ├── pages/                   # 19 个页面
 │   │   ├── stores/                  # Zustand 状态管理
 │   │   ├── services/                # API 调用层
 │   │   ├── lib/                     # 工具库
