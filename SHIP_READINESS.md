@@ -2,17 +2,17 @@
 
 **项目**：cbprice.cn 物流定价 SaaS
 **报告日期**：2026-04-22
-**报告范围**：Wave 1–7 累计 61 原子 commit，P0–P3 字面清零
-**HEAD**：`f14964a3`（ahead `origin/main` 61 commits，**未 push**）
+**报告范围**：Wave 1–9 累计 68 原子 commit，P0–P3 字面清零
+**HEAD**：`e7b40603`（ahead `origin/main` 68 commits，**未 push**）
 
 ---
 
 ## 1. 放行结论
 
-- **P0（阻断）**：✅ 清零
-- **P1（严重）**：✅ 清零
-- **P2（质量）**：✅ 清零（Wave 6 重审计裁决后）
-- **P3（卫生）**：✅ 清零（Wave 6 重审计裁决后）
+- **P0（阻断）**：✅ 清零（Wave 9 复核无新增）
+- **P1（严重）**：✅ 清零（Wave 9 修复 3 项真问题）
+- **P2（质量）**：✅ 清零（Wave 6 重审计裁决后，Wave 9 复核无新增）
+- **P3（卫生）**：✅ 清零（Wave 6 + Wave 9 裁决后）
 
 具备生产上线条件。等待用户决定是否 `git push`。
 
@@ -24,7 +24,7 @@
 |---|---|
 | Python | 3.11.9 |
 | Node.js | v22.22.0 |
-| Alembic head | `87a840348f80` |
+| Alembic head | `e53fd4a44e97` |
 | React | ^18.2.0 |
 | Vite | ^5.1.0 |
 | Tailwind CSS | ^3.4.19 |
@@ -36,15 +36,15 @@
 
 ---
 
-## 3. 质量基线（Wave 7 主控亲跑）
+## 3. 质量基线（Wave 9 主控亲跑）
 
 | 检查项 | 命令 | 结果 |
 |---|---|---|
 | 后端 Lint | `python -m flake8` | **0 违规**（全仓） |
-| 后端测试 | `python -m pytest` | **2147 passed, 4 skipped**（~66s） |
+| 后端测试 | `python -m pytest` | **2154 passed, 4 skipped**（~91s） |
 | 前端 Lint | `npm run lint -- --max-warnings 0` | **0 warnings** |
-| 前端单测 | `npm run test` (vitest) | **37 files / 296 tests passed**（22.96s） |
-| 前端构建 | `npm run build` | ✓ built in 6.25s |
+| 前端单测 | `npm run test` (vitest) | **37 files / 296 tests passed**（23.48s） |
+| 前端构建 | `npm run build` | ✓ built in 5.89s |
 | 工作区 | `git status` | clean |
 
 **4 个 skipped**：均为 Playwright E2E，需真实运行服务器，本地单机批跑不启用。
@@ -73,20 +73,21 @@
 
 ---
 
-## 5. Wave 1–7 累计成果（61 commits）
+## 5. Wave 1–9 累计成果（68 commits）
 
 ### 5.1 分类统计
 
 | 类型 | 数量 |
 |---|---|
 | feat | 25 |
-| fix | 14 |
+| fix | 17 |
 | refactor | 9 |
 | perf | 4 |
+| docs | 6 |
 | chore | 3 |
-| docs | 3 |
+| security | 1 |
 | test | 3 |
-| **合计** | **61** |
+| **合计** | **68** |
 
 ### 5.2 主要能力落地
 
@@ -105,7 +106,12 @@
 **支付安全**
 - 微信支付平台签名验证
 - notify 回调 CAS 幂等（防双扣）
+- 路由层 Suspicious 异常捕获 → `await session.rollback()` → 防止脏 CAS 被 `get_db` 自动 commit（Wave 9）
+- `_parse_duration` 兼容英文 `month`/`year` billing_cycle，修复年付只开 30 天 bug（Wave 9）
 - `wechat_pay_v3_api` 单测覆盖恢复
+
+**数据一致性（Wave 9）**
+- `users` 表 `lower(username)` / `lower(email)` 数据库级 functional unique 索引，彻底消除大小写并发 race 导致的 `MultipleResultsFound`
 
 **性能（N+1 消除）**
 - `get_all_users`、`batch_update_users`、`batch_add_to_my_logistics`、`confirm_product_import` 全部改批量
@@ -129,7 +135,7 @@
 ## 6. 部署注意事项
 
 - **部署位置**：`ssh SSH_USER@SERVER_IP:/var/www/ozon-pricing`
-- **Push 状态**：本地 61 commit 未 push；等待用户指令
+- **Push 状态**：本地 68 commit 未 push；等待用户指令
 - **历史重写授权**：用户已授权本地 main 历史重写
 - **Windows CRLF**：Windows 本地克隆可能出现 CRLF warning，不影响功能
 - **bash 工具前缀**：任何自动化脚本必须前缀 `$env:CI='true'; $env:GIT_TERMINAL_PROMPT='0'; $env:GIT_PAGER='cat'; $env:PAGER='cat';`
@@ -150,7 +156,7 @@
 
 - 所有改动均为**原子 commit**，可用 `git revert <sha>` 精确回退任一能力
 - 未 push，可用 `git reset --hard origin/main` 整体回滚到上游状态
-- 数据库迁移头：`87a840348f80`；如需回滚迁移使用 `alembic downgrade -1`
+- 数据库迁移头：`e53fd4a44e97`；如需回滚迁移使用 `alembic downgrade -1`
 
 ---
 
@@ -165,5 +171,65 @@
 
 ---
 
+---
+
+## 10. Wave 9 专项（2026-04-22 追加）
+
+Wave 9 执行四份独立审计（oracle P0 / oracle P1 / Junior-deep P2 / Junior-deep P3），主控逐项核实后裁决。
+
+### 10.1 主控裁决表（22 报告项 → 5 真 / 17 伪）
+
+| 类别 | 报告项 | 主控裁决 | 处置 |
+|---|---|---|---|
+| P0 | `AUDIT_REPORT.md` 含明文密码 | ✅ **真** | 删除整文件 `cc593159` |
+| P0 | `docs/superpowers/plans/...` 第二处密码 | ❌ 伪 | grep 全仓不存在 |
+| P1 | 微信 notify CAS 设计错误 | ❌ 伪 | CAS 单语句设计正确 |
+| P1 | 路由层吞 Suspicious 异常致脏 CAS 被 commit | ✅ **真** | 注入 session，异常路径 `await session.rollback()` `3d07529f` |
+| P1 | `_parse_duration` 不识别英文 billing_cycle | ✅ **真** | `payment_service.py` + `payment_handler.py` 双处兼容 + 5 测试 `8f94d353` |
+| P1 | 用户名/邮箱大小写并发 race | ✅ **真** | 新增 alembic `e53fd4a44e97`：`ux_users_username_lower` + `ux_users_email_lower` functional 唯一索引 + 2 测试 `ef0b7dc2` |
+| P2 | `payment_callback_enhanced.py` >500 行 | ❌ 伪 | 实测 437 行 |
+| P2 | `exchange_service_providers.py` >500 行 | ❌ 伪 | 实测 410 行 |
+| P2 | `redis_cache.py` >500 行 | ❌ 伪 | 实测 386 行 |
+| P2 | `test_api_routes.py` >800 行 | ❌ 伪 | 实测 776 行 |
+| P2 | `test_db_statistics.py` >800 行 | ❌ 伪 | 实测 682 行 |
+| P2 | `test_session_security_full.py` >800 行 | ❌ 伪 | 实测 680 行 |
+| P3 | 生产前端 4 处 `console.warn` | ❌ 伪 | grep 实测 0 处 |
+| P3 | AGENTS.md alembic head 过时 | ❌ 伪 | 修前已是最新 |
+| P3 | README 引用 `env.template` 错 | ❌ 伪 | 实测正确 |
+| P3 | README "14 个页面"过时 | ✅ **真** | 修正为 19 `798bf6b1` |
+| 其他 7 项 | 格式/风格建议 | ❌ 伪或非阻断 | 不动 |
+
+**核实方法论**：Wave 6 与 Wave 9 连续两轮均发现 audit agent ~50%+ 误判率（行数虚报、grep 假阳性、对 `get_db` 自动 commit 行为不熟），故确立硬性规则：**所有 audit 输出必须经主控 `Read` + `grep` + 上下文核实后方可进入修复流水线**。
+
+### 10.2 Wave 9 commit 清单
+
+| Commit | 类别 | 摘要 |
+|---|---|---|
+| `cc593159` | security | remove obsolete AUDIT_REPORT.md (−751 lines, 明文密码清除) |
+| `3d07529f` | fix(payment) | rollback transaction on suspicious wechat notify |
+| `8f94d353` | fix(payment) | parse english month/year billing_cycle correctly |
+| `ef0b7dc2` | fix(db) | enforce case-insensitive uniqueness on users via functional indexes |
+| `798bf6b1` | docs | correct frontend page count from 14 to 19 in README |
+
+### 10.3 Wave 9 回归基线对比
+
+| 检查项 | Wave 7 基线 | Wave 9 新基线 |
+|---|---|---|
+| Backend pytest | 2147 passed, 4 skipped | **2154 passed, 4 skipped**（+7 新测试） |
+| Backend flake8 | 0 | **0** |
+| Frontend vitest | 37 files / 296 tests | **37 files / 296 tests** |
+| Frontend lint | 0 warnings | **0 warnings** |
+| Frontend build | 6.25s | **5.89s** |
+| Alembic head | `87a840348f80` | `e53fd4a44e97` |
+
+### 10.4 关键架构事实（Wave 9 确认，供运维参考）
+
+- `database.py:get_db()` 在 `yield` 之后**自动 `await session.commit()`**；仅异常传播路径才 rollback。路由层若 try/except 吞掉 service 层 raise，脏状态会被持久化。
+- `apply_wechat_payment_success` 使用 `UPDATE ... WHERE wechat_transaction_id IS NULL RETURNING ...` 单语句 CAS，天然并发安全；金额/用户/身份校验在 CAS 成功后进行。
+- `create_order(billing_cycle=...)` 把参数**原样**写入 `PaymentOrder.duration`，`_parse_duration` 必须同时识别中文（"月"/"年"）与英文（`month`/`year`）。
+- `users.username` / `users.email` 现存两套唯一性保障：Python 层 `func.lower()` 预检 + DB 层 functional unique 索引，并发 race 在 DB 层被终结为 `IntegrityError`。
+
+---
+
 **报告产出人**：Sisyphus（主控）
-**签发基线**：HEAD `f14964a3`，working tree clean，ahead origin/main 61，所有质量门全绿
+**签发基线**：HEAD `e7b40603`，working tree clean，ahead origin/main 68，所有质量门全绿
