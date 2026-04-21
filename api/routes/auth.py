@@ -46,6 +46,7 @@ from api.dependencies import (
     validate_cookie_csrf,
 )
 from api.middleware.login_limiter import login_limiter
+from api.middleware.username_check_limiter import username_check_limiter
 from logger_config import logger
 
 _is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
@@ -55,6 +56,7 @@ _cookie_secure = (
 )
 _ACCESS_COOKIE_MAX_AGE = 15 * 60
 _REFRESH_COOKIE_MAX_AGE = 7 * 24 * 3600
+_TRUSTED_RATE_LIMIT_PROXIES = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
 def validate_password(password: str) -> bool:
@@ -80,6 +82,14 @@ def _get_request_ip(request: Request) -> str:
 
 def _get_request_user_agent(request: Request) -> str:
     return request.headers.get("user-agent", "")
+
+
+def _get_username_check_client_ip(request: Request) -> str:
+    client_ip = _get_request_ip(request)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for and client_ip in _TRUSTED_RATE_LIMIT_PROXIES:
+        return forwarded_for.split(",")[0].strip()
+    return client_ip
 
 
 def _normalize_user_identity(user: User) -> tuple[str, str]:
@@ -259,10 +269,23 @@ async def logout(
 
 @router.get("/check-username")
 async def check_username(
+    request: Request,
     username: str,
     session: AsyncSession = Depends(get_db),
 ):
     # 不抛 4xx：前端 axios 拦截器会把 4xx 当全局错误，破坏注册表单的 inline 提示
+    client_ip = _get_username_check_client_ip(request)
+    try:
+        username_check_limiter.check(client_ip)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            logger.warning(
+                "auth.check_username.rate_limited ip=%s username=%s timestamp=%s",
+                client_ip,
+                username,
+                int(time.time()),
+            )
+        raise
 
     if not re.match(r"^[a-zA-Z0-9_]{3,50}$", username):
         return {"available": False, "reason": "用户名只能包含字母、数字和下划线，长度3-50位"}

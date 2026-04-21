@@ -48,6 +48,15 @@ def _allow_testserver_origin(monkeypatch):
     monkeypatch.setattr(dependencies, "_ALLOWED_ORIGINS", {"http://testserver"})
 
 
+@pytest.fixture(autouse=True)
+def _reset_username_check_limiter():
+    from api.middleware.username_check_limiter import username_check_limiter
+
+    username_check_limiter.reset()
+    yield
+    username_check_limiter.reset()
+
+
 def _logistics_row():
     return {
         "id": 1,
@@ -353,6 +362,114 @@ class TestAuth:
         body = r.json()
         assert body["available"] is False
         assert body["reason"] is not None
+
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    def test_check_username_rate_limit_single_ip_returns_429(self, mock_find):
+        mock_find.return_value = None
+        headers = {"X-Forwarded-For": "203.0.113.10"}
+        for _ in range(10):
+            response = client.get(
+                "/api/auth/check-username",
+                params={"username": "newuser"},
+                headers=headers,
+            )
+            assert response.status_code == 200
+
+        response = client.get(
+            "/api/auth/check-username",
+            params={"username": "newuser"},
+            headers=headers,
+        )
+        assert response.status_code == 429
+        assert response.json()["detail"] == "请求过于频繁，请稍后再试"
+
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    def test_check_username_rate_limit_different_ips_independent(self, mock_find):
+        mock_find.return_value = None
+        ip1_headers = {"X-Forwarded-For": "203.0.113.11"}
+        ip2_headers = {"X-Forwarded-For": "203.0.113.12"}
+
+        for _ in range(10):
+            response = client.get(
+                "/api/auth/check-username",
+                params={"username": "newuser"},
+                headers=ip1_headers,
+            )
+            assert response.status_code == 200
+
+        response = client.get(
+            "/api/auth/check-username",
+            params={"username": "otheruser"},
+            headers=ip2_headers,
+        )
+        assert response.status_code == 200
+
+        response = client.get(
+            "/api/auth/check-username",
+            params={"username": "newuser"},
+            headers=ip1_headers,
+        )
+        assert response.status_code == 429
+
+        response = client.get(
+            "/api/auth/check-username",
+            params={"username": "otheruser2"},
+            headers=ip2_headers,
+        )
+        assert response.status_code == 200
+
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    def test_check_username_rate_limit_window_resets_after_60_seconds(
+        self,
+        mock_find,
+    ):
+        mock_find.return_value = None
+        headers = {"X-Forwarded-For": "203.0.113.13"}
+        fake_time = MagicMock()
+        fake_time.time.side_effect = [1000.0] * 10 + [1061.0]
+        with patch(
+            "api.middleware.username_check_limiter.time",
+            fake_time,
+        ):
+            for _ in range(10):
+                response = client.get(
+                    "/api/auth/check-username",
+                    params={"username": "newuser"},
+                    headers=headers,
+                )
+                assert response.status_code == 200
+
+            response = client.get(
+                "/api/auth/check-username",
+                params={"username": "newuser"},
+                headers=headers,
+            )
+            assert response.status_code == 200
+
+    @patch("api.routes.auth.logger.warning")
+    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
+    def test_check_username_rate_limit_logs_warning(self, mock_find, mock_warning):
+        mock_find.return_value = None
+        headers = {"X-Forwarded-For": "203.0.113.14"}
+        for _ in range(10):
+            response = client.get(
+                "/api/auth/check-username",
+                params={"username": "newuser"},
+                headers=headers,
+            )
+            assert response.status_code == 200
+
+        response = client.get(
+            "/api/auth/check-username",
+            params={"username": "newuser"},
+            headers=headers,
+        )
+        assert response.status_code == 429
+        mock_warning.assert_called_once()
+        args = mock_warning.call_args.args
+        assert args[0] == "auth.check_username.rate_limited ip=%s username=%s timestamp=%s"
+        assert args[1] == "203.0.113.14"
+        assert args[2] == "newuser"
 
 
 
