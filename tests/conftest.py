@@ -53,14 +53,22 @@ def _fast_gensalt(rounds=12, prefix=b"2b"):
 bcrypt.gensalt = _fast_gensalt
 
 
+async def _safe_cleanup_execute(session, statement, params):
+    """Execute best-effort cleanup SQL without poisoning the session."""
+    from sqlalchemy import text
+
+    try:
+        await session.execute(text(statement), params)
+    except Exception:
+        await session.rollback()
+
+
 async def _delete_test_user_async(session, user_id, username):
     """Delete a test user and all FK-dependent rows.
 
     Handles ALL known FK dependencies consistently with clean_db
     and pytest_sessionfinish.
     """
-    from sqlalchemy import text
-
     # user_id FK tables (comprehensive list matching clean_db)
     for table in [
         "products",
@@ -77,47 +85,37 @@ async def _delete_test_user_async(session, user_id, username):
         "user_behavior_log",
         "subscription_upgrade_history",
     ]:
-        try:
-            await session.execute(
-                text(f"DELETE FROM {table} WHERE user_id = :uid"),
-                {"uid": user_id},
-            )
-        except Exception:
-            pass
+        await _safe_cleanup_execute(
+            session,
+            f"DELETE FROM {table} WHERE user_id = :uid",
+            {"uid": user_id},
+        )
 
     # identifier FK tables (username-based)
     for table in ["login_attempts", "user_lockouts"]:
-        try:
-            await session.execute(
-                text(f"DELETE FROM {table} WHERE identifier = :uname"),
-                {"uname": username},
-            )
-        except Exception:
-            pass
+        await _safe_cleanup_execute(
+            session,
+            f"DELETE FROM {table} WHERE identifier = :uname",
+            {"uname": username},
+        )
 
     # admin_action_log references both admin_id and target_user_id
-    try:
-        await session.execute(
-            text(
-                "DELETE FROM admin_action_log"
-                " WHERE admin_id = :uid OR target_user_id = :uid"
-            ),
-            {"uid": user_id},
-        )
-    except Exception:
-        pass
+    await _safe_cleanup_execute(
+        session,
+        "DELETE FROM admin_action_log"
+        " WHERE admin_id = :uid OR target_user_id = :uid",
+        {"uid": user_id},
+    )
 
     # audit_logs references admin_id
-    try:
-        await session.execute(
-            text("DELETE FROM audit_logs WHERE admin_id = :uid"),
-            {"uid": user_id},
-        )
-    except Exception:
-        pass
-
-    await session.execute(
-        text("DELETE FROM users WHERE id = :uid"),
+    await _safe_cleanup_execute(
+        session,
+        "DELETE FROM audit_logs WHERE admin_id = :uid",
+        {"uid": user_id},
+    )
+    await _safe_cleanup_execute(
+        session,
+        "DELETE FROM users WHERE id = :uid",
         {"uid": user_id},
     )
 
@@ -243,7 +241,6 @@ async def test_admin(db_session):
 async def clean_db():
     """清理数据库中的测试数据"""
     from database import AsyncSessionLocal
-    from sqlalchemy import text
 
     async def _clean():
         async with AsyncSessionLocal() as session:
@@ -266,25 +263,19 @@ async def clean_db():
                     "payment_orders",
                     "active_sessions",
                 ]:
-                    try:
-                        await session.execute(
-                            text(
-                                f"DELETE FROM {table}"
-                                f" WHERE user_id IN ({test_user_subquery})"
-                            )
-                        )
-                    except Exception:
-                        pass
+                    await _safe_cleanup_execute(
+                        session,
+                        f"DELETE FROM {table}"
+                        f" WHERE user_id IN ({test_user_subquery})",
+                        {},
+                    )
                 for table in ["login_attempts", "user_lockouts"]:
-                    try:
-                        await session.execute(
-                            text(
-                                f"DELETE FROM {table}"
-                                f" WHERE identifier IN ({test_name_subquery})"
-                            )
-                        )
-                    except Exception:
-                        pass
+                    await _safe_cleanup_execute(
+                        session,
+                        f"DELETE FROM {table}"
+                        f" WHERE identifier IN ({test_name_subquery})",
+                        {},
+                    )
                 for table in [
                     "logistics_pricing_rules",
                     "pricing_plans",
@@ -296,45 +287,33 @@ async def clean_db():
                     "user_behavior_log",
                     "subscription_upgrade_history",
                 ]:
-                    try:
-                        await session.execute(
-                            text(
-                                f"DELETE FROM {table}"
-                                f" WHERE user_id IN ({test_user_subquery})"
-                            )
-                        )
-                    except Exception:
-                        pass
-                try:
-                    await session.execute(
-                        text(
-                            "DELETE FROM admin_action_log"
-                            f" WHERE admin_id IN ({test_user_subquery})"
-                            f" OR target_user_id IN ({test_user_subquery})"
-                        )
+                    await _safe_cleanup_execute(
+                        session,
+                        f"DELETE FROM {table}"
+                        f" WHERE user_id IN ({test_user_subquery})",
+                        {},
                     )
-                except Exception:
-                    pass
-                try:
-                    await session.execute(
-                        text(
-                            "DELETE FROM audit_logs"
-                            f" WHERE admin_id IN ({test_user_subquery})"
-                        )
-                    )
-                except Exception:
-                    pass
-                try:
-                    await session.execute(
-                        text(
-                            "DELETE FROM users"
-                            " WHERE is_test_user = 1"
-                            " OR username LIKE 'test_%%'"
-                            " OR username LIKE 'e2e%%'"
-                        )
-                    )
-                except Exception:
-                    pass
+                await _safe_cleanup_execute(
+                    session,
+                    "DELETE FROM admin_action_log"
+                    f" WHERE admin_id IN ({test_user_subquery})"
+                    f" OR target_user_id IN ({test_user_subquery})",
+                    {},
+                )
+                await _safe_cleanup_execute(
+                    session,
+                    "DELETE FROM audit_logs"
+                    f" WHERE admin_id IN ({test_user_subquery})",
+                    {},
+                )
+                await _safe_cleanup_execute(
+                    session,
+                    "DELETE FROM users"
+                    " WHERE is_test_user = 1"
+                    " OR username LIKE 'test_%%'"
+                    " OR username LIKE 'e2e%%'",
+                    {},
+                )
                 await session.commit()
             except Exception:
                 await session.rollback()
