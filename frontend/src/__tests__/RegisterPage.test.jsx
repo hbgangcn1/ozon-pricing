@@ -65,9 +65,28 @@ vi.mock('../components/ui/dialog', () => ({
 
 describe('RegisterPage', () => {
   const mockSetAuth = vi.fn();
+  const sessionStorageMock = {
+    store: {},
+    getItem: vi.fn((key) => (key in sessionStorageMock.store ? sessionStorageMock.store[key] : null)),
+    setItem: vi.fn((key, value) => {
+      sessionStorageMock.store[key] = String(value);
+    }),
+    removeItem: vi.fn((key) => {
+      delete sessionStorageMock.store[key];
+    }),
+    clear: vi.fn(() => {
+      sessionStorageMock.store = {};
+    }),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorageMock.clear();
+    Object.defineProperty(window, 'sessionStorage', {
+      value: sessionStorageMock,
+      configurable: true,
+      writable: true,
+    });
     useAuthStore.mockReturnValue({ setAuth: mockSetAuth });
   });
 
@@ -314,5 +333,66 @@ describe('RegisterPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '注册中...' })).toBeInTheDocument();
     });
+  });
+
+  it('shows restore dialog when register draft exists on mount', async () => {
+    sessionStorageMock.store['draft:register'] = JSON.stringify({
+      username: 'draft-user',
+      security_question: '您母亲的姓氏是什么？',
+    });
+
+    renderComponent();
+
+    expect(await screen.findByText('检测到未完成的填写')).toBeInTheDocument();
+    expect(screen.getByText('包含 2 个字段')).toBeInTheDocument();
+  });
+
+  it('restores non-sensitive register draft fields after confirmation', async () => {
+    sessionStorageMock.store['draft:register'] = JSON.stringify({
+      username: 'draft-user',
+      security_question: '您母亲的姓氏是什么？',
+    });
+
+    renderComponent();
+
+    fireEvent.click(await screen.findByRole('button', { name: '恢复' }));
+
+    expect(screen.getByDisplayValue('draft-user')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveValue('您母亲的姓氏是什么？');
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:register');
+  });
+
+  it('discards register draft and clears sessionStorage', async () => {
+    sessionStorageMock.store['draft:register'] = JSON.stringify({ username: 'draft-user' });
+
+    renderComponent();
+
+    fireEvent.click(await screen.findByRole('button', { name: '丢弃' }));
+
+    expect(screen.queryByText('检测到未完成的填写')).not.toBeInTheDocument();
+    expect(sessionStorageMock.store['draft:register']).toBeUndefined();
+  });
+
+  it('never persists password, confirmPassword or security_answer into sessionStorage', async () => {
+    vi.useFakeTimers();
+    try {
+      renderComponent();
+
+      fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), { target: { value: 'draft-user' } });
+      fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'ValidPassword123!' } });
+      fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), { target: { value: 'ValidPassword123!' } });
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
+      fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'secret-answer' } });
+
+      vi.advanceTimersByTime(350);
+
+      const savedDraft = JSON.parse(sessionStorageMock.store['draft:register']);
+      expect(savedDraft.username).toBe('draft-user');
+      expect(savedDraft.password).toBeUndefined();
+      expect(savedDraft.confirmPassword).toBeUndefined();
+      expect(savedDraft.security_answer).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
