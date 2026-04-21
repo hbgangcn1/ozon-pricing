@@ -38,14 +38,30 @@ function buildSessionExpiredLoginUrl() {
   return `/login?returnTo=${returnTo}&reason=expired`
 }
 
-function redirectToExpiredLogin() {
+function isSessionKickedDetail(detail) {
+  return typeof detail === 'object'
+    && detail !== null
+    && Object.prototype.hasOwnProperty.call(detail, 'reason')
+}
+
+function clearAuthForRedirect() {
   useAuthStore.getState().logout()
   if (import.meta.env.MODE === 'test') {
     localStorage.removeItem('api_user')
     localStorage.removeItem('api_token')
   }
+}
+
+function redirectToExpiredLogin() {
+  clearAuthForRedirect()
   toast.error('会话已过期，您的填写内容已保存。请重新登录。')
   window.location.href = buildSessionExpiredLoginUrl()
+}
+
+function redirectToUnauthorizedLogin(message) {
+  clearAuthForRedirect()
+  toast.error(message || '登录状态已失效，请重新登录。')
+  window.location.href = '/login'
 }
 
 if (import.meta.env.MODE !== 'test') {
@@ -67,7 +83,15 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config || {}
     const isRefreshRequest = originalRequest.url?.includes('/auth/refresh')
-    const shouldRetry = error.response?.status === 401
+    const status = error.response?.status
+    const detail = error.response?.data?.detail
+
+    if (status === 401 && isSessionKickedDetail(detail)) {
+      useAuthStore.getState().setSessionKicked({ reason: detail.reason ?? null })
+      return Promise.reject(error)
+    }
+
+    const shouldRetry = status === 401
       && !originalRequest._retry
       && !isRefreshRequest
 
@@ -85,11 +109,23 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
         return apiClient(originalRequest)
       } catch (refreshError) {
+        const refreshDetail = refreshError?.response?.data?.detail
         if (refreshError?.response?.status === 401 && window.location.pathname !== '/login') {
-          redirectToExpiredLogin()
+          if (isSessionKickedDetail(refreshDetail)) {
+            useAuthStore.getState().setSessionKicked({ reason: refreshDetail.reason ?? null })
+          } else if (typeof refreshDetail === 'string') {
+            redirectToUnauthorizedLogin(refreshDetail)
+          } else {
+            redirectToExpiredLogin()
+          }
         }
         return Promise.reject(error)
       }
+    }
+
+    if (status === 401 && typeof detail === 'string' && window.location.pathname !== '/login') {
+      redirectToUnauthorizedLogin(detail)
+      return Promise.reject(error)
     }
 
     if (error.code === 'ECONNABORTED') {
@@ -123,10 +159,7 @@ export const authAPI = {
 }
 
 export const logoutUser = () => {
-  useAuthStore.getState().logout()
-  if (import.meta.env.MODE === 'test') {
-    localStorage.removeItem('api_user')
-  }
+  clearAuthForRedirect()
   window.location.href = '/login'
 }
 
