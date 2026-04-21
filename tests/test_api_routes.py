@@ -277,7 +277,9 @@ class TestAuth:
         assert "占用" not in body["detail"]
 
     @patch("api.routes.auth.update_user_password", new_callable=AsyncMock)
-    def test_change_password_success(self, mock_update):
+    @patch("api.routes.auth.get_user_by_id", new_callable=AsyncMock)
+    def test_change_password_success(self, mock_get_user, mock_update):
+        mock_get_user.return_value = {"id": 1}
         mock_update.return_value = True
         r = client.post(
             "/api/auth/change-password",
@@ -290,7 +292,9 @@ class TestAuth:
         assert r.status_code == 200
 
     @patch("api.routes.auth.update_user_password", new_callable=AsyncMock)
-    def test_change_password_wrong_current(self, mock_update):
+    @patch("api.routes.auth.get_user_by_id", new_callable=AsyncMock)
+    def test_change_password_wrong_current(self, mock_get_user, mock_update):
+        mock_get_user.return_value = {"id": 1}
         mock_update.return_value = False
         r = client.post(
             "/api/auth/change-password",
@@ -301,6 +305,21 @@ class TestAuth:
             headers={"Authorization": "Bearer faketoken"},
         )
         assert r.status_code == 401
+        assert r.json()["detail"] == "当前密码错误"
+
+    @patch("api.routes.auth.get_user_by_id", new_callable=AsyncMock)
+    def test_change_password_missing_user_returns_401(self, mock_get_user):
+        mock_get_user.return_value = None
+        r = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "OldP@ss123!x",
+                "new_password": "NewStrongP@ss1!",
+            },
+            headers={"Authorization": "Bearer faketoken"},
+        )
+        assert r.status_code == 401
+        assert r.json()["detail"] == "认证已失效"
 
     @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
     def test_check_username_available(self, mock_find):

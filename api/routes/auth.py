@@ -19,6 +19,7 @@ from db.users import (
     create_user,
     update_user_password,
     find_by_username,
+    get_user_by_id,
 )
 from db.config import is_registration_open
 from api.models.schemas import (
@@ -420,6 +421,13 @@ async def change_password(
             detail="密码必须至少13位，包含大小写字母、数字和特殊字符",
         )
 
+    existing_user = await get_user_by_id(session, user_id)
+    if not existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="认证已失效",
+        )
+
     success = await update_user_password(
         session,
         user_id,
@@ -435,7 +443,7 @@ async def change_password(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="当前密码错误或用户不存在",
+            detail="当前密码错误",
         )
 
     logger.info(
