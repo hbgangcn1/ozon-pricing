@@ -36,10 +36,12 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401 && window.location.pathname !== '/login') {
       useAuthStore.getState().logout()
+      // 测试环境额外清理 localStorage（部分测试不挂 store）
       if (import.meta.env.MODE === 'test') {
         localStorage.removeItem('api_user')
-        window.location.href = '/login'
       }
+      // 无论环境，401 后都跳转登录页，避免用户停留在保护页面看空白
+      window.location.href = '/login'
     }
     if (error.code === 'ECONNABORTED') {
       error.userMessage = '请求超时，请检查网络连接'
@@ -67,8 +69,8 @@ export const logoutUser = () => {
   useAuthStore.getState().logout()
   if (import.meta.env.MODE === 'test') {
     localStorage.removeItem('api_user')
-    window.location.href = '/login'
   }
+  window.location.href = '/login'
 }
 
 export const productsAPI = {
