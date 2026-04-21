@@ -16,13 +16,13 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=1, max_length=128)
     role: str = "user"
 
 
 class UserLogin(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class UserResponse(UserBase):
@@ -276,18 +276,18 @@ class RefreshResponse(BaseModel):
 
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=6)
-    security_question: str
-    security_answer: str
+    password: str = Field(..., min_length=1, max_length=128)
+    security_question: str = Field(..., min_length=1, max_length=200)
+    security_answer: str = Field(..., min_length=1, max_length=200)
 
 
 class ChangePassword(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=1, max_length=128)
 
 
 class PasswordRecoveryStartRequest(BaseModel):
-    username: str
+    username: str = Field(..., min_length=1, max_length=50)
 
 
 class PasswordRecoveryStartResponse(BaseModel):
@@ -296,9 +296,9 @@ class PasswordRecoveryStartResponse(BaseModel):
 
 
 class PasswordRecoveryVerifyRequest(BaseModel):
-    username: str
-    answer1: str
-    answer2: str
+    username: str = Field(..., min_length=1, max_length=50)
+    answer1: str = Field(..., min_length=1, max_length=200)
+    answer2: str = Field(..., min_length=1, max_length=200)
 
 
 class PasswordRecoveryVerifyResponse(BaseModel):
@@ -306,8 +306,8 @@ class PasswordRecoveryVerifyResponse(BaseModel):
 
 
 class PasswordRecoveryResetRequest(BaseModel):
-    reset_token: str
-    new_password: str
+    reset_token: str = Field(..., min_length=1, max_length=512)
+    new_password: str = Field(..., min_length=1, max_length=128)
 
 
 class MessageResponse(BaseModel):
