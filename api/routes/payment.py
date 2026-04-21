@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from typing import Literal, Optional
 
@@ -12,7 +11,10 @@ from api.dependencies import get_current_user_id
 from database import get_db
 from db.config import is_registration_open
 from db.plans import get_plan_by_code, get_plan_price
-from services.payment_service import PaymentService
+from services.payment_service import (
+    PaymentService,
+    SuspiciousWechatNotifyError,
+)
 
 try:
     from wechat_pay_v3_api import wechat_pay_v3
@@ -56,25 +58,6 @@ class NotifyResponse(BaseModel):
 
 def _to_cents(amount: float) -> int:
     return int(round(amount * 100))
-
-
-def _extract_order_id_from_body(body: str) -> Optional[str]:
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    out_trade_no = payload.get("out_trade_no")
-    if isinstance(out_trade_no, str):
-        return out_trade_no
-    resource = payload.get("resource")
-    if isinstance(resource, dict) and isinstance(
-        resource.get("out_trade_no"),
-        str,
-    ):
-        return resource["out_trade_no"]
-    return None
 
 
 @router.post("/create", response_model=CreatePaymentResponse)
@@ -167,8 +150,6 @@ async def payment_notify(
         },
         "body": body,
     }
-    known_order_id = _extract_order_id_from_body(body)
-
     if not _wechat_available or wechat_pay_v3 is None:
         return JSONResponse(
             status_code=400,
@@ -186,19 +167,49 @@ async def payment_notify(
             content={"code": "FAIL", "message": message},
         )
 
-    out_trade_no = result.get("out_trade_no") or known_order_id
-    if out_trade_no:
-        order = await svc.get_order(out_trade_no)
-        if order and order.status != "PENDING":
-            return NotifyResponse(code="SUCCESS", message="成功")
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return JSONResponse(
+            status_code=400,
+            content={"code": "FAIL", "message": "通知数据缺失"},
+        )
 
-    if result.get("trade_state") == "SUCCESS" and out_trade_no:
-        try:
-            await svc.handle_payment_success(out_trade_no)
-        except Exception:
-            logger.error("处理支付成功失败: %s", out_trade_no, exc_info=True)
+    try:
+        out_trade_no = data["out_trade_no"]
+        transaction_id = data["transaction_id"]
+        amount = data["amount"]
+        amount_total = amount["total"]
+        currency = amount["currency"]
+    except (KeyError, TypeError) as exc:
+        logger.warning("微信支付通知缺少必要字段: %s", exc)
+        return JSONResponse(
+            status_code=400,
+            content={"code": "FAIL", "message": "通知字段缺失"},
+        )
 
-    return NotifyResponse(code="SUCCESS", message="成功")
+    appid = data.get("appid")
+    mchid = data.get("mchid")
+
+    try:
+        await svc.apply_wechat_payment_success(
+            out_trade_no=out_trade_no,
+            transaction_id=transaction_id,
+            amount_total=amount_total,
+            currency=currency,
+            appid=appid,
+            mchid=mchid,
+            raw_notify=data,
+        )
+        return NotifyResponse(code="SUCCESS", message="成功")
+    except SuspiciousWechatNotifyError as exc:
+        logger.error("wechat notify rejected as suspicious: %s", exc)
+        return NotifyResponse(code="SUCCESS", message="成功")
+    except Exception:
+        logger.error("wechat notify processing failed unexpectedly", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"code": "FAIL", "message": "系统错误"},
+        )
 
 
 @router.get("/{order_id}/status", response_model=PaymentStatusResponse)

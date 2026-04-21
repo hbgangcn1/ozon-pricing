@@ -13,6 +13,7 @@ from api.main import app  # noqa: E402
 from api import dependencies  # noqa: E402
 from api.routes.payment import get_payment_service  # noqa: E402
 from database import get_db  # noqa: E402
+from services.payment_service import SuspiciousWechatNotifyError  # noqa: E402
 
 MOCK_USER = {
     "id": 1,
@@ -213,11 +214,16 @@ class TestPaymentNotify:
     @patch("api.routes.payment._wechat_available", True)
     def test_success(self, mock_wechat, _setup_overrides):
         _, mock_svc = _setup_overrides
-        mock_svc.get_order.return_value = None
+        mock_svc.apply_wechat_payment_success.return_value = "processed"
         mock_wechat.process_notify.return_value = {
             "success": True,
-            "trade_state": "SUCCESS",
-            "out_trade_no": "test_notify_ord",
+            "data": {
+                "out_trade_no": "test_notify_ord",
+                "transaction_id": "wx_tx_001",
+                "amount": {"total": 2990, "currency": "CNY"},
+                "appid": "wx_app",
+                "mchid": "wx_mch",
+            },
         }
         resp = client.post(
             "/api/payments/notify",
@@ -230,13 +236,14 @@ class TestPaymentNotify:
     @patch("api.routes.payment._wechat_available", True)
     def test_idempotent(self, mock_wechat, _setup_overrides):
         _, mock_svc = _setup_overrides
-        mock_order = MagicMock()
-        mock_order.status = "SUCCESS"
-        mock_svc.get_order.return_value = mock_order
+        mock_svc.apply_wechat_payment_success.return_value = "duplicate"
         mock_wechat.process_notify.return_value = {
             "success": True,
-            "trade_state": "SUCCESS",
-            "out_trade_no": "test_idemp_ord",
+            "data": {
+                "out_trade_no": "test_idemp_ord",
+                "transaction_id": "wx_tx_002",
+                "amount": {"total": 2990, "currency": "CNY"},
+            },
         }
         resp = client.post(
             "/api/payments/notify",
@@ -247,8 +254,6 @@ class TestPaymentNotify:
 
     @patch("api.routes.payment._wechat_available", False)
     def test_wechat_unavailable(self, _setup_overrides):
-        _, mock_svc = _setup_overrides
-        mock_svc.get_order.return_value = None
         resp = client.post(
             "/api/payments/notify",
             json={},
@@ -257,18 +262,22 @@ class TestPaymentNotify:
 
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)
-    def test_handle_payment_success_exception_still_returns_success(
+    def test_suspicious_returns_success_to_stop_retries(
         self,
         mock_wechat,
         _setup_overrides,
     ):
         _, mock_svc = _setup_overrides
-        mock_svc.get_order.return_value = None
-        mock_svc.handle_payment_success.side_effect = RuntimeError("boom")
+        mock_svc.apply_wechat_payment_success.side_effect = (
+            SuspiciousWechatNotifyError("test")
+        )
         mock_wechat.process_notify.return_value = {
             "success": True,
-            "trade_state": "SUCCESS",
-            "out_trade_no": "test_notify_exception_ord",
+            "data": {
+                "out_trade_no": "test_notify_exception_ord",
+                "transaction_id": "wx_tx_003",
+                "amount": {"total": 2990, "currency": "CNY"},
+            },
         }
 
         resp = client.post(
@@ -278,6 +287,50 @@ class TestPaymentNotify:
 
         assert resp.status_code == 200
         assert resp.json() == {"code": "SUCCESS", "message": "成功"}
+
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    def test_missing_required_fields_returns_fail(self, mock_wechat, _setup_overrides):
+        mock_wechat.process_notify.return_value = {
+            "success": True,
+            "data": {
+                "out_trade_no": "test_notify_missing_ord",
+            },
+        }
+
+        resp = client.post(
+            "/api/payments/notify",
+            json={"out_trade_no": "test_notify_missing_ord"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"code": "FAIL", "message": "通知字段缺失"}
+
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    def test_unexpected_processing_error_returns_fail(
+        self,
+        mock_wechat,
+        _setup_overrides,
+    ):
+        _, mock_svc = _setup_overrides
+        mock_svc.apply_wechat_payment_success.side_effect = RuntimeError("boom")
+        mock_wechat.process_notify.return_value = {
+            "success": True,
+            "data": {
+                "out_trade_no": "test_notify_error_ord",
+                "transaction_id": "wx_tx_004",
+                "amount": {"total": 2990, "currency": "CNY"},
+            },
+        }
+
+        resp = client.post(
+            "/api/payments/notify",
+            json={"out_trade_no": "test_notify_error_ord"},
+        )
+
+        assert resp.status_code == 500
+        assert resp.json() == {"code": "FAIL", "message": "系统错误"}
 
 
 class TestPaymentStatus:
