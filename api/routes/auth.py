@@ -28,6 +28,7 @@ from api.dependencies import (
     get_current_user as get_current_user_dep,
 )
 from api.middleware.login_limiter import login_limiter
+from logger_config import logger
 
 _is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
 _cookie_secure = (
@@ -87,12 +88,23 @@ async def login(
     user = await verify_user(session, credentials.username, credentials.password)
     if not user:
         login_limiter.record_attempt(client_ip)
+        logger.warning(
+            "auth.login.failed username=%s ip=%s",
+            credentials.username,
+            client_ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
         )
 
     login_limiter.clear(client_ip)
+    logger.info(
+        "auth.login.success user_id=%s username=%s ip=%s",
+        user["id"],
+        user["username"],
+        client_ip,
+    )
     token = create_access_token(
         user_id=user["id"],
         username=user["username"],
@@ -115,7 +127,9 @@ async def login(
 
 
 @router.post("/logout")
-async def logout():
+async def logout(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info("auth.logout ip=%s", client_ip)
     response = JSONResponse(
         content=MessageResponse(message="登出成功").model_dump(),
     )
@@ -139,6 +153,7 @@ async def logout():
 @router.post("/register")
 async def register(
     user_data: UserRegister,
+    request: Request,
     session: AsyncSession = Depends(get_db),
 ):
     if not await is_registration_open(session):
@@ -177,6 +192,14 @@ async def register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="创建用户失败",
         )
+
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(
+        "auth.register.success user_id=%s username=%s ip=%s",
+        user_id,
+        user_data.username,
+        client_ip,
+    )
 
     token = create_access_token(
         user_id=user_id,
@@ -220,6 +243,7 @@ async def get_me(
 @router.post("/change-password", response_model=MessageResponse)
 async def change_password(
     data: ChangePassword,
+    request: Request,
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
@@ -235,10 +259,21 @@ async def change_password(
         data.current_password,
         data.new_password,
     )
+    client_ip = request.client.host if request.client else "unknown"
     if not success:
+        logger.warning(
+            "auth.change_password.failed user_id=%s ip=%s",
+            user_id,
+            client_ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="当前密码错误或用户不存在",
         )
 
+    logger.info(
+        "auth.change_password.success user_id=%s ip=%s",
+        user_id,
+        client_ip,
+    )
     return MessageResponse(message="密码修改成功")
