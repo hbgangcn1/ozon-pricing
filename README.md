@@ -237,7 +237,6 @@ logistics/
 ├── payment_callback_enhanced.py     # 增强支付回调
 ├── postgres_backup_service.py       # PostgreSQL 备份服务
 ├── session_security.py              # 会话安全
-├── session_security_enhanced.py     # 增强会话安全
 ├── session_security_helpers.py      # 会话安全辅助
 ├── password_recovery.py             # 密码恢复
 ├── password_utils.py                # 密码工具
