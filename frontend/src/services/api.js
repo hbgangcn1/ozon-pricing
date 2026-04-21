@@ -114,6 +114,12 @@ export const authAPI = {
     apiClient.post('/auth/login', { username, password }),
   checkUsername: (username) =>
     apiClient.get('/auth/check-username', { params: { username } }),
+  startRecovery: (username) =>
+    apiClient.post('/auth/recover/start', { username }),
+  verifySecurity: (username, answer1, answer2) =>
+    apiClient.post('/auth/recover/verify', { username, answer1, answer2 }),
+  resetPassword: (reset_token, new_password) =>
+    apiClient.post('/auth/recover/reset', { reset_token, new_password }),
 }
 
 export const logoutUser = () => {

@@ -149,6 +149,15 @@ describe('LoginPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/register');
   });
 
+  it('shows forgot password link to /forgot-password', () => {
+    renderComponent();
+
+    const forgotLink = screen.getByText('忘记密码？').closest('a');
+
+    expect(forgotLink).toBeInTheDocument();
+    expect(forgotLink).toHaveAttribute('href', '/forgot-password');
+  });
+
   it('submit button shows "登录中..." when loading', async () => {
     let resolveLogin;
     const loginPromise = new Promise(resolve => {

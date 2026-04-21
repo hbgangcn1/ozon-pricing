@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -177,6 +177,15 @@ function LoginPage() {
               '登录'
             )}
           </button>
+
+          <div className="text-center">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-primary hover:text-primary-dim transition-colors font-medium"
+            >
+              忘记密码？
+            </Link>
+          </div>
 
           {/* 注册链接 */}
           {openRegistration && (
