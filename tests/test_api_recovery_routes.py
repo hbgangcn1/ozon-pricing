@@ -3,6 +3,7 @@
 # pyright: reportUnusedFunction=false
 
 from datetime import timedelta
+import time
 import bcrypt
 from unittest.mock import patch
 
@@ -219,9 +220,10 @@ async def test_recover_verify_rate_limit_single_ip_returns_429(client, db_sessio
 @pytest.mark.asyncio
 async def test_recover_reset_valid_token_clears_active_sessions(client, db_session, test_user):
     await _prepare_recovery_user(db_session, test_user)
+    session_id = f"recover-reset-session-{int(time.time() * 1000)}"
     await insert_session(
         db_session,
-        session_id="recover-reset-session",
+        session_id=session_id,
         user_id=test_user["id"],
         ip_address="127.0.0.1",
         user_agent="pytest",
@@ -247,7 +249,7 @@ async def test_recover_reset_valid_token_clears_active_sessions(client, db_sessi
     assert response.json()["message"] == "密码已重置，请重新登录"
 
     db_session.expire_all()
-    session_row = await db_session.get(ActiveSession, "recover-reset-session")
+    session_row = await db_session.get(ActiveSession, session_id)
     assert session_row is not None
     assert session_row.is_active is False
 

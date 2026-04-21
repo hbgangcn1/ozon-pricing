@@ -82,24 +82,20 @@ async def _override_get_db():
     yield _mock_session
 
 
-app.dependency_overrides[dependencies.get_current_user_id] = _current_user_override
-app.dependency_overrides[dependencies.require_admin] = _admin_override
-app.dependency_overrides[get_db] = _override_get_db
-
 client = TestClient(app, raise_server_exceptions=False)
 
 
 @pytest.fixture(autouse=True)
 def _reset_overrides():
     global _mock_session
+    previous_overrides = app.dependency_overrides.copy()
     _mock_session = _make_mock_session()
     app.dependency_overrides[dependencies.get_current_user_id] = _current_user_override
     app.dependency_overrides[dependencies.require_admin] = _admin_override
     app.dependency_overrides[get_db] = _override_get_db
     yield
-    app.dependency_overrides[dependencies.get_current_user_id] = _current_user_override
-    app.dependency_overrides[dependencies.require_admin] = _admin_override
-    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous_overrides)
 
 
 _ = _reset_overrides

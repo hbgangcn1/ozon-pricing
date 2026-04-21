@@ -1,4 +1,5 @@
 from datetime import timedelta
+import time
 from typing import cast
 
 import pytest
@@ -122,7 +123,7 @@ class TestAuthRefresh:
         test_user,
         db_session,
     ):
-        sid = "inactive-sid"
+        sid = f"inactive-sid-{int(time.time() * 1000)}"
         await insert_session(
             db_session,
             session_id=sid,
