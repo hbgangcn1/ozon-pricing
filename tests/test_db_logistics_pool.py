@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select
 
 from database import AsyncSessionLocal, engine
-from db.logistics_pool import delete_all, get_all, get_by_id, set_active, upsert
+from db.logistics_pool import delete_all, get_all, get_by_id, get_by_ids, set_active, upsert
 from models.logistics_pool import LogisticsPool
 
 
@@ -137,6 +137,29 @@ def test_get_pool_item_by_id_returns_none_for_missing_row():
     async def scenario(session):
         row = await get_by_id(session, 999999999)
         assert row is None
+
+    _run(_in_session(scenario))
+
+
+def test_get_pool_items_by_ids_empty_returns_empty_dict():
+    async def scenario(session):
+        rows = await get_by_ids(session, [])
+        assert rows == {}
+
+    _run(_in_session(scenario))
+
+
+def test_get_pool_items_by_ids_returns_multiple_matches():
+    async def scenario(session):
+        token = _unique_token("batch_by_id")
+        first_id = await upsert(session, _pool_data(f"{token}_a"))
+        second_id = await upsert(session, _pool_data(f"{token}_b"))
+
+        rows = await get_by_ids(session, [first_id, second_id, 999999999])
+
+        assert set(rows) == {first_id, second_id}
+        assert rows[first_id]["id"] == first_id
+        assert rows[second_id]["id"] == second_id
 
     _run(_in_session(scenario))
 

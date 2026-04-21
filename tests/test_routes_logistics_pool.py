@@ -282,9 +282,6 @@ def test_batch_add_to_my_logistics_success():
 
     call_count = 0
 
-    async def mock_get_by_id(sess, pid):
-        return pool_items.get(pid)
-
     async def mock_create(sess, uid, data):
         nonlocal call_count
         call_count += 1
@@ -292,8 +289,8 @@ def test_batch_add_to_my_logistics_success():
 
     with (
         patch(
-            "api.routes.logistics_pool.get_by_id",
-            new=AsyncMock(side_effect=mock_get_by_id),
+            "api.routes.logistics_pool.get_by_ids",
+            new=AsyncMock(return_value=pool_items),
         ),
         patch(
             "api.routes.logistics_pool.create_logistics",
@@ -318,15 +315,10 @@ def test_batch_add_to_my_logistics_partial_not_found():
     app.dependency_overrides[dependencies.get_current_user_id] = lambda: 18
     app.dependency_overrides[get_db] = _db_override(session)
 
-    async def mock_get_by_id(sess, pid):
-        if pid == 20:
-            return pool_item
-        return None
-
     with (
         patch(
-            "api.routes.logistics_pool.get_by_id",
-            new=AsyncMock(side_effect=mock_get_by_id),
+            "api.routes.logistics_pool.get_by_ids",
+            new=AsyncMock(return_value={20: pool_item}),
         ),
         patch(
             "api.routes.logistics_pool.create_logistics",

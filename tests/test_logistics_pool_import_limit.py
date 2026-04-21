@@ -267,12 +267,12 @@ class TestLogisticsBatchImportLimit:
                 new=AsyncMock(return_value={"logistics_limit": 3, "plan_name": "效率版", "plan_code": "efficiency"}),
             ),
             patch(
-                "api.routes.logistics_pool.get_by_id",
+                "api.routes.logistics_pool.get_by_ids",
                 new=AsyncMock(
-                    side_effect=[
-                        {"id": 1, "name": "test1", "type": "express"},
-                        {"id": 2, "name": "test2", "type": "express"},
-                    ]
+                    return_value={
+                        1: {"id": 1, "name": "test1", "type": "express"},
+                        2: {"id": 2, "name": "test2", "type": "express"},
+                    }
                 ),
             ),
             patch(

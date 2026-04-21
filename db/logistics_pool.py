@@ -53,6 +53,17 @@ async def get_by_id(session: AsyncSession, pool_id: int) -> Optional[dict]:
     return _to_dict(row) if row else None
 
 
+async def get_by_ids(session: AsyncSession, pool_ids: list[int]) -> dict[int, dict]:
+    if not pool_ids:
+        return {}
+    result = await session.execute(
+        select(LogisticsPool).where(LogisticsPool.id.in_(pool_ids)),
+    )
+    rows = result.scalars().all()
+    await session.flush()
+    return {row.id: _to_dict(row) for row in rows}
+
+
 async def upsert(session: AsyncSession, data: dict) -> int:
     result = await session.execute(
         select(LogisticsPool).where(

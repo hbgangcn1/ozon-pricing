@@ -5,11 +5,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from models.user import User
 
 from api.dependencies import (
     EXCEL_ALLOWED_TIERS,
@@ -21,7 +18,14 @@ from database import get_db
 from db.logistics_crud import create_logistics, get_logistics_by_filters
 from db.plans import get_plan_by_code
 from db.priority_group import recalculate_priority_groups
-from db.logistics_pool import delete_all, get_all, get_by_id, insert_row, set_active
+from db.logistics_pool import (
+    delete_all,
+    get_all,
+    get_by_id,
+    get_by_ids,
+    insert_row,
+    set_active,
+)
 from xlsx_import import parse_file
 
 router = APIRouter(prefix="/api/logistics-pool", tags=["物流池"])
@@ -240,8 +244,9 @@ async def batch_add_to_my_logistics(
     added = []
     not_found = []
     errors: list[str] = []
+    pool_items = await get_by_ids(session, body.ids)
     for pool_id in body.ids:
-        item = await get_by_id(session, pool_id)
+        item = pool_items.get(pool_id)
         if not item:
             not_found.append(pool_id)
             continue
