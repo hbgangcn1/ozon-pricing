@@ -82,8 +82,8 @@ start_dev.bat
 - **sonner** — 通知提示
 
 ### 测试
-- **pytest** — 后端测试（47 个测试文件）
-- **Vitest** + **Testing Library** — 前端单元测试（20 个测试文件）
+- **pytest** — 后端测试（108 个测试文件）
+- **Vitest** + **Testing Library** — 前端单元测试（37 个测试文件）
 - **Playwright** — 前端 E2E 测试
 
 ## 数据库配置
@@ -227,7 +227,7 @@ logistics/
 │   ├── tests/                       # Playwright E2E 测试
 │   ├── vite.config.js
 │   └── vitest.config.js
-├── tests/                           # 后端 pytest 测试（47 个文件）
+├── tests/                           # 后端 pytest 测试（108 个文件）
 ├── scripts/                         # 脚本工具
 ├── database.py                      # 数据库连接与会话管理
 ├── logic.py                         # 业务逻辑
