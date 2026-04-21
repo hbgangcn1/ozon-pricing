@@ -1,4 +1,3 @@
-import os
 import re
 import secrets
 import time
@@ -30,6 +29,11 @@ from api.models.schemas import (
     RefreshResponse,
     UserRegister,
     ChangePassword,
+    PasswordRecoveryStartRequest,
+    PasswordRecoveryStartResponse,
+    PasswordRecoveryVerifyRequest,
+    PasswordRecoveryVerifyResponse,
+    PasswordRecoveryResetRequest,
 )
 from models.user import User
 from security.tokens import (
@@ -39,24 +43,33 @@ from security.tokens import (
     TokenExpiredError,
     TokenInvalidError,
 )
-from security.csrf import generate_csrf_token
 from api.dependencies import (
     get_current_user_id,
     get_current_user as get_current_user_dep,
     validate_cookie_csrf,
 )
 from api.middleware.login_limiter import login_limiter
-from api.middleware.username_check_limiter import username_check_limiter
+from api.middleware.username_check_limiter import (
+    UsernameCheckRateLimiter,
+    username_check_limiter,
+)
+from api.routes.auth_recovery import (
+    reset_password_with_token,
+    start_password_recovery,
+    verify_password_recovery,
+)
+from api.routes.auth_support import (
+    clear_token_cookies,
+    decode_refresh_cookie,
+    get_request_user_agent,
+    normalize_user_identity,
+    set_token_cookie,
+)
 from logger_config import logger
 
-_is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
-_cookie_secure = (
-    os.environ.get("COOKIE_SECURE", "true" if _is_production else "false").lower()
-    == "true"
-)
-_ACCESS_COOKIE_MAX_AGE = 15 * 60
-_REFRESH_COOKIE_MAX_AGE = 7 * 24 * 3600
 _TRUSTED_RATE_LIMIT_PROXIES = {"127.0.0.1", "::1", "localhost", "testclient"}
+recover_start_limiter = UsernameCheckRateLimiter(max_requests=5, window_seconds=60)
+recover_verify_limiter = UsernameCheckRateLimiter(max_requests=5, window_seconds=60)
 
 
 def validate_password(password: str) -> bool:
@@ -80,90 +93,12 @@ def _get_request_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _get_request_user_agent(request: Request) -> str:
-    return request.headers.get("user-agent", "")
-
-
 def _get_username_check_client_ip(request: Request) -> str:
     client_ip = _get_request_ip(request)
     forwarded_for = request.headers.get("X-Forwarded-For")
     if forwarded_for and client_ip in _TRUSTED_RATE_LIMIT_PROXIES:
         return forwarded_for.split(",")[0].strip()
     return client_ip
-
-
-def _normalize_user_identity(user: User) -> tuple[str, str]:
-    username = user.username or ""
-    role = user.role or "user"
-    return username, role
-
-
-def _set_token_cookie(
-    response: JSONResponse,
-    access_token: str,
-    refresh_token: str,
-) -> None:
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=_cookie_secure,
-        samesite="strict",
-        max_age=_ACCESS_COOKIE_MAX_AGE,
-        path="/",
-    )
-    response.set_cookie(
-        key="csrf_token",
-        value=generate_csrf_token(),
-        httponly=False,
-        secure=_cookie_secure,
-        samesite="strict",
-        max_age=_REFRESH_COOKIE_MAX_AGE,
-        path="/",
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=_cookie_secure,
-        samesite="strict",
-        max_age=_REFRESH_COOKIE_MAX_AGE,
-        path="/",
-    )
-
-
-def _clear_token_cookies(response: JSONResponse) -> None:
-    response.delete_cookie(
-        key="access_token",
-        path="/",
-        httponly=True,
-        secure=_cookie_secure,
-        samesite="strict",
-    )
-    response.delete_cookie(
-        key="refresh_token",
-        path="/",
-        httponly=True,
-        secure=_cookie_secure,
-        samesite="strict",
-    )
-    response.delete_cookie(
-        key="csrf_token",
-        path="/",
-        httponly=False,
-        secure=_cookie_secure,
-        samesite="strict",
-    )
-
-
-def _decode_refresh_cookie(token: str) -> dict:
-    try:
-        return decode_refresh_token(token)
-    except (TokenExpiredError, TokenInvalidError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的刷新令牌",
-        )
 
 
 async def _issue_auth_tokens(
@@ -180,7 +115,7 @@ async def _issue_auth_tokens(
         session_id=sid,
         user_id=user_id,
         ip_address=_get_request_ip(request),
-        user_agent=_get_request_user_agent(request),
+        user_agent=get_request_user_agent(request.headers.get("user-agent")),
         now=now,
     )
     access_token = create_access_token(
@@ -240,7 +175,7 @@ async def login(
         ),
     )
     response = JSONResponse(content=body.model_dump())
-    _set_token_cookie(response, access_token, refresh_token)
+    set_token_cookie(response, access_token, refresh_token)
     return response
 
 
@@ -263,7 +198,7 @@ async def logout(
     response = JSONResponse(
         content=MessageResponse(message="登出成功").model_dump(),
     )
-    _clear_token_cookies(response)
+    clear_token_cookies(response)
     return response
 
 
@@ -365,7 +300,7 @@ async def register(
         ),
     )
     response = JSONResponse(content=body.model_dump())
-    _set_token_cookie(response, access_token, refresh_token)
+    set_token_cookie(response, access_token, refresh_token)
     return response
 
 
@@ -382,7 +317,7 @@ async def refresh_token(
             detail="缺少刷新令牌",
         )
 
-    payload = _decode_refresh_cookie(refresh_token_value)
+    payload = decode_refresh_cookie(refresh_token_value)
     sid = payload["sid"]
     session_row = await get_session(session, sid)
     if not session_row or not session_row.is_active:
@@ -400,7 +335,7 @@ async def refresh_token(
 
     now = time.time()
     await update_session_activity(session, sid, now)
-    username, role = _normalize_user_identity(user)
+    username, role = normalize_user_identity(user)
     access_token = create_access_token(
         user_id=user.id,
         username=username,
@@ -409,8 +344,51 @@ async def refresh_token(
     new_refresh_token = create_refresh_token(user_id=user.id, sid=sid)
     body = RefreshResponse(access_token=access_token)
     response = JSONResponse(content=body.model_dump())
-    _set_token_cookie(response, access_token, new_refresh_token)
+    set_token_cookie(response, access_token, new_refresh_token)
     return response
+
+
+@router.post("/recover/start", response_model=PasswordRecoveryStartResponse)
+async def recover_start(
+    payload: PasswordRecoveryStartRequest,
+    request: Request,
+):
+    client_ip = _get_username_check_client_ip(request)
+    recover_start_limiter.check(client_ip)
+    return await start_password_recovery(payload.username, client_ip)
+
+
+@router.post("/recover/verify", response_model=PasswordRecoveryVerifyResponse)
+async def recover_verify(
+    payload: PasswordRecoveryVerifyRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    client_ip = _get_username_check_client_ip(request)
+    recover_verify_limiter.check(client_ip)
+    reset_token = await verify_password_recovery(
+        session=session,
+        username=payload.username,
+        answer1=payload.answer1,
+        answer2=payload.answer2,
+        client_ip=client_ip,
+    )
+    return {"reset_token": reset_token}
+
+
+@router.post("/recover/reset", response_model=MessageResponse)
+async def recover_reset(
+    payload: PasswordRecoveryResetRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    message = await reset_password_with_token(
+        session=session,
+        reset_token=payload.reset_token,
+        new_password=payload.new_password,
+        client_ip=_get_request_ip(request),
+    )
+    return MessageResponse(message=message)
 
 
 @router.get("/me", response_model=UserResponse)

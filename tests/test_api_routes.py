@@ -51,10 +51,15 @@ def _allow_testserver_origin(monkeypatch):
 @pytest.fixture(autouse=True)
 def _reset_username_check_limiter():
     from api.middleware.username_check_limiter import username_check_limiter
+    from api.routes.auth import recover_start_limiter, recover_verify_limiter
 
     username_check_limiter.reset()
+    recover_start_limiter.reset()
+    recover_verify_limiter.reset()
     yield
     username_check_limiter.reset()
+    recover_start_limiter.reset()
+    recover_verify_limiter.reset()
 
 
 def _logistics_row():
@@ -470,8 +475,6 @@ class TestAuth:
         assert args[0] == "auth.check_username.rate_limited ip=%s username=%s timestamp=%s"
         assert args[1] == "203.0.113.14"
         assert args[2] == "newuser"
-
-
 
 class TestProducts:
     @patch("api.routes.products.get_all_products_for_user", new_callable=AsyncMock)

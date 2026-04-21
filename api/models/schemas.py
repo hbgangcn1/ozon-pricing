@@ -286,6 +286,30 @@ class ChangePassword(BaseModel):
     new_password: str
 
 
+class PasswordRecoveryStartRequest(BaseModel):
+    username: str
+
+
+class PasswordRecoveryStartResponse(BaseModel):
+    message: str
+    questions: List[str]
+
+
+class PasswordRecoveryVerifyRequest(BaseModel):
+    username: str
+    answer1: str
+    answer2: str
+
+
+class PasswordRecoveryVerifyResponse(BaseModel):
+    reset_token: str
+
+
+class PasswordRecoveryResetRequest(BaseModel):
+    reset_token: str
+    new_password: str
+
+
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
