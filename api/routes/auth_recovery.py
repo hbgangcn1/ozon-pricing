@@ -70,7 +70,14 @@ async def verify_password_recovery(
     user = result.scalar_one_or_none()
     if isawaitable(user):
         user = await user
-    if not user or not user.security_a1 or not user.security_a2:
+    if (
+        not user
+        or not isinstance(getattr(user, "id", None), int)
+        or not isinstance(getattr(user, "security_a1", None), str)
+        or not isinstance(getattr(user, "security_a2", None), str)
+        or not user.security_a1
+        or not user.security_a2
+    ):
         _run_dummy_bcrypt_checks()
         await log_password_recovery_event(
             username=username,
