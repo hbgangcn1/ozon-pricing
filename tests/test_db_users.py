@@ -666,6 +666,58 @@ async def test_update_user_password_null_stored(db_session):
     assert result is False
 
 
+async def test_lower_username_index_blocks_raw_case_variant_insert(db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    username = _unique("raceuser")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
+    assert uid is not None
+    await db_session.commit()
+
+    dup = User(
+        username=username.upper(),
+        password="irrelevant",
+        role="user",
+        user_type="free",
+        subscription_type="free",
+        remaining_calculations=10,
+        is_test_user=1,
+        created_at=str(int(time.time())),
+    )
+    db_session.add(dup)
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+
+async def test_lower_email_index_blocks_raw_case_variant_insert(db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    username = _unique("raceemail")
+    email = f"{username}@example.com"
+    uid = await create_user(
+        db_session, username, "P@ssw0rd!", email=email, is_test_user=True
+    )
+    assert uid is not None
+    await db_session.commit()
+
+    dup = User(
+        username=_unique("raceemail2"),
+        password="irrelevant",
+        role="user",
+        email=email.upper(),
+        user_type="free",
+        subscription_type="free",
+        remaining_calculations=10,
+        is_test_user=1,
+        created_at=str(int(time.time())),
+    )
+    db_session.add(dup)
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+
 async def test_delete_user_admin_target_user_in_log(db_session):
     """Admin action log targeting a non-admin user gets cleaned up."""
     username = _unique("tgtuser")
