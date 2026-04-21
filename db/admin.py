@@ -300,9 +300,20 @@ async def batch_update_users(
     updates: dict,
     admin_id,
 ) -> int:
+    if not user_ids:
+        return 0
+
+    unique_user_ids = list(dict.fromkeys(user_ids))
+    result = await session.execute(select(User).where(User.id.in_(unique_user_ids)))
+    users_by_id = {user.id: user for user in result.scalars().all()}
+
     success_count = 0
     for uid in user_ids:
-        user = await session.get(User, uid)
+        if uid == admin_id:
+            logger.info("批量更新跳过管理员自身: %s", admin_id)
+            continue
+
+        user = users_by_id.get(uid)
         if not user:
             continue
         changed = False
