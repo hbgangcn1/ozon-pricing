@@ -1,5 +1,4 @@
 import asyncio
-import sys
 import time
 
 import pytest
@@ -9,16 +8,8 @@ from database import AsyncSessionLocal, engine
 from db.logistics_pool import delete_all, get_all, get_by_id, get_by_ids, set_active, upsert
 from models.logistics_pool import LogisticsPool
 
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-_LOOP = asyncio.new_event_loop()
-asyncio.set_event_loop(_LOOP)
-
-
 def _run(coro):
-    return _LOOP.run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 async def _in_session(callback):
