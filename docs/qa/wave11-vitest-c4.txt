@@ -1,0 +1,13 @@
+
+> logistics-pricing-frontend@1.0.0 test
+> vitest run table-header-opacity
+
+
+ RUN  v4.1.2 C:/Users/hbgan/OneDrive/Robert/learn/logistics/frontend
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  20:54:42
+   Duration  4.49s (transform 74ms, setup 99ms, import 279ms, tests 2.69s, environment 1.19s)
+
