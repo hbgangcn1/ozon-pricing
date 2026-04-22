@@ -74,7 +74,7 @@ test.describe('修改密码 - 使用测试用户', () => {
     testUserExists = usersArray.some(u => u.username === TEST_USER.username);
   });
 
-  test('测试用户成功修改密码并可用新密码登录', async ({ page, _browser }) => {
+  test('测试用户成功修改密码并可用新密码登录', async ({ page }) => {
     if (!testUserExists) {
       test.skip();
       return;

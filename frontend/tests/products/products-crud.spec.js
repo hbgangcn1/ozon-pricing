@@ -34,7 +34,7 @@ test.describe('产品 CRUD 流程', () => {
     await page.waitForTimeout(600)
   }
 
-  test('创建产品', async ({ _page }) => {
+  test('创建产品', async () => {
     const product = await apiCreateProduct(adminToken, {
       name: productName,
       unit_price: 49.9,
