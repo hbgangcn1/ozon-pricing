@@ -145,13 +145,6 @@ function ForgotPasswordPage() {
           <StepIndicator currentStep={step} />
         </CardHeader>
         <CardContent className="space-y-5">
-          <Alert>
-            <AlertTitle>安全提示</AlertTitle>
-            <AlertDescription>
-              reset_token 仅保存在当前页面内存中，关闭页面后需要重新验证。
-            </AlertDescription>
-          </Alert>
-
           {step === 'username' && (
             <form className="space-y-5" onSubmit={handleStartRecovery}>
               <div className="space-y-2">
