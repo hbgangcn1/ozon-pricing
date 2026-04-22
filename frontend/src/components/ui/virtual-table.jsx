@@ -56,7 +56,8 @@ export function VirtualTable({
     >
       <div
         className="sticky top-0 z-20 grid border-b bg-muted text-sm font-medium shadow-sm"
-        style={{ gridTemplateColumns }}
+        style={{ gridTemplateColumns, backgroundColor: 'hsl(var(--muted))' }}
+        data-testid="virtual-table-header"
       >
         {columns.map((column) => (
           <div
