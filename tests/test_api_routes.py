@@ -373,7 +373,7 @@ class TestAuth:
         assert "questions" in body
         assert isinstance(body["questions"], list)
         assert len(body["questions"]) == 5
-        assert "您母亲的姓氏是什么？" in body["questions"]
+        assert "您母亲的姓名是？" in body["questions"]
 
     def test_check_username_invalid_chars(self):
         r = client.get(

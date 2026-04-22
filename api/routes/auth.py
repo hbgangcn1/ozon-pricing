@@ -392,8 +392,7 @@ async def recover_verify(
     reset_token = await verify_password_recovery(
         session=session,
         username=payload.username,
-        answer1=payload.answer1,
-        answer2=payload.answer2,
+        answer=payload.answer,
         client_ip=client_ip,
     )
     return {"reset_token": reset_token}

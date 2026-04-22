@@ -24,14 +24,13 @@ GENERIC_RECOVERY_MESSAGE = "如该账号存在且已设置安全问题，将引�
 GENERIC_VERIFY_ERROR = "验证失败，请检查您的回答"
 INVALID_RESET_TOKEN_ERROR = "令牌无效或已过期"
 INVALID_PASSWORD_ERROR = "密码不符合要求"
-PLACEHOLDER_QUESTIONS = ["（保密）", "（保密）"]
+PLACEHOLDER_QUESTIONS = ["（保密）"]
 _DUMMY_HASH = (
     "$2b$12$2Qx.E30paHj2a2iZNpNoEub3PgFotifT0s.S8fCytaQB9D1yuJAmy"
 )
 
 
 def _run_dummy_bcrypt_checks() -> None:
-    bcrypt.checkpw(b"dummy-answer", _DUMMY_HASH.encode("utf-8"))
     bcrypt.checkpw(b"dummy-answer", _DUMMY_HASH.encode("utf-8"))
 
 
@@ -40,7 +39,7 @@ async def start_password_recovery(username: str, client_ip: str) -> dict:
     questions = PLACEHOLDER_QUESTIONS
     success = False
     if user and user.get("has_questions"):
-        questions = [user["security_q1"], user["security_q2"]]
+        questions = [user["security_q1"]]
         success = True
     else:
         _run_dummy_bcrypt_checks()
@@ -59,8 +58,7 @@ async def start_password_recovery(username: str, client_ip: str) -> dict:
 async def verify_password_recovery(
     session: AsyncSession,
     username: str,
-    answer1: str,
-    answer2: str,
+    answer: str,
     client_ip: str,
 ) -> str:
     stmt = select(User).where(func.lower(User.username) == func.lower(username))
@@ -74,9 +72,7 @@ async def verify_password_recovery(
         not user
         or not isinstance(getattr(user, "id", None), int)
         or not isinstance(getattr(user, "security_a1", None), str)
-        or not isinstance(getattr(user, "security_a2", None), str)
         or not user.security_a1
-        or not user.security_a2
     ):
         _run_dummy_bcrypt_checks()
         await log_password_recovery_event(
@@ -90,7 +86,7 @@ async def verify_password_recovery(
             detail=GENERIC_VERIFY_ERROR,
         )
 
-    verified, _ = await verify_security_answers(username, answer1, answer2)
+    verified, _ = await verify_security_answers(username, answer)
     if not verified:
         await log_password_recovery_event(
             username=username,

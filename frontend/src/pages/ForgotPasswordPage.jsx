@@ -27,8 +27,7 @@ const usernameSchema = z.object({
 });
 
 const answerSchema = z.object({
-  answer1: z.string().min(1, '请输入第一个答案'),
-  answer2: z.string().min(1, '请输入第二个答案'),
+  answer: z.string().min(1, '请输入答案'),
 });
 
 const steps = [
@@ -61,7 +60,7 @@ function ForgotPasswordPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState('username');
   const [username, setUsername] = useState('');
-  const [questions, setQuestions] = useState(['', '']);
+  const [questions, setQuestions] = useState(['']);
   const [resetToken, setResetToken] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -77,7 +76,7 @@ function ForgotPasswordPage() {
   });
   const answerForm = useForm({
     resolver: zodResolver(answerSchema),
-    defaultValues: { answer1: '', answer2: '' },
+    defaultValues: { answer: '' },
   });
   const passwordForm = useForm({
     resolver: zodResolver(passwordSchema),
@@ -89,8 +88,8 @@ function ForgotPasswordPage() {
     try {
       const response = await authAPI.startRecovery(data.username.trim());
       setUsername(data.username.trim());
-      setQuestions(response.questions || ['', '']);
-      answerForm.reset({ answer1: '', answer2: '' });
+      setQuestions(response.questions || ['']);
+      answerForm.reset({ answer: '' });
       setStep('questions');
     } catch (error) {
       toast.error(error.response?.data?.detail || '无法开始密码找回流程');
@@ -102,7 +101,7 @@ function ForgotPasswordPage() {
   const handleVerifyAnswers = answerForm.handleSubmit(async (data) => {
     setLoading(true);
     try {
-      const response = await authAPI.verifySecurity(username, data.answer1, data.answer2);
+      const response = await authAPI.verifySecurity(username, data.answer);
       setResetToken(response.reset_token);
       passwordForm.reset({ newPassword: '', confirmPassword: '' });
       setStep('newPassword');
@@ -174,19 +173,11 @@ function ForgotPasswordPage() {
                 <AlertDescription>当前账号：{username}</AlertDescription>
               </Alert>
               <div className="space-y-2">
-                <Label htmlFor="answer1">安全问题 1</Label>
+                <Label htmlFor="answer">安全问题</Label>
                 <p className="text-sm text-text-secondary">{questions[0]}</p>
-                <Input id="answer1" placeholder="请输入第一个答案" {...answerForm.register('answer1')} />
-                {answerForm.formState.errors.answer1 && (
-                  <p className="text-xs text-status-error">{answerForm.formState.errors.answer1.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="answer2">安全问题 2</Label>
-                <p className="text-sm text-text-secondary">{questions[1]}</p>
-                <Input id="answer2" placeholder="请输入第二个答案" {...answerForm.register('answer2')} />
-                {answerForm.formState.errors.answer2 && (
-                  <p className="text-xs text-status-error">{answerForm.formState.errors.answer2.message}</p>
+                <Input id="answer" placeholder="请输入答案" {...answerForm.register('answer')} />
+                {answerForm.formState.errors.answer && (
+                  <p className="text-xs text-status-error">{answerForm.formState.errors.answer.message}</p>
                 )}
               </div>
               <div className="flex gap-3">

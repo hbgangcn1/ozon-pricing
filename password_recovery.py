@@ -100,7 +100,7 @@ async def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]
             except (TypeError, ValueError):
                 reset_locked_until = None
 
-        if not user.security_q1 or not user.security_q2:
+        if not user.security_q1:
             return {
                 "has_questions": False,
                 "reset_locked_until": reset_locked_until,
@@ -123,7 +123,6 @@ async def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]
         return {
             "has_questions": True,
             "security_q1": user.security_q1,
-            "security_q2": user.security_q2,
             "is_locked": is_locked,
             "reset_locked_until": reset_locked_until,
             "reset_attempt_count": reset_attempt_count,
@@ -136,20 +135,19 @@ async def get_user_security_questions(username: str) -> Optional[Dict[str, Any]]
 
 
 async def verify_security_answers(
-    username: str, answer1: str, answer2: str
+    username: str, answer: str
 ) -> tuple[bool, str]:
     """
-    验证安全问题的答案
+    校验单个安全问题答案
 
     Args:
         username: 用户名
-        answer1: 答案1
-        answer2: 答案2
+        answer: 答案
 
     Returns:
         tuple: (是否验证成功, 错误信息)
     """
-    is_valid, error_msg = validate_security_answers(answer1, answer2)
+    is_valid, error_msg = validate_security_answers(answer)
     if not is_valid:
         return False, error_msg
 
@@ -161,7 +159,7 @@ async def verify_security_answers(
             await log_password_recovery_event(username, "failure", False, 0)
             return False, "用户不存在"
 
-        if not user.security_a1 or not user.security_a2:
+        if not user.security_a1:
             return False, "用户未设置安全问题"
 
         current_time = time.time()
@@ -174,15 +172,11 @@ async def verify_security_answers(
                 f"账号已被锁定，请于 {locked_until} 后重试。或联系管理员解锁。"
             )
 
-        answer1_lower = answer1.strip().lower()
-        answer2_lower = answer2.strip().lower()
+        answer_lower = answer.strip().lower()
 
         try:
-            a1_valid = bcrypt.checkpw(
-                answer1_lower.encode("utf-8"), user.security_a1.encode("utf-8")
-            )
-            a2_valid = bcrypt.checkpw(
-                answer2_lower.encode("utf-8"), user.security_a2.encode("utf-8")
+            a_valid = bcrypt.checkpw(
+                answer_lower.encode("utf-8"), user.security_a1.encode("utf-8")
             )
         except Exception as e:
             logger.error(f"验证答案时出错: {e}")
@@ -190,7 +184,7 @@ async def verify_security_answers(
 
         attempt_count = user.reset_attempt_count or 0
 
-        if a1_valid and a2_valid:
+        if a_valid:
             user.reset_attempt_count = 0
             user.reset_locked_until = None
             user.reset_last_attempt = current_time

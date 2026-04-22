@@ -297,8 +297,7 @@ class PasswordRecoveryStartResponse(BaseModel):
 
 class PasswordRecoveryVerifyRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50)
-    answer1: str = Field(..., min_length=1, max_length=200)
-    answer2: str = Field(..., min_length=1, max_length=200)
+    answer: str = Field(..., min_length=1, max_length=200)
 
 
 class PasswordRecoveryVerifyResponse(BaseModel):

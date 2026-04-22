@@ -8,6 +8,7 @@ import bcrypt
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import update
 
 from api import dependencies
 from api.main import app
@@ -56,9 +57,7 @@ def _override_db(session):
 async def _prepare_recovery_user(db_session, test_user):
     user = await db_session.get(User, test_user["id"])
     user.security_q1 = "问题1"
-    user.security_q2 = "问题2"
     user.security_a1 = bcrypt.hashpw(b"answer1", bcrypt.gensalt()).decode()
-    user.security_a2 = bcrypt.hashpw(b"answer2", bcrypt.gensalt()).decode()
     await db_session.commit()
     return user
 
@@ -85,9 +84,8 @@ async def test_recover_start_returns_same_shape_for_existing_and_missing(
     assert existing.status_code == 200
     assert missing.status_code == 200
     assert existing.json()["message"] == missing.json()["message"]
-    assert len(existing.json()["questions"]) == 2
-    assert len(missing.json()["questions"]) == 2
-    assert missing.json()["questions"] == ["（保密）", "（保密）"]
+    assert len(existing.json()["questions"]) == len(missing.json()["questions"])
+    assert all(q == "（保密）" for q in missing.json()["questions"])
 
 
 @pytest.mark.asyncio
@@ -121,8 +119,7 @@ async def test_recover_verify_correct_answers_returns_token(client, db_session, 
         "/api/auth/recover/verify",
         json={
             "username": user.username,
-            "answer1": "answer1",
-            "answer2": "answer2",
+            "answer": "answer1",
         },
         headers={"X-Forwarded-For": "203.0.113.34"},
     )
@@ -139,8 +136,7 @@ async def test_recover_verify_wrong_answers_returns_generic_error(client, db_ses
         "/api/auth/recover/verify",
         json={
             "username": user.username,
-            "answer1": "wrong1",
-            "answer2": "wrong2",
+            "answer": "wrong1",
         },
         headers={"X-Forwarded-For": "203.0.113.35"},
     )
@@ -162,8 +158,7 @@ async def test_recover_verify_missing_user_matches_wrong_answer_bcrypt_count(
             "/api/auth/recover/verify",
             json={
                 "username": user.username,
-                "answer1": "wrong1",
-                "answer2": "wrong2",
+                "answer": "wrong1",
             },
             headers={"X-Forwarded-For": "203.0.113.36"},
         )
@@ -174,8 +169,7 @@ async def test_recover_verify_missing_user_matches_wrong_answer_bcrypt_count(
             "/api/auth/recover/verify",
             json={
                 "username": "missing-user",
-                "answer1": "wrong1",
-                "answer2": "wrong2",
+                "answer": "wrong1",
             },
             headers={"X-Forwarded-For": "203.0.113.46"},
         )
@@ -185,8 +179,8 @@ async def test_recover_verify_missing_user_matches_wrong_answer_bcrypt_count(
     assert missing_response.status_code == 400
     assert wrong_response.json()["detail"] == "验证失败，请检查您的回答"
     assert missing_response.json()["detail"] == "验证失败，请检查您的回答"
-    assert wrong_calls == 2
-    assert missing_calls == 2
+    assert wrong_calls == 1
+    assert missing_calls == 1
 
 
 @pytest.mark.asyncio
@@ -195,8 +189,7 @@ async def test_recover_verify_rate_limit_single_ip_returns_429(client, db_sessio
     headers = {"X-Forwarded-For": "203.0.113.37"}
     payload = {
         "username": user.username,
-        "answer1": "wrong1",
-        "answer2": "wrong2",
+        "answer": "wrong1",
     }
 
     for _ in range(5):
@@ -215,6 +208,58 @@ async def test_recover_verify_rate_limit_single_ip_returns_429(client, db_sessio
 
     assert response.status_code == 429
     assert response.json()["detail"] == "请求过于频繁，请稍后再试"
+
+
+@pytest.mark.asyncio
+async def test_recover_verify_works_when_db_has_legacy_q2_a2(client, db_session, test_user):
+    """老用户 DB 中残留 q2/a2，单参 answer 校验仍应成功。"""
+    user = await _prepare_recovery_user(db_session, test_user)
+
+    legacy_a2_hash = bcrypt.hashpw(b"legacy_a", bcrypt.gensalt()).decode()
+    await db_session.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(security_q2="legacy", security_a2=legacy_a2_hash)
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/auth/recover/verify",
+        json={
+            "username": user.username,
+            "answer": "answer1",
+        },
+        headers={"X-Forwarded-For": "203.0.113.42"},
+    )
+
+    assert response.status_code == 200
+    assert isinstance(response.json()["reset_token"], str)
+
+
+@pytest.mark.asyncio
+async def test_recover_questions_returns_only_q1_for_legacy_user(client, db_session, test_user):
+    """GET /recover/start 对带老 q2/a2 残留的用户也只返回 q1 内容。"""
+    user = await _prepare_recovery_user(db_session, test_user)
+
+    legacy_a2_hash = bcrypt.hashpw(b"legacy_a", bcrypt.gensalt()).decode()
+    await db_session.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(security_q2="legacy_question_2", security_a2=legacy_a2_hash)
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/auth/recover/start",
+        json={"username": user.username},
+        headers={"X-Forwarded-For": "203.0.113.43"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    questions = body["questions"]
+    assert "问题1" in questions
+    assert "legacy_question_2" not in questions
 
 
 @pytest.mark.asyncio

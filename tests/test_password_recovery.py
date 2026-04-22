@@ -21,25 +21,30 @@ async def _set_user_security_questions(
     session,
     username,
     q1,
-    q2,
     a1_hash=None,
-    a2_hash=None,
     locked_until=None,
     attempt_count=0,
 ):
     values = {
         "security_q1": q1,
-        "security_q2": q2,
         "reset_attempt_count": attempt_count,
     }
     if a1_hash:
         values["security_a1"] = a1_hash
-    if a2_hash:
-        values["security_a2"] = a2_hash
     if locked_until is not None:
         values["reset_locked_until"] = locked_until
     await session.execute(
         update(User).where(User.username == username).values(**values)
+    )
+    await session.commit()
+
+
+async def _set_legacy_q2_a2(session, username, q2, a2_hash):
+    """直接写入老数据 q2/a2 字段（模拟旧版本残留数据）。"""
+    await session.execute(
+        update(User)
+        .where(User.username == username)
+        .values(security_q2=q2, security_a2=a2_hash)
     )
     await session.commit()
 
@@ -95,14 +100,14 @@ class TestGetUserSecurityQuestions:
         self, _clean_db, test_user, db_session
     ):  # noqa: ARG001
         username = test_user["username"]
-        await _set_user_security_questions(db_session, username, "问题1", "问题2")
+        await _set_user_security_questions(db_session, username, "问题1")
 
         result = await get_user_security_questions(username)
 
         assert result is not None
         assert result["has_questions"] is True
         assert result["security_q1"] == "问题1"
-        assert result["security_q2"] == "问题2"
+        assert "security_q2" not in result
         assert result["is_locked"] is False
 
     async def test_get_user_security_questions_locked(
@@ -115,7 +120,6 @@ class TestGetUserSecurityQuestions:
             db_session,
             username,
             "问题1",
-            "问题2",
             locked_until=lock_until,
             attempt_count=MAX_RESET_ATTEMPTS,
         )
@@ -141,7 +145,6 @@ class TestGetUserSecurityQuestions:
             db_session,
             username,
             "问题1",
-            "问题2",
             locked_until=lock_until,
             attempt_count=MAX_RESET_ATTEMPTS,
         )
@@ -156,15 +159,13 @@ class TestGetUserSecurityQuestions:
 
 class TestVerifySecurityAnswers:
     async def test_verify_security_answers_user_not_exist(self, _clean_db):  # noqa: ARG001
-        is_valid, msg = await verify_security_answers(
-            "nonexistent_user", "答案1", "答案2"
-        )
+        is_valid, msg = await verify_security_answers("nonexistent_user", "答案1")
         assert is_valid is False
         assert "不存在" in msg
 
     async def test_verify_security_answers_no_questions(self, _clean_db, test_user):  # noqa: ARG001
         username = test_user["username"]
-        is_valid, msg = await verify_security_answers(username, "答案1", "答案2")
+        is_valid, msg = await verify_security_answers(username, "答案1")
         assert is_valid is False
         assert "未设置" in msg
 
@@ -174,19 +175,16 @@ class TestVerifySecurityAnswers:
         username = test_user["username"]
         lock_until = time.time() + 3600
         a1_hash = bcrypt.hashpw("answer1".encode(), bcrypt.gensalt()).decode()
-        a2_hash = bcrypt.hashpw("answer2".encode(), bcrypt.gensalt()).decode()
 
         await _set_user_security_questions(
             db_session,
             username,
             "问题1",
-            "问题2",
             a1_hash=a1_hash,
-            a2_hash=a2_hash,
             locked_until=lock_until,
         )
 
-        is_valid, msg = await verify_security_answers(username, "answer1", "answer2")
+        is_valid, msg = await verify_security_answers(username, "answer1")
         assert is_valid is False
         assert "锁定" in msg
 
@@ -195,13 +193,12 @@ class TestVerifySecurityAnswers:
     ):  # noqa: ARG001
         username = test_user["username"]
         a1_hash = bcrypt.hashpw("answer1".encode(), bcrypt.gensalt()).decode()
-        a2_hash = bcrypt.hashpw("answer2".encode(), bcrypt.gensalt()).decode()
 
         await _set_user_security_questions(
-            db_session, username, "问题1", "问题2", a1_hash=a1_hash, a2_hash=a2_hash
+            db_session, username, "问题1", a1_hash=a1_hash
         )
 
-        is_valid, msg = await verify_security_answers(username, "answer1", "answer2")
+        is_valid, msg = await verify_security_answers(username, "answer1")
         assert is_valid is True
         assert "成功" in msg
 
@@ -213,19 +210,16 @@ class TestVerifySecurityAnswers:
     ):  # noqa: ARG001
         username = test_user["username"]
         a1_hash = bcrypt.hashpw("correct1".encode(), bcrypt.gensalt()).decode()
-        a2_hash = bcrypt.hashpw("correct2".encode(), bcrypt.gensalt()).decode()
 
         await _set_user_security_questions(
             db_session,
             username,
             "问题1",
-            "问题2",
             a1_hash=a1_hash,
-            a2_hash=a2_hash,
             attempt_count=0,
         )
 
-        is_valid, _ = await verify_security_answers(username, "wrong1", "wrong2")
+        is_valid, _ = await verify_security_answers(username, "wrong1")
         assert is_valid is False
 
         db_session.expire_all()
@@ -237,19 +231,16 @@ class TestVerifySecurityAnswers:
     ):  # noqa: ARG001
         username = test_user["username"]
         a1_hash = bcrypt.hashpw("correct1".encode(), bcrypt.gensalt()).decode()
-        a2_hash = bcrypt.hashpw("correct2".encode(), bcrypt.gensalt()).decode()
 
         await _set_user_security_questions(
             db_session,
             username,
             "问题1",
-            "问题2",
             a1_hash=a1_hash,
-            a2_hash=a2_hash,
             attempt_count=MAX_RESET_ATTEMPTS - 1,
         )
 
-        is_valid, msg = await verify_security_answers(username, "wrong1", "wrong2")
+        is_valid, msg = await verify_security_answers(username, "wrong1")
         assert is_valid is False
         assert "锁定" in msg
 
@@ -259,6 +250,39 @@ class TestVerifySecurityAnswers:
         )
         assert lock_until is not None
         assert count == MAX_RESET_ATTEMPTS
+
+    async def test_verify_ignores_legacy_q2_a2(
+        self, _clean_db, test_user, db_session
+    ):  # noqa: ARG001
+        """老用户即使 DB 中残留 q2/a2，verify_security_answers 只看 q1/a1。"""
+        username = test_user["username"]
+        a1_hash = bcrypt.hashpw("answer1".encode(), bcrypt.gensalt()).decode()
+        legacy_a2_hash = bcrypt.hashpw(
+            "legacy_old_answer".encode(), bcrypt.gensalt()
+        ).decode()
+
+        await _set_user_security_questions(
+            db_session, username, "问题1", a1_hash=a1_hash
+        )
+        await _set_legacy_q2_a2(db_session, username, "旧问题", legacy_a2_hash)
+
+        db_session.expire_all()
+        legacy_q2, legacy_a2 = await _get_user_field(
+            db_session, username, "security_q2", "security_a2"
+        )
+        assert legacy_q2 == "旧问题"
+        assert legacy_a2 == legacy_a2_hash
+
+        is_valid, msg = await verify_security_answers(username, "answer1")
+        assert is_valid is True
+        assert "成功" in msg
+
+        db_session.expire_all()
+        still_q2, still_a2 = await _get_user_field(
+            db_session, username, "security_q2", "security_a2"
+        )
+        assert still_q2 == "旧问题"
+        assert still_a2 == legacy_a2_hash
 
 
 class TestResetPassword:
@@ -295,7 +319,6 @@ class TestResetPassword:
             db_session,
             username,
             "q1",
-            "q2",
             locked_until=lock_until,
             attempt_count=MAX_RESET_ATTEMPTS,
         )
@@ -325,7 +348,6 @@ class TestUnlockUser:
             db_session,
             username,
             "q1",
-            "q2",
             locked_until=lock_until,
             attempt_count=MAX_RESET_ATTEMPTS,
         )
@@ -365,7 +387,6 @@ class TestAdminResetPassword:
             db_session,
             username,
             "q1",
-            "q2",
             locked_until=lock_until,
             attempt_count=MAX_RESET_ATTEMPTS,
         )

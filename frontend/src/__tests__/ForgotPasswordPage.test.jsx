@@ -65,7 +65,7 @@ describe('ForgotPasswordPage', () => {
   it('step 1 submits username, calls startRecovery and shows step 2 questions', async () => {
     authAPI.startRecovery.mockResolvedValueOnce({
       message: '如该账号存在且已设置安全问题，将引导您回答安全问题',
-      questions: ['问题一？', '问题二？'],
+      questions: ['问题一？'],
     });
 
     renderComponent();
@@ -79,12 +79,11 @@ describe('ForgotPasswordPage', () => {
       expect(authAPI.startRecovery).toHaveBeenCalledWith('alice');
       expect(screen.getByText('回答安全问题')).toBeInTheDocument();
       expect(screen.getByText('问题一？')).toBeInTheDocument();
-      expect(screen.getByText('问题二？')).toBeInTheDocument();
     });
   });
 
   it('step 2 verifies correct answers and shows step 3', async () => {
-    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？', '问题二？'] });
+    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？'] });
     authAPI.verifySecurity.mockResolvedValueOnce({ reset_token: 'memory-only-token' });
 
     renderComponent();
@@ -96,16 +95,13 @@ describe('ForgotPasswordPage', () => {
 
     await screen.findByText('问题一？');
 
-    fireEvent.change(screen.getByPlaceholderText('请输入第一个答案'), {
+    fireEvent.change(screen.getByPlaceholderText('请输入答案'), {
       target: { value: 'a1' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('请输入第二个答案'), {
-      target: { value: 'a2' },
     });
     fireEvent.click(screen.getByRole('button', { name: '验证答案' }));
 
     await waitFor(() => {
-      expect(authAPI.verifySecurity).toHaveBeenCalledWith('alice', 'a1', 'a2');
+      expect(authAPI.verifySecurity).toHaveBeenCalledWith('alice', 'a1');
       expect(screen.getByText('设置新密码')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('请再次输入新密码')).toBeInTheDocument();
     });
@@ -114,7 +110,7 @@ describe('ForgotPasswordPage', () => {
   });
 
   it('step 2 failure shows generic error toast and stays on step 2', async () => {
-    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？', '问题二？'] });
+    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？'] });
     authAPI.verifySecurity.mockRejectedValueOnce({
       response: { data: { detail: '验证失败，请检查您的回答' } },
     });
@@ -128,11 +124,8 @@ describe('ForgotPasswordPage', () => {
 
     await screen.findByText('问题一？');
 
-    fireEvent.change(screen.getByPlaceholderText('请输入第一个答案'), {
+    fireEvent.change(screen.getByPlaceholderText('请输入答案'), {
       target: { value: 'wrong1' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('请输入第二个答案'), {
-      target: { value: 'wrong2' },
     });
     fireEvent.click(screen.getByRole('button', { name: '验证答案' }));
 
@@ -144,7 +137,7 @@ describe('ForgotPasswordPage', () => {
   });
 
   it('step 3 submits new password and navigates to /login', async () => {
-    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？', '问题二？'] });
+    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？'] });
     authAPI.verifySecurity.mockResolvedValueOnce({ reset_token: 'memory-only-token' });
     authAPI.resetPassword.mockResolvedValueOnce({ message: '密码已重置，请重新登录' });
 
@@ -156,11 +149,8 @@ describe('ForgotPasswordPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
     await screen.findByText('问题一？');
 
-    fireEvent.change(screen.getByPlaceholderText('请输入第一个答案'), {
+    fireEvent.change(screen.getByPlaceholderText('请输入答案'), {
       target: { value: 'a1' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('请输入第二个答案'), {
-      target: { value: 'a2' },
     });
     fireEvent.click(screen.getByRole('button', { name: '验证答案' }));
     await screen.findByText('设置新密码');
@@ -182,7 +172,7 @@ describe('ForgotPasswordPage', () => {
   });
 
   it('step 3 weak password fails zod validation and does not call API', async () => {
-    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？', '问题二？'] });
+    authAPI.startRecovery.mockResolvedValueOnce({ questions: ['问题一？'] });
     authAPI.verifySecurity.mockResolvedValueOnce({ reset_token: 'memory-only-token' });
 
     renderComponent();
@@ -193,11 +183,8 @@ describe('ForgotPasswordPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
     await screen.findByText('问题一？');
 
-    fireEvent.change(screen.getByPlaceholderText('请输入第一个答案'), {
+    fireEvent.change(screen.getByPlaceholderText('请输入答案'), {
       target: { value: 'a1' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('请输入第二个答案'), {
-      target: { value: 'a2' },
     });
     fireEvent.click(screen.getByRole('button', { name: '验证答案' }));
     await screen.findByText('设置新密码');

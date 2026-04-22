@@ -1,77 +1,40 @@
-# -*- coding: utf-8 -*-
 """
-安全问题配置模块
-存储预设的安全问题列表
-"""
+安全问题预设清单和校验工具。
 
-# 预设安全问题列表（与前端 RegisterPage 保持一致）
-SECURITY_QUESTIONS = [
-    "您母亲的姓氏是什么？",
-    "您父亲的名字是什么？",
-    "您就读的小学名称是什么？",
-    "您最喜欢的宠物名字是什么？",
-    "您配偶的名字是什么？",
+新规则（Wave 10 Commit 5 起）：
+- 用户只设置/校验 1 个安全问题（之前是 2 个）
+- 数据库 q2/a2 列保留为 nullable 以兼容老数据，但代码不再读写
+"""
+from typing import List, Optional, Tuple
+
+
+SECURITY_QUESTIONS: List[str] = [
+    "您母亲的姓名是？",
+    "您父亲的姓名是？",
+    "您出生的城市是？",
+    "您小学班主任的姓名是？",
+    "您最喜欢的宠物名字是？",
 ]
 
 
-def get_security_questions():
-    """
-    获取安全问题列表
-
-    Returns:
-        list: 安全问题列表
-    """
-    return SECURITY_QUESTIONS.copy()
+def get_security_questions() -> List[str]:
+    """返回预设安全问题清单的副本。"""
+    return list(SECURITY_QUESTIONS)
 
 
-def validate_security_questions(q1: str, q2: str) -> tuple[bool, str]:
-    """
-    验证两个安全问题是否有效
-
-    Args:
-        q1: 问题1
-        q2: 问题2
-
-    Returns:
-        tuple: (是否有效, 错误信息)
-    """
-    if not q1 or not q2:
-        return False, "请选择两个安全问题"
-
-    if q1 == q2:
-        return False, "两个安全问题不能相同"
-
-    questions = get_security_questions()
-    if q1 not in questions:
-        return False, "问题1不在预设列表中"
-
-    if q2 not in questions:
-        return False, "问题2不在预设列表中"
-
-    return True, ""
+def validate_security_questions(q: str) -> Tuple[bool, Optional[str]]:
+    """校验用户选择的安全问题是否合法。"""
+    if not q:
+        return False, "请选择安全问题"
+    if q not in SECURITY_QUESTIONS:
+        return False, "问题不在预设列表中"
+    return True, None
 
 
-def validate_security_answers(
-    answer1: str, answer2: str
-) -> tuple[bool, str]:
-    """
-    验证安全答案是否有效
-
-    Args:
-        answer1: 答案1
-        answer2: 答案2
-
-    Returns:
-        tuple: (是否有效, 错误信息)
-    """
-    if not answer1 or not answer2:
-        return False, "请填写两个安全问题的答案"
-
-    # 答案不区分大小写，但至少需要1个字符
-    if len(answer1.strip()) < 1:
-        return False, "答案1不能为空"
-
-    if len(answer2.strip()) < 1:
-        return False, "答案2不能为空"
-
-    return True, ""
+def validate_security_answers(answer: str) -> Tuple[bool, Optional[str]]:
+    """校验用户填写的安全问题答案是否合法。"""
+    if not answer:
+        return False, "请填写安全问题的答案"
+    if not answer.strip():
+        return False, "答案不能为空"
+    return True, None
