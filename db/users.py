@@ -38,6 +38,9 @@ async def create_user(
     email=None,
     user_type="free",
     is_test_user=False,
+    *,
+    security_question: Optional[str] = None,
+    security_answer: Optional[str] = None,
 ) -> Optional[int]:
     if not username or len(username.strip()) == 0:
         return None
@@ -54,6 +57,17 @@ async def create_user(
             return None
 
     try:
+        # bcrypt-hash answer to match password_recovery.verify_security_answers contract
+        sec_q1: Optional[str] = None
+        sec_a1: Optional[str] = None
+        if security_question and security_answer:
+            import bcrypt
+            sec_q1 = security_question
+            sec_a1 = bcrypt.hashpw(
+                security_answer.encode("utf-8"),
+                bcrypt.gensalt(),
+            ).decode("utf-8")
+
         remaining = _get_remaining_calculations(user_type)
         user = User(
             username=username,
@@ -65,6 +79,8 @@ async def create_user(
             remaining_calculations=remaining,
             created_at=str(int(time.time())),
             is_test_user=1 if is_test_user else 0,
+            security_q1=sec_q1,
+            security_a1=sec_a1,
         )
         session.add(user)
         await session.flush()

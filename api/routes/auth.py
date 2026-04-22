@@ -286,6 +286,8 @@ async def register(
         username=user_data.username,
         password=user_data.password,
         role="user",
+        security_question=user_data.security_question,
+        security_answer=user_data.security_answer,
     )
     if not user_id:
         raise HTTPException(

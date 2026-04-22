@@ -736,3 +736,50 @@ async def test_delete_user_admin_target_user_in_log(db_session):
 
     result = await delete_user(db_session, uid)
     assert result is True
+
+
+async def test_create_user_persists_security_question_and_bcrypt_answer(db_session):
+    import bcrypt
+
+    username = _unique("sec_q")
+    uid = await create_user(
+        db_session,
+        username,
+        "P@ssw0rd!",
+        is_test_user=True,
+        security_question="您母亲的姓氏是什么？",
+        security_answer="李",
+    )
+    assert uid is not None
+    user = await db_session.get(User, uid)
+    assert user.security_q1 == "您母亲的姓氏是什么？"
+    assert user.security_a1 is not None
+    assert user.security_a1 != "李"
+    assert bcrypt.checkpw("李".encode("utf-8"), user.security_a1.encode("utf-8"))
+    assert user.security_q2 is None
+    assert user.security_a2 is None
+
+
+async def test_create_user_security_fields_default_none(db_session):
+    username = _unique("sec_default")
+    uid = await create_user(db_session, username, "P@ssw0rd!", is_test_user=True)
+    assert uid is not None
+    user = await db_session.get(User, uid)
+    assert user.security_q1 is None
+    assert user.security_a1 is None
+
+
+async def test_create_user_security_question_without_answer_skipped(db_session):
+    username = _unique("sec_partial")
+    uid = await create_user(
+        db_session,
+        username,
+        "P@ssw0rd!",
+        is_test_user=True,
+        security_question="您母亲的姓氏是什么？",
+        security_answer=None,
+    )
+    assert uid is not None
+    user = await db_session.get(User, uid)
+    assert user.security_q1 is None
+    assert user.security_a1 is None
