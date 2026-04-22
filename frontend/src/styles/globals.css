@@ -15,6 +15,16 @@
   --input: 215 15% 22%;
   --ring: 228 83% 60%;
   --radius: 0.75rem;
+  /* v4 Wave 11 M3-B1: shadcn standard tokens consumed by tailwind.config.js
+     HSL space-separated, dark-theme-aligned with --background/--card */
+  --popover: 215 20% 11%;
+  --popover-foreground: 0 0% 98%;
+  --accent: 215 20% 16%;
+  --accent-foreground: 0 0% 98%;
+  --secondary: 215 20% 14%;
+  --secondary-foreground: 0 0% 98%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
   --color-product: 0 79% 60%;
   --color-profit: 151 60% 54%;
   --color-logistics: 25 95% 61%;
