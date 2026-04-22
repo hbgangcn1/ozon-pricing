@@ -192,3 +192,17 @@ verification-*.png
 
 # 数据文件（xlsx 导入源）
 xlsx/
+
+# Wave 11 加固: agent 自创的 admin 提权 / qa hack 临时脚本（永不提交）
+# 规则: 根目录 create_*.py / get_*.py / update_*.py / inject_*.py 全屏蔽
+create_admin*.py
+create_fresh_admin*.py
+update_user*.py
+get_token*.py
+inject_*.py
+inject_*.cjs
+inject_*.js
+qa_script*.cjs
+qa_script*.js
+qa_script*.mjs
+docs/qa/screenshot.png
