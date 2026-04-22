@@ -299,9 +299,10 @@ Wave 10 修复 5 类 UX/功能问题，6 个原子 commit，**主控亲自实施
 
 | 检查项 | Wave 9 基线 | Wave 10 新基线 |
 |---|---|---|
-| Backend pytest | 2154 passed, 4 skipped | **2164 passed, 4 skipped**（+10 新测试：T6×7 + T7/P0 ×3） |
+| Backend pytest（单文件） | 单文件全绿 | **单文件全绿**（commit 6 新增 7 测试 + P0 修 3 测试均通过） |
+| Backend pytest（全量并发） | 131 failed pre-existing | **124 failed pre-existing**（commit 6 净改善 7，详见 §11.8） |
 | Backend flake8 | 0 | **0** |
-| Frontend vitest | 37 files / 296 tests | **39 files / 307 tests**（+2 新文件：Dialog + AppLayout） |
+| Frontend vitest | 37 files / 296 tests | **39 files / 307 tests**（+2 新文件：Dialog + AppLayout，全绿） |
 | Frontend lint | 0 warnings | **0 warnings** |
 | Alembic head | `e53fd4a44e97` | `e53fd4a44e97`（无新迁移） |
 
@@ -319,4 +320,19 @@ Wave 10 修复 5 类 UX/功能问题，6 个原子 commit，**主控亲自实施
 ---
 
 **Wave 10 报告产出人**：Sisyphus（主控）
-**Wave 10 签发基线**：HEAD = Wave 10 Commit 6/6（SHA 见 `git log --oneline -6`），pytest 2164 / vitest 307 / flake8 0 / lint 0 全绿，manual QA 5/5 全部通过（含找回密码 1 题制 E2E + 新密码 API login 200 OK 端到端闭环）。本地 ahead origin/main 74 commits，**未 push，等待用户授权**。
+**Wave 10 签发基线**：HEAD = Wave 10 Commit 6/6（SHA 见 `git log --oneline -6`）。flake8 0 / lint 0 / vitest 39 文件 307 测试全绿；后端 pytest 全量并发 2040 passed + 124 pre-existing fail（**与 Wave 10 无关**，详见 §11.8），所有 Wave 10 改动相关单元/集成测试单文件运行全绿。Manual QA 5/5 全部通过（含找回密码 1 题制 E2E + 新密码 API login 200 OK 端到端闭环）。本地 ahead origin/main 74 commits，**未 push，等待用户授权**。
+
+### 11.8 Pre-existing pytest 全量并发失败（Wave 10 调查）
+
+全量 `python -m pytest` 出现 **124 failed**，全部为 `RuntimeError: There is no current event loop in thread 'MainThread'`，集中在：
+- `tests/test_session_security_full.py`
+- `tests/test_session_security_critical_error_paths.py`
+
+**Wave 10 调查结论**：
+
+1. **单文件运行全部 PASS**：`pytest tests/test_session_security_full.py` 单跑 → 77/77 PASS。
+2. **Pre-Wave-10 baseline 同样复现**：在 commit 5 (`84411b08`) checkout 跑全量 → 131 failed，**模式完全相同**。
+3. **Commit 6 净改善**：commit 6 为 124 failed（少 7 个），原因是新增的 `test_api_security_question.py` 和 P0 修复让部分 test_api_routes 通过率提升。
+4. **根因**：跨文件 `pytest-asyncio` 事件循环 fixture 污染，需要重构 `conftest.py` 解决，**严重溢出 Wave 10 边界**，列入未来独立 wave。
+
+**风险评估**：单文件运行/CI 分文件运行不受影响；本地全量并发模式才暴露此污染。生产部署不受影响。
