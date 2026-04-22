@@ -55,7 +55,7 @@ export function VirtualTable({
       style={containerStyle}
     >
       <div
-        className="sticky top-0 z-10 grid border-b bg-muted/50 text-sm font-medium"
+        className="sticky top-0 z-20 grid border-b bg-muted text-sm font-medium shadow-sm"
         style={{ gridTemplateColumns }}
       >
         {columns.map((column) => (
