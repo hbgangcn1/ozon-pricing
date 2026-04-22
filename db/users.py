@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Optional
 
+import bcrypt
 from sqlalchemy import delete as sa_delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -125,6 +126,7 @@ async def verify_user(
         "user_type": user.user_type or "free",
         "subscription_type": user.subscription_type or "free",
         "remaining_calculations": user.remaining_calculations,
+        "security_q1": user.security_q1,
     }
 
 
@@ -249,3 +251,27 @@ async def get_user_role(
     result = await session.execute(stmt)
     row = result.one_or_none()
     return row[0] if row else None
+
+
+async def set_user_security_question_first_time(
+    session: AsyncSession,
+    user_id: int,
+    question: str,
+    answer: str,
+) -> bool:
+    from security_questions import normalize_security_answer
+
+    hashed = bcrypt.hashpw(
+        normalize_security_answer(answer).encode("utf-8"),
+        bcrypt.gensalt(),
+    )
+    stmt = (
+        update(User)
+        .where(User.id == user_id, User.security_q1.is_(None))
+        .values(
+            security_q1=question,
+            security_a1=hashed.decode("utf-8"),
+        )
+    )
+    result = await session.execute(stmt)
+    return int(getattr(result, "rowcount", 0)) == 1

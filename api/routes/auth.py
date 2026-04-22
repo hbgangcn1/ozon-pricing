@@ -180,6 +180,7 @@ async def login(
             user_type=user.get("user_type", "free"),
             subscription_type=user.get("subscription_type", "free"),
             remaining_calculations=user.get("remaining_calculations", -1),
+            has_security_question=bool(user.get("security_q1")),
         ),
     )
     response = JSONResponse(content=body.model_dump())
@@ -319,6 +320,9 @@ async def register(
             user_type="free",
             subscription_type="free",
             remaining_calculations=-1,
+            has_security_question=bool(
+                user_data.security_question and user_data.security_answer
+            ),
         ),
     )
     response = JSONResponse(content=body.model_dump())
@@ -423,6 +427,7 @@ async def get_me(
         role=user["role"],
         user_type=user.get("user_type") or "free",
         subscription_type=user.get("subscription_type") or "free",
+        has_security_question=bool(user.get("security_q1")),
         remaining_calculations=(
             user["remaining_calculations"]
             if user.get("remaining_calculations") is not None

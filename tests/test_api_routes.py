@@ -155,6 +155,7 @@ class TestAuth:
         r = client.post("/api/auth/login", json={"username": "u", "password": "p"})
         assert r.status_code == 200
         assert r.json()["access_token"] == "tok123"
+        assert r.json()["user"]["has_security_question"] is False
         set_cookie = r.headers["set-cookie"]
         assert "access_token=tok123" in set_cookie
         assert "refresh_token=refresh123" in set_cookie
@@ -163,6 +164,33 @@ class TestAuth:
         assert "Max-Age=604800" in set_cookie
         mock_insert_session.assert_awaited_once()
         mock_deactivate_all.assert_awaited_once()
+
+    @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
+    @patch("api.routes.auth.deactivate_all_sessions", new_callable=AsyncMock)
+    @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
+    @patch("api.routes.auth.create_refresh_token")
+    @patch("api.routes.auth.create_access_token")
+    def test_login_returns_has_security_question_true_when_security_q1_set(
+        self,
+        mock_access_token,
+        mock_refresh_token,
+        mock_insert_session,
+        mock_deactivate_all,
+        mock_verify,
+    ):
+        mock_verify.return_value = {
+            "id": 2,
+            "username": "u2",
+            "role": "user",
+            "user_type": "free",
+            "remaining_calculations": 5,
+            "security_q1": "您母亲的姓名是？",
+        }
+        mock_access_token.return_value = "tokQ"
+        mock_refresh_token.return_value = "refQ"
+        r = client.post("/api/auth/login", json={"username": "u2", "password": "p"})
+        assert r.status_code == 200
+        assert r.json()["user"]["has_security_question"] is True
 
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
     def test_login_bad_credentials(self, mock_verify):
@@ -217,6 +245,9 @@ class TestAuth:
         data = r.json()
         assert data["id"] == 1
         assert data["username"] == "testuser"
+        assert data["has_security_question"] is False
+        with patch.dict(app.dependency_overrides, {dependencies.get_current_user: lambda: {**MOCK_USER, "security_q1": "q"}}):
+            assert client.get("/api/auth/me", headers={"Authorization": "Bearer faketoken"}).json()["has_security_question"] is True
 
     @patch("api.routes.auth.is_registration_open", new_callable=AsyncMock)
     def test_register_closed(self, mock_open):
@@ -265,6 +296,7 @@ class TestAuth:
         )
         assert r.status_code == 200
         assert r.json()["access_token"] == "newtoken"
+        assert r.json()["user"]["has_security_question"] is True
         set_cookie = r.headers["set-cookie"]
         assert "access_token=newtoken" in set_cookie
         assert "refresh_token=newrefresh" in set_cookie

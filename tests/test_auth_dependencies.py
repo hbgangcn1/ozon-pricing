@@ -161,6 +161,7 @@ class TestGetCurrentUser:
             user_type="enterprise",
             remaining_calculations=500,
         )
+        mock_get_user.return_value.security_q1 = None
         result = await get_current_user(_make_request(), _make_api_key("jwt-token"), AsyncMock())
         assert result == {
             "id": 10,
@@ -169,6 +170,7 @@ class TestGetCurrentUser:
             "user_type": "enterprise",
             "subscription_type": "free",
             "remaining_calculations": 500,
+            "security_q1": None,
         }
 
 

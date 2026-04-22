@@ -7,15 +7,15 @@
 import bcrypt
 import time
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast
 from datetime import datetime
 
 from database import AsyncSessionLocal
 from models.user import User
 from models.log import PasswordRecoveryLog
 from db.password import hash_password
-from sqlalchemy import select, update
-from security_questions import validate_security_answers
+from sqlalchemy import select
+from security_questions import normalize_security_answer, validate_security_answers
 from password_utils import validate_password_strength
 
 # 配置日志
@@ -149,7 +149,7 @@ async def verify_security_answers(
     """
     is_valid, error_msg = validate_security_answers(answer)
     if not is_valid:
-        return False, error_msg
+        return False, cast(str, error_msg)
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(User).where(User.username == username))
@@ -172,7 +172,7 @@ async def verify_security_answers(
                 f"账号已被锁定，请于 {locked_until} 后重试。或联系管理员解锁。"
             )
 
-        answer_lower = answer.strip().lower()
+        answer_lower = normalize_security_answer(answer)
 
         try:
             a_valid = bcrypt.checkpw(

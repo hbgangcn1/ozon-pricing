@@ -233,3 +233,90 @@ Wave 9 执行四份独立审计（oracle P0 / oracle P1 / Junior-deep P2 / Junio
 
 **报告产出人**：Sisyphus（主控）
 **签发基线**：HEAD `e7b40603`，working tree clean，ahead origin/main 68，所有质量门全绿
+
+---
+
+## 11. Wave 10 专项（2026-04-22 追加）
+
+Wave 10 修复 5 类 UX/功能问题，6 个原子 commit，**主控亲自实施 + manual QA 验证**。
+
+### 11.1 问题清单与处置
+
+| # | 问题 | 处置 | Commit |
+|---|---|---|---|
+| 1 | VirtualTable 表头透明，滚动时下方内容穿透 | 表头改 `bg-muted` 不透明背景 | `0b1ebfb1` |
+| 2 | 找回密码页冗余「安全提示」Alert | 删除整段 Alert | `c6a5a290` |
+| 3 | 注册页 5 题、找回密码 10 题不统一 | 后端 `SECURITY_QUESTIONS` 收敛为 5 题 + 新增 GET 端点 | `46bbcf69` |
+| 4 | register 流程未持久化 q1/a1，导致后续找回密码 NULL 字段 | register API 写入 q/a 双字段 | `c94608b0` |
+| 5 | 找回密码 2 题校验，与注册仅 1 题不对称 | 后端/前端统一为 1 题制 | `84411b08` |
+| 6 | 老用户（升级前注册）登录后无入口补填安全问题 | 登录后强制 Modal 拦截，「提交」或「退出登录」二选一 | _本 commit_ |
+
+### 11.2 Commit 6 设计决议（用户锁定）
+
+| 项 | 决议 |
+|---|---|
+| C1 拦截强度 | 仅前端 Dialog 拦截（不改后端权限） |
+| C2 set 语义 | 仅首次设置（`security_q1 IS NULL` 允许；已设置 HTTP 409） |
+| C3 答案归一化 | `strip+lower + bcrypt`（与 `password_recovery.py:175` verify 对称） |
+| C4 admin 路径 | 不在本 commit 范围 |
+| C5 逃生口 | Dialog 提供「退出登录」按钮，避免账户被锁 |
+
+### 11.3 Commit 6 file manifest（21 文件 = 14 修改 + 7 新增）
+
+**后端修改 7**：`security_questions.py`、`password_recovery.py`、`db/users.py`、`api/main.py`、`api/models/schemas.py`、`api/routes/auth.py`、`api/dependencies.py`
+
+**后端新增 1**：`api/routes/auth_security.py`（POST `/api/auth/security-question`，仅首次设置）
+
+**后端测试修改 2**：`tests/test_auth_dependencies.py`、`tests/test_api_routes.py`（+P0 回归 3 测试）
+
+**后端测试新增 1**：`tests/test_api_security_question.py`（7 测试）
+
+**前端修改 5**：`frontend/src/services/api.js`、`frontend/src/__tests__/api.test.js`、`frontend/src/stores/authStore.js`、`frontend/src/__tests__/authStore.test.js`、`frontend/src/components/AppLayout.jsx`
+
+**前端新增 3**：`frontend/src/components/SecurityQuestionRequiredDialog.jsx`、`frontend/src/__tests__/SecurityQuestionRequiredDialog.test.jsx`、`frontend/src/__tests__/AppLayout.test.jsx`
+
+### 11.4 实施期间发现并修复的集成 bug（manual QA 兜底）
+
+| 级别 | 问题 | 根因 | 修复 |
+|---|---|---|---|
+| P0 | login/register response 缺 `has_security_question` → 所有用户都弹 Dialog | UserResponse 构造时遗漏 flag；`db/users.py:verify_user` dict 缺 `security_q1` key | auth.py 两处 + db/users.py 1 处补字段 + 3 回归测试 |
+| P1 | Dialog 名导出但 AppLayout 用 default import → 整个前端白屏 | vitest 用 named import 通过，浏览器崩溃 | AppLayout 改 `import { SecurityQuestionRequiredDialog }` |
+| P2 | AppLayout 未传 `onSuccess`/`onLogout` → 提交后 200 OK 但 Dialog 不关 | 仅传 `open` prop | AppLayout 完整集成 `handleSuccess` + `handleLogout` |
+
+**教训**：vitest 通过 ≠ 浏览器可用；**manual QA 必须兜底**。
+
+### 11.5 Wave 10 manual QA 截图证据
+
+| 路径 | 截图 |
+|---|---|
+| legacy 用户登录 → Dialog 弹出 | `docs/qa/wave10-commit6-dialog.png` |
+| 提交安全问题 → Dialog 关闭进入 `/pricing` | `docs/qa/wave10-commit6-no-dialog-after-set.png` |
+| Dialog 内点「退出登录」→ 跳回 `/login` | `docs/qa/wave10-commit6-logout-escape.png` |
+| modern 用户登录 → 不弹 Dialog | `docs/qa/wave10-commit6-modern-no-dialog.png` |
+| 找回密码 1 题制 E2E（输入用户名 → 答题 → 重置密码 → 跳 /login，新密码 API login 200 OK） | `docs/qa/wave10-commit6-recovery-success.png` |
+
+### 11.6 Wave 10 回归基线对比
+
+| 检查项 | Wave 9 基线 | Wave 10 新基线 |
+|---|---|---|
+| Backend pytest | 2154 passed, 4 skipped | **2164 passed, 4 skipped**（+10 新测试：T6×7 + T7/P0 ×3） |
+| Backend flake8 | 0 | **0** |
+| Frontend vitest | 37 files / 296 tests | **39 files / 307 tests**（+2 新文件：Dialog + AppLayout） |
+| Frontend lint | 0 warnings | **0 warnings** |
+| Alembic head | `e53fd4a44e97` | `e53fd4a44e97`（无新迁移） |
+
+### 11.7 Wave 10 commit 清单
+
+| Commit | 类别 | 摘要 |
+|---|---|---|
+| `0b1ebfb1` | fix(ui) | VirtualTable header use opaque bg-muted background |
+| `c6a5a290` | fix(ui) | remove redundant 'security tip' alert on forgot password page |
+| `46bbcf69` | fix(security-questions) | unify preset list to 5 questions and expose API endpoint |
+| `c94608b0` | fix(auth) | persist security_question/answer on register to prevent NULL recovery fields |
+| `84411b08` | feat(security) | 找回密码统一为 1 题制（Wave 10 Commit 5） |
+| _Commit 6 SHA 见 git log_ | fix(wave10/commit6) | 登录后强制 Dialog 补填安全问题（含 P0+P1+P2 集成修复 + 5 张 manual QA 截图） |
+
+---
+
+**Wave 10 报告产出人**：Sisyphus（主控）
+**Wave 10 签发基线**：HEAD = Wave 10 Commit 6/6（SHA 见 `git log --oneline -6`），pytest 2164 / vitest 307 / flake8 0 / lint 0 全绿，manual QA 5/5 全部通过（含找回密码 1 题制 E2E + 新密码 API login 200 OK 端到端闭环）。本地 ahead origin/main 74 commits，**未 push，等待用户授权**。

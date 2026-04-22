@@ -17,6 +17,11 @@ SECURITY_QUESTIONS: List[str] = [
 ]
 
 
+def normalize_security_answer(answer: str) -> str:
+    """统一答案归一化：trim + lowercase。set/verify 必须共用此函数。"""
+    return (answer or "").strip().lower()
+
+
 def get_security_questions() -> List[str]:
     """返回预设安全问题清单的副本。"""
     return list(SECURITY_QUESTIONS)

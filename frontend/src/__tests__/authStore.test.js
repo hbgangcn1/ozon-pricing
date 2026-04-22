@@ -18,6 +18,7 @@ describe('authStore.js', () => {
       expect(state.isAuthenticated).toBe(false)
       expect(state.isLoading).toBe(true)
       expect(state.calcMode).toBe('fast')
+      expect(state.showSecurityDialog).toBe(false)
     })
   })
 
@@ -65,11 +66,19 @@ describe('authStore.js', () => {
       expect(state.user).toEqual({ ...mockUser, subscription_type: 'free' })
       expect(state.token).toBeNull()
       expect(state.isAuthenticated).toBe(true)
+      expect(state.showSecurityDialog).toBe(true)
 
       expect(localStorage.getItem('api_token')).toBeNull()
       expect(localStorage.getItem('api_user')).toBe(
         JSON.stringify({ ...mockUser, subscription_type: 'free' })
       )
+    })
+
+    it('syncs security dialog from login user flag', () => {
+      useAuthStore.getState().setAuth({ id: 4, has_security_question: false }, 't')
+      expect(useAuthStore.getState().showSecurityDialog).toBe(true)
+      useAuthStore.getState().setAuth({ id: 5, has_security_question: true }, 't')
+      expect(useAuthStore.getState().showSecurityDialog).toBe(false)
     })
 
     it('normalizes subscription_type from user_type during login', () => {
@@ -107,6 +116,7 @@ describe('authStore.js', () => {
         user: { id: 1 },
         token: 'token',
         isAuthenticated: true,
+        showSecurityDialog: true,
       })
       localStorage.setItem('api_user', 'user')
 
@@ -116,6 +126,7 @@ describe('authStore.js', () => {
       expect(state.user).toBeNull()
       expect(state.token).toBeNull()
       expect(state.isAuthenticated).toBe(false)
+      expect(state.showSecurityDialog).toBe(false)
 
       expect(localStorage.getItem('api_user')).toBeNull()
     })

@@ -30,6 +30,7 @@ const buildClearedAuthState = () => ({
   token: null,
   isAuthenticated: false,
   sessionKicked: initialSessionKicked,
+  showSecurityDialog: false,
 })
 
 const clearAuthState = (set) => {
@@ -45,8 +46,10 @@ export const useAuthStore = create((set, get) => ({
   isLoading: true,
   calcMode: 'fast', // 'fast' | 'detailed'
   sessionKicked: initialSessionKicked,
+  showSecurityDialog: false,
 
   setCalcMode: (mode) => set({ calcMode: mode }),
+  setShowSecurityDialog: (open) => set({ showSecurityDialog: open }),
 
   initAuth: () => {
     const userStr = localStorage.getItem('api_user')
@@ -60,6 +63,7 @@ export const useAuthStore = create((set, get) => ({
           isAuthenticated: true,
           isLoading: false,
           sessionKicked: initialSessionKicked,
+          showSecurityDialog: !user?.has_security_question,
         })
       } catch {
         clearPersistedAuth()
@@ -86,6 +90,7 @@ export const useAuthStore = create((set, get) => ({
       token: tokenToSet,
       isAuthenticated: true,
       sessionKicked: initialSessionKicked,
+      showSecurityDialog: !normalizedUser?.has_security_question,
     })
   },
 
@@ -96,6 +101,7 @@ export const useAuthStore = create((set, get) => ({
 
   logout: () => {
     clearAuthState(set)
+    set({ showSecurityDialog: false })
   },
 
   setSessionKicked: ({ reason }) => set({

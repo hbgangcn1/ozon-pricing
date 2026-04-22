@@ -241,6 +241,7 @@ describe('api.js', () => {
       expect(authAPI).toHaveProperty('login')
       expect(authAPI).toHaveProperty('logout')
       expect(authAPI).toHaveProperty('getMe')
+      expect(authAPI).toHaveProperty('setSecurityQuestion')
       expect(productsAPI).toHaveProperty('getAll')
       expect(logisticsAPI).toHaveProperty('batchDelete')
       expect(pricingAPI).toHaveProperty('calculate')
@@ -249,6 +250,14 @@ describe('api.js', () => {
       expect(adminAPI).toHaveProperty('getUsers')
       expect(settingsAPI).toHaveProperty('getBackupStats')
       expect(statisticsAPI).toHaveProperty('getOverview')
+    })
+
+    it('setSecurityQuestion posts question and answer', async () => {
+      const { authAPI } = await loadApiModule()
+      mocks.mockApiInstance.post.mockResolvedValue({ success: true, message: 'ok' })
+
+      await expect(authAPI.setSecurityQuestion('pet', 'fluffy')).resolves.toEqual({ success: true, message: 'ok' })
+      expect(mocks.mockApiInstance.post).toHaveBeenCalledWith('/auth/security-question', { question: 'pet', answer: 'fluffy' })
     })
   })
 })

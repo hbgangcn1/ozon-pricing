@@ -31,6 +31,7 @@ class UserResponse(UserBase):
     user_type: str = "free"
     subscription_type: str = "free"
     remaining_calculations: int = -1
+    has_security_question: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -312,6 +313,11 @@ class PasswordRecoveryResetRequest(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+
+
+class SetSecurityQuestionRequest(BaseModel):
+    question: str
+    answer: str
 
 
 class CommissionCategoryCreate(BaseModel):

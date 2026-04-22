@@ -25,6 +25,7 @@ from api.routes import (
     commission_categories,
     logistics_pool,
 )
+from api.routes.auth_security import router as auth_security_router
 from api.middleware.rate_limit import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,7 @@ app.include_router(statistics.router)
 app.include_router(exchange.router)
 app.include_router(commission_categories.router)
 app.include_router(logistics_pool.router)
+app.include_router(auth_security_router, prefix="/api")
 
 
 @app.middleware("http")

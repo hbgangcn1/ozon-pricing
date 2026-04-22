@@ -150,6 +150,7 @@ async def get_current_user(
         "user_type": user.user_type,
         "subscription_type": user.subscription_type or "free",
         "remaining_calculations": user.remaining_calculations,
+        "security_q1": user.security_q1,
     }
 
 

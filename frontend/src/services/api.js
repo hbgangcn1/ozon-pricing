@@ -144,6 +144,8 @@ export const authAPI = {
     apiClient.post('/auth/login', { username, password }),
   logout: () => apiClient.post('/auth/logout'),
   getMe: () => apiClient.get('/auth/me'),
+  /** 设置密保问题 */
+  setSecurityQuestion: (question, answer) => apiClient.post('/auth/security-question', { question, answer }),
   changePassword: (data) => apiClient.post('/auth/change-password', data),
   register: (data) => apiClient.post('/auth/register', data),
   loginAs: (username, password) =>
