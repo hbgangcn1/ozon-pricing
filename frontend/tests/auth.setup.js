@@ -3,13 +3,19 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { TEST_ADMIN, TEST_USER, URLS } from './fixtures/test-data.js';
 import { LOGIN_PAGE } from './fixtures/selectors.js';
-import { apiLogin, apiCreateUser, apiGetUsers, apiToggleRegistration } from './helpers/api-helpers.js';
+import {
+  apiLogin,
+  apiCreateUser,
+  apiGetUsers,
+  apiSetMySecurityQuestion,
+  apiToggleRegistration,
+} from './helpers/api-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_AUTH_FILE = path.join(__dirname, '.auth', 'admin.json');
 const USER_AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 
-setup('authenticate as admin', async ({ page }) => {
+setup('authenticate as admin', async ({ page, request }) => {
   await page.goto(URLS.login);
   await page.waitForSelector(LOGIN_PAGE.usernameInput, { state: 'visible' });
   await page.fill(LOGIN_PAGE.usernameInput, TEST_ADMIN.username);
@@ -17,6 +23,10 @@ setup('authenticate as admin', async ({ page }) => {
   await page.click(LOGIN_PAGE.submitButton);
   await page.waitForURL(/\/(pricing|dashboard)/, { timeout: 20000 });
   await expect(page).toHaveURL(/\/(pricing|dashboard)/);
+
+  const adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password);
+  await apiSetMySecurityQuestion(request, adminToken);
+
   await page.context().storageState({ path: ADMIN_AUTH_FILE });
 });
 

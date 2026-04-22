@@ -8,6 +8,11 @@ export const TEST_USER = {
   password: 'TestPassword1!',
 };
 
+export const TEST_ADMIN_SECURITY_QUESTION = {
+  question: '您母亲的姓名？',
+  answer: 'admin_e2e_answer',
+};
+
 export const TEST_PASSWORD = 'TestPassword1!';
 
 export const URLS = {

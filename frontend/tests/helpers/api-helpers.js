@@ -1,4 +1,4 @@
-import { API_BASE } from '../fixtures/test-data.js';
+import { API_BASE, TEST_ADMIN_SECURITY_QUESTION } from '../fixtures/test-data.js';
 
 export async function apiLogin(username, password) {
   const resp = await fetch(`${API_BASE}/auth/login`, {
@@ -129,4 +129,25 @@ export async function apiGetProducts(token) {
     throw new Error(`apiGetProducts failed ${resp.status}: ${body}`);
   }
   return resp.json();
+}
+
+export async function apiSetMySecurityQuestion(
+  request,
+  token,
+  securityQuestion = TEST_ADMIN_SECURITY_QUESTION,
+) {
+  const resp = await request.post(`${API_BASE}/auth/security-question`, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    data: securityQuestion,
+  });
+
+  if ([200, 201, 409].includes(resp.status())) {
+    return;
+  }
+
+  const body = await resp.text();
+  throw new Error(`apiSetMySecurityQuestion failed ${resp.status()}: ${body}`);
 }
