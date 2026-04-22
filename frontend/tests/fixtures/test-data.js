@@ -9,7 +9,7 @@ export const TEST_USER = {
 };
 
 export const TEST_ADMIN_SECURITY_QUESTION = {
-  question: '您母亲的姓名？',
+  question: '您母亲的姓名是？',
   answer: 'admin_e2e_answer',
 };
 
