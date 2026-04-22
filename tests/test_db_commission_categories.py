@@ -1,25 +1,15 @@
 import asyncio
-import sys
 import time
 from decimal import Decimal
 
-import pytest
-
 from database import AsyncSessionLocal, engine
 from db.commission_categories import create, get_all, get_by_id, soft_delete, update
-
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-_LOOP = asyncio.new_event_loop()
-asyncio.set_event_loop(_LOOP)
 
 _TEST_USER_ID = 0
 
 
 def _run(coro):
-    return _LOOP.run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 async def _in_session(callback):
