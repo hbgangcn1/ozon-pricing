@@ -44,7 +44,7 @@ class SessionSecurityEnhanced:
         max_sessions = SessionSecurityEnhanced.MAX_CONCURRENT_SESSIONS
         lock_key = f"session_create_{user_id}"
         lock = DistributedLock(lock_key, timeout=5, redis_available=True)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         acquired = False
         try:
             acquired = await loop.run_in_executor(None, lock.acquire)
@@ -78,7 +78,7 @@ class SessionSecurityEnhanced:
     async def update_session_activity_atomic(session_id: str) -> bool:
         lock_key = f"session_update_{session_id}"
         lock = DistributedLock(lock_key, timeout=2, redis_available=True)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         acquired = False
         try:
             acquired = await loop.run_in_executor(None, lock.acquire)
