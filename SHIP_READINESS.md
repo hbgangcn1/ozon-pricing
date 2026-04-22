@@ -336,3 +336,29 @@ Wave 10 修复 5 类 UX/功能问题，6 个原子 commit，**主控亲自实施
 4. **根因**：跨文件 `pytest-asyncio` 事件循环 fixture 污染，需要重构 `conftest.py` 解决，**严重溢出 Wave 10 边界**，列入未来独立 wave。
 
 **风险评估**：单文件运行/CI 分文件运行不受影响；本地全量并发模式才暴露此污染。生产部署不受影响。
+
+> **修订**：Commit 0b1ebfb1 在 Wave 11 §12.1 之前为事实上的 no-op，详见 §12.3。
+
+---
+
+## §12 Wave 11 — Tailwind Tokens 注册 + 表头透明修复
+
+### §12.1 根因
+shadcn/ui 标准色彩 token (muted/card/border/...) 仅在 globals.css 中以 CSS 变量声明，
+未在 tailwind.config.js 中注册，导致 `bg-muted` 等工具类编译为空规则,
+`/logistics-pool` 公共物流池列表页 sticky 表头完全透明（rgba(0,0,0,0)）。
+
+### §12.2 修复范围
+- C1: tailwind.config.js 注册 shadcn 标准 token
+- C2: VirtualTable thead 内联 fallback
+- C3: shadcn TableHeader 加 bg-muted + sticky
+- C4: vitest computed-style 断言（含负向控制）
+- C5: Playwright 视觉回归 baseline
+- C6: 文档（本节）
+- C7: 预存在 async fixture 失败复检
+- C8: 全量回归 + push
+
+### §12.3 Wave 10 Commit 0b1ebfb1 状态修订
+该提交将 `bg-muted/50` → `bg-muted`，但因 Tailwind 未注册 muted token，
+两者均为空类，提交在 token 注册前为 no-op。Wave 11 §12.1 注册后该提交意图实际生效，
+保留不回滚（用户决策 §11.x 已授权）。

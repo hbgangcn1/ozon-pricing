@@ -782,3 +782,8 @@ DB_POOL_MAX=15
 | 24.3 | ✅ | 新建 `postgres_backup_service_connection.py`，提取 connection management 相关 3 个方法 |
 | 24.4 | ✅ | 新建 `postgres_backup_service_restore.py`，提取 restore flow 相关 15 个方法 |
 | 24.5 | ✅ | 验证 — flake8 零违规、全量 `pytest --tb=short -q` 2147 passed / 4 skipped、引用点保持兼容 |
+
+### Phase 25: Wave 11 — Tailwind Tokens + 表头透明修复 ✅
+- 状态：✅ 已完成（2026-04-22）
+- 7 fixed atomic commits（C1-C6 + C8） + N variable sub-commits under C7（C7a/7b/...，按 root cause 拆，N≥1）；最终 commit 数以 `git rev-list --count origin/main..HEAD` 实测为准
+- 详见 .sisyphus/plans/wave11-tailwind-tokens.md 与 SHIP_READINESS.md §12
