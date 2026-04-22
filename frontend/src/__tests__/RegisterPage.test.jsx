@@ -10,6 +10,17 @@ vi.mock('../services/api', () => ({
   authAPI: {
     register: vi.fn(),
     checkUsername: vi.fn().mockResolvedValue({ available: true, reason: null }),
+    getSecurityQuestions: vi.fn().mockResolvedValue({
+      data: {
+        questions: [
+          '您母亲的姓氏是什么？',
+          '您父亲的名字是什么？',
+          '您就读的小学名称是什么？',
+          '您最喜欢的宠物名字是什么？',
+          '您配偶的名字是什么？',
+        ],
+      },
+    }),
   },
   settingsAPI: {
     get: vi.fn().mockResolvedValue({ open_registration: true }),

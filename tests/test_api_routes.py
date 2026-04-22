@@ -366,6 +366,15 @@ class TestAuth:
         assert body["available"] is False
         assert body["reason"] is not None
 
+    def test_security_questions_endpoint_returns_preset_list(self):
+        r = client.get("/api/auth/security-questions")
+        assert r.status_code == 200
+        body = r.json()
+        assert "questions" in body
+        assert isinstance(body["questions"], list)
+        assert len(body["questions"]) == 5
+        assert "您母亲的姓氏是什么？" in body["questions"]
+
     def test_check_username_invalid_chars(self):
         r = client.get(
             "/api/auth/check-username",

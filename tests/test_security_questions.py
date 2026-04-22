@@ -33,8 +33,8 @@ class TestGetSecurityQuestions:
     def test_get_security_questions_contains_items(self):
         """测试包含预设问题"""
         questions = get_security_questions()
-        assert len(questions) > 0
-        assert "你小学的名字是什么？" in questions
+        assert len(questions) == 5
+        assert "您母亲的姓氏是什么？" in questions
 
 
 class TestValidateSecurityQuestions:

@@ -29,7 +29,7 @@ const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
-const securityQuestions = [
+const securityQuestionsFallback = [
   '您母亲的姓氏是什么？',
   '您父亲的名字是什么？',
   '您就读的小学名称是什么？',
@@ -46,6 +46,20 @@ function RegisterPage() {
   const [agreedToEULA, setAgreedToEULA] = useState(false);
   const [eulaDialogOpen, setEulaDialogOpen] = useState(false);
   const [openRegistration, setOpenRegistration] = useState(null);
+  const [securityQuestions, setSecurityQuestions] = useState(securityQuestionsFallback);
+
+  useEffect(() => {
+    let cancelled = false;
+    authAPI.getSecurityQuestions()
+      .then(res => {
+        const list = res?.data?.questions;
+        if (!cancelled && Array.isArray(list) && list.length > 0) {
+          setSecurityQuestions(list);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

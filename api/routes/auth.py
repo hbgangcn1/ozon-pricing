@@ -242,6 +242,14 @@ async def check_username(
     return {"available": True, "reason": None}
 
 
+@router.get("/security-questions")
+async def list_security_questions():
+    # 公开接口：返回预设安全问题列表，供注册/找回密码页面动态加载
+    # 避免前后端硬编码漂移（参见 SECURITY_QUESTIONS in security_questions.py）
+    from security_questions import get_security_questions
+    return {"questions": get_security_questions()}
+
+
 @router.post("/register")
 async def register(
     user_data: UserRegister,

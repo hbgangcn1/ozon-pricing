@@ -150,6 +150,7 @@ export const authAPI = {
     apiClient.post('/auth/login', { username, password }),
   checkUsername: (username) =>
     apiClient.get('/auth/check-username', { params: { username } }),
+  getSecurityQuestions: () => apiClient.get('/auth/security-questions'),
   startRecovery: (username) =>
     apiClient.post('/auth/recover/start', { username }),
   verifySecurity: (username, answer1, answer2) =>
