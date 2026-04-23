@@ -86,6 +86,8 @@ function ProductListDialog({
                       variant="ghost"
                       size="sm"
                       className="h-7 px-2 transition-all duration-200"
+                      data-testid={`product-edit-${product.id}`}
+                      aria-label={`编辑产品 ${product.name}`}
                       onClick={() => {
                         onProductListDialogChange(false)
                         onEditProduct(product)
@@ -93,7 +95,16 @@ function ProductListDialog({
                     >
                       ✏️
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 transition-all duration-200" onClick={() => onDeleteProduct(product)}>🗑️</Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 transition-all duration-200"
+                      data-testid={`product-delete-${product.id}`}
+                      aria-label={`删除产品 ${product.name}`}
+                      onClick={() => onDeleteProduct(product)}
+                    >
+                      🗑️
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -135,7 +146,12 @@ function ProductEditorDialog({
         <div className="space-y-3 max-h-96 overflow-y-auto">
           <div>
             <Label>产品名称 <span className="text-status-error">*</span></Label>
-            <Input value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} />
+            <Input
+              data-testid="product-form-name"
+              aria-label="产品名称"
+              value={productForm.name}
+              onChange={(event) => setProductForm({ ...productForm, name: event.target.value })}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

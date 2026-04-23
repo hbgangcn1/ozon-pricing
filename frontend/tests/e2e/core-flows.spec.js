@@ -41,19 +41,23 @@ test.describe('核心业务流程测试', () => {
     const row = listDialog.locator('.font-medium', { hasText: uniqueName }).first();
     await expect(row).toBeVisible({ timeout: 10000 });
 
-    await row.locator('..').locator('..').locator('button').first().click();
-    await page.waitForTimeout(300);
+    const editBtn = listDialog.getByRole('button', { name: `编辑产品 ${uniqueName}` });
+    await expect(editBtn).toBeVisible({ timeout: 10000 });
+    await editBtn.click();
 
-    const editDialog = page.locator('[role="dialog"]');
+    const editDialog = page.getByRole('dialog').filter({ has: page.getByText('编辑产品', { exact: true }) });
     await expect(editDialog).toBeVisible({ timeout: 5000 });
-    const nameInput = editDialog.locator('input').first();
+    const nameInput = editDialog.getByTestId('product-form-name');
     await nameInput.click();
     await page.keyboard.press('Control+a');
     await page.keyboard.type(editedName, { delay: 20 });
 
-    await editDialog.getByRole('button', { name: /保存修改|创建/ }).click();
-    await page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'PUT', { timeout: 5000 }).catch(() => null);
-    await page.waitForTimeout(2000);
+    const [putResponse] = await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'PUT', { timeout: 10000 }),
+      editDialog.getByRole('button', { name: /保存修改|创建/ }).click(),
+    ]);
+    expect(putResponse.ok()).toBeTruthy();
+    await expect(editDialog).toBeHidden({ timeout: 5000 });
 
     const openBtn1b = page.getByRole('button', { name: /打开产品列表/ });
     await Promise.all([

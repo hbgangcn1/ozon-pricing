@@ -71,30 +71,35 @@ test.describe('产品 CRUD 流程', () => {
       page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
       listBtn.click(),
     ])
-    const dialog = page.locator('[role="dialog"]')
-    await expect(dialog).toBeVisible({ timeout: 5000 })
+    // Scope by dialog title to avoid matching other dialogs.
+    const listDialog = page.getByRole('dialog').filter({ has: page.getByText('产品列表') })
+    await expect(listDialog).toBeVisible({ timeout: 5000 })
 
-    const productRow = dialog.locator('.font-medium', { hasText: productName }).locator('..').locator('..')
-    await expect(productRow).toBeVisible({ timeout: 10000 })
+    // Use aria-label to target the edit button by product name (not .first()
+    // which would hit the row Checkbox; Radix Checkbox renders as <button>).
+    const editBtn = listDialog.getByRole('button', { name: `编辑产品 ${productName}` })
+    await expect(editBtn).toBeVisible({ timeout: 10000 })
+    await editBtn.click()
 
-    await productRow.locator('button').first().click()
-    await page.waitForTimeout(500)
-
-    const editDialog = page.locator('[role="dialog"]')
+    const editDialog = page.getByRole('dialog').filter({ has: page.getByText('编辑产品', { exact: true }) })
     await expect(editDialog).toBeVisible({ timeout: 5000 })
 
-    const nameInput = editDialog.locator('input').first()
+    const nameInput = editDialog.getByTestId('product-form-name')
     await nameInput.click()
     await nameInput.fill(editedName)
 
-    await editDialog.getByRole('button', { name: /保存修改|创建/ }).click()
+    // Assert PUT succeeds; do NOT swallow the response (was masking real failures).
+    const [putResponse] = await Promise.all([
+      page.waitForResponse(
+        r => r.url().includes('/api/products') && r.request().method() === 'PUT',
+        { timeout: 10000 }
+      ),
+      editDialog.getByRole('button', { name: /保存修改|创建/ }).click(),
+    ])
+    expect(putResponse.ok()).toBeTruthy()
 
-    await page.waitForResponse(
-      r => r.url().includes('/api/products') && r.request().method() === 'PUT',
-      { timeout: 10000 }
-    ).catch(() => null)
-
-    await page.waitForTimeout(800)
+    // Edit dialog should close after successful save.
+    await expect(editDialog).toBeHidden({ timeout: 5000 })
   })
 
   test('产品列表可见编辑后的名称', async ({ page }) => {
@@ -120,24 +125,26 @@ test.describe('产品 CRUD 流程', () => {
       page.waitForResponse(r => r.url().includes('/api/products') && r.request().method() === 'GET'),
       listBtn.click(),
     ])
-    const dialog = page.locator('[role="dialog"]')
+    const dialog = page.getByRole('dialog').filter({ has: page.getByText('产品列表') })
     await expect(dialog).toBeVisible({ timeout: 5000 })
 
-    const productRow = dialog.locator('.font-medium', { hasText: editedName }).locator('..').locator('..')
-    await expect(productRow).toBeVisible({ timeout: 10000 })
+    const deleteBtn = dialog.getByRole('button', { name: `删除产品 ${editedName}` })
+    await expect(deleteBtn).toBeVisible({ timeout: 10000 })
+    await deleteBtn.click()
 
-    await productRow.locator('button').last().click()
-
-    const alertDialog = page.locator('[role="alertdialog"]')
+    const alertDialog = page.getByRole('alertdialog')
     await expect(alertDialog).toBeVisible({ timeout: 5000 })
-    await alertDialog.getByRole('button', { name: /确认删除/ }).click()
 
-    await page.waitForResponse(
-      r => r.url().includes('/api/products') && r.request().method() === 'DELETE',
-      { timeout: 10000 }
-    ).catch(() => null)
+    const [deleteResponse] = await Promise.all([
+      page.waitForResponse(
+        r => r.url().includes('/api/products') && r.request().method() === 'DELETE',
+        { timeout: 10000 }
+      ),
+      alertDialog.getByRole('button', { name: /确认删除/ }).click(),
+    ])
+    expect(deleteResponse.ok()).toBeTruthy()
 
-    await page.waitForTimeout(800)
+    await expect(alertDialog).toBeHidden({ timeout: 5000 })
   })
 
   test('删除后产品列表中不可见', async ({ page }) => {
