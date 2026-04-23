@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
-import { TEST_ADMIN, API_BASE } from '../fixtures/test-data.js'
-import { apiLogin } from '../helpers/api-helpers.js'
+import { API_BASE } from '../fixtures/test-data.js'
+import { getAdminToken } from '../helpers/admin-token.js'
+import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js'
 
 test.describe('物流管理 — 全选与批量删除', () => {
   test.describe.configure({ mode: 'serial' })
@@ -9,8 +10,8 @@ test.describe('物流管理 — 全选与批量删除', () => {
   let adminToken
   const ruleNames = []
 
-  test.beforeAll(async () => {
-    adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password)
+  test.beforeAll(async ({ request }) => {
+    adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
 
     for (let i = 0; i < 3; i++) {
       const name = `BatchTest_${Date.now()}_${i}`
@@ -153,8 +154,8 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   let adminToken
   let hasPoolData = false
 
-  test.beforeAll(async () => {
-    adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password)
+  test.beforeAll(async ({ request }) => {
+    adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
 
     const resp = await fetch(`${API_BASE}/logistics-pool?limit=5`, {
       headers: { Authorization: `Bearer ${adminToken}` },

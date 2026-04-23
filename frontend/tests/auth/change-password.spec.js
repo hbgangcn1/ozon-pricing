@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { TEST_ADMIN, TEST_USER, URLS } from '../fixtures/test-data.js';
 import { ACCOUNT_PAGE } from '../fixtures/selectors.js';
-import { apiLogin, apiGetUsers } from '../helpers/api-helpers.js';
+import { apiGetUsers } from '../helpers/api-helpers.js';
+import { getAdminToken } from '../helpers/admin-token.js';
+import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js';
 
 test.describe('修改密码', () => {
   test.beforeEach(async ({ page }) => {
@@ -65,8 +67,8 @@ test.describe('修改密码 - 使用测试用户', () => {
   const TEMP_NEW_PASSWORD = 'TempNewPass1!ABC';
   let testUserExists = false;
 
-  test.beforeAll(async () => {
-    const adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password).catch(() => null);
+  test.beforeAll(async ({ request }) => {
+    const adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE }).catch(() => null);
     if (!adminToken) return;
 
     const users = await apiGetUsers(adminToken).catch(() => []);

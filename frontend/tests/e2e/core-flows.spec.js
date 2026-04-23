@@ -1,16 +1,17 @@
 import { test, expect } from '@playwright/test';
-import { TEST_ADMIN } from '../fixtures/test-data.js';
-import { apiLogin, apiCreateProduct, apiGetProducts } from '../helpers/api-helpers.js';
+import { apiCreateProduct, apiGetProducts } from '../helpers/api-helpers.js';
+import { getAdminToken } from '../helpers/admin-token.js';
+import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js';
 
 test.describe('核心业务流程测试', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(60000);
 
-  test('产品完整CRUD流程', async ({ page }) => {
+  test('产品完整CRUD流程', async ({ page, request }) => {
     const uniqueName = `EP${Date.now() % 10000}`;
     const editedName = `${uniqueName}E`;
 
-    const adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password);
+    const adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE });
     const product = await apiCreateProduct(adminToken, {
       name: uniqueName,
       unit_price: 99,

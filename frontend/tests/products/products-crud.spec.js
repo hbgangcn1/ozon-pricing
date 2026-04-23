@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
-import { TEST_ADMIN } from '../fixtures/test-data.js'
-import { apiLogin, apiCreateProduct, apiDeleteProduct, apiGetProducts } from '../helpers/api-helpers.js'
+import { apiCreateProduct, apiDeleteProduct, apiGetProducts } from '../helpers/api-helpers.js'
+import { getAdminToken } from '../helpers/admin-token.js'
+import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js'
 
 test.describe('产品 CRUD 流程', () => {
   test.describe.configure({ mode: 'serial' })
@@ -9,11 +10,11 @@ test.describe('产品 CRUD 流程', () => {
   let productName
   let editedName
   let adminToken
-  test.beforeAll(async () => {
+  test.beforeAll(async ({ request }) => {
     const suffix = Date.now() % 100000
     productName = `TestProduct${suffix}`
     editedName = `TestProduct${suffix}E`
-    adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password)
+    adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
   })
 
   test.afterAll(async () => {

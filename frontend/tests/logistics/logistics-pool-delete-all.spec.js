@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test'
-import { TEST_ADMIN, API_BASE } from '../fixtures/test-data.js'
-import { apiLogin } from '../helpers/api-helpers.js'
+import { API_BASE } from '../fixtures/test-data.js'
+import { getAdminToken } from '../helpers/admin-token.js'
+import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js'
 
 test.describe('公共物流池 — 删除全部', () => {
   test.setTimeout(60000)
 
   let adminToken
 
-  test.beforeAll(async () => {
-    adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password)
+  test.beforeAll(async ({ request }) => {
+    adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
   })
 
   test('删除全部按钮可见', async ({ page }) => {
