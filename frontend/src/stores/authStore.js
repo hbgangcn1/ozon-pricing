@@ -33,6 +33,44 @@ const buildClearedAuthState = () => ({
   showSecurityDialog: false,
 })
 
+const buildPersistedUser = (user) => {
+  if (!user) {
+    return null
+  }
+
+  const {
+    id,
+    username,
+    role,
+    subscription_type,
+    user_type,
+    remaining_calculations,
+    has_security_question,
+  } = user
+
+  return {
+    id,
+    username,
+    role,
+    subscription_type,
+    user_type,
+    remaining_calculations,
+    has_security_question,
+  }
+}
+
+const persistNormalizedUser = (user) => {
+  const persistedUser = buildPersistedUser(user)
+  if (persistedUser) {
+    localStorage.setItem('api_user', JSON.stringify(persistedUser))
+  }
+}
+
+const buildAuthUserState = (user) => ({
+  user,
+  showSecurityDialog: !user?.has_security_question,
+})
+
 const clearAuthState = (set) => {
   clearPersistedAuth()
   resetLinkedStores()
@@ -58,12 +96,11 @@ export const useAuthStore = create((set, get) => ({
       try {
         const user = normalizeSubscriptionType(JSON.parse(userStr))
         set({
-          user,
+          ...buildAuthUserState(user),
           token: token || null,
           isAuthenticated: true,
           isLoading: false,
           sessionKicked: initialSessionKicked,
-          showSecurityDialog: !user?.has_security_question,
         })
       } catch {
         clearPersistedAuth()
@@ -74,23 +111,21 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  setAuth: (user, token) => {
-    const normalizedUser = normalizeSubscriptionType(user)
-    // Only persist essential fields to localStorage (no PII like email, phone)
-    const { id, username, role, subscription_type, user_type, remaining_calculations } = normalizedUser
-    const persistUser = { id, username, role, subscription_type, user_type, remaining_calculations }
-    localStorage.setItem('api_user', JSON.stringify(persistUser))
-    if (token && import.meta.env.MODE !== 'test') {
-      localStorage.setItem('api_token', token)
+  setAuth: (authOrUser, token) => {
+    const rawUser = authOrUser?.user ?? authOrUser
+    const resolvedToken = authOrUser?.token ?? token
+    const normalizedUser = normalizeSubscriptionType(rawUser)
+    persistNormalizedUser(normalizedUser)
+    if (resolvedToken && import.meta.env.MODE !== 'test') {
+      localStorage.setItem('api_token', resolvedToken)
     }
     
-    const tokenToSet = import.meta.env.MODE === 'test' ? null : (token || null)
+    const tokenToSet = import.meta.env.MODE === 'test' ? null : (resolvedToken || null)
     set({
-      user: normalizedUser,
+      ...buildAuthUserState(normalizedUser),
       token: tokenToSet,
       isAuthenticated: true,
       sessionKicked: initialSessionKicked,
-      showSecurityDialog: !normalizedUser?.has_security_question,
     })
   },
 
@@ -112,7 +147,11 @@ export const useAuthStore = create((set, get) => ({
     clearAuthState(set)
   },
 
-  setUser: (user) => set({ user: normalizeSubscriptionType(user) }),
+  setUser: (user) => {
+    const normalizedUser = normalizeSubscriptionType(user)
+    persistNormalizedUser(normalizedUser)
+    set(buildAuthUserState(normalizedUser))
+  },
 
   hasPermission: (page) => {
     const { user } = get()

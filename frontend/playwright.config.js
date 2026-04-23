@@ -68,7 +68,15 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 120000,
       cwd: '../',
-      env: { ...process.env, E2E_TEST: '1' },
+      // E2E_DISABLE_NEW_LOGIN_SESSION_KICK: Playwright 专用 gate，绕过
+      // _issue_auth_tokens 内的 deactivate_all_sessions，避免 admin 共享
+      // session 被并行 spec 反复踢下线。仅当与 E2E_TEST=1 同时存在才生效。
+      // 真实 kick 语义由后端 pytest test_auth_login_kicks_others.py 覆盖。
+      env: {
+        ...process.env,
+        E2E_TEST: '1',
+        E2E_DISABLE_NEW_LOGIN_SESSION_KICK: '1',
+      },
     },
   ],
 });

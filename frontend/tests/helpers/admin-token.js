@@ -16,6 +16,24 @@ function decodeExp(token) {
 
 function nowSec() { return Math.floor(Date.now() / 1000); }
 
+async function renameWithRetry(src, dst, attempts = 5, baseDelayMs = 80) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      await fs.rename(src, dst);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (err && (err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES')) {
+        await new Promise((r) => setTimeout(r, baseDelayMs * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 function shouldRefresh() {
   if (!cachedToken || !cachedExpSec) return true;
   return (cachedExpSec - nowSec()) <= REFRESH_THRESHOLD_SEC;
@@ -41,7 +59,6 @@ export async function getAdminToken(request, opts) {
   cachedToken = token;
   cachedExpSec = decodeExp(token);
 
-  await rewriteAdminStorageState(token, authFile);
   await rewriteMarker(token, markerFile);
 
   return token;
@@ -52,36 +69,19 @@ export function invalidateAdminToken() {
   cachedExpSec = null;
 }
 
-export async function rewriteAdminStorageState(token, authFile) {
-  const raw = await fs.readFile(authFile, 'utf8');
-  const state = JSON.parse(raw);
-  let updated = false;
-  for (const origin of state.origins ?? []) {
-    for (const item of origin.localStorage ?? []) {
-      if (item.name === 'api_token') {
-        item.value = token;
-        updated = true;
-      }
-    }
-  }
-  if (!updated) {
-    throw new Error(`rewriteAdminStorageState: no api_token entry found in ${authFile}`);
-  }
-  const tmp = `${authFile}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8');
-  await fs.rename(tmp, authFile);
-}
-
 export async function rewriteMarker(token, markerFile) {
+  if (typeof token !== 'string' || token.length < 20) {
+    throw new Error(`rewriteMarker: token must be a non-empty JWT string, got ${typeof token} length=${token?.length}`);
+  }
   await fs.mkdir(path.dirname(markerFile), { recursive: true });
   const exp = decodeExp(token);
   const issuedAt = Math.floor(Date.now() / 1000);
-  if (!exp || typeof exp !== 'number') {
+  if (typeof exp !== 'number' || !Number.isFinite(exp)) {
     throw new Error(`rewriteMarker: decodeExp returned invalid exp: ${exp}`);
   }
   const tmp = `${markerFile}.tmp`;
   await fs.writeFile(tmp, JSON.stringify({ token, exp, issuedAt }, null, 2), 'utf8');
-  await fs.rename(tmp, markerFile);
+  await renameWithRetry(tmp, markerFile);
 }
 
 export async function refreshAdminUiAuth(page) {
