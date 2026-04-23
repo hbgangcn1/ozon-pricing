@@ -10,9 +10,10 @@ import {
   apiSetMySecurityQuestion,
   apiToggleRegistration,
 } from './helpers/api-helpers.js';
+import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from './helpers/auth-paths.js';
+import { rewriteAdminStorageState, rewriteMarker } from './helpers/admin-token.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ADMIN_AUTH_FILE = path.join(__dirname, '.auth', 'admin.json');
 const USER_AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 
 setup('authenticate as admin', async ({ page, request }) => {
@@ -28,6 +29,8 @@ setup('authenticate as admin', async ({ page, request }) => {
   await apiSetMySecurityQuestion(request, adminToken);
 
   await page.context().storageState({ path: ADMIN_AUTH_FILE });
+  await rewriteAdminStorageState(adminToken, ADMIN_AUTH_FILE);
+  await rewriteMarker(adminToken, ADMIN_MARKER_FILE);
 });
 
 setup('authenticate as regular user', async ({ page }) => {
