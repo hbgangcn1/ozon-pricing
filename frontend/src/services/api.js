@@ -91,9 +91,12 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
 
+    const isLocalAuth401 = originalRequest.auth401Mode === 'local'
+
     const shouldRetry = status === 401
       && !originalRequest._retry
       && !isRefreshRequest
+      && !isLocalAuth401
 
     if (shouldRetry) {
       originalRequest._retry = true
@@ -123,7 +126,12 @@ apiClient.interceptors.response.use(
       }
     }
 
-    if (status === 401 && typeof detail === 'string' && window.location.pathname !== '/login') {
+    if (
+      status === 401
+      && typeof detail === 'string'
+      && window.location.pathname !== '/login'
+      && !isLocalAuth401
+    ) {
       redirectToUnauthorizedLogin(detail)
       return Promise.reject(error)
     }
@@ -146,7 +154,7 @@ export const authAPI = {
   getMe: () => apiClient.get('/auth/me'),
   /** 设置密保问题 */
   setSecurityQuestion: (question, answer) => apiClient.post('/auth/security-question', { question, answer }),
-  changePassword: (data) => apiClient.post('/auth/change-password', data),
+  changePassword: (data) => apiClient.post('/auth/change-password', data, { auth401Mode: 'local' }),
   register: (data) => apiClient.post('/auth/register', data),
   loginAs: (username, password) =>
     apiClient.post('/auth/login', { username, password }),

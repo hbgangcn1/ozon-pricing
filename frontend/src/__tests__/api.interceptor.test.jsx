@@ -131,4 +131,55 @@ describe('api interceptor session handling', () => {
     expect(mocks.mockToastError).toHaveBeenCalledWith('令牌已过期')
     expect(window.location.href).toBe('/login')
   })
+
+  it('does NOT refresh, redirect, or toast on 401 when auth401Mode=local', async () => {
+    localStorage.setItem('api_user', 'user')
+    localStorage.setItem('api_token', 'token')
+    await loadApiModule()
+    const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
+
+    const error = {
+      response: {
+        status: 401,
+        data: { detail: '当前密码错误' },
+      },
+      config: {
+        url: '/auth/change-password',
+        headers: {},
+        auth401Mode: 'local',
+      },
+    }
+
+    await expect(resErrorInterceptor(error)).rejects.toBe(error)
+
+    expect(mocks.mockAxiosPost).not.toHaveBeenCalled()
+    expect(mocks.mockLogout).not.toHaveBeenCalled()
+    expect(mocks.mockSetSessionKicked).not.toHaveBeenCalled()
+    expect(mocks.mockToastError).not.toHaveBeenCalled()
+    expect(window.location.href).toBe('')
+  })
+
+  it('still honors session-kicked detail even when auth401Mode=local', async () => {
+    await loadApiModule()
+    const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
+
+    const error = {
+      response: {
+        status: 401,
+        data: { detail: { error: '已失效', reason: 'kicked_by_new_login' } },
+      },
+      config: {
+        url: '/auth/change-password',
+        headers: {},
+        auth401Mode: 'local',
+      },
+    }
+
+    await expect(resErrorInterceptor(error)).rejects.toBe(error)
+
+    expect(mocks.mockSetSessionKicked).toHaveBeenCalledWith({ reason: 'kicked_by_new_login' })
+    expect(mocks.mockAxiosPost).not.toHaveBeenCalled()
+    expect(mocks.mockLogout).not.toHaveBeenCalled()
+    expect(mocks.mockToastError).not.toHaveBeenCalled()
+  })
 })

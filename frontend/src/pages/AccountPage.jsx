@@ -5,6 +5,22 @@ import { toast } from 'sonner'
 import { authAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 
+function extractApiErrorMessage(error, fallback) {
+  const detail = error?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => (typeof d === 'string' ? d : d?.msg || ''))
+      .filter(Boolean)
+    if (msgs.length > 0) return msgs.join('；')
+  }
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.msg === 'string') return detail.msg
+    if (typeof detail.message === 'string') return detail.message
+  }
+  return fallback
+}
+
 function AccountPage() {
   const [loading, setLoading] = useState(false)
   const { user } = useAuthStore()
@@ -39,7 +55,7 @@ function AccountPage() {
         confirm_password: '',
       })
     } catch (error) {
-      toast.error(error.response?.data?.detail || '密码修改失败')
+      toast.error(extractApiErrorMessage(error, '密码修改失败'))
     } finally {
       setLoading(false)
     }
@@ -57,7 +73,7 @@ function AccountPage() {
             <CardTitle>🔒 修改密码</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form data-testid="change-password-form" onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <label htmlFor="current_password" className="text-sm font-medium text-text-secondary">当前密码</label>
                 <div className="relative">
