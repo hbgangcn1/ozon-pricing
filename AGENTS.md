@@ -152,11 +152,21 @@ Test-Path "C:\Users\hbgan\OneDrive\Robert\learn\logistics\tests"  # 应返回 Tr
 - 如果目录已存在 → 直接写文件，不执行任何 mkdir
 - 如果目录不存在 → 用安全 API 创建（`exist_ok=True` / `recursive: true`）
 
-### 严禁在 opencode 的 bash/terminal 中启动后端进程（uvicorn、python server 等）
-  - 原因：`Start-Process`、直接运行 `uvicorn` 等方式会阻塞 agent shell，导致 agent 完全失去响应
-  - 已踩坑 2 次，每次都需要用户手动终止 session
-  - 正确做法：请用户在独立终端中手动运行 `.\start_dev.ps1` 或 `uvicorn api.main:app --reload --port 8003`
-  - 如需验证后端是否运行，使用 `Invoke-WebRequest http://localhost:8003/docs -Method Head` 检查即可
+### 后端/前端进程启动规则（用户已授权 agent 自主管理）
+  - **历史教训**：直接 `uvicorn api.main:app` 或 `npm run dev` 在前台运行会阻塞 agent shell
+  - **正确做法**：必须用 `Start-Process` 后台启动 + 重定向 stdout/stderr 到文件,**绝不前台运行**
+  - **启动后端模板**（必须设 ALLOWED_ORIGINS,否则 cookie csrf 路径全 403）：
+    ```powershell
+    $env:ALLOWED_ORIGINS='http://localhost:3001'
+    $env:E2E_TEST='1'
+    $env:E2E_DISABLE_NEW_LOGIN_SESSION_KICK='1'
+    Start-Process -FilePath ".\.venv\Scripts\python.exe" `
+      -ArgumentList "-m","uvicorn","api.main:app","--host","0.0.0.0","--port","8003" `
+      -RedirectStandardOutput "backend.log" -RedirectStandardError "backend.err.log" `
+      -NoNewWindow -PassThru
+    ```
+  - **关后端**：`Get-NetTCPConnection -LocalPort 8003 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
+  - **验证存活**：`Invoke-WebRequest http://localhost:8003/docs -Method Head -TimeoutSec 3`
 
 ### 验证原则
 - **Agent 必须自己完成验证**：不要让用户手动操作来验证 agent 的修改结果

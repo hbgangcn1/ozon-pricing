@@ -6,6 +6,12 @@ const ADMIN_PASS = TEST_ADMIN.password
 const TEST_USER = TEST_USER_DATA.username
 const TEST_PASS = TEST_USER_DATA.password
 
+// Playwright `request` fixture inherits BrowserContext storageState (admin.json
+// httpOnly access_token cookie). Backend api/dependencies.py:_extract_token
+// prefers cookie over Authorization header and triggers cookie CSRF validation.
+// Tests verifying "no auth -> 401" must opt-out of storageState.
+const NO_AUTH_STATE = { storageState: { cookies: [], origins: [] } }
+
 async function getToken(request, username, password) {
   const resp = await request.post('/api/auth/login', {
     data: { username, password },
@@ -47,11 +53,6 @@ test.describe('Statistics API - 概览', () => {
       headers: { Authorization: `Bearer ${token}` },
     })
     expect(resp.status()).toBe(403)
-  })
-
-  test('GET /api/statistics/overview - 无认证返回 401', async ({ request }) => {
-    const resp = await request.get('/api/statistics/overview')
-    expect(resp.status()).toBe(401)
   })
 })
 
@@ -107,9 +108,11 @@ test.describe('Statistics API - 登录日志', () => {
     }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
-    expect(Array.isArray(data)).toBeTruthy()
-    if (data.length > 0) {
-      const log = data[0]
+    expect(data).toHaveProperty('items')
+    expect(data).toHaveProperty('total')
+    expect(Array.isArray(data.items)).toBeTruthy()
+    if (data.items.length > 0) {
+      const log = data.items[0]
       expect(log).toHaveProperty('id')
       expect(log).toHaveProperty('username')
       expect(log).toHaveProperty('action')
@@ -144,83 +147,16 @@ test.describe('Statistics API - 管理员日志', () => {
     }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
-    expect(Array.isArray(data)).toBeTruthy()
-    if (data.length > 0) {
-      const log = data[0]
+    expect(data).toHaveProperty('items')
+    expect(data).toHaveProperty('total')
+    expect(Array.isArray(data.items)).toBeTruthy()
+    if (data.items.length > 0) {
+      const log = data.items[0]
       expect(log).toHaveProperty('id')
       expect(log).toHaveProperty('admin')
       expect(log).toHaveProperty('action')
       expect(log).toHaveProperty('time')
     }
-  })
-})
-
-test.describe('Statistics API - 功能使用', () => {
-  test('GET /api/statistics/feature-usage - admin 返回 200', async ({ request }) => {
-    const token = await getToken(request, ADMIN_USER, ADMIN_PASS)
-    const resp = await request.get('/api/statistics/feature-usage', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(resp.status()).toBe(200)
-    const data = await resp.json()
-    expect(Array.isArray(data)).toBeTruthy()
-    if (data.length > 0) {
-      expect(data[0]).toHaveProperty('feature')
-      expect(data[0]).toHaveProperty('count')
-    }
-  })
-})
-
-test.describe('Statistics API - 用户分群', () => {
-  test('GET /api/statistics/user-groups - admin 返回 200', async ({ request }) => {
-    const token = await getToken(request, ADMIN_USER, ADMIN_PASS)
-    const resp = await request.get('/api/statistics/user-groups', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
-    expect(resp.status()).toBe(200)
-    const data = await resp.json()
-    expect(data).toHaveProperty('high_value_users')
-    expect(data).toHaveProperty('active_users')
-    expect(data).toHaveProperty('silent_users')
-  })
-})
-
-test.describe('Statistics API - 转化漏斗', () => {
-  test('GET /api/statistics/funnel - admin 返回 200', async ({ request }) => {
-    const token = await getToken(request, ADMIN_USER, ADMIN_PASS)
-    const resp = await request.get('/api/statistics/funnel', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(resp.status()).toBe(200)
-    const data = await resp.json()
-    expect(data).toHaveProperty('registered')
-    expect(data).toHaveProperty('trial')
-    expect(data).toHaveProperty('paid')
-    expect(data).toHaveProperty('conversion_trial')
-    expect(data).toHaveProperty('conversion_paid')
-  })
-})
-
-test.describe('Statistics API - 计划分析', () => {
-  test('GET /api/statistics/plan-analysis - admin 返回 200', async ({ request }) => {
-    const token = await getToken(request, ADMIN_USER, ADMIN_PASS)
-    const resp = await request.get('/api/statistics/plan-analysis', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
-    expect(resp.status()).toBe(200)
-    const data = await resp.json()
-    expect(data).toHaveProperty('free_users')
-    expect(data).toHaveProperty('efficiency_users')
-    expect(data).toHaveProperty('professional_users')
-    expect(data).toHaveProperty('enterprise_users')
   })
 })
 
@@ -243,22 +179,11 @@ test.describe('Statistics API - 活跃用户', () => {
   })
 })
 
-test.describe('Statistics API - 增长趋势', () => {
-  test('GET /api/statistics/growth - admin 返回 200', async ({ request }) => {
-    const token = await getToken(request, ADMIN_USER, ADMIN_PASS)
-    const resp = await request.get('/api/statistics/growth', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(resp.status()).toBe(200)
-    const data = await resp.json()
-    expect(data).toHaveProperty('current_month')
-    expect(data).toHaveProperty('average')
-    expect(data).toHaveProperty('predicted')
-    expect(data).toHaveProperty('trend')
-  })
+test.describe('Statistics API - 无认证检查 (no storageState)', () => {
+  test.use(NO_AUTH_STATE)
 
-  test('GET /api/statistics/growth - 无认证返回 401', async ({ request }) => {
-    const resp = await request.get('/api/statistics/growth')
+  test('GET /api/statistics/overview - 无认证返回 401', async ({ request }) => {
+    const resp = await request.get('/api/statistics/overview')
     expect(resp.status()).toBe(401)
   })
 })

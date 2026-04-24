@@ -4,6 +4,8 @@ import { TEST_ADMIN } from '../fixtures/test-data.js'
 const ADMIN_USER = TEST_ADMIN.username
 const ADMIN_PASS = TEST_ADMIN.password
 
+const NO_AUTH_STATE = { storageState: { cookies: [], origins: [] } }
+
 async function getAdminToken(request) {
   const resp = await request.post('/api/auth/login', {
     data: { username: ADMIN_USER, password: ADMIN_PASS },
@@ -14,11 +16,6 @@ async function getAdminToken(request) {
 }
 
 test.describe('Settings API - 系统设置', () => {
-  test('GET /api/settings - 无认证返回 401', async ({ request }) => {
-    const resp = await request.get('/api/settings')
-    expect(resp.status()).toBe(401)
-  })
-
   test('GET /api/settings - admin 返回 200 和配置', async ({ request }) => {
     const token = await getAdminToken(request)
     expect(token).not.toBeNull()
@@ -49,19 +46,9 @@ test.describe('Settings API - 系统设置', () => {
     })
     expect(respOff.status()).toBe(200)
   })
-
-  test('PUT /api/settings/open-registration - 无认证返回 401', async ({ request }) => {
-    const resp = await request.put('/api/settings/open-registration?enabled=true')
-    expect(resp.status()).toBe(401)
-  })
 })
 
 test.describe('Settings API - 备份列表', () => {
-  test('GET /api/settings/backups - 无认证返回 401', async ({ request }) => {
-    const resp = await request.get('/api/settings/backups')
-    expect(resp.status()).toBe(401)
-  })
-
   test('GET /api/settings/backups - admin 返回 200', async ({ request }) => {
     const token = await getAdminToken(request)
     const resp = await request.get('/api/settings/backups', {
@@ -82,11 +69,6 @@ test.describe('Settings API - 备份列表', () => {
 })
 
 test.describe('Settings API - 备份配置', () => {
-  test('GET /api/settings/backup/settings - 无认证返回 401', async ({ request }) => {
-    const resp = await request.get('/api/settings/backup/settings')
-    expect(resp.status()).toBe(401)
-  })
-
   test('GET /api/settings/backup/settings - admin 返回 200', async ({ request }) => {
     const token = await getAdminToken(request)
     const resp = await request.get('/api/settings/backup/settings', {
@@ -104,11 +86,6 @@ test.describe('Settings API - 备份配置', () => {
 })
 
 test.describe('Settings API - 备份统计', () => {
-  test('GET /api/settings/backup/stats - 无认证返回 401', async ({ request }) => {
-    const resp = await request.get('/api/settings/backup/stats')
-    expect(resp.status()).toBe(401)
-  })
-
   test('GET /api/settings/backup/stats - admin 返回 200', async ({ request }) => {
     const token = await getAdminToken(request)
     const resp = await request.get('/api/settings/backup/stats', {
@@ -126,11 +103,6 @@ test.describe('Settings API - 备份统计', () => {
 })
 
 test.describe('Settings API - 手动备份', () => {
-  test('POST /api/settings/backup - 无认证返回 401', async ({ request }) => {
-    const resp = await request.post('/api/settings/backup')
-    expect(resp.status()).toBe(401)
-  })
-
   test('POST /api/settings/backup - admin 触发备份', async ({ request }) => {
     const token = await getAdminToken(request)
     const resp = await request.post('/api/settings/backup', {
@@ -182,5 +154,39 @@ test.describe('Settings API - 备份下载/删除/恢复（需要文件存在）
       data: { create_snapshot: false },
     })
     expect(resp.status()).toBe(400)
+  })
+})
+
+test.describe('Settings API - 无认证检查 (no storageState)', () => {
+  test.use(NO_AUTH_STATE)
+
+  test('GET /api/settings - 无认证返回 401', async ({ request }) => {
+    const resp = await request.get('/api/settings')
+    expect(resp.status()).toBe(401)
+  })
+
+  test('PUT /api/settings/open-registration - 无认证返回 401', async ({ request }) => {
+    const resp = await request.put('/api/settings/open-registration?enabled=true')
+    expect(resp.status()).toBe(401)
+  })
+
+  test('GET /api/settings/backups - 无认证返回 401', async ({ request }) => {
+    const resp = await request.get('/api/settings/backups')
+    expect(resp.status()).toBe(401)
+  })
+
+  test('GET /api/settings/backup/settings - 无认证返回 401', async ({ request }) => {
+    const resp = await request.get('/api/settings/backup/settings')
+    expect(resp.status()).toBe(401)
+  })
+
+  test('GET /api/settings/backup/stats - 无认证返回 401', async ({ request }) => {
+    const resp = await request.get('/api/settings/backup/stats')
+    expect(resp.status()).toBe(401)
+  })
+
+  test('POST /api/settings/backup - 无认证返回 401', async ({ request }) => {
+    const resp = await request.post('/api/settings/backup')
+    expect(resp.status()).toBe(401)
   })
 })

@@ -76,6 +76,7 @@ export default defineConfig({
         ...process.env,
         E2E_TEST: '1',
         E2E_DISABLE_NEW_LOGIN_SESSION_KICK: '1',
+        ALLOWED_ORIGINS: 'http://localhost:3001',
       },
     },
   ],

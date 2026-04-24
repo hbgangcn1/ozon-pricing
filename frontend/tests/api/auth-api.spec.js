@@ -6,6 +6,12 @@ const ADMIN_PASS = TEST_ADMIN.password
 const TEST_USER = TEST_USER_DATA.username
 const TEST_PASS = TEST_USER_DATA.password
 
+// Wave 14 C3: clear inherited admin storageState for tests that assert "no auth"
+// behavior. Without this, the request fixture inherits admin.json httpOnly
+// access_token cookie, and api/dependencies.py:_extract_token treats the cookie
+// as auth (then enforces CSRF on POST/PUT/DELETE => 403).
+const NO_AUTH_STATE = { storageState: { cookies: [], origins: [] } }
+
 /**
  * 通过 API 登录获取 token
  */
@@ -23,6 +29,13 @@ async function getToken(request, username, password) {
  */
 function authHeaders(token) {
   return { Authorization: `Bearer ${token}` }
+}
+
+function csrfHeaders(csrf, testInfo) {
+  return {
+    Origin: new URL(testInfo.project.use.baseURL).origin,
+    'X-CSRF-Token': csrf,
+  }
 }
 
 test.describe('Auth API - 登录', () => {
@@ -97,11 +110,6 @@ test.describe('Auth API - 当前用户信息', () => {
     expect(data.role).toBe('admin')
   })
 
-  test('GET /api/auth/me - 无 token 返回 401', async ({ request }) => {
-    const resp = await request.get('/api/auth/me')
-    expect(resp.status()).toBe(401)
-  })
-
   test('GET /api/auth/me - 无效 token 返回 401', async ({ request }) => {
     const resp = await request.get('/api/auth/me', {
       headers: { Authorization: 'Bearer invalid.token.here' },
@@ -120,6 +128,8 @@ test.describe('Auth API - 当前用户信息', () => {
 })
 
 test.describe('Auth API - 登出', () => {
+  test.use(NO_AUTH_STATE)
+
   test('POST /api/auth/logout - 返回 200', async ({ request }) => {
     const resp = await request.post('/api/auth/logout')
     expect(resp.status()).toBe(200)
@@ -127,10 +137,22 @@ test.describe('Auth API - 登出', () => {
     expect(data).toHaveProperty('message')
   })
 
-  test('POST /api/auth/logout - 有 token 也返回 200', async ({ request }) => {
-    const token = await getToken(request, ADMIN_USER, ADMIN_PASS)
+  test('POST /api/auth/logout - 有 token 也返回 200', async ({ request }, testInfo) => {
+    const loginResp = await request.post('/api/auth/login', {
+      data: { username: ADMIN_USER, password: ADMIN_PASS },
+    })
+    expect(loginResp.ok()).toBeTruthy()
+    const token = (await loginResp.json()).access_token
+    const setCookies = loginResp.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie')
+    const csrfCookie = setCookies.find((h) => h.value.startsWith('csrf_token='))
+    const csrf = csrfCookie?.value.split(';')[0].split('=')[1]
+    expect(token).toBeTruthy()
+    expect(csrf).toBeTruthy()
     const resp = await request.post('/api/auth/logout', {
-      headers: authHeaders(token),
+      headers: {
+        ...authHeaders(token),
+        ...csrfHeaders(csrf, testInfo),
+      },
     })
     expect(resp.status()).toBe(200)
   })
@@ -244,16 +266,6 @@ test.describe('Auth API - 注册', () => {
 })
 
 test.describe('Auth API - 修改密码', () => {
-  test('POST /api/auth/change-password - 无 token 返回 401', async ({ request }) => {
-    const resp = await request.post('/api/auth/change-password', {
-      data: {
-        current_password: 'OldPassword123!',
-        new_password: 'NewPassword456@X',
-      },
-    })
-    expect(resp.status()).toBe(401)
-  })
-
   test('POST /api/auth/change-password - 错误的当前密码返回 401', async ({ request }) => {
     const token = await getToken(request, ADMIN_USER, ADMIN_PASS)
     const resp = await request.post('/api/auth/change-password', {
@@ -278,5 +290,24 @@ test.describe('Auth API - 修改密码', () => {
     expect(resp.status()).toBe(400)
     const data = await resp.json()
     expect(data).toHaveProperty('detail')
+  })
+})
+
+test.describe('Auth API - 无认证检查 (no storageState)', () => {
+  test.use(NO_AUTH_STATE)
+
+  test('GET /api/auth/me - 无 token 返回 401', async ({ request }) => {
+    const resp = await request.get('/api/auth/me')
+    expect(resp.status()).toBe(401)
+  })
+
+  test('POST /api/auth/change-password - 无 token 返回 401', async ({ request }) => {
+    const resp = await request.post('/api/auth/change-password', {
+      data: {
+        current_password: 'OldPassword123!',
+        new_password: 'NewPassword456@X',
+      },
+    })
+    expect(resp.status()).toBe(401)
   })
 })

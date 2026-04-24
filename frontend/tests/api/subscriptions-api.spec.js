@@ -4,6 +4,8 @@ import { TEST_ADMIN } from '../fixtures/test-data.js'
 const ADMIN_USER = TEST_ADMIN.username
 const ADMIN_PASS = TEST_ADMIN.password
 
+const NO_AUTH_STATE = { storageState: { cookies: [], origins: [] } }
+
 async function getToken(request, username, password) {
   const resp = await request.post('/api/auth/login', {
     data: { username, password },
@@ -73,11 +75,6 @@ test.describe('Subscriptions API - 订阅计划', () => {
 })
 
 test.describe('Subscriptions API - 当前订阅', () => {
-  test('GET /api/subscriptions/current - 无认证返回 401', async ({ request }) => {
-    const resp = await request.get('/api/subscriptions/current')
-    expect(resp.status()).toBe(401)
-  })
-
   test('GET /api/subscriptions/current - 无效 token 返回 401', async ({ request }) => {
     const resp = await request.get('/api/subscriptions/current', {
       headers: { Authorization: 'Bearer invalid.token.xyz' },
@@ -129,5 +126,14 @@ test.describe('Subscriptions API - 当前订阅', () => {
     const data = await resp.json()
     expect(typeof data.calc_limit).toBe('number')
     expect(typeof data.logistics_limit).toBe('number')
+  })
+})
+
+test.describe('Subscriptions API - 无认证检查 (no storageState)', () => {
+  test.use(NO_AUTH_STATE)
+
+  test('GET /api/subscriptions/current - 无认证返回 401', async ({ request }) => {
+    const resp = await request.get('/api/subscriptions/current')
+    expect(resp.status()).toBe(401)
   })
 })
