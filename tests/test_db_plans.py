@@ -303,7 +303,7 @@ class TestCreatePlan:
         assert result["calc_limit"] == data["calc_limit"]
         assert result["logistics_limit"] == data["logistics_limit"]
         assert result["description"] == data["description"]
-        assert result["features"] == data["features"]
+        assert result["features"] == [data["features"]]
 
 
 # ===========================================================================
