@@ -6,19 +6,20 @@ export default defineConfig({
   globalTeardown: './tests/global-teardown.js',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 1,
+  retries: process.env.CI ? 1 : 0,
   workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1,
-  reporter: 'html',
+  reporter: [['list'], ['html', { open: 'never' }]],
+  reportSlowTests: { max: 10, threshold: 20000 },
   use: {
     baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
     headless: true,
-    actionTimeout: 30000,
-    navigationTimeout: 30000,
+    actionTimeout: 10000,
+    navigationTimeout: 15000,
   },
   timeout: 60000,
   expect: {
-    timeout: 10000,
+    timeout: 5000,
   },
   projects: [
     // Auth setup project — runs first, no dependencies
