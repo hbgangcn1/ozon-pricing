@@ -20,7 +20,7 @@
     },
     {
       "id": "c4_4",
-      "commit_sha": "PENDING_COMMIT_SHA",
+      "commit_sha": "d4d05a2a",
       "subject": "perf(pytest): xdist parallel + timeout protection (-36% wall-clock)",
       "wall_clock_sec": 80,
       "tier_3_sec": 80,
