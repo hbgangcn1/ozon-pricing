@@ -6,6 +6,22 @@
   "pass_gate": true,
   "commits": [
     {
+      "id": "c4_3",
+      "commit_sha": null,
+      "subject": "perf(vitest): switch to threads pool + isolate=false (-12.4% wall-clock)",
+      "wall_clock_sec": 22.76,
+      "tier_3_sec": 22.76,
+      "tier_3_baseline_sec": 26,
+      "tier_3_reduction_pct": 12.4,
+      "pass_count": 315,
+      "failed_count": 0,
+      "error_count": null,
+      "warning_count": null,
+      "timestamp": "2026-04-24T18:16:11Z",
+      "tier_3_gate": "SOFT_PASS",
+      "note": "Vitest 4 poolOptions must be top-level; after config migration the run passes and falls in SOFT_PASS band"
+    },
+    {
       "id": "c4_1",
       "commit_sha": "8ff1374f",
       "subject": "perf(playwright): parallel workers 1→4 (-64.5% wall-clock)",

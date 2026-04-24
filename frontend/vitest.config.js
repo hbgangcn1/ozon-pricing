@@ -10,11 +10,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  poolOptions: {
+    threads: {
+      isolate: false,
+      singleThread: false,
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/setupTests.js'],
     css: false,
+    pool: 'threads',
     exclude: ['**/tests/**', '**/node_modules/**'],
   },
 })

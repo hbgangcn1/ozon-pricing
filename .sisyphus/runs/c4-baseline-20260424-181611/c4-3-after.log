@@ -1,0 +1,23 @@
+
+> logistics-pricing-frontend@1.0.0 test
+> vitest run
+
+19:45:03 [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+19:45:03 [vite] warning: `optimizeDeps.esbuildOptions` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `optimizeDeps.rolldownOptions` instead.
+Both esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored. The following esbuild options were set: `{ jsx: 'automatic', jsxImportSource: undefined }`
+
+ RUN  v4.1.2 C:/Users/hbgan/OneDrive/Robert/learn/logistics/frontend
+
+Browserslist: caniuse-lite is outdated. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Rebuilding...
+
+Done in 1416ms.
+
+ Test Files  41 passed (41)
+      Tests  315 passed (315)
+   Start at  19:45:03
+   Duration  21.66s (transform 6.01s, setup 7.26s, import 19.53s, tests 28.49s, environment 76.85s)
+
