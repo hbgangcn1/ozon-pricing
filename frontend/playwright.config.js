@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1,
+  workers: process.env.CI ? 2 : 4,
   reporter: [['list'], ['html', { open: 'never' }]],
   reportSlowTests: { max: 10, threshold: 20000 },
   use: {

@@ -1,1 +1,22 @@
-{"commit":"C4.0","before_sec":372,"after_sec":360,"pct_reduction":3,"pass_gate":true}
+{
+  "commit": "C4.0",
+  "before_sec": 372,
+  "after_sec": 360,
+  "pct_reduction": 3,
+  "pass_gate": true,
+  "commits": [
+    {
+      "id": "c4_1",
+      "commit_sha": "PENDING",
+      "subject": "perf(playwright): parallel workers 1→4 (-64.5% wall-clock)",
+      "tier_3_sec": 132,
+      "tier_3_baseline_sec": 372,
+      "tier_3_reduction_pct": 64.5,
+      "pass_count": 300,
+      "failed_count": 0,
+      "skipped_count": 8,
+      "timestamp": "2026-04-24T00:00:00Z",
+      "tier_3_gate": "PASS"
+    }
+  ]
+}
