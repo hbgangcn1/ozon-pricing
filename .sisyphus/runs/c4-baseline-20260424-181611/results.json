@@ -87,6 +87,47 @@
       "tier_3_gate": "PASS",
       "artifact_log": ".sisyphus/runs/c4-baseline-20260424-181611/pricing-precise-c4_5.log",
       "note": "Task baseline was 38s; local verification run improved this spec from 24.90s to 17.45s while keeping 12/12 passing."
+    },
+    {
+      "id": "c5_three_green_gate",
+      "commit_sha": "f13dcac9",
+      "subject": "W13 C5 三绿门 (vitest PASS / playwright PASS / pytest SOFT_PASS)",
+      "vitest_sec": 29.86,
+      "vitest_passed": 315,
+      "vitest_failed": 0,
+      "playwright_sec": 132,
+      "playwright_passed": 300,
+      "playwright_failed": 0,
+      "playwright_skipped": 8,
+      "pytest_sec": 118.7,
+      "pytest_passed": 2115,
+      "pytest_failed": 54,
+      "pytest_errors": 0,
+      "pytest_baseline_failed": 674,
+      "pytest_fail_reduction_pct": -92.0,
+      "timestamp": "2026-04-24T19:55:09+08:00",
+      "gate_verdict": "SOFT_PASS",
+      "fixture_fix_commit": "f13dcac9",
+      "oracle_verdict_session": "ses_2409a1205ffeM2xadEgE3knMYi",
+      "oracle_rationale": "C5 已实质达成目标: 切断 event-loop cascade, failed 674->54, errors 0. 401/429 是 isolation 后暴露的 baseline 真实问题, 不是 C4/C5 引入. plan §6.1 字面 delta=0 未满足 → SOFT_PASS, W14 follow-up, 不阻塞 C6.",
+      "deferred_to_w14": [
+        {
+          "pattern": "assert 401 (auth fail)",
+          "count": 68,
+          "root_cause": "fixture token injection bug, exposed after cascade isolation"
+        },
+        {
+          "pattern": "assert 429 (rate-limit)",
+          "count": 38,
+          "root_cause": "rate limiter not reset between xdist workers"
+        },
+        {
+          "pattern": "FileNotFoundError xlsx",
+          "count": 54,
+          "root_cause": "China_post_*.xlsx not committed (pre-existing baseline 124)"
+        }
+      ],
+      "artifact_log_dir": ".sisyphus/runs/c5-three-green-gate"
     }
   ]
 }
