@@ -206,3 +206,12 @@ qa_script*.cjs
 qa_script*.js
 qa_script*.mjs
 docs/qa/screenshot.png
+
+# Wave-N agent 进度日志（agent 后台跑 playwright/pytest 输出 + pid 重定向文件）
+wave*.txt
+wave*.err.txt
+wave*.pid
+*-failures.txt
+frontend/wave*.txt
+frontend/wave*.err.txt
+frontend/wave*.pid
