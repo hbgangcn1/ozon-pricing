@@ -161,6 +161,7 @@ Test-Path "C:\Users\hbgan\OneDrive\Robert\learn\logistics\tests"  # 应返回 Tr
 - 数据库批量迁移、备份、恢复
 - 大规模脚本（构建、批量导入、批量计算）
 - 任何历史上观察到 ≥30s 的命令
+- **任何预计整体 ≥1min 的多步任务（即使单步 <30s）**：Playwright MCP 浏览器自动化序列（login → navigate → screenshot × N）、Manual QA 多页面截图、批量文件改写（≥3 文件）、连续 ≥3 次 MCP 工具调用
 
 #### 强制做法（三选一,优先级从高到低）
 
@@ -210,6 +211,27 @@ $proc = Start-Process -FilePath "npx.cmd" `
 #### 进度回报频率
 - 后台命令运行期间,**至少每 60 秒**给用户一条进度更新（哪怕是"仍在运行,已 X 秒"）
 - 命令完成后立即报告: 总耗时 + 退出码 + 关键摘要(如 pass/fail 数)
+
+#### 多步骤序列任务（Playwright MCP / Manual QA / 批量改写）
+
+> ⚠️ **历史教训（R-STUCK-MCP）**: 后端启动 3.8s 完成后 agent 静默,接着调 Playwright MCP 截图 5 张,期间 1-3 分钟无任何文字输出 → 用户面对黑屏判定"卡住"。即使每个 MCP 调用 < 30s,串起来就是长程任务。
+
+##### 触发条件
+- 任何预计整体 ≥1min 的多步任务,即使每步 <30s 都满足
+- 典型场景: Playwright MCP login→navigate→screenshot × N、Manual QA 多页面截图、批量改写 ≥3 个文件、连续 ≥3 次 MCP 工具调用
+
+##### 强制做法
+1. **开工前一句话宣告**: "接下来 N 步,预计 X 分钟,每步完成回报"
+   - 例: "Manual QA 5 截图,预计 2-3 分钟。步骤: 登录 → /statistics → /subscriptions → /product-import → /logistics-pool → /users。每步完成报告。"
+2. **每步开始前 1 行声明**: `[step k/N] 正在 {action}...`
+3. **每步完成后 1 行回报**: `[step k/N done, took Ys] {summary}`
+4. **任何单步失败立即停 + 报错**,不静默重试,不跳过
+
+##### 反模式（禁止）
+- ❌ 连续调用 5+ 个 MCP 工具中间不发任何文字
+- ❌ 启动后端 / 验证端口存活后直接进入下一步而不告知"准备进入 step 2"
+- ❌ Manual QA 截图全做完才一次性报告"完成 5 张",中间静默 2 分钟
+- ❌ 假设单步 <30s 就豁免进度回报 — 串行起来就是长程任务
 
 ### 后端/前端进程启动规则（用户已授权 agent 自主管理）
   - **历史教训**：直接 `uvicorn api.main:app` 或 `npm run dev` 在前台运行会阻塞 agent shell
