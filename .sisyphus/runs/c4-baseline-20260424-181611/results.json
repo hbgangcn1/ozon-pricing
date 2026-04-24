@@ -7,7 +7,7 @@
   "commits": [
     {
       "id": "c4_1",
-      "commit_sha": "PENDING",
+      "commit_sha": "8ff1374f",
       "subject": "perf(playwright): parallel workers 1→4 (-64.5% wall-clock)",
       "tier_3_sec": 132,
       "tier_3_baseline_sec": 372,
