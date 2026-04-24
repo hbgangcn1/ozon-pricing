@@ -23,6 +23,7 @@ test.describe('产品批量导入流程', () => {
   test('上传区域包含文件选择按钮', async ({ page }) => {
     await page.goto('/product-import')
     await page.waitForLoadState('domcontentloaded')
+    await expect(page.locator('h1, h2')).toBeVisible({ timeout: 8000 })
 
     const fileInput = page.locator('input[type="file"]')
     const uploadBtn = page.getByRole('button', { name: /上传|选择文件|导入/ })
@@ -59,6 +60,7 @@ test.describe('产品批量导入流程', () => {
   test('产品导入页面字段映射区域结构正确', async ({ page }) => {
     await page.goto('/product-import')
     await page.waitForLoadState('domcontentloaded')
+    await expect(page.locator('h1, h2')).toBeVisible({ timeout: 8000 })
 
     const pageContent = await page.locator('body').textContent()
     const hasNameField = pageContent.includes('产品名称')
@@ -69,6 +71,7 @@ test.describe('产品批量导入流程', () => {
   test('导入页面不包含货币字段', async ({ page }) => {
     await page.goto('/product-import')
     await page.waitForLoadState('domcontentloaded')
+    await expect(page.locator('h1, h2')).toBeVisible({ timeout: 8000 })
 
     const pageContent = await page.locator('body').textContent()
     expect(pageContent).not.toContain('货币')
