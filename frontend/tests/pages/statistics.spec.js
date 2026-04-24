@@ -7,8 +7,7 @@ test.describe('数据统计页面 — /statistics (admin)', () => {
   })
 
   test('页面加载不崩溃', async ({ page }) => {
-    const bodyText = await page.evaluate(() => document.body.innerText)
-    expect(bodyText.length).toBeGreaterThan(50)
+    await expect(page.locator('h1')).toBeVisible({ timeout: 8000 })
   })
 
   test('页面标题包含数据统计', async ({ page }) => {
@@ -19,14 +18,13 @@ test.describe('数据统计页面 — /statistics (admin)', () => {
     await expect(page.getByRole('tablist')).toBeVisible()
   })
 
-  test('七个标签页都存在', async ({ page }) => {
+  test('六个标签页都存在', async ({ page }) => {
     await expect(page.getByRole('tab', { name: /总览/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /留存分析/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /用户活跃/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /充值与收入/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /操作日志/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /登录记录/ })).toBeVisible()
-    await expect(page.getByRole('tab', { name: /异常监控/ })).toBeVisible()
   })
 
   test('总览标签页默认激活显示统计卡片', async ({ page }) => {
@@ -86,10 +84,8 @@ test.describe('数据统计页面 — /statistics (admin)', () => {
     await expect(header).toContainText('状态')
   })
 
-  test('切换到异常监控标签页', async ({ page }) => {
-    await page.getByRole('tab', { name: /异常监控/ }).click()
-    await expect(page.getByText('系统异常告警')).toBeVisible()
-    await expect(page.getByText(/暂无异常|系统运行正常/).first()).toBeVisible()
+  test('异常监控标签页已下线', async ({ page }) => {
+    await expect(page.getByRole('tab', { name: /异常监控/ })).toHaveCount(0)
   })
 
   test('操作日志有导出按钮', async ({ page }) => {
