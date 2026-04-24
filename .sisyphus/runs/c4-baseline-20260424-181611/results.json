@@ -32,7 +32,28 @@
       "warning_count": 29,
       "timestamp": "2026-04-24T00:00:00Z",
       "tier_3_gate": "SOFT_PASS",
-      "pytest_timeout_version": "2.4.0"
+      "pytest_timeout_version": "2.4.0",
+      "note_supersedes": "Initial commit data superseded by c4_4_fix re-measurement (Oracle D verification)"
+    },
+    {
+      "id": "c4_4_fix",
+      "subject": "fix(W13C4.4): Oracle D + Oracle C - tune -n 4 + untrack requirements_test.txt",
+      "supersedes": "c4_4",
+      "wall_clock_sec": 67.85,
+      "tier_3_sec": 67.85,
+      "tier_3_baseline_sec": 125,
+      "tier_3_reduction_pct": 45.8,
+      "pass_count": 1816,
+      "failed_count": 348,
+      "error_count": 5,
+      "warning_count": 46,
+      "timestamp": "2026-04-24T19:35:00Z",
+      "tier_3_gate": "PASS",
+      "oracle_decisions": {
+        "D_n4_vs_n_auto": "Confirmed +pass / -fail drift is event-loop pollution removal (H1), not test-skipping (H2). RuntimeError 'no current event loop' baseline 1980 -> n_auto 444 -> n_4 ~similar. -n 4 chosen to reduce isolation pressure vs auto (8 worker on 8-core).",
+        "C_pytest_timeout_dep": "Untrack requirements_test.txt from .gitignore (verified safe - only public packages, no machine paths/tokens). pytest-timeout==2.4.0 now version-controlled.",
+        "errors_followup": "5 errors all UniqueViolationError on users_username_key fixture - xdist worker username collision. Follow-up: prefix test usernames with worker_id. Defer to W14."
+      }
     }
   ]
 }

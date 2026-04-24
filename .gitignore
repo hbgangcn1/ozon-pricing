@@ -100,7 +100,6 @@ node_modules/
 pyrightconfig.json
 run_tests.py
 run_tests_with_progress.py
-requirements_test.txt
 tests/test_ui_user_blocks.py
 
 # 临时调试和修复文件
