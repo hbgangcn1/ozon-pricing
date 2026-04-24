@@ -152,6 +152,65 @@ Test-Path "C:\Users\hbgan\OneDrive\Robert\learn\logistics\tests"  # 应返回 Tr
 - 如果目录已存在 → 直接写文件，不执行任何 mkdir
 - 如果目录不存在 → 用安全 API 创建（`exist_ok=True` / `recursive: true`）
 
+### 长程命令进度可见性规则（必须遵守,防止"卡住无反应"）
+
+> ⚠️ **任何预计超过 30 秒的命令都属于"长程命令"。Agent 必须保证用户随时能看到进度,绝不可让用户面对长时间静默等待。**
+
+#### 触发条件（满足任一即视为长程命令）
+- 整套测试运行（pytest 全量、playwright/vitest 全量、E2E）
+- 数据库批量迁移、备份、恢复
+- 大规模脚本（构建、批量导入、批量计算）
+- 任何历史上观察到 ≥30s 的命令
+
+#### 强制做法（三选一,优先级从高到低）
+
+**方案 A — 后台运行 + 轮询日志（推荐,适用于 ≥2 分钟的命令）**
+```powershell
+# 1. 后台启动,日志写绝对路径文件
+$logOut = "C:\Users\hbgan\OneDrive\Robert\learn\logistics\run.log"
+$logErr = "C:\Users\hbgan\OneDrive\Robert\learn\logistics\run.err.log"
+$proc = Start-Process -FilePath "npx.cmd" `
+  -ArgumentList "playwright","test","--reporter=list" `
+  -RedirectStandardOutput $logOut -RedirectStandardError $logErr `
+  -NoNewWindow -PassThru -WorkingDirectory "C:\...\frontend"
+
+# 2. 每 10-15 秒 Get-Content -Tail 30 一次,显示进度给用户
+# 3. 设置硬超时（默认 10 分钟,Playwright 全量 25 分钟）
+# 4. 进程完成或超时 → kill + 输出最终摘要
+```
+
+**方案 B — 流式 reporter（适用于 30s~2min 的命令）**
+- pytest: `--tb=short -q` (避免 verbose 刷屏)
+- playwright: `--reporter=line` 或 `--reporter=list`(显示每个 test 进度)
+- vitest 4.x: 默认 reporter（**禁用 `--reporter=basic`/`verbose`**）
+- npm/pip install: 默认输出已带进度
+
+**方案 C — 分块执行（适用于可拆分的批量任务）**
+- 把 312 个 Playwright test 按 spec 文件分批跑,每批 commit 进度
+- 每完成一批就向用户回报: "已完成 X/Y, 当前进度..."
+
+#### 反模式（禁止）
+- ❌ `python -m pytest` 不带参数 + 前台等待
+- ❌ `Select-String -Pattern xxx` 管道 + `Select-Object -Last N`(会缓冲整个流)
+- ❌ Bash 工具默认 120s 超时,但 agent 不显示中间进度,用户面对 2 分钟黑屏
+- ❌ Start-Process 后立即 `Wait-Process` 不轮询输出
+- ❌ 没设置硬超时,任由命令无限挂起
+
+#### Bash 工具内置 timeout 字段（必用）
+- 任何长程命令调用 `bash` 工具时,**必须显式设置 `timeout` 参数**(单位 ms,默认 120000)
+- Playwright 全量: `timeout: 1800000` (30 分钟)
+- pytest 全量: `timeout: 600000` (10 分钟)
+- alembic upgrade: `timeout: 60000` (1 分钟)
+- npm install: `timeout: 300000` (5 分钟)
+
+#### 用户反馈触发条件（自我审查）
+- 若用户说"卡住了 / 没反应 / 好久没动 / 看不到进度" → 立即停止当前命令,改用方案 A/B/C 重做
+- 历史教训: R-STUCK-1/2/3/4/最新 + R-PROGRESS + R-TIMEOUT 都是这条规则缺失导致
+
+#### 进度回报频率
+- 后台命令运行期间,**至少每 60 秒**给用户一条进度更新（哪怕是"仍在运行,已 X 秒"）
+- 命令完成后立即报告: 总耗时 + 退出码 + 关键摘要(如 pass/fail 数)
+
 ### 后端/前端进程启动规则（用户已授权 agent 自主管理）
   - **历史教训**：直接 `uvicorn api.main:app` 或 `npm run dev` 在前台运行会阻塞 agent shell
   - **正确做法**：必须用 `Start-Process` 后台启动 + 重定向 stdout/stderr 到文件,**绝不前台运行**

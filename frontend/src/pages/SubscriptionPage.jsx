@@ -63,7 +63,7 @@ function SubscriptionPage() {
             calc_limit: -1,
             logistics_limit: 1,
           })),
-          subscriptionsAPI.getPlans(),
+          subscriptionsAPI.getPlans().catch(() => []),
         ])
         if (!controller.signal.aborted) {
           setCurrentPlan(subData)
@@ -230,7 +230,7 @@ function SubscriptionPage() {
                 </div>
 
                 <div className="mb-4 flex-1">
-                  {plan.features.map((f) => (
+                  {(Array.isArray(plan.features) ? plan.features : []).map((f) => (
                     <div key={f} className="flex items-start text-sm text-text-secondary mb-2">
                       <CheckCircle className="w-4 h-4 text-status-success mr-2 mt-0.5 shrink-0" />
                       <span>{f}</span>

@@ -9,6 +9,16 @@ from models.user import Plan
 logger = logging.getLogger(__name__)
 
 
+def _decode_features(raw) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if item]
+    if isinstance(raw, str):
+        return [token.strip() for token in raw.split("|") if token.strip()]
+    return []
+
+
 def _plan_to_dict(plan: Plan) -> dict:
     return {
         "id": plan.id,
@@ -23,7 +33,7 @@ def _plan_to_dict(plan: Plan) -> dict:
         "calc_limit": plan.calc_limit,
         "logistics_limit": plan.logistics_limit,
         "description": plan.description,
-        "features": plan.features,
+        "features": _decode_features(plan.features),
         "is_active": plan.is_active,
         "sort_order": plan.sort_order,
         "created_at": plan.created_at,

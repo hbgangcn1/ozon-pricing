@@ -7,8 +7,7 @@ test.describe('订阅管理页面 — /subscription', () => {
   })
 
   test('页面加载不崩溃', async ({ page }) => {
-    const bodyText = await page.evaluate(() => document.body.innerText)
-    expect(bodyText.length).toBeGreaterThan(50)
+    await expect(page.locator('h1')).toBeVisible({ timeout: 10000 })
   })
 
   test('页面标题包含订阅管理', async ({ page }) => {
