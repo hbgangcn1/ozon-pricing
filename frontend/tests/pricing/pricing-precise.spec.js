@@ -1,57 +1,90 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('精准模式定价计算', () => {
+  test.describe.configure({ mode: 'parallel' })
   test.setTimeout(90000)
 
   async function goPrecise(page) {
-    await page.goto('/pricing')
-    await page.waitForLoadState('domcontentloaded')
-    await page.getByRole('tab', { name: /精准模式/ }).click()
-    await page.waitForTimeout(600)
+    await page.goto('/pricing', { waitUntil: 'domcontentloaded' })
+    const preciseTab = page.getByRole('tab', { name: /精准模式/ })
+    await expect(preciseTab).toBeVisible({ timeout: 5000 })
+    await preciseTab.click()
+    await expect(page.locator('input[placeholder="必填"]')).toBeVisible({ timeout: 5000 })
   }
 
-  async function ensureTestProduct(page) {
-    const cb = page.locator('[role="combobox"]').first()
-    await cb.click()
-    await page.waitForTimeout(400)
+  async function fillPreciseForm(page, name, values = ['60', '400', '20', '15', '10']) {
+    await page.locator('input[placeholder="必填"]').fill(name)
 
-    const optCount = await page.locator('[role="option"]').count()
-    if (optCount > 1) {
-      await page.locator('[role="option"]').nth(1).click()
-      await page.waitForTimeout(300)
+    const numInputs = page.locator('input[type="number"]')
+    for (const [index, value] of values.entries()) {
+      await numInputs.nth(index).fill(value)
+    }
+  }
+
+  function waitForProductMutation(page, methods = ['POST']) {
+    return page.waitForResponse(
+      response => response.url().includes('/api/products') && methods.includes(response.request().method()),
+      { timeout: 10000 }
+    )
+  }
+
+  function waitForPricingResponse(page) {
+    return page.waitForResponse(
+      response => response.url().includes('/api/pricing') && response.request().method() === 'POST',
+      { timeout: 15000 }
+    )
+  }
+
+  async function selectFirstSavedProduct(page) {
+    const productCombobox = page.locator('[role="combobox"]').first()
+    await productCombobox.click()
+
+    const productOptions = page.locator('[role="option"]')
+    await expect(productOptions.first()).toBeVisible({ timeout: 3000 }).catch(() => null)
+
+    const optionCount = await productOptions.count()
+    if (optionCount > 1) {
+      await productOptions.nth(1).click()
+      await expect(page.locator('input[placeholder="必填"]')).not.toHaveValue('', { timeout: 3000 })
       return true
     }
 
     await page.keyboard.press('Escape')
-    await page.waitForTimeout(200)
+    return false
+  }
 
-    const nameInput = page.locator('input[placeholder="必填"]')
-    await nameInput.fill(`PreciseTest${Date.now() % 10000}`)
-    const numInputs = page.locator('input[type="number"]')
-    await numInputs.nth(0).fill('60')
-    await numInputs.nth(1).fill('400')
-    await numInputs.nth(2).fill('20')
-    await numInputs.nth(3).fill('15')
-    await numInputs.nth(4).fill('10')
+  async function ensureTestProduct(page) {
+    const hasExistingProduct = await selectFirstSavedProduct(page)
+    if (hasExistingProduct) {
+      return true
+    }
 
-    await page.getByRole('button', { name: /保存产品/ }).click()
-    await page.waitForResponse(
-      r => r.url().includes('/api/products') && r.request().method() === 'POST',
-      { timeout: 10000 }
-    ).catch(() => null)
-    await page.waitForTimeout(800)
+    await fillPreciseForm(page, `PreciseTest${Date.now() % 10000}`)
+    const saveButton = page.getByRole('button', { name: /保存产品/ })
+    await Promise.all([
+      waitForProductMutation(page).catch(() => null),
+      saveButton.click(),
+    ])
+
+    await expect
+      .poll(async () => {
+        const productCombobox = page.locator('[role="combobox"]').first()
+        await productCombobox.click()
+        const optionCount = await page.locator('[role="option"]').count()
+        await page.keyboard.press('Escape')
+        return optionCount
+      }, { timeout: 5000 })
+      .toBeGreaterThan(1)
 
     return false
   }
 
   test('精准模式标签页可切换', async ({ page }) => {
-    await page.goto('/pricing')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/pricing', { waitUntil: 'domcontentloaded' })
 
     const preciseTab = page.getByRole('tab', { name: /精准模式/ })
     await expect(preciseTab).toBeVisible({ timeout: 5000 })
     await preciseTab.click()
-    await page.waitForTimeout(300)
 
     await expect(page.locator('input[placeholder="必填"]')).toBeVisible({ timeout: 5000 })
   })
@@ -83,24 +116,13 @@ test.describe('精准模式定价计算', () => {
     const suffix = Date.now() % 100000
     const testName = `PreciseSave${suffix}`
 
-    const nameInput = page.locator('input[placeholder="必填"]')
-    await nameInput.fill(testName)
+    await fillPreciseForm(page, testName, ['45', '300', '15', '10', '8'])
 
-    const numInputs = page.locator('input[type="number"]')
-    await numInputs.nth(0).fill('45')
-    await numInputs.nth(1).fill('300')
-    await numInputs.nth(2).fill('15')
-    await numInputs.nth(3).fill('10')
-    await numInputs.nth(4).fill('8')
+    await Promise.all([
+      waitForProductMutation(page).catch(() => null),
+      page.getByRole('button', { name: /保存产品/ }).click(),
+    ])
 
-    await page.getByRole('button', { name: /保存产品/ }).click()
-
-    await page.waitForResponse(
-      r => r.url().includes('/api/products') && r.request().method() === 'POST',
-      { timeout: 10000 }
-    ).catch(() => null)
-
-    await page.waitForTimeout(800)
     const bodyLength = await page.evaluate(() => document.body.innerText.length)
     expect(bodyLength).toBeGreaterThan(100)
   })
@@ -110,47 +132,27 @@ test.describe('精准模式定价计算', () => {
 
     await ensureTestProduct(page)
 
-    const cb = page.locator('[role="combobox"]').first()
-    await cb.click()
-    await page.waitForTimeout(400)
+    const hasSelectedProduct = await selectFirstSavedProduct(page)
+    expect(hasSelectedProduct).toBeTruthy()
 
-    const optCount = await page.locator('[role="option"]').count()
-    if (optCount > 1) {
-      await page.locator('[role="option"]').nth(1).click()
-      await page.waitForTimeout(500)
-
-      const nameInput = page.locator('input[placeholder="必填"]')
-      const nameValue = await nameInput.inputValue()
-      expect(nameValue.length).toBeGreaterThan(0)
-    }
+    const nameValue = await page.locator('input[placeholder="必填"]').inputValue()
+    expect(nameValue.length).toBeGreaterThan(0)
   })
 
   test('精准模式计算 — 填写参数后点击计算不崩溃', async ({ page }) => {
     await goPrecise(page)
 
-    const nameInput = page.locator('input[placeholder="必填"]')
-    await nameInput.fill(`CalcTest${Date.now() % 10000}`)
-
-    const numInputs = page.locator('input[type="number"]')
-    await numInputs.nth(0).fill('55')
-    await numInputs.nth(1).fill('600')
-    await numInputs.nth(2).fill('25')
-    await numInputs.nth(3).fill('18')
-    await numInputs.nth(4).fill('12')
+    await fillPreciseForm(page, `CalcTest${Date.now() % 10000}`, ['55', '600', '25', '18', '12'])
 
     const calcBtn = page.getByRole('button', { name: /开始计算/ })
     await expect(calcBtn).toBeVisible({ timeout: 5000 })
 
     const isDisabled = await calcBtn.isDisabled()
     if (!isDisabled) {
-      const calcResponse = page.waitForResponse(
-        r => r.url().includes('/api/pricing'),
-        { timeout: 20000 }
-      ).catch(() => null)
-
-      await calcBtn.click()
-      await calcResponse
-      await page.waitForTimeout(1500)
+      await Promise.all([
+        waitForPricingResponse(page).catch(() => null),
+        calcBtn.click(),
+      ])
 
       const bodyLength = await page.evaluate(() => document.body.innerText.length)
       expect(bodyLength).toBeGreaterThan(100)
@@ -160,29 +162,17 @@ test.describe('精准模式定价计算', () => {
   test('精准模式计算结果显示或给出正确提示', async ({ page }) => {
     await goPrecise(page)
 
-    const nameInput = page.locator('input[placeholder="必填"]')
-    await nameInput.fill(`ResultTest${Date.now() % 10000}`)
-
-    const numInputs = page.locator('input[type="number"]')
-    await numInputs.nth(0).fill('70')
-    await numInputs.nth(1).fill('800')
-    await numInputs.nth(2).fill('30')
-    await numInputs.nth(3).fill('20')
-    await numInputs.nth(4).fill('15')
+    await fillPreciseForm(page, `ResultTest${Date.now() % 10000}`, ['70', '800', '30', '20', '15'])
 
     const calcBtn = page.getByRole('button', { name: /开始计算/ })
     await expect(calcBtn).toBeVisible({ timeout: 5000 })
 
     const isDisabled = await calcBtn.isDisabled()
     if (!isDisabled) {
-      const calcResponse = page.waitForResponse(
-        r => r.url().includes('/api/pricing'),
-        { timeout: 20000 }
-      ).catch(() => null)
-
-      await calcBtn.click()
-      const resp = await calcResponse
-      await page.waitForTimeout(1500)
+      const resp = await Promise.all([
+        waitForPricingResponse(page).catch(() => null),
+        calcBtn.click(),
+      ]).then(([response]) => response)
 
       if (resp && resp.status() === 200) {
         const resultSection = page.locator('text=/价格优先|速度优先|汇率|建议售价/')
@@ -204,7 +194,6 @@ test.describe('精准模式定价计算', () => {
 
     const cylinderRadio = page.locator('label[for="pkg-cylinder"]')
     await cylinderRadio.click()
-    await page.waitForTimeout(300)
 
     await expect(page.getByText('圆柱直径（厘米）')).toBeVisible({ timeout: 3000 })
   })
@@ -216,15 +205,7 @@ test.describe('精准模式定价计算', () => {
     const suffix = Date.now() % 100000
     const testName = `CommCat${suffix}`
 
-    const nameInput = page.locator('input[placeholder="必填"]')
-    await nameInput.fill(testName)
-
-    const numInputs = page.locator('input[type="number"]')
-    await numInputs.nth(0).fill('50')
-    await numInputs.nth(1).fill('400')
-    await numInputs.nth(2).fill('20')
-    await numInputs.nth(3).fill('15')
-    await numInputs.nth(4).fill('10')
+    await fillPreciseForm(page, testName)
 
     // 选择佣金类目（如果有可选项）
     const categorySelects = page.locator('text=佣金类目').locator('..').locator('[role="combobox"]')
@@ -232,41 +213,29 @@ test.describe('精准模式定价计算', () => {
 
     if (hasCategorySelect > 0) {
       await categorySelects.first().click()
-      await page.waitForTimeout(400)
 
       const options = page.locator('[role="option"]')
+      await expect(options.first()).toBeVisible({ timeout: 3000 }).catch(() => null)
       const optCount = await options.count()
 
       if (optCount > 1) {
         // 选择第二个选项（跳过"不使用类目"）
         await options.nth(1).click()
-        await page.waitForTimeout(300)
 
         // 保存产品
-        await page.getByRole('button', { name: /保存产品/ }).click()
-        await page.waitForResponse(
-          r => r.url().includes('/api/products') &&
-               (r.request().method() === 'POST' || r.request().method() === 'PUT'),
-          { timeout: 10000 }
-        ).catch(() => null)
-        await page.waitForTimeout(800)
+        await Promise.all([
+          waitForProductMutation(page, ['POST', 'PUT']).catch(() => null),
+          page.getByRole('button', { name: /保存产品/ }).click(),
+        ])
 
         // 重新选择产品下拉菜单，找到刚保存的产品
         const productCombobox = page.locator('[role="combobox"]').first()
         await productCombobox.click()
-        await page.waitForTimeout(400)
 
         // 选择包含我们测试名称的产品
-        const productOptions = page.locator('[role="option"]')
-        const prodCount = await productOptions.count()
-        for (let i = 0; i < prodCount; i++) {
-          const text = await productOptions.nth(i).textContent()
-          if (text.includes(testName)) {
-            await productOptions.nth(i).click()
-            await page.waitForTimeout(500)
-            break
-          }
-        }
+        const productOption = page.locator('[role="option"]').filter({ hasText: testName }).first()
+        await expect(productOption).toBeVisible({ timeout: 5000 })
+        await productOption.click()
 
         // 验证佣金类目是否正确回显（不再显示占位文字"选择佣金类目"）
         const categoryTrigger = page.locator('text=佣金类目').locator('..').locator('[role="combobox"]')
