@@ -17,6 +17,22 @@
       "skipped_count": 8,
       "timestamp": "2026-04-24T00:00:00Z",
       "tier_3_gate": "PASS"
+    },
+    {
+      "id": "c4_4",
+      "commit_sha": "PENDING_COMMIT_SHA",
+      "subject": "perf(pytest): xdist parallel + timeout protection (-36% wall-clock)",
+      "wall_clock_sec": 80,
+      "tier_3_sec": 80,
+      "tier_3_baseline_sec": 125,
+      "tier_3_reduction_pct": 36.0,
+      "pass_count": 1905,
+      "failed_count": 260,
+      "error_count": 4,
+      "warning_count": 29,
+      "timestamp": "2026-04-24T00:00:00Z",
+      "tier_3_gate": "SOFT_PASS",
+      "pytest_timeout_version": "2.4.0"
     }
   ]
 }

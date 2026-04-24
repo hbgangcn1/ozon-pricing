@@ -228,6 +228,9 @@ def _cleanup_test_users(conn) -> None:
 
 
 def pytest_sessionfinish(session, exitstatus):
+    # xdist worker guard: only master executes session-end side effects
+    if hasattr(session.config, "workerinput"):
+        return
     _ = session
     _ = exitstatus
     try:
