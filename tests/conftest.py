@@ -161,7 +161,8 @@ async def test_user(db_session):
     from db.password import hash_password
     from models.user import User
 
-    username = f"test_user_{int(time.time() * 1000)}"
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    username = f"test_user_{worker_id}_{int(time.time() * 1000)}_{os.getpid()}"
     password = "TestP@ss123456"
     hashed = hash_password(password)
 
@@ -202,7 +203,8 @@ async def test_admin(db_session):
     from db.password import hash_password
     from models.user import User
 
-    username = f"test_admin_{int(time.time() * 1000)}"
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    username = f"test_admin_{worker_id}_{int(time.time() * 1000)}_{os.getpid()}"
     password = "AdminP@ss123456"
     hashed = hash_password(password)
 
