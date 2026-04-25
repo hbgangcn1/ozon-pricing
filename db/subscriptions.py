@@ -8,6 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
+from db.plans import get_plan_by_code
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,42 @@ async def reset_free_users_daily_calculations(
     except Exception:
         logger.warning("重置免费用户每日计算次数失败", exc_info=True)
         return 0
+
+
+async def reset_user_daily_calculations(
+    session: AsyncSession,
+    user_id: int,
+) -> bool:
+    """
+    每日重置检查：
+    - 如果用户套餐的 calc_limit == -1（无限），不处理
+    - 如果今天已经重置过，不处理
+    - 否则重置 remaining_calculations = calc_limit，并更新 last_calculations_reset_date
+    """
+    try:
+        user = await session.get(User, user_id)
+        if not user:
+            return False
+
+        plan = await get_plan_by_code(session, user.subscription_type or "free")
+        if not plan:
+            return False
+
+        calc_limit = plan.get("calc_limit", -1)
+        if calc_limit == -1:
+            return False
+
+        today = date.today().isoformat()
+        if user.last_calculations_reset_date == today:
+            return False
+
+        user.remaining_calculations = calc_limit
+        user.last_calculations_reset_date = today
+        await session.commit()
+        return True
+    except Exception:
+        logger.warning("重置用户每日计算次数失败", exc_info=True)
+        return False
 
 
 def _check_test_status(user_info, user_type):

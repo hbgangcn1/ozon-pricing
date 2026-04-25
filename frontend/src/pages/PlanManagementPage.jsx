@@ -103,7 +103,7 @@ function PlanCard({ plan, onEdit, isEditing, onDelete, onToggle }) {
               <TableCell>{plan.actualPriceYear ? `¥${Number(plan.actualPriceYear).toFixed(2)}` : '-'}</TableCell>
               <TableCell>¥{Number(plan.testPriceMonth).toFixed(2)}</TableCell>
               <TableCell>{plan.testPriceYear ? `¥${Number(plan.testPriceYear).toFixed(2)}` : '-'}</TableCell>
-              <TableCell>{plan.calcLimit === -1 ? '无限' : `${plan.calcLimit}次/月`}</TableCell>
+              <TableCell>{plan.calcLimit === -1 ? '无限' : `${plan.calcLimit}次/天`}</TableCell>
               <TableCell>{plan.logisticsTemplate === -1 ? '无限' : plan.logisticsTemplate}</TableCell>
               <TableCell>{plan.sort}</TableCell>
             </TableRow>

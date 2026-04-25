@@ -126,7 +126,7 @@ function SubscriptionPage() {
   }, [currentPlan, user])
 
   const getCalcLimitText = useCallback((limit) => {
-    return limit === -1 ? '无限次' : `${limit}次/月`
+    return limit === -1 ? '无限次' : `${limit}次/天`
   }, [])
 
   const getLogisticsLimitText = useCallback((limit) => {

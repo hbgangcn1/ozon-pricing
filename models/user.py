@@ -28,6 +28,10 @@ class User(Base):
         Integer,
         server_default=text("'-1'"),
     )
+    last_calculations_reset_date: Mapped[Optional[str]] = mapped_column(
+        String,
+        server_default=text("''"),
+    )
     first_login_date: Mapped[Optional[str]] = mapped_column(String)
     test_days_remaining: Mapped[Optional[int]] = mapped_column(
         Integer,

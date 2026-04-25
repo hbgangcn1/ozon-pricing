@@ -23,6 +23,7 @@ from db.users import (
     get_user_by_id,
 )
 from db.config import is_registration_open
+from db.subscriptions import reset_user_daily_calculations
 from api.models.schemas import (
     UserLogin,
     UserResponse,
@@ -187,6 +188,8 @@ async def login(
         user["username"],
         client_ip,
     )
+    await reset_user_daily_calculations(session, user["id"])
+    refreshed_user = await get_user_by_id(session, user["id"])
     access_token, refresh_token = await _issue_auth_tokens(
         session=session,
         request=request,
@@ -202,7 +205,7 @@ async def login(
             role=user["role"],
             user_type=user.get("user_type", "free"),
             subscription_type=user.get("subscription_type", "free"),
-            remaining_calculations=user.get("remaining_calculations", -1),
+            remaining_calculations=refreshed_user.remaining_calculations if refreshed_user else -1,
             has_security_question=bool(user.get("security_q1")),
         ),
     )

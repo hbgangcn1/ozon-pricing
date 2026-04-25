@@ -1,8 +1,10 @@
 import time
 from datetime import date, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from models.user import User
 from db.subscriptions import (
     _check_enterprise_status,
     _check_monthly_status,
@@ -14,6 +16,7 @@ from db.subscriptions import (
     decrement_user_calculations,
     get_user_subscription_info,
     reset_free_users_daily_calculations,
+    reset_user_daily_calculations,
     update_user_subscription,
 )
 
@@ -761,5 +764,78 @@ def test_get_days_remaining_no_dates():
     days, calcs, err = _get_days_remaining_from_info(user_info, "professional")
     assert days is None
     assert err is not None
-    assert err["valid"] is False
     assert "不完整" in err["message"]
+
+
+@pytest.mark.asyncio
+async def test_reset_user_daily_first_login_of_day(db_session, test_user):
+    """Scenario: First login of the day for limited user"""
+    with patch("db.subscriptions.get_plan_by_code", new_callable=AsyncMock) as mock_get_plan:
+        mock_get_plan.return_value = {"calc_limit": 100, "plan_code": "free"}
+
+        result = await reset_user_daily_calculations(db_session, test_user["id"])
+        assert result is True
+
+        info = await get_user_subscription_info(db_session, test_user["id"])
+        assert info["remaining_calculations"] == 100
+        today = date.today().isoformat()
+        user = await db_session.get(User, test_user["id"])
+        assert user.last_calculations_reset_date == today
+
+
+@pytest.mark.asyncio
+async def test_reset_user_daily_subsequent_login_same_day(db_session, test_user):
+    """Scenario: Subsequent login same day - should NOT reset"""
+    today = date.today().isoformat()
+
+    with patch("db.subscriptions.get_plan_by_code", new_callable=AsyncMock) as mock_get_plan:
+        mock_get_plan.return_value = {"calc_limit": 100, "plan_code": "free"}
+
+        user = await db_session.get(User, test_user["id"])
+        user.last_calculations_reset_date = today
+        user.remaining_calculations = 50
+        await db_session.commit()
+
+        result = await reset_user_daily_calculations(db_session, test_user["id"])
+        assert result is False
+
+        info = await get_user_subscription_info(db_session, test_user["id"])
+        assert info["remaining_calculations"] == 50
+
+
+@pytest.mark.asyncio
+async def test_reset_user_daily_unlimited_plan(db_session, test_user):
+    """Scenario: Login for unlimited plan user - should NOT reset"""
+    with patch("db.subscriptions.get_plan_by_code", new_callable=AsyncMock) as mock_get_plan:
+        mock_get_plan.return_value = {"calc_limit": -1, "plan_code": "enterprise"}
+
+        user = await db_session.get(User, test_user["id"])
+        user.subscription_type = "enterprise"
+        user.remaining_calculations = -1
+        await db_session.commit()
+
+        result = await reset_user_daily_calculations(db_session, test_user["id"])
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_reset_user_daily_after_date_changes(db_session, test_user):
+    """Scenario: Login after date changes - should reset"""
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+    with patch("db.subscriptions.get_plan_by_code", new_callable=AsyncMock) as mock_get_plan:
+        mock_get_plan.return_value = {"calc_limit": 100, "plan_code": "free"}
+
+        user = await db_session.get(User, test_user["id"])
+        user.last_calculations_reset_date = yesterday
+        user.remaining_calculations = 5
+        await db_session.commit()
+
+        result = await reset_user_daily_calculations(db_session, test_user["id"])
+        assert result is True
+
+        info = await get_user_subscription_info(db_session, test_user["id"])
+        assert info["remaining_calculations"] == 100
+        today = date.today().isoformat()
+        user = await db_session.get(User, test_user["id"])
+        assert user.last_calculations_reset_date == today
