@@ -55,7 +55,16 @@ export const FILTER_DESTINATION_OPTIONS = [
   { value: 'UZ', label: '乌兹别克斯坦(UZ)' },
   { value: 'GE', label: '格鲁吉亚(GE)' },
   { value: 'AZ', label: '阿塞拜疆(AZ)' },
+  { value: 'AM', label: '亚美尼亚(AM)' },
 ]
+
+export const DESTINATION_LABEL_MAP = FILTER_DESTINATION_OPTIONS.reduce(
+  (acc, { value, label }) => {
+    acc[value] = label
+    return acc
+  },
+  {}
+)
 
 export const FBP_SERVICE_LEVEL_OPTIONS = [
   { value: 'economy', label: 'Economy' },

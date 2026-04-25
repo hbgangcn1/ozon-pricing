@@ -1,6 +1,5 @@
-import React, { useMemo, useState } from 'react'
+import React from 'react'
 import { Plus } from 'lucide-react'
-import DraftRestoreDialog from '../components/DraftRestoreDialog'
 import { Button } from '../components/ui/button'
 import LogisticsDialogs from './logistics/LogisticsDialogs'
 import LogisticsFilters from './logistics/LogisticsFilters'
@@ -10,43 +9,11 @@ import LogisticsSelectionBar from './logistics/LogisticsSelectionBar'
 import LogisticsTabs from './logistics/LogisticsTabs'
 import { useLogisticsPage } from './logistics/useLogisticsPage'
 
-function countDraftFields(draft) {
-  if (!draft?.form) return 0
-  return Object.values(draft.form).filter((value) => {
-    if (typeof value === 'boolean') return value
-    return value !== '' && value !== null && value !== undefined
-  }).length
-}
-
 export default function LogisticsPage() {
   const logistics = useLogisticsPage()
-  const [draft] = useState(() => logistics.logisticsDraft.loadDraft())
-  const [draftDialogOpen, setDraftDialogOpen] = useState(() => logistics.logisticsDraft.hasDraft())
-  const draftSummary = useMemo(() => {
-    const fieldCount = countDraftFields(draft)
-    return fieldCount > 0 ? `包含 ${fieldCount} 个字段` : undefined
-  }, [draft])
-
-  const handleRestoreDraft = () => {
-    logistics.restoreDraft(draft)
-    logistics.logisticsDraft.clearDraft()
-    setDraftDialogOpen(false)
-  }
-
-  const handleDiscardDraft = () => {
-    logistics.logisticsDraft.clearDraft()
-    setDraftDialogOpen(false)
-  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4">
-      <DraftRestoreDialog
-        open={draftDialogOpen}
-        onRestore={handleRestoreDraft}
-        onDiscard={handleDiscardDraft}
-        summary={draftSummary}
-      />
-
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold font-headline tracking-tight">物流规则管理</h1>
         <Button onClick={logistics.handleAdd} className="transition-all duration-200">

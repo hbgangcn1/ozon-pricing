@@ -130,11 +130,11 @@ describe('LogisticsPoolPage', () => {
     // Check rendered items
     expect(screen.getByText('测试物流 1')).toBeInTheDocument();
     expect(screen.getByText('rfbs')).toBeInTheDocument();
-    expect(screen.getByText('RU')).toBeInTheDocument();
+    expect(screen.getByText('俄罗斯(RU)')).toBeInTheDocument();
     
     expect(screen.getByText('智能物流 FBP')).toBeInTheDocument();
     expect(screen.getByText('fbp')).toBeInTheDocument();
-    expect(screen.getByText('BY')).toBeInTheDocument();
+    expect(screen.getByText('白俄罗斯(BY)')).toBeInTheDocument();
     expect(screen.getByText('standard')).toBeInTheDocument();
     expect(screen.getByText('智能分配')).toBeInTheDocument();
     expect(screen.getByText('生效中')).toBeInTheDocument();

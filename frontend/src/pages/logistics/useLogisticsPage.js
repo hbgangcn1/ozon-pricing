@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { logisticsAPI } from '../../services/api'
-import { useDraftPersist } from '../../hooks/useDraftPersist'
 import { useLogisticsStore } from '../../stores/logisticsStore'
 import { DEFAULT_FORM } from './logisticsConstants'
 import {
@@ -27,26 +26,6 @@ export function useLogisticsPage() {
   const [pageSize, setPageSize] = useState(50)
   const [total, setTotal] = useState(0)
   const [togglingIds, setTogglingIds] = useState(new Set())
-  const draftState = useMemo(() => ({
-    dialogOpen,
-    editingItem: editingItem ? { id: editingItem.id } : null,
-    form,
-    activeTab,
-    filterFulfillment,
-    filterDestination,
-    currentPage,
-    pageSize,
-  }), [
-    activeTab,
-    currentPage,
-    dialogOpen,
-    editingItem,
-    filterDestination,
-    filterFulfillment,
-    form,
-    pageSize,
-  ])
-  const logisticsDraft = useDraftPersist('logistics-page', draftState)
 
   const fetchLogistics = useCallback(async () => {
     setLoading(true)
@@ -254,28 +233,6 @@ export function useLogisticsPage() {
     if (!open) setDeleteConfirmId(null)
   }, [])
 
-  const restoreDraft = useCallback((draft) => {
-    if (!draft || typeof draft !== 'object') return
-
-    if (draft.form && typeof draft.form === 'object') {
-      setForm({ ...DEFAULT_FORM, ...draft.form })
-    }
-
-    const draftEditingId = draft.editingItem?.id
-    if (draftEditingId != null) {
-      setEditingItem(logistics.find((item) => item.id === draftEditingId) || null)
-    } else {
-      setEditingItem(null)
-    }
-
-    setDialogOpen(Boolean(draft.dialogOpen))
-    setActiveTab(draft.activeTab === 'air' ? 'air' : 'land')
-    setFilterFulfillment(typeof draft.filterFulfillment === 'string' ? draft.filterFulfillment : 'all')
-    setFilterDestination(typeof draft.filterDestination === 'string' ? draft.filterDestination : 'all')
-    setCurrentPage(Number.isInteger(draft.currentPage) && draft.currentPage > 0 ? draft.currentPage : 1)
-    setPageSize(Number.isInteger(draft.pageSize) && draft.pageSize > 0 ? draft.pageSize : 50)
-  }, [logistics])
-
   const confirmDelete = useCallback(async () => {
     const id = deleteConfirmId
     setDeleteConfirmId(null)
@@ -305,8 +262,6 @@ export function useLogisticsPage() {
     total,
     totalPages,
     togglingIds,
-    logisticsDraft,
-    restoreDraft,
     fetchLogistics,
     handleAdd,
     handleEdit,

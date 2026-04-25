@@ -115,7 +115,7 @@ def test_infer_type_express_in_category_column():
 @pytest.mark.parametrize(
     ("filename", "expected_format"),
     [
-        ("China_post_10_2_26_ENG_CN_1770625401.xlsx", "china_post"),
+        ("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx", "china_post"),
         ("China_scoring_ENG_CN_7_04_26_1775544002.xlsx", "scoring_rfbs"),
         ("CIS_Delivery_methods_7_04_26_1775544004.xlsx", "cis_rfbs"),
         ("FBP_List_of_services_7_04_26_1775544198.xlsx", "fbp"),
@@ -123,6 +123,12 @@ def test_infer_type_express_in_category_column():
 )
 def test_detect_format_matches_reference_workbooks(filename: str, expected_format: str):
     assert detect_format(_file(filename)) == expected_format
+
+
+def test_detect_format_rejects_legacy_china_post_workbook():
+    legacy = _file("China_post_10_2_26_ENG_CN_1770625401.xlsx")
+    with pytest.raises(ValueError, match="旧版 China Post"):
+        detect_format(legacy)
 
 
 def test_detect_format_raises_for_unknown_workbook(tmp_path: Path):
@@ -139,7 +145,7 @@ def test_detect_format_raises_for_unknown_workbook(tmp_path: Path):
 
 def test_parse_file_china_post_returns_expected_core_fields():
     result = parse_file(
-        _file("China_post_10_2_26_ENG_CN_1770625401.xlsx"),
+        _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx"),
         source_file="china_post_source.xlsx",
     )
 
@@ -156,8 +162,25 @@ def test_parse_file_china_post_returns_expected_core_fields():
     assert row["continue_fee"] == 0.067
     assert row["continue_unit"] == "1g"
     assert row["allow_battery"] == 0
-    assert row["price_min_cny"] > 0
-    assert row["price_limit_cny"] >= row["price_min_cny"]
+    assert row["price_min_cny"] == 0.01
+    assert row["price_limit_cny"] == 135.0
+
+
+def test_parse_file_china_post_parses_dual_sheet_destinations():
+    result = parse_file(
+        _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx"),
+    )
+
+    assert result["format"] == "china_post"
+    rows = result["rows"]
+    assert len(rows) == 14
+    assert result["skipped"] == 0
+    assert result["errors"] == []
+
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["destination"]] = counts.get(r["destination"], 0) + 1
+    assert counts == {"RU": 7, "KZ": 2, "BY": 2, "AM": 1, "UZ": 1, "AZ": 1}
 
 
 def test_parse_file_scoring_rfbs_skips_transition_rows_and_parses_rates():
@@ -257,13 +280,19 @@ def test_parse_file_fbp_max_actual_vs_volume_mode():
 # --------------- type inference integration tests ---------------
 
 
-def test_china_post_eems_is_air_and_others_are_land():
-    result = parse_file(_file("China_post_10_2_26_ENG_CN_1770625401.xlsx"))
+def test_china_post_air_delivery_rows_are_air_and_ground_delivery_rows_are_land():
+    result = parse_file(
+        _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx")
+    )
 
     eems = _find_row(result["rows"], "eEMS")
     assert eems["type"] == "air"
-    economy = _find_row(result["rows"], "eParcel Economy")
+    pudo_standard = _find_row(result["rows"], "China Post to PUDO Standard")
+    assert pudo_standard["type"] == "air"
+    economy = _find_row(result["rows"], "China Post to PUDO Economy")
     assert economy["type"] == "land"
+    epacket_economy_track = _find_row(result["rows"], "ePacket Economy Track")
+    assert epacket_economy_track["type"] == "land"
 
 
 def test_scoring_express_rows_are_air():
@@ -426,7 +455,7 @@ def test_scoring_rfbs_volume_mode_exists():
 # --------------- China Post specific tests ---------------
 
 
-CHINA_POST_FILE = _file("China_post_10_2_26_ENG_CN_1770625401.xlsx")
+CHINA_POST_FILE = _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx")
 
 
 def _china_post_rows():
@@ -435,20 +464,18 @@ def _china_post_rows():
     return result["rows"]
 
 
-def test_china_post_cny_min_from_m_column():
-    """price_min_cny comes from M column (index 12)."""
+def test_china_post_cny_min_from_l_column():
+    """price_min_cny comes from L column (index 11) in NEW two-sheet layout."""
     rows = _china_post_rows()
     row = _find_row(rows, "China Post to PUDO Standard")
-    assert row["price_min_cny"] >= 0.0
-    assert row["price_min_cny"] == round(row["price_min_cny"], 2)
+    assert row["price_min_cny"] == 0.01
 
 
-def test_china_post_cny_max_from_n_column():
-    """price_limit_cny comes from N column (index 13)."""
+def test_china_post_cny_max_from_m_column():
+    """price_limit_cny comes from M column (index 12) in NEW two-sheet layout."""
     rows = _china_post_rows()
     row = _find_row(rows, "China Post to PUDO Standard")
-    assert row["price_limit_cny"] >= 0.0
-    assert row["price_limit_cny"] == round(row["price_limit_cny"], 2)
+    assert row["price_limit_cny"] == 135.0
 
 
 def test_china_post_cny_dash_means_zero():
@@ -586,7 +613,7 @@ def test_china_post_first_weight_mode_eparcel():
     assert row["first_fee"] == 52.5
     assert row["first_weight_g"] == 500
     assert row["base_fee"] == 0.0
-    assert row["continue_fee"] == 15.0
+    assert row["continue_fee"] == 0.15
     assert row["continue_unit"] == "500g"
     assert row["min_weight"] == 0
 

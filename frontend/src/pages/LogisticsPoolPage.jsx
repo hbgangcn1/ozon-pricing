@@ -10,6 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { VirtualTable } from '../components/ui/virtual-table'
 import { logisticsPoolAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
+import { DESTINATION_LABEL_MAP } from './logistics/logisticsConstants'
 
 export default function LogisticsPoolPage() {
   const [logistics, setLogistics] = useState([])
@@ -235,7 +236,7 @@ export default function LogisticsPoolPage() {
       key: 'destination',
       header: '目的地',
       width: '1fr',
-      render: (item) => item.destination,
+      render: (item) => DESTINATION_LABEL_MAP[item.destination] ?? item.destination,
     },
     {
       key: 'fbp_service_level',
@@ -406,7 +407,7 @@ export default function LogisticsPoolPage() {
                 {detailItem?.name || '物流详情'}
               </DialogTitle>
               <div className="text-sm text-text-secondary font-medium">
-                {detailItem?.destination} · {detailItem?.fulfillment_type || '履约类型未知'}
+  {DESTINATION_LABEL_MAP[detailItem?.destination] ?? detailItem?.destination} · {detailItem?.fulfillment_type || '履约类型未知'}
               </div>
             </div>
           </DialogHeader>
@@ -416,7 +417,7 @@ export default function LogisticsPoolPage() {
               { label: '类型', value: detailItem?.type === 'land' ? '陆运' : detailItem?.type === 'air' ? '空运' : detailItem?.type },
               { label: '配送方式', value: detailItem?.delivery_method },
               { label: '履约类型', value: detailItem?.fulfillment_type },
-              { label: '目的地', value: detailItem?.destination }
+      { label: '目的地', value: DESTINATION_LABEL_MAP[detailItem?.destination] ?? detailItem?.destination }
             ]} />
 
             <DetailSection title="时效" fields={[

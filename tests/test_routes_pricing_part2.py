@@ -556,6 +556,7 @@ class TestCalculateBreakevenResponses:
             return {
                 "rfbs_ru": dual,
                 "rfbs_AZ": dual,
+                "rfbs_AM": dual,
                 "rfbs_BY": dual,
                 "rfbs_GE": dual,
                 "rfbs_KGZ": dual,

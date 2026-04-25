@@ -17,6 +17,7 @@ test.describe('精准模式标签页切换', () => {
     { name: '吉尔吉斯斯坦', key: 'rfbs_KGZ' },
     { name: '阿塞拜疆', key: 'rfbs_AZ' },
     { name: '乌兹别克斯坦', key: 'rfbs_UZ' },
+    { name: '亚美尼亚', key: 'rfbs_AM' },
   ]
 
   async function goPrecise(page) {
@@ -209,6 +210,7 @@ test.describe('精准模式标签页切换', () => {
       { main: 'rFBS-独联体', cis: '吉尔吉斯斯坦', key: 'rfbs_KGZ' },
       { main: 'rFBS-独联体', cis: '阿塞拜疆', key: 'rfbs_AZ' },
       { main: 'rFBS-独联体', cis: '乌兹别克斯坦', key: 'rfbs_UZ' },
+      { main: 'rFBS-独联体', cis: '亚美尼亚', key: 'rfbs_AM' },
       { main: 'FBP-仅俄罗斯', key: 'fbp_ru' },
       { main: 'FBP-俄+CIS', key: 'fbp_cis' },
     ]

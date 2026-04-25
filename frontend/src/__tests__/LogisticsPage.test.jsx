@@ -225,28 +225,8 @@ const mockLandLogistics = mockLogistics.filter(l => l.type === 'land');
 const mockAirLogistics = mockLogistics.filter(l => l.type === 'air');
 
 describe('LogisticsPage', () => {
-  const sessionStorageMock = {
-    store: {},
-    getItem: vi.fn((key) => (key in sessionStorageMock.store ? sessionStorageMock.store[key] : null)),
-    setItem: vi.fn((key, value) => {
-      sessionStorageMock.store[key] = String(value);
-    }),
-    removeItem: vi.fn((key) => {
-      delete sessionStorageMock.store[key];
-    }),
-    clear: vi.fn(() => {
-      sessionStorageMock.store = {};
-    }),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorageMock.clear();
-    Object.defineProperty(window, 'sessionStorage', {
-      value: sessionStorageMock,
-      configurable: true,
-      writable: true,
-    });
     useLogisticsStore.mockReturnValue(mockStore);
     logisticsAPI.getAll.mockImplementation((params) => {
       const type = params?.type || 'land';
@@ -519,50 +499,4 @@ describe('LogisticsPage', () => {
     });
   });
 
-  it('shows restore dialog when logistics draft exists on mount', async () => {
-    sessionStorageMock.store['draft:logistics-page'] = JSON.stringify({
-      dialogOpen: true,
-      form: { name: '恢复物流', price_limit_cny: '188.88' },
-    });
-
-    render(<LogisticsPage />);
-
-    expect(await screen.findByText('检测到未完成的填写')).toBeInTheDocument();
-    expect(screen.getByText('包含 2 个字段')).toBeInTheDocument();
-  });
-
-  it('restores logistics form draft after confirmation', async () => {
-    sessionStorageMock.store['draft:logistics-page'] = JSON.stringify({
-      dialogOpen: true,
-      form: {
-        name: '恢复物流',
-        price_limit_cny: '188.88',
-        price_min_cny: '66.66',
-      },
-    });
-
-    render(<LogisticsPage />);
-
-    fireEvent.click(await screen.findByRole('button', { name: '恢复' }));
-
-    expect(screen.getByDisplayValue('恢复物流')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('188.88')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('66.66')).toBeInTheDocument();
-    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:logistics-page');
-  });
-
-  it('discards logistics draft and clears sessionStorage', async () => {
-    sessionStorageMock.store['draft:logistics-page'] = JSON.stringify({
-      dialogOpen: true,
-      form: { name: '恢复物流' },
-    });
-
-    render(<LogisticsPage />);
-
-    fireEvent.click(await screen.findByRole('button', { name: '丢弃' }));
-
-    expect(screen.queryByText('检测到未完成的填写')).not.toBeInTheDocument();
-    expect(sessionStorageMock.store['draft:logistics-page']).toBeUndefined();
-    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:logistics-page');
-  });
 });

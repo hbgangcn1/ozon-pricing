@@ -56,9 +56,9 @@ describe('LoginPage session restore', () => {
   it('shows expired session prompt card and info toast', async () => {
     renderPage('/login?returnTo=%2Fpricing%3Ftab%3Dprecise&reason=expired')
 
-    expect(screen.getByText('您的会话已过期，登录后将恢复您的填写内容')).toBeInTheDocument()
+    expect(screen.getByText('您的会话已过期，请重新登录')).toBeInTheDocument()
     await waitFor(() => {
-      expect(toast.info).toHaveBeenCalledWith('您的会话已过期，登录后将恢复您的填写内容')
+      expect(toast.info).toHaveBeenCalledWith('您的会话已过期，请重新登录')
     })
   })
 

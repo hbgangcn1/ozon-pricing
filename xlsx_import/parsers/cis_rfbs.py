@@ -20,10 +20,12 @@ from xlsx_import.common import (
 
 
 DEST_MAP = {
+    "am": "AM",
     "belarus": "BY",
     "kazakhstan": "KZ",
     "az": "AZ",
     "ge": "GE",
+    "armenia": "AM",
     "uz": "UZ",
     "kgz": "KGZ",
 }

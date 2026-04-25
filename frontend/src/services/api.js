@@ -3,7 +3,6 @@ import { toast } from 'sonner'
 import { useAuthStore } from '../stores/authStore'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
-let refreshPromise = null
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -17,20 +16,6 @@ const apiClient = axios.create({
 function getCsrfToken() {
   const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
   return match ? decodeURIComponent(match[1]) : null
-}
-
-async function refreshAccessToken() {
-  const csrfToken = getCsrfToken()
-  const response = await axios.post(
-    '/auth/refresh',
-    null,
-    {
-      baseURL: API_BASE_URL,
-      withCredentials: true,
-      headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
-    }
-  )
-  return response.data.access_token
 }
 
 function buildSessionExpiredLoginUrl() {
@@ -65,10 +50,20 @@ function redirectToUnauthorizedLogin(message) {
 }
 
 if (import.meta.env.MODE !== 'test') {
-  apiClient.interceptors.request.use((config) => {
+  apiClient.interceptors.request.use(async (config) => {
     const token = useAuthStore.getState().token;
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      if (useAuthStore.getState().shouldRefreshToken()) {
+        try {
+          await useAuthStore.getState().refreshToken()
+        } catch (_) {
+          // Proactive refresh failed; proceed with existing token
+        }
+      }
+      const currentToken = useAuthStore.getState().token
+      if (currentToken) {
+        config.headers.Authorization = `Bearer ${currentToken}`;
+      }
     }
     const csrfToken = getCsrfToken()
     if (csrfToken) {
@@ -83,6 +78,7 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config || {}
     const isRefreshRequest = originalRequest.url?.includes('/auth/refresh')
+      || originalRequest.url?.includes('/auth/refresh-access')
     const status = error.response?.status
     const detail = error.response?.data?.detail
 
@@ -101,13 +97,7 @@ apiClient.interceptors.response.use(
     if (shouldRetry) {
       originalRequest._retry = true
       try {
-        if (!refreshPromise) {
-          refreshPromise = refreshAccessToken().finally(() => {
-            refreshPromise = null
-          })
-        }
-        const newAccessToken = await refreshPromise
-        useAuthStore.getState().setToken(newAccessToken)
+        const newAccessToken = await useAuthStore.getState().refreshToken()
         originalRequest.headers = originalRequest.headers || {}
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
         return apiClient(originalRequest)
@@ -152,7 +142,7 @@ export const authAPI = {
     apiClient.post('/auth/login', { username, password }),
   logout: () => apiClient.post('/auth/logout'),
   getMe: () => apiClient.get('/auth/me'),
-  /** 设置密保问题 */
+  refreshAccess: () => apiClient.post('/auth/refresh-access'),
   setSecurityQuestion: (question, answer) => apiClient.post('/auth/security-question', { question, answer }),
   changePassword: (data) => apiClient.post('/auth/change-password', data, { auth401Mode: 'local' }),
   register: (data) => apiClient.post('/auth/register', data),

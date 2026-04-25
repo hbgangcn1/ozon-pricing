@@ -71,4 +71,5 @@ export const CIS_COUNTRIES = [
   { key: 'rfbs_UZ', label: '乌兹别克斯坦' },
   { key: 'rfbs_GE', label: '格鲁吉亚' },
   { key: 'rfbs_AZ', label: '阿塞拜疆' },
+  { key: 'rfbs_AM', label: '亚美尼亚' },
 ]

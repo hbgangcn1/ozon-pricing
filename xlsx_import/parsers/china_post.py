@@ -17,6 +17,42 @@ from xlsx_import.common import (
 
 HEADER_ROW = 5
 
+COL_METHOD = 1
+COL_PRICE = 2
+COL_DAYS = 3
+COL_BATTERIES = 4
+COL_LIQUIDS = 5
+COL_MEASUREMENTS = 6
+COL_WEIGHT_MIN = 7
+COL_WEIGHT_MAX = 8
+COL_CNY_MIN = 11
+COL_CNY_MAX = 12
+COL_TARIFICATION = 17
+COL_VOLUME_CALC = 18
+MAX_COL = 19
+
+TARGET_SHEETS: dict[str, str | None] = {
+    "china to russia by cp": "RU",
+    "china to cis by cp": None,
+}
+
+_CIS_DESTINATION_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("kazakhstan", "KZ"),
+    ("kz", "KZ"),
+    ("belarus", "BY"),
+    ("by", "BY"),
+    ("armenia", "AM"),
+    ("am", "AM"),
+    ("uzbekistan", "UZ"),
+    ("uz", "UZ"),
+    ("azerbaijan", "AZ"),
+    ("az", "AZ"),
+    ("kyrgyzstan", "KGZ"),
+    ("kgz", "KGZ"),
+    ("georgia", "GE"),
+    ("ge", "GE"),
+)
+
 
 def _parse_cny_value(value: object) -> float:
     if isinstance(value, (int, float)):
@@ -32,20 +68,20 @@ def _parse_cny_value(value: object) -> float:
 
 
 def _apply_volume_mode(item: dict, values: list[object]) -> None:
-    raw = normalize_text(values[18]).lower()
+    raw = normalize_text(values[COL_TARIFICATION]).lower()
     item["longest_side_threshold"] = 0
     item["sum_of_sides_threshold"] = 0
     if "no side" in raw and "physical weight" in raw and "one side" in raw:
         match = re.search(r"no side\s*[<>≤≥]\s*(\d+)", raw)
         item["volume_mode"] = "longest_side"
         item["longest_side_threshold"] = int(match.group(1)) if match else 40
-        item["volume_coefficient"] = parse_volume_coeff(values[19])
+        item["volume_coefficient"] = parse_volume_coeff(values[COL_VOLUME_CALC])
     elif not raw or raw == "-" or "physical weight" in raw:
         item["volume_mode"] = "none"
         item["volume_coefficient"] = 0.0
     else:
         item["volume_mode"] = "max_actual_vs_volume"
-        item["volume_coefficient"] = parse_volume_coeff(values[19])
+        item["volume_coefficient"] = parse_volume_coeff(values[COL_VOLUME_CALC])
 
 
 def _parse_size_fields(item: dict, value: object) -> None:
@@ -107,58 +143,118 @@ def _parse_size_fields(item: dict, value: object) -> None:
         item["max_sum_of_sides"], item["max_longest_side"], _ = parse_size_limits(value)
 
 
+def _resolve_cis_destination(method_name: str) -> str | None:
+    lowered = method_name.lower()
+    tokens = re.findall(r"[a-z]+", lowered)
+    token_set = set(tokens)
+    for keyword, code in _CIS_DESTINATION_KEYWORDS:
+        if len(keyword) <= 3:
+            if keyword in token_set:
+                return code
+        else:
+            if keyword in lowered:
+                return code
+    return None
+
+
+def _parse_sheet(ws, source_name: str, fixed_destination: str | None) -> dict:
+    result: dict = {"rows": [], "skipped": 0, "errors": []}
+    for row_num in range(HEADER_ROW + 1, ws.max_row + 1):
+        values: list[object] = [
+            cast(object, ws.cell(row_num, col).value)
+            for col in range(1, MAX_COL + 1)
+        ]
+        if is_blank_row(values):
+            continue
+        name_text = normalize_text(values[COL_METHOD])
+        if not name_text:
+            result["skipped"] += 1
+            continue
+        try:
+            if fixed_destination is not None:
+                destination = fixed_destination
+            else:
+                destination = _resolve_cis_destination(name_text)
+                if not destination:
+                    result["skipped"] += 1
+                    result["errors"].append(
+                        f"row {row_num}: 无法识别 CIS 目的国: {name_text!r}"
+                    )
+                    continue
+
+            item = create_row(name_text, source_name)
+            item["destination"] = destination
+            lowered = name_text.lower()
+            item["type"] = (
+                "air"
+                if "eems" in lowered or "air delivery" in lowered
+                else "land"
+            )
+            item["min_days"], item["max_days"] = parse_days(values[COL_DAYS])
+            item["base_fee"], item["continue_fee"], item["continue_unit"] = (
+                parse_rate(values[COL_PRICE])
+            )
+            min_weight_val = as_int(values[COL_WEIGHT_MIN])
+            if min_weight_val != 0:
+                item["fee_mode"] = "first_weight"
+                item["first_fee"] = item["base_fee"]
+                item["first_weight_g"] = min_weight_val
+                item["base_fee"] = 0.0
+                item["min_weight"] = 0
+            else:
+                item["min_weight"] = min_weight_val
+            item["max_weight"] = as_int(values[COL_WEIGHT_MAX])
+            item["price_min_cny"] = _parse_cny_value(values[COL_CNY_MIN])
+            item["price_limit_cny"] = _parse_cny_value(values[COL_CNY_MAX])
+            _parse_size_fields(item, values[COL_MEASUREMENTS])
+            item["allow_battery"] = parse_yes_no(values[COL_BATTERIES])
+            item["allow_liquid"] = parse_yes_no(values[COL_LIQUIDS])
+            _apply_volume_mode(item, values)
+            result["rows"].append(item)
+        except Exception as exc:
+            result["skipped"] += 1
+            result["errors"].append(f"row {row_num}: {exc}")
+    return result
+
+
+def _select_target_sheets(wb) -> list[tuple[object, str | None]]:
+    selected: list[tuple[object, str | None]] = []
+    for ws in wb.worksheets:
+        title_norm = (ws.title or "").strip().lower()
+        if title_norm in TARGET_SHEETS:
+            selected.append((ws, TARGET_SHEETS[title_norm]))
+    return selected
+
+
 def parse(
     source: object, filepath: str | None = None, source_file: str | None = None
 ) -> dict:
     wb, should_close = load_workbook_source(source)
     try:
         actual_path = filepath or cast(str, source)
-        ws = next(ws for ws in wb.worksheets if "russia-china cp" in ws.title.lower())
         source_name = finalize_source_file(actual_path, source_file)
-        result = {"rows": [], "skipped": 0, "errors": []}
-        for row_num in range(HEADER_ROW + 1, ws.max_row + 1):
-            values: list[object] = [
-                cast(object, ws.cell(row_num, col).value) for col in range(1, 21)
-            ]
-            if is_blank_row(values):
-                continue
-            name_text = normalize_text(values[1])
-            if not name_text:
-                result["skipped"] += 1
-                continue
-            try:
-                item = create_row(name_text, source_name)
-                item["type"] = (
-                    "air"
-                    if "eems" in name_text.lower()
-                    or "air delivery" in name_text.lower()
-                    else "land"
-                )
-                item["min_days"], item["max_days"] = parse_days(values[3])
-                item["base_fee"], item["continue_fee"], item["continue_unit"] = (
-                    parse_rate(values[2])
-                )
-                min_weight_val = as_int(values[8])
-                if min_weight_val != 0:
-                    item["fee_mode"] = "first_weight"
-                    item["first_fee"] = item["base_fee"]
-                    item["first_weight_g"] = min_weight_val
-                    item["base_fee"] = 0.0
-                    item["min_weight"] = 0
-                else:
-                    item["min_weight"] = min_weight_val
-                item["max_weight"] = as_int(values[9])
-                item["price_min_cny"] = _parse_cny_value(values[12])
-                item["price_limit_cny"] = _parse_cny_value(values[13])
-                _parse_size_fields(item, values[7])
-                item["allow_battery"] = parse_yes_no(values[5])
-                item["allow_liquid"] = parse_yes_no(values[6])
-                _apply_volume_mode(item, values)
-                result["rows"].append(item)
-            except Exception as exc:
-                result["skipped"] += 1
-                result["errors"].append(f"row {row_num}: {exc}")
-        return result
+        sheets = _select_target_sheets(wb)
+        if not sheets:
+            titles = [ws.title for ws in wb.worksheets]
+            raise ValueError(
+                "China Post xlsx 中未找到目标工作表 "
+                f"({list(TARGET_SHEETS.keys())})；实际工作表: {titles}"
+            )
+
+        merged: dict = {"rows": [], "skipped": 0, "errors": []}
+        for ws, fixed_destination in sheets:
+            sub = _parse_sheet(ws, source_name, fixed_destination)
+            merged["rows"].extend(sub["rows"])
+            merged["skipped"] += sub["skipped"]
+            merged["errors"].extend(sub["errors"])
+
+        if not merged["rows"]:
+            raise ValueError(
+                "China Post xlsx 解析后无任何有效行 "
+                f"(skipped={merged['skipped']}, errors={merged['errors']})"
+            )
+
+        return merged
     finally:
         if should_close:
             wb.close()

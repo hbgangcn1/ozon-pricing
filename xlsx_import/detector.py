@@ -2,8 +2,8 @@ import openpyxl
 from openpyxl.workbook.workbook import Workbook
 
 KEYWORDS = (
-    ("russia-china cp", "china_post"),
-    ("russia china", "china_post"),
+    ("china to russia by cp", "china_post"),
+    ("china to cis by cp", "china_post"),
     ("china post", "china_post"),
     ("china rfbs", "scoring_rfbs"),
     ("rfbs", "scoring_rfbs"),
@@ -15,6 +15,8 @@ KEYWORDS = (
     ("china fbp", "fbp"),
     ("fbp", "fbp"),
 )
+
+DEPRECATED_CHINA_POST_SHEETS = {"russia-china cp"}
 
 
 def _detect_by_sheet_names(titles: list[str]) -> str | None:
@@ -37,10 +39,15 @@ def _detect_by_headers(wb: Workbook) -> str | None:
         if "\u4e2d\u6587" in (ws.title or ""):
             continue
 
-        # china_post: row5 col2="delivery method", col3="pudo"
+        # china_post (NEW two-sheet layout): row5 col2="delivery method",
+        # col3="price", col18="tarification"
         r5c2 = _cell_text(ws, 5, 2)
         r5c3 = _cell_text(ws, 5, 3)
-        if "delivery method" in r5c2 and "pudo" in r5c3:
+        if (
+            "delivery method" in r5c2
+            and "price" in r5c3
+            and "tarification" in _cell_text(ws, 5, 18)
+        ):
             return "china_post"
 
         # cis_rfbs: row5 col1="scoring group", col4="delivery method"
@@ -77,6 +84,17 @@ def detect_format(source: str | Workbook) -> str:
 
     wb = source
     titles = [ws.title for ws in wb.worksheets]
+
+    lowered_titles = [t.lower().strip() for t in titles]
+    for deprecated in DEPRECATED_CHINA_POST_SHEETS:
+        if any(deprecated == t or deprecated in t for t in lowered_titles):
+            raise ValueError(
+                "\u65e0\u6cd5\u8bc6\u522bxlsx\u683c\u5f0f: "
+                "\u68c0\u6d4b\u5230\u65e7\u7248 China Post (Russia-China CP) "
+                "\u5de5\u4f5c\u8868\uff0c\u5df2\u4e0d\u518d\u652f\u6301\u3002"
+                "\u8bf7\u8054\u7cfb\u4f9b\u5e94\u5546\u83b7\u53d6\u65b0\u7248 ePacket "
+                f"\u6587\u4ef6\u3002\u5de5\u4f5c\u8868: {titles}"
+            )
 
     result = _detect_by_sheet_names(titles)
     if result:

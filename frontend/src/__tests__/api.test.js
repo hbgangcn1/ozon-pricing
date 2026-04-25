@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => {
   const mockRequestUse = vi.fn()
   const mockResponseUse = vi.fn()
-  const mockAxiosPost = vi.fn()
   const mockLogout = vi.fn()
+  const mockRefreshToken = vi.fn()
+  const mockShouldRefreshToken = vi.fn()
   const mockSetToken = vi.fn()
   const mockGetState = vi.fn()
   const mockApiInstance = Object.assign(vi.fn(), {
@@ -22,8 +23,9 @@ const mocks = vi.hoisted(() => {
   return {
     mockRequestUse,
     mockResponseUse,
-    mockAxiosPost,
     mockLogout,
+    mockRefreshToken,
+    mockShouldRefreshToken,
     mockSetToken,
     mockGetState,
     mockApiInstance,
@@ -72,6 +74,8 @@ describe('api.js', () => {
       token: null,
       logout: mocks.mockLogout,
       setToken: mocks.mockSetToken,
+      refreshToken: mocks.mockRefreshToken,
+      shouldRefreshToken: mocks.mockShouldRefreshToken,
     })
     originalLocation = window.location
     delete window.location
@@ -111,9 +115,7 @@ describe('api.js', () => {
       const originalRequest = { url: '/products', headers: {} }
       const retriedResponse = { ok: true }
 
-      mocks.mockAxiosPost.mockResolvedValue({
-        data: { access_token: 'new-access-token' },
-      })
+      mocks.mockRefreshToken.mockResolvedValue('new-access-token')
       mocks.mockApiInstance.mockResolvedValue(retriedResponse)
 
       const result = await resErrorInterceptor({
@@ -121,17 +123,7 @@ describe('api.js', () => {
         config: originalRequest,
       })
 
-      expect(mocks.mockAxiosPost).toHaveBeenCalledTimes(1)
-      expect(mocks.mockAxiosPost).toHaveBeenCalledWith(
-        '/auth/refresh',
-        null,
-        expect.objectContaining({
-          baseURL: '/api',
-          withCredentials: true,
-          headers: { 'X-CSRF-Token': 'test-csrf-token' },
-        })
-      )
-      expect(mocks.mockSetToken).toHaveBeenCalledWith('new-access-token')
+      expect(mocks.mockRefreshToken).toHaveBeenCalledTimes(1)
       expect(originalRequest._retry).toBe(true)
       expect(originalRequest.headers.Authorization).toBe('Bearer new-access-token')
       expect(mocks.mockApiInstance).toHaveBeenCalledWith(originalRequest)
@@ -145,7 +137,7 @@ describe('api.js', () => {
         response: { status: 401 },
         config: { url: '/products', headers: {} },
       }
-      mocks.mockAxiosPost.mockRejectedValue(new Error('refresh failed'))
+      mocks.mockRefreshToken.mockRejectedValue(new Error('refresh failed'))
 
       await expect(resErrorInterceptor(originalError)).rejects.toBe(originalError)
 
@@ -158,7 +150,7 @@ describe('api.js', () => {
       const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
       const deferred = createDeferred()
 
-      mocks.mockAxiosPost.mockReturnValue(deferred.promise)
+      mocks.mockRefreshToken.mockReturnValue(deferred.promise)
       mocks.mockApiInstance.mockImplementation(async (request) => ({ url: request.url, ok: true }))
 
       const firstRequest = { url: '/products', headers: {} }
@@ -172,12 +164,9 @@ describe('api.js', () => {
         config: secondRequest,
       })
 
-      expect(mocks.mockAxiosPost).toHaveBeenCalledTimes(1)
-
-      deferred.resolve({ data: { access_token: 'shared-token' } })
+      deferred.resolve('shared-token')
       const [firstResult, secondResult] = await Promise.all([firstPromise, secondPromise])
 
-      expect(mocks.mockAxiosPost).toHaveBeenCalledTimes(1)
       expect(firstRequest.headers.Authorization).toBe('Bearer shared-token')
       expect(secondRequest.headers.Authorization).toBe('Bearer shared-token')
       expect(firstResult).toEqual({ url: '/products', ok: true })
@@ -189,7 +178,7 @@ describe('api.js', () => {
       const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
       window.location.pathname = '/login'
       window.location.href = 'http://localhost/login'
-      mocks.mockAxiosPost.mockRejectedValue(new Error('refresh failed'))
+      mocks.mockRefreshToken.mockRejectedValue(new Error('refresh failed'))
 
       await expect(
         resErrorInterceptor({
@@ -241,6 +230,7 @@ describe('api.js', () => {
       expect(authAPI).toHaveProperty('login')
       expect(authAPI).toHaveProperty('logout')
       expect(authAPI).toHaveProperty('getMe')
+      expect(authAPI).toHaveProperty('refreshAccess')
       expect(authAPI).toHaveProperty('setSecurityQuestion')
       expect(productsAPI).toHaveProperty('getAll')
       expect(logisticsAPI).toHaveProperty('batchDelete')
@@ -250,6 +240,14 @@ describe('api.js', () => {
       expect(adminAPI).toHaveProperty('getUsers')
       expect(settingsAPI).toHaveProperty('getBackupStats')
       expect(statisticsAPI).toHaveProperty('getOverview')
+    })
+
+    it('refreshAccess posts to /auth/refresh-access', async () => {
+      const { authAPI } = await loadApiModule()
+      mocks.mockApiInstance.post.mockResolvedValue({ access_token: 'fresh-token', token_type: 'bearer' })
+
+      await expect(authAPI.refreshAccess()).resolves.toEqual({ access_token: 'fresh-token', token_type: 'bearer' })
+      expect(mocks.mockApiInstance.post).toHaveBeenCalledWith('/auth/refresh-access')
     })
 
     it('setSecurityQuestion posts question and answer', async () => {

@@ -93,7 +93,7 @@ def _fmt_grouped_result(dual_res, product, rate):
 
 
 def _make_grouped_response(grouped, breakeven_grouped, rate, product, mode):
-    _CIS_CODES = ["AZ", "BY", "GE", "KGZ", "KZ", "UZ"]
+    _CIS_CODES = ["AM", "AZ", "BY", "GE", "KGZ", "KZ", "UZ"]
     all_group_keys = ["rfbs_ru", "fbp_ru", "fbp_cis"] + [
         f"rfbs_{c}" for c in _CIS_CODES
     ]

@@ -5,6 +5,7 @@ import pytest
 
 from security.tokens import (
     create_access_token,
+    create_access_token_from_payload,
     create_refresh_token,
     decode_access_token,
     decode_refresh_token,
@@ -15,6 +16,7 @@ from security.tokens import (
     TOKEN_TYPE_REFRESH,
     SECRET_KEY,
     ALGORITHM,
+    ACCESS_TOKEN_EXPIRE_SECONDS,
 )
 
 
@@ -217,3 +219,71 @@ class TestAccessTokenTypeField:
         token = create_access_token(user_id=1, username="alice")
         payload = decode_access_token(token)
         assert payload["type"] == TOKEN_TYPE_ACCESS
+
+
+class TestCreateAccessTokenFromPayload:
+    def test_returns_string(self):
+        original = create_access_token(user_id=1, username="alice", role="admin")
+        original_payload = decode_access_token(original)
+        new_token = create_access_token_from_payload(original_payload)
+        assert isinstance(new_token, str)
+        assert len(new_token) > 0
+
+    def test_preserves_user_id_username_role(self):
+        original = create_access_token(user_id=99, username="bob", role="moderator")
+        original_payload = decode_access_token(original)
+        new_token = create_access_token_from_payload(original_payload)
+        new_payload = decode_access_token(new_token)
+        assert new_payload["sub"] == "99"
+        assert new_payload["username"] == "bob"
+        assert new_payload["role"] == "moderator"
+
+    def test_updates_iat_and_exp(self):
+        original = create_access_token(user_id=1, username="alice")
+        original_payload = decode_access_token(original)
+        time.sleep(1.1)
+        new_token = create_access_token_from_payload(original_payload)
+        new_payload = decode_access_token(new_token)
+        assert new_payload["iat"] > original_payload["iat"]
+        assert new_payload["exp"] > original_payload["exp"]
+
+    def test_default_expiry_is_standard_duration(self):
+        original = create_access_token(user_id=1, username="alice")
+        original_payload = decode_access_token(original)
+        new_token = create_access_token_from_payload(original_payload)
+        new_payload = decode_access_token(new_token)
+        ttl = new_payload["exp"] - new_payload["iat"]
+        assert ttl == ACCESS_TOKEN_EXPIRE_SECONDS
+
+    def test_custom_expires_delta(self):
+        original = create_access_token(user_id=1, username="alice")
+        original_payload = decode_access_token(original)
+        new_token = create_access_token_from_payload(
+            original_payload, expires_delta=timedelta(seconds=30)
+        )
+        new_payload = decode_access_token(new_token)
+        ttl = new_payload["exp"] - new_payload["iat"]
+        assert ttl == 30
+
+    def test_preserves_sid_if_present(self):
+        token = create_access_token(
+            user_id=1, username="alice", extra_claims={"sid": "session-abc"}
+        )
+        payload = decode_access_token(token)
+        new_token = create_access_token_from_payload(payload)
+        new_payload = decode_access_token(new_token)
+        assert new_payload["sid"] == "session-abc"
+
+    def test_type_field_is_access(self):
+        original = create_access_token(user_id=1, username="alice")
+        original_payload = decode_access_token(original)
+        new_token = create_access_token_from_payload(original_payload)
+        new_payload = decode_access_token(new_token)
+        assert new_payload["type"] == TOKEN_TYPE_ACCESS
+
+    def test_different_token_from_original(self):
+        original = create_access_token(user_id=1, username="alice")
+        original_payload = decode_access_token(original)
+        time.sleep(1.1)
+        new_token = create_access_token_from_payload(original_payload)
+        assert new_token != original

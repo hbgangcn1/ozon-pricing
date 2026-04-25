@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import { useProductStore } from './productStore'
 import { useLogisticsStore } from './logisticsStore'
+import { authAPI } from '../services/api'
 
 const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/about']
 const PROFESSIONAL_TIERS = ['professional', 'enterprise', 'gratitude', 'test']
 const ENTERPRISE_TIERS = ['enterprise', 'gratitude', 'test']
 const initialSessionKicked = { open: false, reason: null }
+const REFRESH_THRESHOLD_SECONDS = 300
+let refreshPromise = null
 
 const normalizeSubscriptionType = (user) => {
   if (!user) return user
@@ -151,6 +154,46 @@ export const useAuthStore = create((set, get) => ({
     const normalizedUser = normalizeSubscriptionType(user)
     persistNormalizedUser(normalizedUser)
     set(buildAuthUserState(normalizedUser))
+  },
+
+  getTokenExpiry: () => {
+    const { token } = get()
+    if (!token) return null
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      if (!payload.exp) return null
+      const now = Math.floor(Date.now() / 1000)
+      return payload.exp - now
+    } catch {
+      return null
+    }
+  },
+
+  refreshToken: async () => {
+    if (refreshPromise) {
+      return refreshPromise
+    }
+    const { token } = get()
+    if (!token) {
+      throw new Error('No token to refresh')
+    }
+    refreshPromise = authAPI.refreshAccess()
+      .then((data) => {
+        const newToken = data.access_token
+        localStorage.setItem('api_token', newToken)
+        set({ token: newToken })
+        return newToken
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+    return refreshPromise
+  },
+
+  shouldRefreshToken: () => {
+    const expiry = get().getTokenExpiry()
+    if (expiry === null) return false
+    return expiry < REFRESH_THRESHOLD_SECONDS
   },
 
   hasPermission: (page) => {

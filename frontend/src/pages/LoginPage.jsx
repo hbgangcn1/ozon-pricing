@@ -34,7 +34,7 @@ function LoginPage() {
 
   useEffect(() => {
     if (reason === 'expired') {
-      toast.info('您的会话已过期，登录后将恢复您的填写内容');
+      toast.info('您的会话已过期，请重新登录');
     }
   }, [reason]);
 
@@ -98,7 +98,7 @@ function LoginPage() {
 
         {reason === 'expired' && (
           <div className="mb-5 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
-            您的会话已过期，登录后将恢复您的填写内容
+            您的会话已过期，请重新登录
           </div>
         )}
 

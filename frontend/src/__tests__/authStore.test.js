@@ -1,9 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAuthStore } from '../stores/authStore'
+import { authAPI } from '../services/api'
+
+vi.mock('../services/api', () => ({
+  authAPI: {
+    refreshAccess: vi.fn(),
+  },
+}))
 
 describe('authStore.js', () => {
   const initialState = useAuthStore.getState()
-  
+
   beforeEach(() => {
     useAuthStore.setState(initialState, true)
     localStorage.clear()
@@ -203,6 +210,202 @@ describe('authStore.js', () => {
       useAuthStore.setState({ user: null })
 
       expect(useAuthStore.getState().getSubscriptionType()).toBe('free')
+    })
+  })
+
+  describe('getTokenExpiry()', () => {
+    it('returns null when token is missing', () => {
+      useAuthStore.setState({ token: null })
+      expect(useAuthStore.getState().getTokenExpiry()).toBeNull()
+    })
+
+    it('returns null for invalid token format', () => {
+      useAuthStore.setState({ token: 'not-a-valid-jwt' })
+      expect(useAuthStore.getState().getTokenExpiry()).toBeNull()
+    })
+
+    it('returns remaining seconds for valid token', () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now,
+        exp: now + 600,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const token = `${header}.${payloadB64}.signature`
+      useAuthStore.setState({ token })
+      const expiry = useAuthStore.getState().getTokenExpiry()
+      expect(expiry).toBeGreaterThan(500)
+      expect(expiry).toBeLessThanOrEqual(600)
+    })
+
+    it('returns negative value for expired token', () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now - 1200,
+        exp: now - 600,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const token = `${header}.${payloadB64}.signature`
+      useAuthStore.setState({ token })
+      const expiry = useAuthStore.getState().getTokenExpiry()
+      expect(expiry).toBeLessThan(0)
+    })
+  })
+
+  describe('shouldRefreshToken()', () => {
+    it('returns false when token is null', () => {
+      useAuthStore.setState({ token: null })
+      expect(useAuthStore.getState().shouldRefreshToken()).toBe(false)
+    })
+
+    it('returns false when token has plenty of time', () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now,
+        exp: now + 600,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const token = `${header}.${payloadB64}.signature`
+      useAuthStore.setState({ token })
+      expect(useAuthStore.getState().shouldRefreshToken()).toBe(false)
+    })
+
+    it('returns true when token expires within 300 seconds', () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now,
+        exp: now + 200,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const token = `${header}.${payloadB64}.signature`
+      useAuthStore.setState({ token })
+      expect(useAuthStore.getState().shouldRefreshToken()).toBe(true)
+    })
+
+    it('returns true when token is already expired', () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now - 1200,
+        exp: now - 600,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const token = `${header}.${payloadB64}.signature`
+      useAuthStore.setState({ token })
+      expect(useAuthStore.getState().shouldRefreshToken()).toBe(true)
+    })
+  })
+
+  describe('refreshToken()', () => {
+    it('throws when no token exists', async () => {
+      useAuthStore.setState({ token: null })
+      await expect(useAuthStore.getState().refreshToken()).rejects.toThrow(
+        'No token to refresh',
+      )
+    })
+
+    it('calls authAPI.refreshAccess and updates token', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now,
+        exp: now + 600,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const oldToken = `${header}.${payloadB64}.oldsignature`
+      useAuthStore.setState({ token: oldToken })
+
+      const newToken = 'new-refreshed-token'
+      authAPI.refreshAccess.mockResolvedValueOnce({ access_token: newToken })
+
+      const result = await useAuthStore.getState().refreshToken()
+
+      expect(result).toBe(newToken)
+      expect(useAuthStore.getState().token).toBe(newToken)
+      expect(localStorage.getItem('api_token')).toBe(newToken)
+      expect(authAPI.refreshAccess).toHaveBeenCalledOnce()
+    })
+
+    it('deduplicates concurrent refreshToken calls', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now,
+        exp: now + 600,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const token = `${header}.${payloadB64}.signature`
+      useAuthStore.setState({ token })
+
+      const newToken = 'deduplicated-token'
+      authAPI.refreshAccess.mockResolvedValueOnce({ access_token: newToken })
+
+      const [result1, result2] = await Promise.all([
+        useAuthStore.getState().refreshToken(),
+        useAuthStore.getState().refreshToken(),
+      ])
+
+      expect(result1).toBe(newToken)
+      expect(result2).toBe(newToken)
+      expect(authAPI.refreshAccess).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-throws API error and allows retry', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const payload = {
+        sub: '1',
+        username: 'test',
+        role: 'user',
+        type: 'access',
+        iat: now,
+        exp: now + 600,
+      }
+      const payloadB64 = btoa(JSON.stringify(payload))
+      const token = `${header}.${payloadB64}.signature`
+      useAuthStore.setState({ token })
+
+      authAPI.refreshAccess.mockRejectedValueOnce(new Error('Network error'))
+
+      await expect(useAuthStore.getState().refreshToken()).rejects.toThrow(
+        'Network error',
+      )
+
+      authAPI.refreshAccess.mockResolvedValueOnce({ access_token: 'retry-token' })
+      const result = await useAuthStore.getState().refreshToken()
+      expect(result).toBe('retry-token')
     })
   })
 })

@@ -40,8 +40,11 @@ from api.models.schemas import (
 from models.user import User
 from security.tokens import (
     create_access_token,
+    create_access_token_from_payload,
     create_refresh_token,
+    decode_access_token_unsafe,
     decode_refresh_token,
+    ACCESS_TOKEN_EXPIRE_SECONDS,
     TokenExpiredError,
     TokenInvalidError,
 )
@@ -393,6 +396,39 @@ async def refresh_token(
     response = JSONResponse(content=body.model_dump())
     set_token_cookie(response, access_token, new_refresh_token)
     return response
+
+
+@router.post("/refresh-access", response_model=RefreshResponse)
+async def refresh_access_token_bearer(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    """Proactive access token refresh via Bearer auth (no CSRF).
+
+    Frontend calls this when token is near expiry (< 5 min remaining).
+    Decodes the Bearer token (without exp verification), verifies user
+    exists and not frozen, then issues a fresh access token.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="缺少或无效的 Bearer token",
+        )
+    token = auth_header[7:]
+
+    payload = decode_access_token_unsafe(token)
+    user_id = int(payload["sub"])
+
+    user = await session.get(User, user_id)
+    if not user or bool(user.is_frozen):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在或已冻结",
+        )
+
+    access_token = create_access_token_from_payload(payload)
+    return JSONResponse(content=RefreshResponse(access_token=access_token).model_dump())
 
 
 @router.post("/recover/start", response_model=PasswordRecoveryStartResponse)

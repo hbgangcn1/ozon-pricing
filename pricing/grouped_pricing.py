@@ -385,7 +385,7 @@ def calculate_pricing_grouped(
     priority: str = "低价优先",
     commission_category: Optional[dict] = None,
 ) -> Dict[str, Any]:
-    _CIS_DESTS = {"KZ", "BY", "KGZ", "UZ", "GE", "AZ"}
+    _CIS_DESTS = {"KZ", "BY", "KGZ", "UZ", "GE", "AZ", "AM"}
 
     def _group(ft, dest_filter, apply_fbp_filter=False):
         gp = _apply_commission_rate(product, commission_category, mode, ft)

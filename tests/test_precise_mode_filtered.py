@@ -21,6 +21,7 @@ EXPECTED_GROUP_KEYS = [
     "rfbs_UZ",
     "rfbs_GE",
     "rfbs_AZ",
+    "rfbs_AM",
 ]
 
 EXPECTED_GROUP_KEY_SET = set(EXPECTED_GROUP_KEYS)

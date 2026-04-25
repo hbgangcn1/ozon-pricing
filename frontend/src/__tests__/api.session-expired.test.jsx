@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => {
   const mockRequestUse = vi.fn()
   const mockResponseUse = vi.fn()
-  const mockAxiosPost = vi.fn()
   const mockLogout = vi.fn()
   const mockSetToken = vi.fn()
+  const mockRefreshToken = vi.fn()
   const mockGetState = vi.fn()
   const mockApiInstance = Object.assign(vi.fn(), {
     interceptors: {
@@ -21,9 +21,9 @@ const mocks = vi.hoisted(() => {
   return {
     mockRequestUse,
     mockResponseUse,
-    mockAxiosPost,
     mockLogout,
     mockSetToken,
+    mockRefreshToken,
     mockGetState,
     mockApiInstance,
   }
@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('axios', () => {
   const axiosDefault = Object.assign(vi.fn(), {
     create: vi.fn(() => mocks.mockApiInstance),
-    post: mocks.mockAxiosPost,
+    post: vi.fn(),
   })
   return { default: axiosDefault }
 })
@@ -62,6 +62,7 @@ describe('api session expired flow', () => {
       token: null,
       logout: mocks.mockLogout,
       setToken: mocks.mockSetToken,
+      refreshToken: mocks.mockRefreshToken,
     })
     delete window.location
     window.location = {
@@ -78,7 +79,7 @@ describe('api session expired flow', () => {
     const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
     localStorage.setItem('api_user', 'user')
     localStorage.setItem('api_token', 'token')
-    mocks.mockAxiosPost.mockRejectedValue({ response: { status: 401 } })
+    mocks.mockRefreshToken.mockRejectedValue({ response: { status: 401 } })
 
     const originalError = {
       response: { status: 401 },
@@ -96,7 +97,7 @@ describe('api session expired flow', () => {
     const { toast } = await import('sonner')
     await loadApiModule()
     const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
-    mocks.mockAxiosPost.mockRejectedValue(new Error('network down'))
+    mocks.mockRefreshToken.mockRejectedValue(new Error('network down'))
 
     const originalError = {
       response: { status: 401 },

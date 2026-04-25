@@ -90,7 +90,7 @@ function PricingResult({
               {/* rFBS-独联体 — 6 country sub-tabs */}
               <TabsContent value="rfbs_cis" className="mt-0">
                 <Tabs value={cisActiveTab} onValueChange={setCisActiveTab}>
-                  <TabsList className="grid grid-cols-6 mb-4">
+                  <TabsList className="grid grid-cols-7 mb-4">
                     {CIS_COUNTRIES.map(c => (
                       <TabsTrigger key={c.key} value={c.key}>{c.label}</TabsTrigger>
                     ))}

@@ -787,3 +787,48 @@ DB_POOL_MAX=15
 - 状态：✅ 已完成（2026-04-22）
 - 7 fixed atomic commits（C1-C6 + C8） + N variable sub-commits under C7（C7a/7b/...，按 root cause 拆，N≥1）；最终 commit 数以 `git rev-list --count origin/main..HEAD` 实测为准
 - 详见 .sisyphus/plans/wave11-tailwind-tokens.md 与 SHIP_READINESS.md §12
+
+### fix-jwt-sliding-expiration: JWT 滑动过期实现 ✅
+
+**根因**: `security/tokens.py:81` 设置 `exp = now + 15min`，token 在签发时固定，无滑动机制。用户活跃使用时 15 分钟后 token 过期导致 401。
+
+**目标**: 添加主动 token 刷新（sliding expiration），用户在活跃操作期间永不遇到 401。
+
+#### 设计决策
+
+| 决策 | 选择 |
+|------|------|
+| D1: 刷新策略 | 主动刷新（axios 请求拦截器检查 `exp - now < 300s`）+ 401 fallback |
+| D2: 刷新端点 | 新增 `POST /auth/refresh-access`（Bearer token，不走 cookie） |
+| D3: Token 签发 | `create_access_token_from_payload()` 复用 payload 字段，不重复查 DB |
+| D4: 并发去重 | authStore.refreshToken() 单例 Promise 模式 |
+| D5: 主动刷新阈值 | 300 秒（5 分钟），足够 API 往返 + 刷新 + 重试 |
+| D6: CSRF | 刷新端点跳过 CSRF double-submit 检查 |
+
+#### 任务完成
+
+| 任务 | 文件 | 状态 |
+|------|------|------|
+| 1.1 | `security/tokens.py` — `create_access_token_from_payload()` + `ACCESS_TOKEN_EXPIRE_SECONDS` | ✅ |
+| 2.1 | `api/routes/auth.py` — `POST /auth/refresh-access` Bearer token 端点 | ✅ |
+| 2.2 | `api/routes/auth.py` — 新增路由前缀已在 router 中 | ✅ |
+| 2.3 | `security/tokens.py` — `ACCESS_TOKEN_EXPIRE_SECONDS` 常量 | ✅ |
+| 3.1 | `frontend/src/stores/authStore.js` — `refreshToken()` | ✅ |
+| 3.2 | `frontend/src/stores/authStore.js` — 并发去重单例模式 | ✅ |
+| 3.3 | `frontend/src/stores/authStore.js` — `getTokenExpiry()` | ✅ |
+| 4.1 | `frontend/src/services/api.js` — 请求拦截器主动刷新逻辑 | ✅ |
+| 4.2 | `frontend/src/services/api.js` — 401 拦截器 refresh + 重试 | ✅ |
+| 5.1 | `frontend/src/hooks/useTokenRefresh.js` — 新 hook | ✅ |
+| 5.2 | `frontend/src/App.jsx` — 引入 useTokenRefresh | ✅ |
+| 6.1 | `tests/test_auth_refresh.py` — 端点测试（10 tests） | ✅ |
+| 6.2 | `tests/test_jwt_tokens.py` — `test_create_access_token_from_payload`（8 tests） | ✅ |
+| 7.1 | `frontend/src/__tests__/authStore.test.js` — refreshToken 测试 | ✅ |
+| 7.2 | `frontend/src/__tests__/api.test.js` — refresh 拦截器测试 | ✅ |
+
+#### 验证结果
+
+- 后端: `tests/test_auth_refresh.py` + `tests/test_jwt_tokens.py` — **46 passed**
+- 前端: vitest — **309 passed**（全部）
+- flake8: **0 errors**
+- 前端 build: ✅
+- lint: 0 warnings

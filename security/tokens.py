@@ -32,6 +32,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
         "ACCESS_TOKEN_EXPIRE_MINUTES", os.environ.get("JWT_EXPIRE_MINUTES", "15")
     )
 )
+ACCESS_TOKEN_EXPIRE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
 REFRESH_TOKEN_EXPIRE_DAYS = int(
     os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "7")
 )
@@ -94,6 +95,31 @@ def create_access_token(
     return jwt.encode(payload, _get_secret_key(), algorithm=ALGORITHM)
 
 
+def create_access_token_from_payload(
+    payload: dict,
+    expires_delta: Optional[timedelta] = None,
+) -> str:
+    """从已有 payload 提取 user_id/username/role，重新签发 token。
+
+    用于 refresh 时避免重复查 DB 获取这些信息。
+    """
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    now = datetime.now(timezone.utc)
+    new_payload = {
+        "sub": payload["sub"],
+        "username": payload["username"],
+        "role": payload["role"],
+        "type": TOKEN_TYPE_ACCESS,
+        "iat": now,
+        "exp": now + expires_delta,
+    }
+    if payload.get("sid"):
+        new_payload["sid"] = payload["sid"]
+    return jwt.encode(new_payload, _get_secret_key(), algorithm=ALGORITHM)
+
+
 def create_refresh_token(
     user_id: int,
     sid: str,
@@ -127,6 +153,25 @@ def decode_access_token(token: str) -> dict:
         return payload
     except jwt.ExpiredSignatureError:
         raise TokenExpiredError("Token 已过期")
+    except jwt.InvalidTokenError as e:
+        raise TokenInvalidError(f"Token 无效: {e}")
+
+
+def decode_access_token_unsafe(token: str) -> dict:
+    """解码 access token，不验证 exp。用于 proactive refresh 场景。
+
+    Raises TokenInvalidError。
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            _get_secret_key(),
+            algorithms=[ALGORITHM],
+            options={"verify_exp": False},
+        )
+        if payload.get("type") == TOKEN_TYPE_REFRESH:
+            raise TokenInvalidError("Refresh token 不能用作 access token")
+        return payload
     except jwt.InvalidTokenError as e:
         raise TokenInvalidError(f"Token 无效: {e}")
 

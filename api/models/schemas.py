@@ -421,6 +421,7 @@ class PricingDualPriorityGroupResult(BaseModel):
 
 class PricingGroupedResponse(BaseModel):
     calculation_mode: str
+    rfbs_AM: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
     rfbs_ru: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
     rfbs_KZ: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
     rfbs_BY: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
@@ -430,6 +431,7 @@ class PricingGroupedResponse(BaseModel):
     rfbs_AZ: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
     fbp_ru: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
     fbp_cis: PricingDualPriorityGroupResult = Field(default_factory=PricingDualPriorityGroupResult)
+    breakeven_rfbs_AM: Optional[PricingDualPriorityGroupResult] = None
     breakeven_rfbs_ru: Optional[PricingDualPriorityGroupResult] = None
     breakeven_rfbs_KZ: Optional[PricingDualPriorityGroupResult] = None
     breakeven_rfbs_BY: Optional[PricingDualPriorityGroupResult] = None

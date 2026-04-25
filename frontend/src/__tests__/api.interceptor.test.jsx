@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => {
   const mockRequestUse = vi.fn()
   const mockResponseUse = vi.fn()
-  const mockAxiosPost = vi.fn()
   const mockLogout = vi.fn()
   const mockSetToken = vi.fn()
   const mockSetSessionKicked = vi.fn()
+  const mockRefreshToken = vi.fn()
   const mockGetState = vi.fn()
   const mockApiInstance = Object.assign(vi.fn(), {
     interceptors: {
@@ -23,10 +23,10 @@ const mocks = vi.hoisted(() => {
   return {
     mockRequestUse,
     mockResponseUse,
-    mockAxiosPost,
     mockLogout,
     mockSetToken,
     mockSetSessionKicked,
+    mockRefreshToken,
     mockGetState,
     mockApiInstance,
     mockToastError,
@@ -36,7 +36,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('axios', () => {
   const axiosDefault = Object.assign(vi.fn(), {
     create: vi.fn(() => mocks.mockApiInstance),
-    post: mocks.mockAxiosPost,
+    post: vi.fn(),
   })
   return { default: axiosDefault }
 })
@@ -67,6 +67,7 @@ describe('api interceptor session handling', () => {
       logout: mocks.mockLogout,
       setToken: mocks.mockSetToken,
       setSessionKicked: mocks.mockSetSessionKicked,
+      refreshToken: mocks.mockRefreshToken,
     })
     delete window.location
     window.location = { href: '', pathname: '/pricing', search: '' }
@@ -100,7 +101,7 @@ describe('api interceptor session handling', () => {
     expect(mocks.mockSetSessionKicked).toHaveBeenCalledWith({ reason })
     expect(mocks.mockToastError).not.toHaveBeenCalled()
     expect(mocks.mockLogout).not.toHaveBeenCalled()
-    expect(mocks.mockAxiosPost).not.toHaveBeenCalled()
+    expect(mocks.mockRefreshToken).not.toHaveBeenCalled()
   })
 
   it('falls back to legacy logout and toast flow for string detail 401', async () => {
@@ -108,7 +109,7 @@ describe('api interceptor session handling', () => {
     localStorage.setItem('api_token', 'token')
     await loadApiModule()
     const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
-    mocks.mockAxiosPost.mockRejectedValue({
+    mocks.mockRefreshToken.mockRejectedValue({
       response: {
         status: 401,
         data: { detail: '令牌已过期' },
@@ -125,7 +126,7 @@ describe('api interceptor session handling', () => {
 
     await expect(resErrorInterceptor(error)).rejects.toBe(error)
 
-    expect(mocks.mockAxiosPost).toHaveBeenCalledTimes(1)
+    expect(mocks.mockRefreshToken).toHaveBeenCalledTimes(1)
     expect(mocks.mockLogout).toHaveBeenCalledTimes(1)
     expect(mocks.mockSetSessionKicked).not.toHaveBeenCalled()
     expect(mocks.mockToastError).toHaveBeenCalledWith('令牌已过期')
@@ -152,7 +153,7 @@ describe('api interceptor session handling', () => {
 
     await expect(resErrorInterceptor(error)).rejects.toBe(error)
 
-    expect(mocks.mockAxiosPost).not.toHaveBeenCalled()
+    expect(mocks.mockRefreshToken).not.toHaveBeenCalled()
     expect(mocks.mockLogout).not.toHaveBeenCalled()
     expect(mocks.mockSetSessionKicked).not.toHaveBeenCalled()
     expect(mocks.mockToastError).not.toHaveBeenCalled()
@@ -178,7 +179,7 @@ describe('api interceptor session handling', () => {
     await expect(resErrorInterceptor(error)).rejects.toBe(error)
 
     expect(mocks.mockSetSessionKicked).toHaveBeenCalledWith({ reason: 'kicked_by_new_login' })
-    expect(mocks.mockAxiosPost).not.toHaveBeenCalled()
+    expect(mocks.mockRefreshToken).not.toHaveBeenCalled()
     expect(mocks.mockLogout).not.toHaveBeenCalled()
     expect(mocks.mockToastError).not.toHaveBeenCalled()
   })

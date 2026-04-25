@@ -51,6 +51,7 @@ export default function LogisticsBasicSection({ form, onFormFieldChange, onFulfi
                     <SelectItem value="UZ">乌兹别克斯坦(UZ)</SelectItem>
                     <SelectItem value="GE">格鲁吉亚(GE)</SelectItem>
                     <SelectItem value="AZ">阿塞拜疆(AZ)</SelectItem>
+                    <SelectItem value="AM">亚美尼亚(AM)</SelectItem>
                   </>
                 )}
               </SelectContent>

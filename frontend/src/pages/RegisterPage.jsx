@@ -12,8 +12,6 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Checkbox } from '../components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import DraftRestoreDialog from '../components/DraftRestoreDialog';
-import { useDraftPersist } from '../hooks/useDraftPersist';
 import PasswordStrengthIndicator from '../components/PasswordStrengthIndicator';
 
 const registerSchema = z.object({
@@ -80,7 +78,6 @@ function RegisterPage() {
   const {
     register,
     handleSubmit,
-    reset,
     watch,
     formState: { errors },
   } = useForm({
@@ -90,38 +87,8 @@ function RegisterPage() {
 
   const passwordValue = watch('password') || '';
   const usernameValue = watch('username') || '';
-  const registerFormData = watch();
   const [usernameStatus, setUsernameStatus] = useState({ state: 'idle', reason: null });
   const usernameCheckRef = useRef(0);
-  const registerDraft = useDraftPersist('register', registerFormData, {
-    excludeFields: ['password', 'confirmPassword', 'security_answer'],
-  });
-
-  const [draftData] = useState(() => registerDraft.loadDraft());
-  const [draftDialogOpen, setDraftDialogOpen] = useState(() => registerDraft.hasDraft());
-  const draftFieldCount = draftData
-    ? Object.values(draftData).filter((value) => value !== '' && value !== null && value !== undefined).length
-    : 0;
-
-  const handleRestoreDraft = () => {
-    if (draftData) {
-      reset({
-        username: '',
-        password: '',
-        confirmPassword: '',
-        security_question: '',
-        security_answer: '',
-        ...draftData,
-      });
-      registerDraft.clearDraft();
-    }
-    setDraftDialogOpen(false);
-  };
-
-  const handleDiscardDraft = () => {
-    registerDraft.clearDraft();
-    setDraftDialogOpen(false);
-  };
 
   useEffect(() => {
     const trimmed = usernameValue.trim();
@@ -211,13 +178,6 @@ function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4 fixed inset-0 z-50">
-      <DraftRestoreDialog
-        open={draftDialogOpen}
-        onRestore={handleRestoreDraft}
-        onDiscard={handleDiscardDraft}
-        summary={draftFieldCount > 0 ? `包含 ${draftFieldCount} 个字段` : undefined}
-      />
-
       <div className="w-full max-w-lg bg-surface-container border border-surface-high shadow-xl shadow-black/40 rounded-2xl px-12 py-8 animate-fade-in-up my-auto max-h-[90vh] overflow-y-auto">
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4 border border-primary/20">

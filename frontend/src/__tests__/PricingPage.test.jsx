@@ -244,20 +244,6 @@ const mockGroupedResult = {
 };
 
 describe('PricingPage', () => {
-  const sessionStorageMock = {
-    store: {},
-    getItem: vi.fn((key) => (key in sessionStorageMock.store ? sessionStorageMock.store[key] : null)),
-    setItem: vi.fn((key, value) => {
-      sessionStorageMock.store[key] = String(value);
-    }),
-    removeItem: vi.fn((key) => {
-      delete sessionStorageMock.store[key];
-    }),
-    clear: vi.fn(() => {
-      sessionStorageMock.store = {};
-    }),
-  };
-
   const renderPage = () => render(
     <MemoryRouter>
       <PricingPage />
@@ -266,12 +252,6 @@ describe('PricingPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorageMock.clear();
-    Object.defineProperty(window, 'sessionStorage', {
-      value: sessionStorageMock,
-      configurable: true,
-      writable: true,
-    });
     useAuthStore.mockReturnValue({ user: mockUser });
     productsAPI.getAll.mockResolvedValue([]);
     commissionCategoriesAPI.getAll.mockResolvedValue([]);
@@ -528,44 +508,4 @@ describe('PricingPage', () => {
     });
   });
 
-  it('shows restore dialog when pricing drafts exist on mount', async () => {
-    sessionStorageMock.store['draft:pricing-fast'] = JSON.stringify({ unit_price: '88', weight_g: '500' });
-
-    renderPage();
-
-    expect(await screen.findByText('检测到未完成的填写')).toBeInTheDocument();
-    expect(screen.getByText('包含 2 个字段')).toBeInTheDocument();
-  });
-
-  it('restores fast and precise drafts after confirmation', async () => {
-    sessionStorageMock.store['draft:pricing-fast'] = JSON.stringify({ unit_price: '88', weight_g: '500' });
-    sessionStorageMock.store['draft:pricing-precise'] = JSON.stringify({ name: '恢复商品', unit_price: '66' });
-
-    renderPage();
-
-    fireEvent.click(await screen.findByRole('button', { name: '恢复' }));
-    fireEvent.click(screen.getByText('快速模式'));
-
-    expect(screen.getByDisplayValue('88')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('500')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('精准模式'));
-
-    expect(screen.getByDisplayValue('恢复商品')).toBeInTheDocument();
-    expect(screen.queryByText('检测到未完成的填写')).not.toBeInTheDocument();
-    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:pricing-fast');
-    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:pricing-precise');
-  });
-
-  it('discards pricing drafts and clears sessionStorage', async () => {
-    sessionStorageMock.store['draft:pricing-fast'] = JSON.stringify({ unit_price: '88' });
-
-    renderPage();
-
-    fireEvent.click(await screen.findByRole('button', { name: '丢弃' }));
-
-    expect(screen.queryByText('检测到未完成的填写')).not.toBeInTheDocument();
-    expect(sessionStorageMock.store['draft:pricing-fast']).toBeUndefined();
-    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('draft:pricing-fast');
-  });
 });

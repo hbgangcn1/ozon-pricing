@@ -119,6 +119,12 @@ def _all_logistics():
             "fulfillment_type": "rfbs",
             "destination": "AZ",
         },
+        {
+            "name": "A-rfbs-AM",
+            "type": "air",
+            "fulfillment_type": "rfbs",
+            "destination": "AM",
+        },
     ]
 
 
@@ -223,9 +229,9 @@ def test_rfbs_az_only_receives_rfbs_az_logistics():
 
 
 def test_total_call_count_is_2x_groups():
-    """Each of 9 groups calls calculate_pricing twice (price + speed)."""
+    """Each of 10 groups calls calculate_pricing twice (price + speed)."""
     _, calls = _run_grouped()
-    assert len(calls) == 18
+    assert len(calls) == 20
 
 
 def test_all_calls_use_precise_mode():
@@ -248,6 +254,7 @@ def test_no_logistics_leak_between_groups():
         "rfbs_UZ": (set(), {"A-rfbs-UZ"}),
         "rfbs_GE": ({"L-rfbs-GE"}, set()),
         "rfbs_AZ": (set(), {"A-rfbs-AZ"}),
+        "rfbs_AM": (set(), {"A-rfbs-AM"}),
     }
 
     all_expected = []
@@ -297,7 +304,7 @@ def test_commission_applied_per_group_fulfillment_type():
             commission_category=commission_cat,
         )
 
-    assert len(products_seen) == 18
+    assert len(products_seen) == 20
 
     for i, p in enumerate(products_seen):
         rate = p["commission_rate"]

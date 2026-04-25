@@ -2,6 +2,7 @@ import { useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuthStore } from './stores/authStore'
+import { useTokenRefresh } from './hooks/useTokenRefresh'
 import { Skeleton } from './components/ui/skeleton'
 import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/AppLayout'
@@ -56,6 +57,8 @@ function App() {
   const initAuth = useAuthStore((state) => state.initAuth)
   const sessionKicked = useAuthStore((state) => state.sessionKicked)
   const clearSessionKicked = useAuthStore((state) => state.clearSessionKicked)
+
+  useTokenRefresh()
 
   useEffect(() => {
     initAuth()
