@@ -76,6 +76,11 @@ log "===== 第4步: 安装 Python 依赖 ====="
 "$VENV/bin/pip" install --quiet -r requirements.txt
 log "Python 依赖安装完成"
 
+# ===== 4.1 执行数据库迁移 =====
+log "===== 第4.1步: 执行数据库迁移 ====="
+"$VENV/bin/python" -m alembic upgrade head
+log "数据库迁移完成"
+
 # ===== 5. 检查前端构建产物 =====
 log "===== 第5步: 检查前端 ====="
 if [ -f "$PROJECT_DIR/frontend/dist/index.html" ]; then
