@@ -258,8 +258,14 @@ async def batch_add_to_my_logistics(
         except IntegrityError as exc:
             await session.rollback()
             name = data.get("name", pool_id)
-            errors.append(f"{name}: {exc.orig}")
-            logger.warning("batch-add 跳过 pool_id=%s: %s", pool_id, exc.orig)
+            pgcode = getattr(exc.orig, 'pgcode', None) if exc.orig else None
+            if pgcode == '23505':
+                errors.append(f"{name}: 已存在")
+            elif pgcode:
+                errors.append(f"{name}: 数据库错误({pgcode})")
+            else:
+                errors.append(f"{name}: {exc}")
+            logger.warning("batch-add 跳过 pool_id=%s: %s", pool_id, exc)
     if added:
         await recalculate_priority_groups(session, user_id)
     return {

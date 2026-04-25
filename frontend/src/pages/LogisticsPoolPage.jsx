@@ -178,6 +178,7 @@ export default function LogisticsPoolPage() {
       const BATCH_SIZE = 200
       let totalAdded = 0
       let totalNotFound = 0
+      let totalErrors = 0
 
       for (let i = 0; i < allIds.length; i += BATCH_SIZE) {
         const batch = allIds.slice(i, i + BATCH_SIZE)
@@ -185,9 +186,15 @@ export default function LogisticsPoolPage() {
         const data = result?.data || result
         totalAdded += data?.added || 0
         totalNotFound += data?.not_found?.length || 0
+        totalErrors += data?.errors?.length || 0
       }
 
-      if (totalNotFound > 0) {
+      if (totalErrors > 0) {
+        toast.error(
+          `部分添加失败：成功 ${totalAdded} 条，失败 ${totalErrors} 条${totalNotFound > 0 ? `，${totalNotFound} 条未找到` : ''}`,
+          { description: '失败的条目可能是已存在或数据重复的物流规则' }
+        )
+      } else if (totalNotFound > 0) {
         toast.success(`已添加 ${totalAdded} 条，${totalNotFound} 条未找到`)
       } else {
         toast.success(`已成功添加 ${totalAdded} 条到我的物流`)
