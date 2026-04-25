@@ -65,20 +65,8 @@ async def get_by_ids(session: AsyncSession, pool_ids: list[int]) -> dict[int, di
 
 
 async def upsert(session: AsyncSession, data: dict) -> int:
-    result = await session.execute(
-        select(LogisticsPool).where(
-            LogisticsPool.source_file == data.get("source_file"),
-            LogisticsPool.name == data.get("name"),
-        ),
-    )
-    record = result.scalar_one_or_none()
-    clean = {k: v for k, v in data.items() if k in _UPSERT_FIELDS}
-    if record:
-        for key, value in clean.items():
-            setattr(record, key, value)
-    else:
-        record = LogisticsPool(**clean)
-        session.add(record)
+    record = LogisticsPool(**{k: v for k, v in data.items() if k in _UPSERT_FIELDS})
+    session.add(record)
     await session.flush()
     return record.id
 
