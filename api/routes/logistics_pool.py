@@ -23,7 +23,7 @@ from db.logistics_pool import (
     get_all,
     get_by_id,
     get_by_ids,
-    insert_row,
+    upsert,
     set_active,
 )
 from xlsx_import import parse_file
@@ -170,7 +170,7 @@ async def import_logistics_pool(
         errors = list(result.get("errors", []))
         for index, row in enumerate(result.get("rows", []), start=1):
             try:
-                await insert_row(session, row)
+                await upsert(session, row)
                 imported += 1
             except Exception as exc:
                 skipped += 1
