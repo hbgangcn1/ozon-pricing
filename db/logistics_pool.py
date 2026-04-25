@@ -68,8 +68,7 @@ async def upsert(session: AsyncSession, data: dict) -> int:
     result = await session.execute(
         select(LogisticsPool).where(
             LogisticsPool.source_file == data.get("source_file"),
-            LogisticsPool.delivery_method == data.get("delivery_method"),
-            LogisticsPool.destination == data.get("destination"),
+            LogisticsPool.name == data.get("name"),
         ),
     )
     record = result.scalar_one_or_none()
