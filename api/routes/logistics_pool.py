@@ -253,10 +253,18 @@ async def batch_add_to_my_logistics(
         data = {k: v for k, v in item.items() if k not in _COPY_EXCLUDE}
         _sanitize_pool_data(data)
         try:
-            new_id = await create_logistics(session, user_id, data)
-            added.append(new_id)
+            savepoint = session.begin_nested()
+            try:
+                new_id = await create_logistics(session, user_id, data)
+                await savepoint.commit()
+                added.append(new_id)
+            except IntegrityError:
+                await savepoint.rollback()
+                raise
+            except Exception:
+                await savepoint.rollback()
+                raise
         except IntegrityError as exc:
-            await session.rollback()
             name = data.get("name", pool_id)
             pgcode = getattr(exc.orig, 'pgcode', None) if exc.orig else None
             if pgcode == '23505':
