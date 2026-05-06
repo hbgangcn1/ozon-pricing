@@ -96,6 +96,7 @@ node_modules/
 !AGENTS.md
 !AUDIT_REPORT.md
 !SHIP_READINESS.md
+!openspec/**/*.md
 !LICENSE
 
 # 项目特定文件
@@ -181,7 +182,6 @@ setup.cfg
 # Agent 临时文件
 .playwright-mcp/
 .sisyphus/
-openspec/
 
 # 临时截图和浏览器快照
 browser-snapshot-*.yml
