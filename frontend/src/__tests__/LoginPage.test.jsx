@@ -29,6 +29,9 @@ const mockSetAuth = vi.fn();
 vi.mock('../stores/authStore', () => ({
   useAuthStore: () => ({
     setAuth: mockSetAuth,
+    isAuthenticated: false,
+    user: null,
+    logout: vi.fn(),
   }),
 }));
 

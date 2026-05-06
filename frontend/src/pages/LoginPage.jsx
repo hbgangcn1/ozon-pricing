@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Eye, EyeOff, Package, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
+import { safeReturnTo } from '../lib/safeReturnTo';
 import { authAPI, settingsAPI } from '../services/api';
 
 const loginSchema = z.object({
@@ -16,7 +17,7 @@ const loginSchema = z.object({
 function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setAuth } = useAuthStore();
+  const { setAuth, isAuthenticated, user, logout } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -24,13 +25,6 @@ function LoginPage() {
   const searchParams = new URLSearchParams(location.search);
   const returnTo = searchParams.get('returnTo') || '';
   const reason = searchParams.get('reason') || '';
-
-  const getSafeReturnTo = () => {
-    if (!returnTo || !returnTo.startsWith('/') || returnTo.startsWith('//')) {
-      return '/';
-    }
-    return returnTo;
-  };
 
   useEffect(() => {
     if (reason === 'expired') {
@@ -71,7 +65,11 @@ function LoginPage() {
       const { access_token, user } = response;
       setAuth(user, access_token);
       toast.success('登录成功');
-      navigate(reason === 'expired' ? getSafeReturnTo() : '/pricing');
+      if (reason === 'expired' || returnTo) {
+        navigate(safeReturnTo(returnTo), { replace: true });
+      } else {
+        navigate(safeReturnTo(returnTo));
+      }
     } catch (error) {
       const msg = error.response?.data?.detail || '登录失败';
       toast.error(msg);
@@ -80,6 +78,74 @@ function LoginPage() {
       setLoading(false);
     }
   };
+
+  const handleContinue = async () => {
+    setLoading(true);
+    try {
+      await authAPI.getMe();
+      navigate(safeReturnTo(returnTo), { replace: true });
+    } catch (error) {
+      if (error.response?.status === 401) {
+        logout();
+        toast.error('登录已失效,请重新登录');
+      } else {
+        toast.error('网络错误,请重试');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSwitchAccount = () => {
+    logout();
+  };
+
+  if (isAuthenticated && user) {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4 fixed inset-0 z-50">
+        <div className="w-full max-w-lg bg-surface-container border border-surface-high shadow-xl shadow-black/40 rounded-2xl px-12 py-8 animate-fade-in-up">
+          <div className="text-center mb-8">
+            <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4 border border-primary/20">
+              <Package className="w-6 h-6 text-primary" />
+            </div>
+            <h1 className="text-3xl font-headline font-bold text-text-primary tracking-tight mb-2">
+              物流定价系统
+            </h1>
+            <p className="text-text-secondary text-sm">
+              已登录为 {user.username}
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={handleContinue}
+              disabled={loading}
+              className="w-full bg-primary text-white rounded-lg py-2.5 hover:bg-primary-dim transition-all duration-200 ease-out active:scale-[0.98] font-medium flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100 shadow-lg shadow-primary/20"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  验证中...
+                </>
+              ) : (
+                '继续使用'
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSwitchAccount}
+              disabled={loading}
+              className="w-full bg-surface-high text-text-primary rounded-lg py-2.5 hover:bg-surface-highest border border-surface-highest transition-all duration-200 ease-out active:scale-[0.98] font-medium disabled:opacity-70 disabled:active:scale-100"
+            >
+              切换账号
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4 fixed inset-0 z-50">
