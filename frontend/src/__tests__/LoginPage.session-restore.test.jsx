@@ -27,9 +27,12 @@ vi.mock('../services/api', () => ({
 
 const mockSetAuth = vi.fn()
 vi.mock('../stores/authStore', () => ({
-  useAuthStore: () => ({
+  useAuthStore: vi.fn(() => ({
     setAuth: mockSetAuth,
-  }),
+    isAuthenticated: false,
+    user: null,
+    logout: vi.fn(),
+  })),
 }))
 
 vi.mock('sonner', () => ({
@@ -76,7 +79,7 @@ describe('LoginPage session restore', () => {
 
     await waitFor(() => {
       expect(mockSetAuth).toHaveBeenCalledWith({ id: 1, username: 'alice' }, 'token')
-      expect(mockNavigate).toHaveBeenCalledWith('/pricing?tab=precise')
+      expect(mockNavigate).toHaveBeenCalledWith('/pricing?tab=precise', { replace: true })
     })
   })
 
@@ -93,7 +96,7 @@ describe('LoginPage session restore', () => {
     fireEvent.click(screen.getByRole('button', { name: '登录' }))
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/')
+      expect(mockNavigate).toHaveBeenCalledWith('/pricing', { replace: true })
     })
   })
 })
