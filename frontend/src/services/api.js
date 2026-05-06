@@ -53,7 +53,12 @@ if (import.meta.env.MODE !== 'test') {
   apiClient.interceptors.request.use(async (config) => {
     const token = useAuthStore.getState().token;
     if (token) {
-      if (useAuthStore.getState().shouldRefreshToken()) {
+      // Skip proactive refresh for refresh endpoint itself to avoid self-deadlock
+      // (refreshToken() awaits authAPI.refreshAccess(), whose request interceptor
+      // would otherwise re-enter refreshToken() and await the same refreshPromise).
+      const isRefreshEndpoint = config.url?.includes('/auth/refresh-access')
+        || config.url?.includes('/auth/refresh')
+      if (!isRefreshEndpoint && useAuthStore.getState().shouldRefreshToken()) {
         try {
           await useAuthStore.getState().refreshToken()
         } catch (_) {
