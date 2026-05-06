@@ -60,6 +60,13 @@
 - **持续检查**：每次代码修改后必须运行完整测试套件
 - **立即修复**：发现测试失败立即修复，不允许遗留
 
+### 数据库 schema 完整性 - 必须遵守
+- **新增/修改 CHECK 约束的迁移**：必须同步在 `scripts/check_schema_integrity.py` 的 `EXPECTED_CHECK_VALUES` 加对应不变量
+- **生产部署**：`deploy/deploy.sh` 第 4.2 步会自动跑 `scripts/check_schema_integrity.py`，失败即中止部署
+- **关于 `alembic check`**：当前**不在** deploy.sh 中启用——生产 DB 存在大量历史 SQLite→PostgreSQL 类型残留（TEXT vs String、REAL vs Float 等），`alembic check` 会报海量 false positive 阻塞部署。启用前提：先 autogenerate 一次性清理迁移消除历史 drift。**禁止**未做清理就把 `alembic check` 加回 deploy.sh
+- **历史教训**：生产 alembic_version 曾被 stamp 至 head 但部分迁移 DDL 未真正执行（如 `d2e9f3b4c5a6` 的 `volume_mode` CHECK），导致 `volume_mode='sum_of_sides'` 写入 23514 失败。即使 `alembic check` 启用也抓不到——它只比对 model 与 DB，而本项目 CHECK 约束只在迁移 DDL 中声明（models/*.py 无 `CheckConstraint`）。`check_schema_integrity.py` 是唯一能抓此类 drift 的守卫
+- **修复 stamp drift**：直接在生产事务里 DROP+CREATE 对应约束，alembic_version 不动
+
 ### 通信语言
 - 中文
 

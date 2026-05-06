@@ -81,6 +81,14 @@ log "===== 第4.1步: 执行数据库迁移 ====="
 "$VENV/bin/python" -m alembic upgrade head
 log "数据库迁移完成"
 
+# ===== 4.2 数据库 schema 完整性校验 =====
+# 防止 stamp-but-not-applied drift（例如从 dump 恢复后 alembic stamp head
+# 但部分迁移 DDL 实际未执行）。alembic check 受历史 SQLite→PG 类型
+# 残留影响暂不可用，先用 check_schema_integrity.py 守关键 CHECK 约束。
+log "===== 第4.2步: schema 完整性校验 ====="
+"$VENV/bin/python" "$PROJECT_DIR/scripts/check_schema_integrity.py" || error "schema 完整性校验失败：关键 CHECK 约束缺失，部署中止"
+log "schema 完整性校验通过 ✓"
+
 # ===== 5. 检查前端构建产物 =====
 log "===== 第5步: 检查前端 ====="
 if [ -f "$PROJECT_DIR/frontend/dist/index.html" ]; then
