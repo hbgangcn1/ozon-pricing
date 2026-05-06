@@ -1,5 +1,5 @@
 import { useEffect, Suspense, lazy } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuthStore } from './stores/authStore'
 import { useTokenRefresh } from './hooks/useTokenRefresh'
@@ -26,8 +26,18 @@ const LogisticsPoolPage = lazy(() => import('./pages/LogisticsPoolPage'))
 const ProductImportPage = lazy(() => import('./pages/ProductImportPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
+function buildLoginRedirect(location) {
+  // 根路径不带 returnTo,避免登录后跳 / 又被弹回 /login 死循环
+  if (!location || location.pathname === '/' || location.pathname === '') {
+    return '/login'
+  }
+  const target = `${location.pathname}${location.search || ''}`
+  return `/login?returnTo=${encodeURIComponent(target)}`
+}
+
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuthStore()
+  const location = useLocation()
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -35,11 +45,12 @@ function ProtectedRoute({ children }) {
       </div>
     )
   }
-  return isAuthenticated ? children : <Navigate to="/login" replace />
+  return isAuthenticated ? children : <Navigate to={buildLoginRedirect(location)} replace />
 }
 
 function AdminRoute({ children }) {
   const { isAuthenticated, isAdmin, isLoading } = useAuthStore()
+  const location = useLocation()
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -47,7 +58,7 @@ function AdminRoute({ children }) {
       </div>
     )
   }
-  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (!isAuthenticated) return <Navigate to={buildLoginRedirect(location)} replace />
   if (!isAdmin()) return <Navigate to="/pricing" replace />
   return children
 }
@@ -80,28 +91,29 @@ function App() {
       <ErrorBoundary>
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Skeleton className="w-48 h-8" /></div>}>
           <Routes>
+            {/* 根路径永远跳登录页,无论登录态 */}
+            <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            {/* 业务页:无 path 父路由 + 绝对路径子路由,保持扁平 URL */}
             <Route
-              path="/"
               element={
                 <ProtectedRoute>
                   <Layout />
                 </ProtectedRoute>
               }
             >
-              <Route index element={<PricingPage />} />
-              <Route path="pricing" element={<PricingPage />} />
-              <Route path="logistics" element={<LogisticsPage />} />
-              <Route path="account" element={<AccountPage />} />
-              <Route path="subscription" element={<SubscriptionPage />} />
-              <Route path="payment" element={<PaymentPage />} />
-              <Route path="commission-categories" element={<CommissionCategoriesPage />} />
-              <Route path="logistics-pool" element={<LogisticsPoolPage />} />
-              <Route path="product-import" element={<ProductImportPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/logistics" element={<LogisticsPage />} />
+              <Route path="/account" element={<AccountPage />} />
+              <Route path="/subscription" element={<SubscriptionPage />} />
+              <Route path="/payment" element={<PaymentPage />} />
+              <Route path="/commission-categories" element={<CommissionCategoriesPage />} />
+              <Route path="/logistics-pool" element={<LogisticsPoolPage />} />
+              <Route path="/product-import" element={<ProductImportPage />} />
               <Route
-                path="settings"
+                path="/settings"
                 element={
                   <AdminRoute>
                     <SettingsPage />
@@ -109,7 +121,7 @@ function App() {
                 }
               />
               <Route
-                path="users"
+                path="/users"
                 element={
                   <AdminRoute>
                     <UserManagementPage />
@@ -117,7 +129,7 @@ function App() {
                 }
               />
               <Route
-                path="plans"
+                path="/plans"
                 element={
                   <AdminRoute>
                     <PlanManagementPage />
@@ -125,15 +137,14 @@ function App() {
                 }
               />
               <Route
-                path="statistics"
+                path="/statistics"
                 element={
                   <AdminRoute>
                     <StatisticsPage />
                   </AdminRoute>
                 }
               />
-              <Route path="about" element={<AboutPage />} />
-              <Route path="*" element={<NotFoundPage />} />
+              <Route path="/about" element={<AboutPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
