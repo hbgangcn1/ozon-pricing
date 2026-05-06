@@ -123,6 +123,15 @@ sudo systemctl disable streamlit-app.service 2>/dev/null || true
 sudo systemctl disable pricing-api.service 2>/dev/null || true
 log "旧服务已禁用"
 
+# 杀掉占用 8003 端口的孤儿 gunicorn（非 systemd 管理的历史进程）
+# 否则第 10 步 fastapi-app.service 会因 "Connection in use" 反复 restart 失败
+if command -v fuser >/dev/null 2>&1; then
+    fuser -k -TERM 8003/tcp 2>/dev/null || true
+    sleep 2
+    fuser -k -KILL 8003/tcp 2>/dev/null || true
+fi
+log "端口 8003 已释放"
+
 # 停止 fastapi-app（如果已存在）
 if systemctl is-active --quiet fastapi-app.service 2>/dev/null; then
     sudo systemctl stop fastapi-app.service
