@@ -1,7 +1,7 @@
 # pyright: reportUnusedFunction=false
 import os
 import sys
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -13,6 +13,22 @@ from api.main import app  # noqa: E402
 from database import get_db  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
+
+
+def _mock_session_with_savepoint():
+    """Build an AsyncMock session whose begin_nested() works as `async with`.
+
+    The single + batch add-to-my-logistics routes wrap create_logistics in
+    `async with session.begin_nested():` (SAVEPOINT). AsyncMock returns a
+    coroutine for begin_nested(), not an async context manager, so we install
+    a MagicMock that returns an object with __aenter__/__aexit__.
+    """
+    session = AsyncMock()
+    savepoint = AsyncMock()
+    savepoint.__aenter__ = AsyncMock(return_value=savepoint)
+    savepoint.__aexit__ = AsyncMock(return_value=None)
+    session.begin_nested = MagicMock(return_value=savepoint)
+    return session
 
 
 @pytest.fixture(autouse=True)
@@ -136,7 +152,7 @@ def test_import_logistics_pool_success():
             return_value={"rows": rows, "skipped": 1, "errors": ["row 0 ignored"]},
         ) as mock_parse,
         patch(
-            "api.routes.logistics_pool.insert_row",
+            "api.routes.logistics_pool.upsert",
             new=AsyncMock(side_effect=[101, 102]),
         ) as mock_insert,
     ):
@@ -214,7 +230,7 @@ def test_set_logistics_pool_active_rejects_invalid_status():
 
 
 def test_add_to_my_logistics_success():
-    session = AsyncMock()
+    session = _mock_session_with_savepoint()
     pool_item = _pool_row(pool_id=9)
     app.dependency_overrides[dependencies.get_current_user_id] = lambda: 18
     app.dependency_overrides[get_db] = _db_override(session)
@@ -272,7 +288,7 @@ def test_add_to_my_logistics_returns_404_when_pool_item_missing():
 
 
 def test_batch_add_to_my_logistics_success():
-    session = AsyncMock()
+    session = _mock_session_with_savepoint()
     pool_items = {
         10: _pool_row(pool_id=10),
         11: _pool_row(pool_id=11),
@@ -310,7 +326,7 @@ def test_batch_add_to_my_logistics_success():
 
 
 def test_batch_add_to_my_logistics_partial_not_found():
-    session = AsyncMock()
+    session = _mock_session_with_savepoint()
     pool_item = _pool_row(pool_id=20)
     app.dependency_overrides[dependencies.get_current_user_id] = lambda: 18
     app.dependency_overrides[get_db] = _db_override(session)

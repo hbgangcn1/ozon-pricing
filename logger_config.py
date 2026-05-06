@@ -249,7 +249,7 @@ def configure_logger(
         message = SensitiveFormatter.sanitize_message(message)
         # 转义函数名中的特殊字符，防止loguru解析错误
         fn_name = record["function"].replace("<", "\\<").replace(">", "\\>")
-        return (
+        base = (
             f"<green>{record['time']:YYYY-MM-DD HH:mm:ss}</green> | "
             f"<level>{record['level'].name: <8}</level> | "
             f"<cyan>{record['name']}</cyan>:"
@@ -257,6 +257,7 @@ def configure_logger(
             f"<cyan>{record['line']}</cyan> | "
             f"<level>{message}</level>"
         )
+        return base + "\n{exception}"
 
     # 控制台输出（开发环境）
     if enable_console:

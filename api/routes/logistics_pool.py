@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import (
@@ -225,7 +225,8 @@ async def add_to_my_logistics(
         raise HTTPException(status_code=404, detail="物流池条目不存在")
     data = {k: v for k, v in item.items() if k not in _COPY_EXCLUDE}
     _sanitize_pool_data(data)
-    new_id = await create_logistics(session, user_id, data)
+    async with session.begin_nested():
+        new_id = await create_logistics(session, user_id, data)
     await recalculate_priority_groups(session, user_id)
     return {"id": new_id}
 
@@ -253,27 +254,34 @@ async def batch_add_to_my_logistics(
         data = {k: v for k, v in item.items() if k not in _COPY_EXCLUDE}
         _sanitize_pool_data(data)
         try:
-            savepoint = session.begin_nested()
-            try:
+            async with session.begin_nested():
                 new_id = await create_logistics(session, user_id, data)
-                await savepoint.commit()
-                added.append(new_id)
-            except IntegrityError:
-                await savepoint.rollback()
-                raise
-            except Exception:
-                await savepoint.rollback()
-                raise
         except IntegrityError as exc:
             name = data.get("name", pool_id)
-            pgcode = getattr(exc.orig, 'pgcode', None) if exc.orig else None
-            if pgcode == '23505':
+            pgcode = getattr(exc.orig, "pgcode", None) if exc.orig else None
+            if pgcode == "23505":
                 errors.append(f"{name}: 已存在")
             elif pgcode:
                 errors.append(f"{name}: 数据库错误({pgcode})")
             else:
                 errors.append(f"{name}: {exc}")
             logger.warning("batch-add 跳过 pool_id=%s: %s", pool_id, exc)
+        except DBAPIError as exc:
+            # connection_invalidated 必须中止整批 (spec.md:38, design.md D2)
+            if getattr(exc, "connection_invalidated", False):
+                logger.exception("batch-add 连接失效，中止整批")
+                raise
+            # 其它 DBAPI 子类 (DataError / ProgrammingError / OperationalError 等) 单条跳过
+            name = data.get("name", pool_id)
+            errors.append(f"{name}: {exc}")
+            logger.warning("batch-add 跳过 pool_id=%s DB 错误: %s", pool_id, exc)
+        except StatementError as exc:
+            # 非 DBAPI 的 StatementError (绑定/编译阶段错误等)，单条跳过
+            name = data.get("name", pool_id)
+            errors.append(f"{name}: {exc}")
+            logger.warning("batch-add 跳过 pool_id=%s 语句错误: %s", pool_id, exc)
+        else:
+            added.append(new_id)
     if added:
         await recalculate_priority_groups(session, user_id)
     return {
