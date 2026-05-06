@@ -77,8 +77,14 @@ function Stop-PortProcess {
 Stop-PortProcess -Port 8003
 Stop-PortProcess -Port 3001
 
+# ── 设置后端环境变量（CORS / 开发模式）────────────────────────
+# ALLOWED_ORIGINS 必须包含 vite 实际监听的端口；vite.config.js 锁定 3001（strictPort），
+# 但保留 3002/5173 作为兜底防止本机其他实例占用导致漂移。
+$env:ALLOWED_ORIGINS = 'http://localhost:3001,http://localhost:3002,http://localhost:5173'
+
 # ── 启动后端（uvicorn）──────────────────────────────────────
 Write-Host '[启动] FastAPI 后端...' -ForegroundColor Cyan
+Write-Host "  ALLOWED_ORIGINS = $env:ALLOWED_ORIGINS" -ForegroundColor DarkGray
 $backendProcess = Start-Process `
     -FilePath $venvPython `
     -ArgumentList '-m', 'uvicorn', 'api.main:app', '--reload', '--host', '0.0.0.0', '--port', '8003' `

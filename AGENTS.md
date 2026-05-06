@@ -63,6 +63,43 @@
 ### 通信语言
 - 中文
 
+### skill_mcp 工具调用规约（必须遵守，防止 "missing operation" 错误）
+
+> ⚠️ **历史教训**：subagent 调用 `skill_mcp` 时只传 `mcp_name`，缺操作字段，导致工具拒绝并报 "missing operation"。
+
+**强制签名**：
+```
+skill_mcp(
+  mcp_name="<server-name>",        // 必填
+  tool_name="<tool>"               // ← 三选一必填其一
+  | resource_name="<uri>"
+  | prompt_name="<prompt>",
+  arguments='{...}' | {...}        // 可选；JSON 字符串或对象
+)
+```
+
+**正例**（调用 playwright MCP 的 browser_navigate 工具）：
+```
+skill_mcp(
+  mcp_name="playwright",
+  tool_name="browser_navigate",
+  arguments='{"url":"http://localhost:3001"}'
+)
+```
+
+**反例**（缺操作字段 → "missing operation"）：
+```
+skill_mcp(mcp_name="playwright", arguments='{"url":"..."}')   ❌ 缺 tool_name
+skill_mcp(mcp_name="playwright")                              ❌ 同上
+```
+
+**何时用哪个字段**：
+- `tool_name` — 调 MCP server 的工具（最常见，~95% 场景）
+- `resource_name` — 读 MCP server 暴露的资源（URI）
+- `prompt_name` — 取 MCP server 预定义的 prompt 模板
+
+**绝不能同时传两个**操作字段；只能三选一。
+
 ### 当前项目结构
 ```
 logistics/
@@ -216,6 +253,50 @@ $proc = Start-Process -FilePath "npx.cmd" `
 - ❌ Bash 工具默认 120s 超时,但 agent 不显示中间进度,用户面对 2 分钟黑屏
 - ❌ Start-Process 后立即 `Wait-Process` 不轮询输出
 - ❌ 没设置硬超时,任由命令无限挂起
+
+#### Bash 工具单次调用静默问题（必须遵守，反复出现的痛点）
+
+> ⚠️ **历史教训（R-STUCK-COMPOUND）**: bash 工具只在**整个命令结束时**才把 stdout 回传给 agent，agent 才能转发给用户。把 "启动后台进程 + Start-Sleep N + 健康检查" 塞进**一个 bash 调用**，用户在 N 秒内看不到任何字符，必然误判"卡住"。
+
+##### 触发条件
+- 单个 bash 调用内含 `Start-Sleep -Seconds N`（N ≥ 3）
+- 单个 bash 调用内含 "启动 + 等待启动完成 + 验证" 三段式
+- 任何**预计单次调用 >5 秒**的 PowerShell 复合脚本
+
+##### 强制做法：拆分成多个 bash 调用
+把"启动 + 等待 + 验证"拆成 3 个独立的 bash 工具调用：
+1. **调用 1**：仅 `Start-Process` 启动后台进程，立刻返回 PID
+2. **调用 2**：等待固定时间（短，如 `Start-Sleep -Seconds 5`）—— 用户能看到这是"等待"步骤
+3. **调用 3**：跑健康检查 / `Invoke-WebRequest` / 读 log tail
+
+每个调用 ≤ 3 秒返回，用户能看到清晰的步骤进度。
+
+##### 正例
+```powershell
+# 调用 1（立即返回）：
+Start-Process -FilePath ... -RedirectStandardOutput backend.log -NoNewWindow -PassThru | Select Id
+
+# 调用 2（5s 返回）：
+Start-Sleep -Seconds 5; "boot wait done"
+
+# 调用 3（立即返回）：
+try { (iwr http://localhost:8003/docs -Method Head -TimeoutSec 3).StatusCode } catch { "DOWN" }
+Get-Content backend.log -Tail 10
+```
+
+##### 反例（禁止）
+```powershell
+# ❌ 整段塞一个 bash 调用，用户面对 8s 黑屏
+Start-Process ...
+Start-Sleep -Seconds 8
+iwr http://localhost:8003/docs ...
+Get-Content backend.log -Tail 20
+```
+
+##### 与"长程命令"规则的关系
+- **长程命令规则**（≥30s）：用 `Start-Process` 后台 + 轮询 log
+- **本规则**（5s ~ 30s 复合脚本）：拆成多个 bash 调用，每个 ≤ 3s 返回
+- 两条规则互补，覆盖不同时长区间
 
 #### Bash 工具内置 timeout 字段（必用）
 - 任何长程命令调用 `bash` 工具时,**必须显式设置 `timeout` 参数**(单位 ms,默认 120000)
