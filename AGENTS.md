@@ -67,6 +67,79 @@
 - **历史教训**：生产 alembic_version 曾被 stamp 至 head 但部分迁移 DDL 未真正执行（如 `d2e9f3b4c5a6` 的 `volume_mode` CHECK），导致 `volume_mode='sum_of_sides'` 写入 23514 失败。即使 `alembic check` 启用也抓不到——它只比对 model 与 DB，而本项目 CHECK 约束只在迁移 DDL 中声明（models/*.py 无 `CheckConstraint`）。`check_schema_integrity.py` 是唯一能抓此类 drift 的守卫
 - **修复 stamp drift**：直接在生产事务里 DROP+CREATE 对应约束，alembic_version 不动
 
+### 生产部署流程 - 必须遵守
+
+**生产环境信息**
+- 域名：`https://www.cbprice.cn`
+- SSH：`SSH_USER@SERVER_IP`（需已配置 SSH key，无密码）
+- 项目路径：`/var/www/ozon-pricing`
+- venv：`/var/www/ozon-pricing/venv`
+- systemd 服务：`fastapi-app.service`（gunicorn + uvicorn worker × 3，监听 `127.0.0.1:8003`）
+- nginx：`/etc/nginx/sites-enabled/cbprice.cn`（前端静态 + `/api` 反代到 8003）
+- 部署日志路径：`/tmp/deploy.log`（每次 deploy.sh 重写）
+- gunicorn 应用日志：`/var/log/cbprice/access.log` + `/var/log/cbprice/error.log`
+
+**标准部署三步**（绝对不要 ssh 进生产手改代码）
+
+```powershell
+# 1. 本地 push 到 main
+git push origin main
+
+# 2. SSH pull（必须分步：pull → 后台启动 deploy → 跟日志，遵循"长程命令"规则）
+ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && git pull origin main 2>&1 | tail -5'
+
+# 3. 后台启动 deploy.sh + 重定向日志（前台运行会阻塞 agent shell，禁止）
+ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && nohup bash deploy/deploy.sh > /tmp/deploy.log 2>&1 < /dev/null & disown; echo started'
+
+# 4. 30s 后跟日志（典型部署 30~60s 完成）
+Start-Sleep -Seconds 30
+ssh SSH_USER@SERVER_IP 'tail -30 /tmp/deploy.log'
+```
+
+**deploy.sh 11 步速览**
+1. 预检（venv / .env 存在性）
+2. 备份当前 git commit 为 `pre-deploy-<timestamp>` tag + nginx 配置快照
+3. `git pull origin main`
+4. `pip install -r requirements.txt`
+4.1. `alembic upgrade head`
+4.2. **`scripts/check_schema_integrity.py`**（schema CHECK 不变量守卫，drift 中止部署）
+5. 检查前端构建产物（`frontend/dist`，本地构建后 commit 进 repo）
+6. 创建 `/var/log/cbprice/`
+7. 停旧服务（`streamlit-app` / `pricing-api` `systemctl stop`+`disable`）+ **`fuser -k 8003/tcp`** 杀孤儿 gunicorn
+8. 安装 systemd unit `fastapi-app.service`
+9. 安装 nginx 配置 + `nginx -t` + `nginx -s reload`
+10. `systemctl restart fastapi-app` + 等待 healthcheck
+11. 健康检查：本地 `curl 127.0.0.1:8003/api/exchange/rates` + 公网 `curl https://www.cbprice.cn`
+
+**健康检查（部署后必跑）**
+```powershell
+# 公网 HTTPS 必须返回 200
+(Invoke-WebRequest https://www.cbprice.cn/api/exchange/rates -TimeoutSec 10).StatusCode
+# 生产 systemd 状态
+ssh SSH_USER@SERVER_IP 'systemctl --no-pager status fastapi-app | head -10'
+```
+
+**回滚**
+```powershell
+# 列出最近备份标签
+ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && git tag -l "pre-deploy-*" | tail -5'
+# 回滚（rollback.sh 接受 tag 参数）
+ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && bash deploy/rollback.sh pre-deploy-<timestamp>'
+```
+
+**故障排查**
+- `deploy.sh` 退出非 0 → 看 `/tmp/deploy.log` 末尾的 `[ERROR]` 行
+- 第 4.2 步失败 → schema CHECK drift，read `scripts/check_schema_integrity.py` 输出找出 drift 的约束
+- 第 10 步 `Connection in use` → 8003 端口被孤儿进程占（应该已被第 7 步 fuser 清掉，若仍出现：`ssh SSH_USER@... 'ss -ltnp | grep 8003'` 找 PID 手 kill）
+- FastAPI 启动失败 → `ssh SSH_USER@... 'tail -50 /var/log/cbprice/error.log'`（systemd journal 当前在该用户下不可读）
+- nginx `conflicting server name` 警告 → pre-existing 历史配置残留，不影响功能，可忽略
+
+**禁止事项**
+- ❌ SSH 进生产 `vim` 改代码（除紧急 schema 修复，且必须事后回填到 repo）
+- ❌ 跳过 deploy.sh 直接 `systemctl restart fastapi-app`（绕过 schema 守卫 + 备份 + 健康检查）
+- ❌ 前台运行 `bash deploy/deploy.sh`（阻塞 agent shell，违反"长程命令"规则）
+- ❌ 修改 `EXPECTED_CHECK_VALUES` 时不同步迁移 DDL（守卫脚本只校验 DB 实况）
+
 ### 通信语言
 - 中文
 
