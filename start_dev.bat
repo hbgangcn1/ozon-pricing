@@ -17,8 +17,14 @@ if not exist "%~dp0frontend\node_modules" (
 call :kill_port 8003
 call :kill_port 3001
 
+:: ── 设置后端环境变量（CORS） ──────────────────────────────────
+:: 必须包含 vite 实际监听端口；vite.config.js 锁定 3001（strictPort），
+:: 保留 3002/5173 兜底防止本机其他实例占用。
+set "ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3002,http://localhost:5173"
+
 :: ── 启动后端（使用 venv 的 python） ─────────────────────────
 echo [启动] FastAPI 后端...
+echo   ALLOWED_ORIGINS = %ALLOWED_ORIGINS%
 start "logistics-backend" "%~dp0.venv\Scripts\python.exe" -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8003
 
 :: ── 启动前端 ────────────────────────────────────────────────

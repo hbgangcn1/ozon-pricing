@@ -1,4 +1,17 @@
-$ErrorActionPreference = 'Stop'
+# 注意：默认用 Continue，避免单条 cmdlet 出错就让脚本闪退（双击运行时尤其致命）。
+# 关键步骤需要"出错就停"的，自己用 try/catch 包。
+$ErrorActionPreference = 'Continue'
+
+# 双击 .ps1 闪退保护：任何未捕获异常都暂停窗口，让用户看到错误信息。
+trap {
+    Write-Host ''
+    Write-Host '!!!! 脚本异常退出 !!!!' -ForegroundColor Red
+    Write-Host $_ -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
+    Write-Host ''
+    Read-Host '按回车键关闭窗口'
+    exit 1
+}
 
 $repoRoot = $PSScriptRoot
 if (-not $repoRoot) { $repoRoot = Get-Location }
@@ -9,7 +22,9 @@ $frontendNodeModules = Join-Path $frontendDir 'node_modules'
 
 # ── 前置检查 ──────────────────────────────────────────────
 if (-not (Test-Path $venvPython)) {
-    Write-Error "找不到虚拟环境 Python：$venvPython`n请先创建虚拟环境：python -m venv .venv && .venv\Scripts\pip install -r requirements.txt"
+    Write-Host "[ERROR] 找不到虚拟环境 Python：$venvPython" -ForegroundColor Red
+    Write-Host '请先创建虚拟环境：python -m venv .venv ; .venv\Scripts\pip install -r requirements.txt' -ForegroundColor Yellow
+    Read-Host '按回车键关闭窗口'
     exit 1
 }
 
@@ -146,4 +161,6 @@ finally {
         }
     }
     Write-Host '开发环境已关闭。' -ForegroundColor Green
+    Write-Host ''
+    Read-Host '按回车键关闭窗口'
 }
