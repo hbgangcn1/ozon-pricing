@@ -11,3 +11,12 @@
 ## 3. 部署
 
 - [x] 3.1 本地构建前端并部署到生产服务器
+
+## 4. 生产 QA 证据
+
+- [x] 4.1 Playwright 验证 `https://www.cbprice.cn/subscription`（2026-05-08）：
+  - 企业版卡片底部"开发中……"文字出现 1 次 ✅
+  - "开发中" Badge 出现 ✅
+  - 旧文案"联系客服"已不存在 ✅
+  - 截图：`qa_subscription_developing.png`
+  - 代码定位：`frontend/src/pages/SubscriptionPage.jsx:298-301`
