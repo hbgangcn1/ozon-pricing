@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+decimal-arithmetic capability spec.
+
+## Requirements
+
 
 ### Requirement: Pricing 模块全链路使用 Decimal 进行货币计算
 

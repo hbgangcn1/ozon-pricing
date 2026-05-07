@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+product-batch-delete capability spec.
+
+## Requirements
+
 
 ### Requirement: Batch selection in product list dialog
 The product list dialog in PricingPage precise mode SHALL include a Checkbox for each product row enabling single selection, and a "select all" Checkbox in the header area. Selection state SHALL be independent of product editing or form population.

@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+statistics-overhaul capability spec.
+
+## Requirements
+
 
 ### Requirement: Overview tab displays real data from API
 The system SHALL replace all hardcoded mock data in the overview tab with real data fetched from `/api/statistics/overview`. Active users SHALL be calculated based on users with `last_login` within the last 30 days, not set equal to total users.

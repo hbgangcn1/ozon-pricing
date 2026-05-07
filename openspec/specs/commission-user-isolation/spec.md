@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+commission-user-isolation capability spec.
+
+## Requirements
+
 
 ### Requirement: Commission categories are user-scoped
 The system SHALL associate each commission category with a specific user via a `user_id` foreign key. Each user SHALL only see and manage their own commission categories. The `name` uniqueness constraint SHALL be per-user (user_id + name), not global.

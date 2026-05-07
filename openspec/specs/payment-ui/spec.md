@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+payment-ui capability spec.
+
+## Requirements
+
 
 ### Requirement: 支付二维码弹窗组件
 系统 SHALL 提供支付二维码弹窗（基于 shadcn/ui Dialog），当用户触发支付时展示微信支付二维码，并实时显示支付状态。弹窗 SHALL 与现有深色主题设计系统完全一致。

@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+pricing-empty-state capability spec.
+
+## Requirements
+
 
 ### Requirement: Empty state prompt when no logistics rules exist
 The PricingPage SHALL display a prominent empty state message when the user has no logistics rules configured. The message SHALL read "请先添加物流规则" and be visually prominent (not a subtle hint). The empty state SHALL appear in both fast mode and precise mode tabs. The page's calculation forms and buttons SHALL still be visible but the empty state provides clear guidance.

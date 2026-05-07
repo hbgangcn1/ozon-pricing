@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+decimal-db-migration capability spec.
+
+## Requirements
+
 
 ### Requirement: 数据库价格列从 Float 迁移至 Numeric(12,4)
 

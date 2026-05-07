@@ -219,6 +219,48 @@ class TestAuth:
         r = client.post("/api/auth/login", json={"username": "u", "password": "wrong"})
         assert r.status_code == 401
 
+    @patch("api.routes.auth.get_user_by_id", new_callable=AsyncMock)
+    @patch("api.routes.auth.reset_user_daily_calculations", new_callable=AsyncMock)
+    @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
+    @patch("api.routes.auth.deactivate_all_sessions", new_callable=AsyncMock)
+    @patch("api.routes.auth.insert_session", new_callable=AsyncMock)
+    @patch("api.routes.auth.create_refresh_token")
+    @patch("api.routes.auth.create_access_token")
+    def test_login_invokes_daily_reset_and_returns_refreshed_count(
+        self,
+        mock_access_token,
+        mock_refresh_token,
+        mock_insert_session,
+        mock_deactivate_all,
+        mock_verify,
+        mock_reset,
+        mock_get_user_by_id,
+    ):
+        # daily-calc-reset task 3.3: login must call reset_user_daily_calculations
+        # and surface the post-reset remaining_calculations in the response.
+        mock_verify.return_value = {
+            "id": 7,
+            "username": "limited_user",
+            "role": "user",
+            "user_type": "free",
+            "remaining_calculations": 0,
+        }
+        mock_reset.return_value = True
+        refreshed = MagicMock()
+        refreshed.remaining_calculations = 10
+        mock_get_user_by_id.return_value = refreshed
+        mock_access_token.return_value = "tokR"
+        mock_refresh_token.return_value = "refR"
+        r = client.post(
+            "/api/auth/login",
+            json={"username": "limited_user", "password": "p"},
+        )
+        assert r.status_code == 200
+        mock_reset.assert_awaited_once()
+        reset_args = mock_reset.await_args
+        assert reset_args.args[1] == 7
+        assert r.json()["user"]["remaining_calculations"] == 10
+
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
     @patch("api.routes.auth.deactivate_all_sessions", new_callable=AsyncMock)
     @patch("api.routes.auth.insert_session", new_callable=AsyncMock)

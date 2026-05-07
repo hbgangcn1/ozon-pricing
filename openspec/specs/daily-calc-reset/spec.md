@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+daily-calc-reset capability spec.
+
+## Requirements
+
 
 ### Requirement: Daily calculation count reset on login
 
