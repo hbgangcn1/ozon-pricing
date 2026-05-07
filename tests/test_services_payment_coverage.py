@@ -195,6 +195,11 @@ async def test_handle_payment_success_happy_path(monkeypatch):
     session.get.return_value = user
     service = PaymentService(session)
     monkeypatch.setattr(payment_service.time, "time", lambda: 1_700_001_000)
+    from db import subscriptions as _subs
+    from services import overflow_service as _ovf
+    monkeypatch.setattr(_subs, "get_plan_by_code", AsyncMock(return_value=None))
+    monkeypatch.setattr(_subs, "_count_active_rules", AsyncMock(return_value=0))
+    monkeypatch.setattr(_ovf, "restore_all_overflow", AsyncMock(return_value=0))
 
     await service.handle_payment_success("ord-1")
 

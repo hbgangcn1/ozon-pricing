@@ -12,8 +12,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pricing.commission import (  # noqa: E402
+from api.routes._pricing_helpers import (  # noqa: E402
     fetch_commission_category,
+)
+from pricing.commission import (  # noqa: E402
     select_commission_rate_from_category,
 )
 from pricing.calculate_pricing import (  # noqa: E402

@@ -12,7 +12,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.exc import DataError, DBAPIError
+from sqlalchemy.exc import DataError, DBAPIError, IntegrityError
 
 from api import dependencies
 from api.main import app
@@ -202,30 +202,30 @@ async def test_batch_add_integrity_error_isolated(
     http_client, db_session, test_user
 ):
     """
-    Inject an invalid volume_mode on the 2nd call to _sanitize_pool_data
-    so the DB CHECK constraint fires. The SAVEPOINT must isolate the failure
-    and the other 2 rows must still be inserted.
+    Inject IntegrityError on the 2nd create_logistics call. SAVEPOINT must
+    isolate the failure so the other 2 rows still commit.
+
+    Note: cannot rely on raw DB CHECK constraints here because worker-schema
+    setup uses Base.metadata.create_all() which does not install
+    migration-only constraints (see AGENTS.md schema integrity section).
+    Mirroring test_batch_add_dataerror_isolated pattern.
     """
     pool_ids = await _seed_pool_rows(3)
     try:
         call_counter = {"n": 0}
-        original_sanitize = (
-            __import__(
-                "api.routes.logistics_pool",
-                fromlist=["_sanitize_pool_data"],
-            )._sanitize_pool_data
-        )
+        original_create = create_logistics
 
-        def _patched_sanitize(data):
+        async def _patched_create(session, user_id, data):
             call_counter["n"] += 1
-            result = original_sanitize(data)
             if call_counter["n"] == 2:
-                result["volume_mode"] = "__INVALID__"
-            return result
+                raise IntegrityError(
+                    "INSERT", {}, Exception("duplicate key value")
+                )
+            return await original_create(session, user_id, data)
 
         with patch(
-            "api.routes.logistics_pool._sanitize_pool_data",
-            side_effect=_patched_sanitize,
+            "api.routes.logistics_pool.create_logistics",
+            side_effect=_patched_create,
         ):
             resp = await http_client.post(
                 "/api/logistics-pool/batch-add-to-my-logistics",
@@ -238,7 +238,6 @@ async def test_batch_add_integrity_error_isolated(
         assert len(body["errors"]) == 1, body
         assert len(body["new_ids"]) == 2, body
 
-        # Verify 2 logistics rows in DB
         from sqlalchemy import select
         from models.logistics import Logistics
         result = await db_session.execute(

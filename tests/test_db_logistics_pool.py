@@ -173,12 +173,17 @@ def test_upsert_pool_item_creates_new_row():
     _run(_in_session(scenario))
 
 
-def test_upsert_pool_item_updates_existing_row_in_place():
+def test_upsert_pool_item_creates_new_row_each_call():
+    # Priority 1 (correctness/regression-pin): commit 0449d146 deliberately
+    # removed dedup from db.logistics_pool.upsert(); it is now plain INSERT.
+    # This test pins the new contract so future "fix" attempts to re-add
+    # dedup get caught — production callers (xlsx_import, batch_add) rely
+    # on INSERT-only semantics.
     async def scenario(session):
-        token = _unique_token("update")
-        original_id = await upsert(session, _pool_data(token))
+        token = _unique_token("repeat")
+        first_id = await upsert(session, _pool_data(token))
 
-        updated_id = await upsert(
+        second_id = await upsert(
             session,
             _pool_data(
                 token,
@@ -189,14 +194,19 @@ def test_upsert_pool_item_updates_existing_row_in_place():
             ),
         )
 
-        assert updated_id == original_id
+        assert second_id != first_id
+        assert second_id > first_id
 
-        row = await get_by_id(session, original_id)
-        assert row is not None
-        assert row["name"] == f"Updated Pool {token}"
-        assert row["max_days"] == 12
-        assert row["price_limit_cny"] == pytest.approx(321.0)
-        assert row["id"] == original_id
+        first_row = await get_by_id(session, first_id)
+        assert first_row is not None
+        assert first_row["name"] == f"Pool {token}"
+        assert first_row["max_days"] == 7
+
+        second_row = await get_by_id(session, second_id)
+        assert second_row is not None
+        assert second_row["name"] == f"Updated Pool {token}"
+        assert second_row["max_days"] == 12
+        assert second_row["price_limit_cny"] == pytest.approx(321.0)
 
         count = await session.scalar(
             select(func.count(LogisticsPool.id))
@@ -204,7 +214,7 @@ def test_upsert_pool_item_updates_existing_row_in_place():
             .where(LogisticsPool.delivery_method == f"method_{token}")
             .where(LogisticsPool.destination == f"DEST_{token}")
         )
-        assert count == 1
+        assert count == 2
 
     _run(_in_session(scenario))
 

@@ -35,6 +35,30 @@ if "POSTGRES_PASSWORD" not in os.environ:
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+def _install_worker_schema_isolation() -> None:
+    import database
+    from tests._db_isolation import (
+        create_all_in_schema,
+        create_worker_schema,
+        make_worker_engine,
+        make_worker_sessionmaker,
+        worker_schema_name,
+    )
+
+    schema = worker_schema_name()
+    create_worker_schema(schema)
+    create_all_in_schema(schema)
+
+    worker_engine = make_worker_engine(schema)
+    worker_sessionmaker = make_worker_sessionmaker(worker_engine)
+
+    database.engine = worker_engine
+    database.AsyncSessionLocal = worker_sessionmaker
+
+
+_install_worker_schema_isolation()
+
 warnings.filterwarnings("ignore", category=ResourceWarning)
 warnings.filterwarnings(
     "ignore",
@@ -69,21 +93,17 @@ async def _delete_test_user_async(session, user_id, username):
     Handles ALL known FK dependencies consistently with clean_db
     and pytest_sessionfinish.
     """
-    # user_id FK tables (comprehensive list matching clean_db)
+    # user_id FK tables (ORM-registered only; legacy non-ORM tables removed
+    # per fix-pytest-xdist-isolation Phase 3.4 set-diff)
     for table in [
         "products",
         "active_sessions",
         "logistics",
         "payment_orders",
-        "logistics_pricing_rules",
-        "pricing_plans",
-        "orders",
-        "session_security_audit_log",
-        "user_sessions",
-        "rate_limit_log",
         "user_login_log",
         "user_behavior_log",
         "subscription_upgrade_history",
+        "trial_overflow_window",
     ]:
         await _safe_cleanup_execute(
             session,
@@ -279,12 +299,6 @@ async def clean_db():
                         {},
                     )
                 for table in [
-                    "logistics_pricing_rules",
-                    "pricing_plans",
-                    "orders",
-                    "session_security_audit_log",
-                    "user_sessions",
-                    "rate_limit_log",
                     "user_login_log",
                     "user_behavior_log",
                     "subscription_upgrade_history",

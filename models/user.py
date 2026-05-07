@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlalchemy import String, Integer, Float, text
+from sqlalchemy import String, Integer, Float, text, Index, func
 from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 
@@ -85,6 +85,40 @@ class User(Base):
     is_frozen: Mapped[Optional[int]] = mapped_column(
         Integer,
         server_default=text("0"),
+    )
+    trial_used: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    trial_started_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    trial_expires_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    trial_plan_at_start: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default=text("''"),
+    )
+
+    __table_args__ = (
+        Index(
+            "ux_users_username_lower",
+            func.lower(username),
+            unique=True,
+        ),
+        Index(
+            "ux_users_email_lower",
+            func.lower(email),
+            unique=True,
+            postgresql_where=email.isnot(None),
+        ),
     )
 
 

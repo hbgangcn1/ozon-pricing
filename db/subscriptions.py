@@ -1,16 +1,195 @@
 import math
 import logging
 import time
+from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from sqlalchemy import update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
+from models.logistics import Logistics
 from db.plans import get_plan_by_code
+# overflow_service imported lazily in apply_subscription_change to break
+# db <-> services circular import (services/__init__ imports payment_service
+# which imports db.subscriptions).
 
 logger = logging.getLogger(__name__)
+
+
+# --- apply_subscription_change ------------------------------------------------
+#
+# SINGLE source of truth for mutating users.subscription_type. All payment
+# success paths, admin grants, and downgrades MUST funnel here so trial-overflow
+# bookkeeping (auto-trim on downgrade, restore on upgrade, window close) stays
+# consistent. Direct `user.subscription_type = X` writes elsewhere are forbidden
+# (enforced by code review + grep).
+
+ChangeAction = Literal["noop", "upgraded", "downgraded", "same_tier"]
+
+
+@dataclass
+class ChangeResult:
+    action: ChangeAction
+    old_plan: str
+    new_plan: str
+    new_limit: int
+    active_count: int
+    restored_count: int = 0
+    trimmed_count: int = 0
+    window_id: int = 0
+
+
+# Hardcoded fallback (mirrors plan_resolution._FALLBACK_LIMITS) for tests that
+# don't seed Plan rows. Kept private; production hits real plans table.
+_FALLBACK_LIMITS = {
+    "free": 1,
+    "efficiency": 3,
+    "professional": 10,
+    "enterprise": -1,
+    "gratitude": -1,
+}
+
+
+async def _resolve_plan_limit(session: AsyncSession, plan_code: str) -> int:
+    plan = await get_plan_by_code(session, plan_code)
+    if plan and plan.get("logistics_limit") is not None:
+        return int(plan["logistics_limit"])
+    return _FALLBACK_LIMITS.get(plan_code, 1)
+
+
+async def _count_active_rules(session: AsyncSession, user_id: int) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(Logistics)
+        .where(
+            Logistics.user_id == user_id,
+            Logistics.is_active == 1,
+            Logistics.disabled_by_overflow == 0,
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one() or 0)
+
+
+async def apply_subscription_change(
+    session: AsyncSession,
+    user_id: int,
+    new_plan: str,
+    *,
+    billing_cycle: Optional[str] = None,
+    subscription_expires: Optional[int] = None,
+    source: str = "unknown",
+) -> ChangeResult:
+    """ONLY allowed entry point for writing users.subscription_type.
+
+    Transactional steps (caller commits):
+      1. Load user (404 → ValueError).
+      2. Read old plan code.
+      3. Same plan + same expires → idempotent noop (still updates billing_cycle
+         if provided; does NOT touch subscription_expires unless given).
+      4. Write subscription_type / billing_cycle / subscription_expires.
+      5. Resolve new plan's logistics_limit.
+      6. UPGRADE branch: new plan in {professional, enterprise} OR new_limit==-1
+         OR new_limit > old active_count → restore_all_overflow(reason='upgraded').
+      7. DOWNGRADE branch: new_limit > 0 AND new_limit < active_count
+         → auto_trim_user_rules(user_id, new_limit).
+      8. Otherwise: same_tier (e.g. monthly→yearly free).
+
+    `source` is for audit logging only (e.g. 'wechat_pay', 'admin_grant').
+    Returns ChangeResult with audit fields. Caller commits.
+    """
+    from services import overflow_service  # lazy: see module-level note
+    user = await session.get(User, user_id)
+    if user is None:
+        raise ValueError(f"user not found: id={user_id}")
+
+    old_plan = (user.subscription_type or "free").strip() or "free"
+    new_plan_norm = (new_plan or "free").strip() or "free"
+
+    # Idempotent same-plan path: still allow billing_cycle / expires refresh
+    # (e.g. renewal of same tier extends expiry without overflow recompute).
+    if old_plan == new_plan_norm:
+        if billing_cycle is not None:
+            user.billing_cycle = billing_cycle
+        if subscription_expires is not None:
+            user.subscription_expires = subscription_expires
+        active_count = await _count_active_rules(session, user_id)
+        new_limit = await _resolve_plan_limit(session, new_plan_norm)
+        logger.info(
+            "subscription_change noop: user=%d plan=%s source=%s",
+            user_id, new_plan_norm, source,
+        )
+        return ChangeResult(
+            action="noop",
+            old_plan=old_plan,
+            new_plan=new_plan_norm,
+            new_limit=new_limit,
+            active_count=active_count,
+        )
+
+    user.subscription_type = new_plan_norm
+    if billing_cycle is not None:
+        user.billing_cycle = billing_cycle
+    if subscription_expires is not None:
+        user.subscription_expires = subscription_expires
+
+    new_limit = await _resolve_plan_limit(session, new_plan_norm)
+    active_count = await _count_active_rules(session, user_id)
+
+    is_upgrade = (
+        new_plan_norm in ("professional", "enterprise", "gratitude")
+        or new_limit == -1
+        or new_limit > active_count
+    )
+
+    if is_upgrade:
+        restored = await overflow_service.restore_all_overflow(
+            session, user_id, reason="upgraded",
+        )
+        logger.info(
+            "subscription_change upgrade: user=%d %s→%s restored=%d source=%s",
+            user_id, old_plan, new_plan_norm, restored, source,
+        )
+        return ChangeResult(
+            action="upgraded",
+            old_plan=old_plan,
+            new_plan=new_plan_norm,
+            new_limit=new_limit,
+            active_count=active_count,
+            restored_count=restored,
+        )
+
+    if new_limit > 0 and active_count > new_limit:
+        trim = await overflow_service.auto_trim_user_rules(
+            session, user_id, new_limit,
+        )
+        logger.info(
+            "subscription_change downgrade: user=%d %s→%s trimmed=%d window=%d source=%s",
+            user_id, old_plan, new_plan_norm, trim.trimmed_count,
+            trim.window_id, source,
+        )
+        return ChangeResult(
+            action="downgraded",
+            old_plan=old_plan,
+            new_plan=new_plan_norm,
+            new_limit=new_limit,
+            active_count=active_count,
+            trimmed_count=trim.trimmed_count,
+            window_id=trim.window_id,
+        )
+
+    logger.info(
+        "subscription_change same_tier: user=%d %s→%s source=%s",
+        user_id, old_plan, new_plan_norm, source,
+    )
+    return ChangeResult(
+        action="same_tier",
+        old_plan=old_plan,
+        new_plan=new_plan_norm,
+        new_limit=new_limit,
+        active_count=active_count,
+    )
 
 
 async def get_user_subscription_info(

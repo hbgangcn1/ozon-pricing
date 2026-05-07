@@ -21,11 +21,30 @@ MOCK_USER = {
     "remaining_calculations": 100,
 }
 
-app.dependency_overrides[dependencies.get_current_user_id] = lambda: 1
-app.dependency_overrides[dependencies.require_admin] = lambda: 1
-app.dependency_overrides[dependencies.get_current_user] = lambda: MOCK_USER
-
 client = TestClient(app, raise_server_exceptions=False)
+
+
+# Priority 1 (correctness): see test_api_routes.py for rationale. Module-level
+# dependency_overrides are wiped by sibling test files' teardown
+# (`app.dependency_overrides.clear()`), so we install per-test via monkeypatch
+# which auto-restores after each test.
+@pytest.fixture(autouse=True)
+def _mock_auth_dependencies(monkeypatch):
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        dependencies.get_current_user_id,
+        lambda: 1,
+    )
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        dependencies.require_admin,
+        lambda: 1,
+    )
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        dependencies.get_current_user,
+        lambda: MOCK_USER,
+    )
 
 
 def _make_backup_service_tuple():
@@ -283,11 +302,17 @@ class TestStatistics:
 
 
 class TestPricing:
+    # Priority 1 (correctness): mock decrement_user_calculations because no real
+    # user row exists in worker schema (D6 forbids modifying shared fixtures);
+    # without this mock the real function returns False and route raises 403.
+    @patch("api.routes.pricing.decrement_user_calculations", new_callable=AsyncMock)
     @patch("api.routes.pricing.calculate_pricing")
     @patch("api.routes.pricing.get_user_logistics")
     @patch("api.routes.pricing.get_fallback_exchange_rate")
     @patch("api.routes.pricing.get_fallback_usd_rate")
-    def test_calculate_fast_mode(self, mock_usd, mock_rate, mock_logistics, mock_calc):
+    def test_calculate_fast_mode(
+        self, mock_usd, mock_rate, mock_logistics, mock_calc, mock_decrement
+    ):
         mock_rate.return_value = 0.085
         mock_usd.return_value = 7.2
         mock_logistics.return_value = []
@@ -295,6 +320,7 @@ class TestPricing:
             "suggested_price": None,
             "filtered_logistics": {"land": [], "air": []},
         }
+        mock_decrement.return_value = True
         payload = {
             "mode": "fast",
             "product_data": {"name": "test", "weight_g": 100},

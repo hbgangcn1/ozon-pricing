@@ -1,5 +1,5 @@
 import { useEffect, useState , useCallback } from 'react'
-import { Crown, CheckCircle, Info } from 'lucide-react'
+import { Crown, CheckCircle, Info, Sparkles } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import PaymentQRDialog from '../components/PaymentQRDialog'
 import { toast } from 'sonner'
 import { useAuthStore } from '../stores/authStore'
-import { subscriptionsAPI } from '../services/api'
+import { subscriptionsAPI, trialAPI } from '../services/api'
 
 function SubscriptionPage() {
   const { user } = useAuthStore()
@@ -20,6 +20,30 @@ function SubscriptionPage() {
   const [selectedPlan, setSelectedPlan] = useState(null)
   const [billingCycle, setBillingCycle] = useState('month')
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
+  const [trialStatus, setTrialStatus] = useState(null)
+  const [claimingTrial, setClaimingTrial] = useState(false)
+
+  const fetchTrialStatus = useCallback(async () => {
+    try {
+      const data = await trialAPI.getStatus()
+      setTrialStatus(data)
+    } catch (_) {
+      setTrialStatus(null)
+    }
+  }, [])
+
+  const handleClaimTrial = useCallback(async () => {
+    setClaimingTrial(true)
+    try {
+      await trialAPI.claim()
+      toast.success('已开启 7 天专业版试用')
+      await fetchTrialStatus()
+    } catch (err) {
+      toast.error(err?.userMessage || err?.response?.data?.detail || '领取试用失败')
+    } finally {
+      setClaimingTrial(false)
+    }
+  }, [fetchTrialStatus])
 
   const fetchSubscription = useCallback(async () => {
     try {
@@ -81,8 +105,9 @@ function SubscriptionPage() {
       }
     }
     loadInitial()
+    fetchTrialStatus()
     return () => controller.abort()
-  }, [user])
+  }, [user, fetchTrialStatus])
 
   const handleUpgrade = useCallback((plan) => {
     setSelectedPlan(plan)
@@ -107,6 +132,7 @@ function SubscriptionPage() {
     toast.success('支付成功，正在刷新订阅信息...')
     const sub = await fetchSubscription()
     await fetchPlans()
+    await fetchTrialStatus()
     // Sync auth store so sidebar/header reflect the new plan
     if (sub?.plan_code && user) {
       useAuthStore.getState().setUser({
@@ -115,7 +141,7 @@ function SubscriptionPage() {
         subscription_type: sub.plan_code,
       })
     }
-  }, [fetchSubscription, fetchPlans, user])
+  }, [fetchSubscription, fetchPlans, fetchTrialStatus, user])
 
   const getCurrentPlanName = useCallback(() => {
     const code = currentPlan?.plan_code || user?.subscription_type || user?.user_type || 'free'
@@ -178,9 +204,38 @@ function SubscriptionPage() {
         </CardContent>
       </Card>
 
+      {trialStatus?.eligible && !trialStatus?.in_trial && !trialStatus?.trial_used && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex items-center justify-between gap-4 py-4">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-6 h-6 text-primary" />
+              <div>
+                <p className="font-medium text-text-primary">免费体验 7 天专业版</p>
+                <p className="text-sm text-text-secondary">物流模板上限提升至 10 个，无需绑定支付方式</p>
+              </div>
+            </div>
+            <Button onClick={handleClaimTrial} disabled={claimingTrial}>
+              {claimingTrial ? '正在开启...' : '开始 7 天专业版试用'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {trialStatus?.in_trial && (
+        <Card className="border-status-success/30 bg-status-success/5">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-6 h-6 text-status-success" />
+              <p className="text-text-primary">
+                专业版试用中，剩余 {Math.max(1, Math.ceil((trialStatus.remaining_seconds || 0) / 86400))} 天
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 套餐对比 */}
       <h2 className="text-lg font-medium text-text-primary mt-8">📊 套餐对比</h2>
-      
       {loading && plans.length === 0 ? (
         <div className="flex justify-center items-center py-12 text-text-secondary">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-3"></div>

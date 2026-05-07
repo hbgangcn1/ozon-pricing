@@ -24,9 +24,12 @@ from api.routes._pricing_helpers import (
 from database import get_db
 from db.products import get_product_by_id
 from models.user import User
+from api.routes._pricing_helpers import (
+    fetch_commission_category,
+)
 from pricing.calculate_pricing import calculate_pricing, calculate_pricing_grouped
-from pricing.commission import fetch_commission_category
 from db.subscriptions import decrement_user_calculations
+from services.overflow_service import mark_logistics_used
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +145,7 @@ def _make_grouped_response(grouped, breakeven_grouped, rate, product, mode):
 
 def calculate_combo_results(product, mode, land_rules, air_rules, rate):
     results = {}
+    raw_res = {}
     for priority in ["低价优先", "速度优先"]:
         res = calculate_pricing(
             product, land_rules, air_rules, mode=mode, priority=priority
@@ -151,7 +155,39 @@ def calculate_combo_results(product, mode, land_rules, air_rules, rate):
             "air": format_result(res, product, rate, is_land=False),
         }
         results[priority] = combo_results
-    return results
+        raw_res[priority] = res
+    return results, raw_res
+
+
+def _collect_winner_ids_from_res_dict(res_map: dict) -> set[int]:
+    # Task 3.2: gather winning logistic rule ids from raw pricing results.
+    # Each `res` may contain best_land/best_air dicts (full Logistics row dict)
+    # or None when no rule survived filtering. We pull `id` defensively.
+    ids: set[int] = set()
+    for res in res_map.values():
+        if not res:
+            continue
+        for key in ("best_land", "best_air"):
+            row = res.get(key)
+            if row and isinstance(row, dict):
+                rid = row.get("id")
+                if isinstance(rid, int):
+                    ids.add(rid)
+    return ids
+
+
+def _collect_winner_ids_from_grouped(grouped: dict) -> set[int]:
+    # Task 3.2: grouped result is {group_key: {price_priority: res, speed_priority: res, ...}}
+    # We extract winners across every group's both priority sub-results.
+    ids: set[int] = set()
+    for group_payload in grouped.values():
+        if not isinstance(group_payload, dict):
+            continue
+        for sub_key in ("price_priority", "speed_priority"):
+            sub_res = group_payload.get(sub_key)
+            if sub_res:
+                ids |= _collect_winner_ids_from_res_dict({sub_key: sub_res})
+    return ids
 
 
 @router.post("/calculate", response_model=PricingResponse)
@@ -204,7 +240,7 @@ async def calculate(
 
     rate = get_fallback_exchange_rate()
 
-    results = await asyncio.to_thread(
+    results, raw_res = await asyncio.to_thread(
         calculate_combo_results,
         product,
         mode,
@@ -217,7 +253,7 @@ async def calculate(
     if mode == "precise":
         breakeven_product = dict(product)
         breakeven_product["target_profit_margin"] = Decimal("0")
-        breakeven_results = await asyncio.to_thread(
+        breakeven_results, _ = await asyncio.to_thread(
             calculate_combo_results,
             breakeven_product,
             mode,
@@ -232,6 +268,11 @@ async def calculate(
         mode=mode, priority="低价优先",
     )
     filtered_logistics = all_res.get("filtered_logistics", {"land": [], "air": []})
+
+    winner_ids = _collect_winner_ids_from_res_dict(raw_res)
+    if winner_ids:
+        await mark_logistics_used(session, user_id, winner_ids)
+        await session.commit()
 
     return PricingResponse(
         calculation_mode=mode,
@@ -331,5 +372,10 @@ async def calculate_grouped(
             priority=priority,
             commission_category=commission_category,
         )
+
+    winner_ids = _collect_winner_ids_from_grouped(grouped)
+    if winner_ids:
+        await mark_logistics_used(session, user_id, winner_ids)
+        await session.commit()
 
     return _make_grouped_response(grouped, breakeven_grouped, rate, product, mode)

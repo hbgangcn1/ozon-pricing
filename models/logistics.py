@@ -153,3 +153,13 @@ class Logistics(Base):
         Integer,
         server_default=text("1"),
     )
+    disabled_by_overflow: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    last_used_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )

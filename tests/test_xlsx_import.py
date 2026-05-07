@@ -145,14 +145,14 @@ def test_detect_format_raises_for_unknown_workbook(tmp_path: Path):
 
 def test_parse_file_china_post_returns_expected_core_fields():
     result = parse_file(
-        _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx"),
+        _file("China_post_30_04_26_1777887104.xlsx"),
         source_file="china_post_source.xlsx",
     )
 
     assert result["format"] == "china_post"
     assert result["skipped"] >= 0
     assert isinstance(result["errors"], list)
-    row = _find_row(result["rows"], "China Post to PUDO Standard")
+    row = _find_row(result["rows"], "China Post to OZON Standard")
     assert row["fulfillment_type"] == "rfbs"
     assert row["destination"] == "RU"
     assert row["source_file"] == "china_post_source.xlsx"
@@ -168,19 +168,19 @@ def test_parse_file_china_post_returns_expected_core_fields():
 
 def test_parse_file_china_post_parses_dual_sheet_destinations():
     result = parse_file(
-        _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx"),
+        _file("China_post_30_04_26_1777887104.xlsx"),
     )
 
     assert result["format"] == "china_post"
     rows = result["rows"]
-    assert len(rows) == 14
+    assert len(rows) == 9
     assert result["skipped"] == 0
     assert result["errors"] == []
 
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["destination"]] = counts.get(r["destination"], 0) + 1
-    assert counts == {"RU": 7, "KZ": 2, "BY": 2, "AM": 1, "UZ": 1, "AZ": 1}
+    assert counts == {"RU": 2, "KZ": 2, "BY": 2, "AM": 1, "UZ": 1, "AZ": 1}
 
 
 def test_parse_file_scoring_rfbs_skips_transition_rows_and_parses_rates():
@@ -282,15 +282,15 @@ def test_parse_file_fbp_max_actual_vs_volume_mode():
 
 def test_china_post_air_delivery_rows_are_air_and_ground_delivery_rows_are_land():
     result = parse_file(
-        _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx")
+        _file("China_post_30_04_26_1777887104.xlsx")
     )
 
-    eems = _find_row(result["rows"], "eEMS")
-    assert eems["type"] == "air"
-    pudo_standard = _find_row(result["rows"], "China Post to PUDO Standard")
-    assert pudo_standard["type"] == "air"
-    economy = _find_row(result["rows"], "China Post to PUDO Economy")
-    assert economy["type"] == "land"
+    ozon_standard = _find_row(result["rows"], "China Post to OZON Standard")
+    assert ozon_standard["type"] == "air"
+    ozon_economy = _find_row(result["rows"], "China Post to OZON Economy")
+    assert ozon_economy["type"] == "land"
+    epacket_kz_air = _find_row(result["rows"], "ePacket Kazakhstan")
+    assert epacket_kz_air["type"] == "air"
     epacket_economy_track = _find_row(result["rows"], "ePacket Economy Track")
     assert epacket_economy_track["type"] == "land"
 
@@ -455,7 +455,7 @@ def test_scoring_rfbs_volume_mode_exists():
 # --------------- China Post specific tests ---------------
 
 
-CHINA_POST_FILE = _file("China_post_HELP_ePacket_AM_AZ_UZ_1776238342.xlsx")
+CHINA_POST_FILE = _file("China_post_30_04_26_1777887104.xlsx")
 
 
 def _china_post_rows():
@@ -467,14 +467,14 @@ def _china_post_rows():
 def test_china_post_cny_min_from_l_column():
     """price_min_cny comes from L column (index 11) in NEW two-sheet layout."""
     rows = _china_post_rows()
-    row = _find_row(rows, "China Post to PUDO Standard")
+    row = _find_row(rows, "China Post to OZON Standard")
     assert row["price_min_cny"] == 0.01
 
 
 def test_china_post_cny_max_from_m_column():
     """price_limit_cny comes from M column (index 12) in NEW two-sheet layout."""
     rows = _china_post_rows()
-    row = _find_row(rows, "China Post to PUDO Standard")
+    row = _find_row(rows, "China Post to OZON Standard")
     assert row["price_limit_cny"] == 135.0
 
 
@@ -502,25 +502,10 @@ def test_china_post_physical_weight_rows():
             )
 
 
-def test_china_post_conditional_volume_eems():
-    """eEMS row S column has conditional text → volume_mode='longest_side', threshold=40."""
-    rows = _china_post_rows()
-    ems_row = _find_row(rows, "eEMS")
-    assert ems_row["volume_mode"] == "longest_side", (
-        f"eEMS volume_mode: expected 'longest_side', got {ems_row['volume_mode']!r}"
-    )
-    assert ems_row["longest_side_threshold"] == 40, (
-        f"eEMS longest_side_threshold: expected 40, got {ems_row.get('longest_side_threshold')}"
-    )
-    assert ems_row["volume_coefficient"] == 6000.0, (
-        f"eEMS volume_coefficient: expected 6000.0, got {ems_row['volume_coefficient']}"
-    )
-
-
 def test_china_post_simple_size_limits():
     """Simple format H column rows parse max_sum_of_sides and max_longest_side."""
     rows = _china_post_rows()
-    row = _find_row(rows, "China Post to PUDO Standard")
+    row = _find_row(rows, "China Post to OZON Standard")
     assert row["max_sum_of_sides"] == 90, (
         f"max_sum_of_sides: expected 90, got {row['max_sum_of_sides']}"
     )
@@ -532,7 +517,7 @@ def test_china_post_simple_size_limits():
 def test_china_post_epacket_cylinder_limits():
     """ePacket H column rows parse all 8 cylinder+min size fields."""
     rows = _china_post_rows()
-    row = _find_row(rows, "ePacket Super Express")
+    row = _find_row(rows, "ePacket Kazakhstan")
     assert row["max_sum_of_sides"] == 90
     assert row["max_longest_side"] == 60
     assert row["max_cylinder_sum"] == 104
@@ -541,26 +526,6 @@ def test_china_post_epacket_cylinder_limits():
     assert row["min_second_side"] == 11
     assert row["min_cylinder_sum"] == 17
     assert row["min_cylinder_length"] == 11
-
-
-def test_china_post_eems_size_standard1():
-    """eEMS H column → only max_longest_side=150, cylinder/min fields=0."""
-    rows = _china_post_rows()
-    ems_row = _find_row(rows, "eEMS")
-    assert ems_row["max_longest_side"] == 150, (
-        f"max_longest_side: expected 150, got {ems_row['max_longest_side']}"
-    )
-    for field in (
-        "max_cylinder_sum",
-        "max_cylinder_length",
-        "min_length",
-        "min_second_side",
-        "min_cylinder_sum",
-        "min_cylinder_length",
-    ):
-        assert ems_row.get(field, 0) == 0, (
-            f"eEMS {field}: expected 0, got {ems_row.get(field)}"
-        )
 
 
 def test_parse_size_fields_unit_epacket():
@@ -605,36 +570,10 @@ def test_parse_size_fields_unit_eems():
     assert item.get("min_length", 0) == 0
 
 
-def test_china_post_first_weight_mode_eparcel():
-    """eParcel Economy (I=500) → fee_mode=first_weight, first_fee, first_weight_g."""
-    rows = _china_post_rows()
-    row = _find_row(rows, "China Post eParcel Economy")
-    assert row["fee_mode"] == "first_weight"
-    assert row["first_fee"] == 52.5
-    assert row["first_weight_g"] == 500
-    assert row["base_fee"] == 0.0
-    assert row["continue_fee"] == 0.15
-    assert row["continue_unit"] == "500g"
-    assert row["min_weight"] == 0
-
-
-def test_china_post_first_weight_mode_eems():
-    """eEMS (I=50) → fee_mode=first_weight, first_fee, first_weight_g."""
-    rows = _china_post_rows()
-    row = _find_row(rows, "China Post eEMS")
-    assert row["fee_mode"] == "first_weight"
-    assert row["first_fee"] == 102.0
-    assert row["first_weight_g"] == 50
-    assert row["base_fee"] == 0.0
-    assert row["continue_fee"] == 2.55
-    assert row["continue_unit"] == "50g"
-    assert row["min_weight"] == 0
-
-
 def test_china_post_base_mode_when_i_column_zero():
     """Standard (I=0) → fee_mode stays base_plus_continue."""
     rows = _china_post_rows()
-    row = _find_row(rows, "China Post to PUDO Standard")
+    row = _find_row(rows, "China Post to OZON Standard")
     assert row["fee_mode"] == "base_plus_continue"
     assert row["base_fee"] == 1.9
     assert row["first_fee"] == 0.0

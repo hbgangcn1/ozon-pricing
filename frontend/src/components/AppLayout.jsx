@@ -2,6 +2,8 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopHeader from './TopHeader';
+import TrialBanner from './TrialBanner';
+import TrialExpiredModal from './TrialExpiredModal';
 import { SecurityQuestionRequiredDialog } from './SecurityQuestionRequiredDialog';
 import { useAuthStore } from '../stores/authStore';
 
@@ -28,6 +30,8 @@ const AppLayout = () => {
 
         {/* 主内容区 */}
         <main className="flex-1 m-6 p-6 overflow-y-auto bg-surface min-h-0">
+          <TrialBanner />
+          <TrialExpiredModal />
           <Outlet />
         </main>
       </div>

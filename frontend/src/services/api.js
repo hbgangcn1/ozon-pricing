@@ -207,6 +207,20 @@ export const subscriptionsAPI = {
   getCurrent: () => apiClient.get('/subscriptions/current'),
 }
 
+// Priority 3: documents non-obvious endpoint contract for OpenSpec change add-pro-trial-overflow
+// (claim is one-shot 7-day Pro trial; status drives banner + expired modal).
+export const trialAPI = {
+  claim: () => apiClient.post('/subscriptions/trial/claim'),
+  getStatus: () => apiClient.get('/subscriptions/trial/status'),
+}
+
+// Priority 3: documents non-obvious endpoint contract for OpenSpec change add-pro-trial-overflow
+// (reselect consumes the open 48h window; status drives the auto-popup modal).
+export const overflowAPI = {
+  reselect: (keepIds) => apiClient.post('/logistics/overflow/reselect', { keep_ids: keepIds }),
+  getStatus: () => apiClient.get('/logistics/overflow/status'),
+}
+
 export const plansAPI = {
   getAll: (activeOnly = false) => apiClient.get('/subscriptions/plans', { params: { active_only: activeOnly } }),
   create: (data) => apiClient.post('/subscriptions/plans', data),

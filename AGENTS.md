@@ -59,6 +59,7 @@
 - **测试覆盖率**：核心模块必须达到90%+覆盖率
 - **持续检查**：每次代码修改后必须运行完整测试套件
 - **立即修复**：发现测试失败立即修复，不允许遗留
+- **并行执行**：本地默认 `pytest` 即并行运行（`pytest.ini` `addopts` 含 `-n 4 --dist=loadscope`）；如需手工调试单 worker 用 `pytest -n0`。每个 worker 自动获得独立 PostgreSQL schema（`test_master` / `test_gw*`），机制详见 [`tests/README.md` "Worker 隔离机制"](tests/README.md#worker-隔离机制)。
 
 ### 数据库 schema 完整性 - 必须遵守
 - **新增/修改 CHECK 约束的迁移**：必须同步在 `scripts/check_schema_integrity.py` 的 `EXPECTED_CHECK_VALUES` 加对应不变量

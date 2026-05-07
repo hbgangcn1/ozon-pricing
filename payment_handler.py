@@ -12,6 +12,7 @@ from database import AsyncSessionLocal
 from sqlalchemy import select
 from models.order import PaymentOrder
 from models.user import User
+from db.subscriptions import apply_subscription_change
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,13 @@ class PaymentHandler:
                 expiry = current_time + duration_days * 86400
                 user = await session.get(User, order.user_id)
                 if user:
-                    user.subscription_type = plan_code
-                    user.subscription_expires = expiry
+                    await apply_subscription_change(
+                        session,
+                        order.user_id,
+                        plan_code,
+                        subscription_expires=expiry,
+                        source="wechat_pay_legacy",
+                    )
                     user.remaining_calculations = -1
                 await session.commit()
                 logger.info(f"支付成功处理完成: 订单{order_id}, 用户{order.user_id}")

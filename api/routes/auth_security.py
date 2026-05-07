@@ -23,14 +23,14 @@ async def set_security_question(
     q_ok, q_err = validate_security_questions(body.question)
     if not q_ok:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=q_err,
         )
 
     a_ok, a_err = validate_security_answers(body.answer)
     if not a_ok:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=a_err,
         )
 

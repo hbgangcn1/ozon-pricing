@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from typing import List, Optional
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -19,6 +21,14 @@ from api.models.schemas import (
 )
 from api.dependencies import get_current_user_id
 from db.priority_group import recalculate_priority_groups
+from models.logistics import Logistics
+from models.trial_overflow_window import TrialOverflowWindow
+from models.user import User
+from services.overflow_service import reselect_kept_rules
+from services.plan_resolution import (
+    count_user_active_rules,
+    get_effective_logistics_limit,
+)
 
 router = APIRouter(prefix="/api/logistics", tags=["物流"])
 
@@ -65,6 +75,17 @@ async def create_logistics_endpoint(
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    effective_limit = await get_effective_logistics_limit(session, user)
+    if effective_limit >= 0:
+        active_count = await count_user_active_rules(session, user_id)
+        if active_count >= effective_limit:
+            raise HTTPException(
+                status_code=403,
+                detail=f"已达到当前套餐物流规则上限（{effective_limit}）",
+            )
     data = logistics.model_dump()
     for key in OPTIONAL_LOGISTICS_FIELDS:
         if key not in data:
@@ -238,3 +259,92 @@ async def batch_delete_logistics_endpoint(
     deleted_count = await batch_delete_logistics(session, ids, user_id)
     await recalculate_priority_groups(session, user_id)
     return MessageResponse(message=f"成功删除 {deleted_count} 条规则")
+
+
+# ---------------------------------------------------------------------------
+# Trial overflow reselect (OpenSpec change: add-pro-trial-overflow, task 4.2)
+#
+# These endpoints expose the 48h reselect window opened by overflow_service
+# when a user's effective plan limit drops below their active rule count
+# (trial expiry or downgrade). reselect_kept_rules is the only mutation
+# entry point for closing such a window with reason='reselected'.
+# ---------------------------------------------------------------------------
+
+
+class OverflowReselectRequest(BaseModel):
+    keep_ids: List[int] = Field(default_factory=list)
+
+
+class OverflowReselectResponse(BaseModel):
+    enabled_ids: List[int]
+    disabled_ids: List[int]
+
+
+class OverflowStatusResponse(BaseModel):
+    has_open_window: bool
+    expires_at: int
+    current_disabled_count: int
+    new_limit: int
+
+
+@router.post("/overflow/reselect", response_model=OverflowReselectResponse)
+async def overflow_reselect_endpoint(
+    payload: OverflowReselectRequest,
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    new_limit = await get_effective_logistics_limit(session, user)
+    result = await reselect_kept_rules(
+        session,
+        user_id,
+        set(payload.keep_ids),
+        new_limit,
+    )
+    if result.status == "exceeds_limit":
+        raise HTTPException(
+            status_code=422,
+            detail=f"保留数量超过当前套餐限制（{new_limit}）",
+        )
+    if result.status == "ids_not_owned":
+        raise HTTPException(status_code=403, detail="包含非本人的物流规则")
+    if result.status == "no_open_window":
+        raise HTTPException(status_code=409, detail="当前无打开的重选窗口")
+    await session.commit()
+    return OverflowReselectResponse(
+        enabled_ids=result.enabled_ids,
+        disabled_ids=result.disabled_ids,
+    )
+
+
+@router.get("/overflow/status", response_model=OverflowStatusResponse)
+async def overflow_status_endpoint(
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    new_limit = await get_effective_logistics_limit(session, user)
+    win_stmt = select(TrialOverflowWindow).where(
+        TrialOverflowWindow.user_id == user_id,
+        TrialOverflowWindow.closed_at == 0,
+    )
+    win = (await session.execute(win_stmt)).scalar_one_or_none()
+    disabled_stmt = (
+        select(func.count())
+        .select_from(Logistics)
+        .where(
+            Logistics.user_id == user_id,
+            Logistics.disabled_by_overflow == 1,
+        )
+    )
+    disabled_count = int((await session.execute(disabled_stmt)).scalar_one() or 0)
+    return OverflowStatusResponse(
+        has_open_window=win is not None,
+        expires_at=int(win.expires_at) if win is not None else 0,
+        current_disabled_count=disabled_count,
+        new_limit=new_limit,
+    )

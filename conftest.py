@@ -1,16 +1,157 @@
 # -*- coding: utf-8 -*-
 """
 根目录的pytest配置文件
-用于排除非测试文件
+用于排除非测试文件 + pytest-xdist worker schema 隔离
 """
 
+import asyncio
+import gc
 import os
 import sys
 import types
+import weakref
 from pathlib import Path
+
+import pytest
 
 os.environ["E2E_TEST"] = "1"
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-do-not-use-in-production")
+
+
+# D13 v2 (Oracle option g): Reuse pytest-asyncio session loop instead of
+# minting a new one when Python 3.13 reports "no current event loop". A new
+# loop would orphan asyncpg Futures bound to the original session loop and
+# cause "attached to a different loop" errors during fixture teardown.
+_PYTEST_ASYNCIO_LOOP_REFS: list = []
+
+
+def _is_alive_pytest_asyncio_loop(loop: object) -> bool:
+    return (
+        isinstance(loop, asyncio.AbstractEventLoop)
+        and getattr(loop, "__pytest_asyncio", False)
+        and not loop.is_closed()
+    )
+
+
+def _remember_pytest_asyncio_loop(loop: object) -> object:
+    if _is_alive_pytest_asyncio_loop(loop):
+        _PYTEST_ASYNCIO_LOOP_REFS.append(weakref.ref(loop))
+    return loop
+
+
+def _select_pytest_asyncio_loop():
+    seen_ids: set = set()
+
+    for loop_ref in reversed(_PYTEST_ASYNCIO_LOOP_REFS):
+        loop = loop_ref()
+        if loop is None:
+            continue
+        loop_id = id(loop)
+        if loop_id in seen_ids:
+            continue
+        seen_ids.add(loop_id)
+        if _is_alive_pytest_asyncio_loop(loop):
+            return loop
+
+    for obj in gc.get_objects():
+        obj_id = id(obj)
+        if obj_id in seen_ids:
+            continue
+        seen_ids.add(obj_id)
+        if _is_alive_pytest_asyncio_loop(obj):
+            _remember_pytest_asyncio_loop(obj)
+            return obj
+
+    return None
+
+
+def _rebind_pytest_asyncio_loop(policy=None):
+    loop = _select_pytest_asyncio_loop()
+    if loop is None:
+        return None
+    loop_policy = policy or asyncio.get_event_loop_policy()
+    loop_policy.set_event_loop(loop)
+    return loop
+
+
+def _install_pytest_asyncio_py313_loop_fallback() -> None:
+    """D13 v2: Compat shim for pytest-asyncio 0.26 on Python 3.13.
+
+    On Python 3.13 ``asyncio.get_event_loop()`` raises when the policy's
+    per-thread slot is None instead of auto-creating. This breaks
+    pytest-asyncio's ``_get_event_loop_no_warn`` between tests when
+    ``_provide_clean_event_loop`` momentarily unbinds the session loop.
+
+    D13 v1 created a brand-new loop on RuntimeError but that left in-flight
+    asyncpg Futures bound to the original session loop, raising
+    "attached to a different loop" during async fixture teardown.
+
+    D13 v2 instead REUSES the existing pytest-asyncio-tagged session loop
+    (recorded via the autouse fixture below + GC fallback), and only mints
+    a new loop as a last resort. We also wrap ``_provide_clean_event_loop``
+    so it re-binds the session loop after each per-test cleanup, making the
+    RuntimeError path rare.
+    """
+    try:
+        import pytest_asyncio.plugin as pap
+    except ImportError:
+        return
+
+    if getattr(pap, "_py313_loop_fallback_installed", False):
+        return
+
+    original_get_loop = pap._get_event_loop_no_warn
+    original_clean_loop = getattr(pap, "_provide_clean_event_loop", None)
+    make_pytest_loop = getattr(pap, "_make_pytest_asyncio_loop", None)
+
+    def _shim(policy=None):
+        loop_policy = policy or asyncio.get_event_loop_policy()
+        try:
+            loop = original_get_loop(loop_policy)
+        except RuntimeError as exc:
+            if "There is no current event loop" not in str(exc):
+                raise
+            loop = _rebind_pytest_asyncio_loop(loop_policy)
+            if loop is None:
+                loop = loop_policy.new_event_loop()
+                if make_pytest_loop is not None:
+                    loop = make_pytest_loop(loop)
+                loop_policy.set_event_loop(loop)
+        _remember_pytest_asyncio_loop(loop)
+        return loop
+
+    def _provide_clean_event_loop_and_rebind() -> None:
+        if original_clean_loop is not None:
+            original_clean_loop()
+        _rebind_pytest_asyncio_loop()
+
+    pap._get_event_loop_no_warn = _shim
+    if original_clean_loop is not None:
+        pap._provide_clean_event_loop = _provide_clean_event_loop_and_rebind
+    pap._py313_loop_fallback_installed = True
+
+
+# Install at import time so the shim is active before any test fixture runs.
+_install_pytest_asyncio_py313_loop_fallback()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _bind_pytest_asyncio_session_loop(request):
+    # D13 v2: capture pytest-asyncio's session loop early so the shim can
+    # reuse it on Python 3.13 no-current-loop RuntimeError between tests.
+    try:
+        loop = request.getfixturevalue("_session_event_loop")
+    except pytest.FixtureLookupError:
+        yield
+        return
+
+    _remember_pytest_asyncio_loop(loop)
+    _rebind_pytest_asyncio_loop()
+
+    yield
+
+    if _is_alive_pytest_asyncio_loop(loop):
+        asyncio.get_event_loop_policy().set_event_loop(loop)
 
 
 def pytest_ignore_collect(collection_path, config):
@@ -131,119 +272,74 @@ def _mock_postgres_backup_service_module() -> None:
         pass
 
 
+def _master_setup_test_schemas() -> None:
+    """Master-only: drop stale `test_*` schemas + create `test_master`.
+
+    Loads .env so POSTGRES_PASSWORD is available before importing the
+    isolation helpers (POSTGRES_CONFIG is read at module import).
+    """
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(Path(__file__).resolve().parent / ".env")
+    except ImportError:
+        pass
+
+    from tests._db_isolation import (
+        create_all_in_schema,
+        create_worker_schema,
+        drop_test_schemas,
+        worker_schema_name,
+    )
+
+    drop_test_schemas()
+    schema = worker_schema_name()
+    create_worker_schema(schema)
+    create_all_in_schema(schema)
+
+
 def pytest_sessionstart(session):
-    _ = session
+    _install_pytest_asyncio_py313_loop_fallback()
     _mock_redis_cache_module()
     _mock_auto_backup_module()
     _mock_postgres_backup_service_module()
 
-
-_TEST_USER_ID_SUBQUERY = (
-    "SELECT id FROM users "
-    "WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
-    " OR username LIKE 'e2e%%') AND id != 1"
-)
-_TEST_USER_NAME_SUBQUERY = (
-    "SELECT username FROM users "
-    "WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
-    " OR username LIKE 'e2e%%') AND id != 1"
-)
-
-
-def _delete_by_user_id(cursor, conn, table: str) -> None:
-    try:
-        cursor.execute(
-            f"DELETE FROM {table} WHERE user_id IN ({_TEST_USER_ID_SUBQUERY})"
-        )
-    except Exception as exc:
-        print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
-        conn.rollback()
-
-
-def _delete_by_identifier(cursor, conn, table: str) -> None:
-    try:
-        cursor.execute(
-            f"DELETE FROM {table} WHERE identifier IN ({_TEST_USER_NAME_SUBQUERY})"
-        )
-    except Exception as exc:
-        print(f"[pytest_sessionfinish] cleanup {table} failed: {exc}")
-        conn.rollback()
-
-
-def _cleanup_admin_audit_tables(cursor, conn) -> None:
-    try:
-        cursor.execute(
-            f"DELETE FROM admin_action_log"
-            f" WHERE admin_id IN ({_TEST_USER_ID_SUBQUERY})"
-            f" OR target_user_id IN ({_TEST_USER_ID_SUBQUERY})"
-        )
-    except Exception as exc:
-        print(f"[pytest_sessionfinish] cleanup admin_action_log failed: {exc}")
-        conn.rollback()
-
-    try:
-        cursor.execute(
-            f"DELETE FROM audit_logs WHERE admin_id IN ({_TEST_USER_ID_SUBQUERY})"
-        )
-    except Exception as exc:
-        print(f"[pytest_sessionfinish] cleanup audit_logs failed: {exc}")
-        conn.rollback()
-
-
-def _cleanup_test_users(conn) -> None:
-    cursor = conn.cursor()
-
-    for table in ["products", "logistics", "payment_orders", "active_sessions"]:
-        _delete_by_user_id(cursor, conn, table)
-
-    for table in ["login_attempts", "user_lockouts"]:
-        _delete_by_identifier(cursor, conn, table)
-
-    for table in [
-        "user_login_log",
-        "user_behavior_log",
-        "subscription_upgrade_history",
-        "trusted_devices",
-        "commission_category",
-    ]:
-        _delete_by_user_id(cursor, conn, table)
-
-    _cleanup_admin_audit_tables(cursor, conn)
-
-    cursor.execute(
-        "DELETE FROM users"
-        " WHERE (is_test_user = 1 OR username LIKE 'test_%%'"
-        " OR username LIKE 'e2e%%') AND id != 1"
-        " RETURNING id"
-    )
-    deleted = cursor.rowcount
-    conn.commit()
-    cursor.close()
-
-    if deleted > 0:
-        print(
-            f"\n[pytest_sessionfinish] Cleaned up {deleted}"
-            " orphaned test user(s)."
-        )
+    if hasattr(session.config, "workerinput"):
+        return
+    _master_setup_test_schemas()
 
 
 def pytest_sessionfinish(session, exitstatus):
-    # xdist worker guard: only master executes session-end side effects
+    _ = exitstatus
     if hasattr(session.config, "workerinput"):
         return
-    _ = session
-    _ = exitstatus
+
+    try:
+        from tests._db_isolation import drop_test_schemas
+
+        drop_test_schemas()
+    except Exception as exc:
+        print(f"[pytest_sessionfinish] drop_test_schemas FAILED: {exc}")
+
     try:
         import psycopg2
 
         with psycopg2.connect(
-            host="localhost",
-            port=5432,
-            dbname="logistics",
-            user="postgres",
+            host=os.environ.get("POSTGRES_HOST", "localhost"),
+            port=int(os.environ.get("POSTGRES_PORT", "5432")),
+            dbname=os.environ.get("POSTGRES_DB", "logistics"),
+            user=os.environ.get("POSTGRES_USER", "logistics_user"),
             password=os.environ.get("POSTGRES_PASSWORD", ""),
         ) as conn:
             conn.autocommit = False
-            _cleanup_test_users(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    r"""
+                    DELETE FROM public.users
+                    WHERE username LIKE 'test\_%' ESCAPE '\'
+                       OR username LIKE 'e2e%'
+                    """
+                )
+            conn.commit()
     except Exception as exc:
-        print(f"[pytest_sessionfinish] global cleanup FAILED: {exc}")
+        print(f"[pytest_sessionfinish] public.users sweep FAILED: {exc}")

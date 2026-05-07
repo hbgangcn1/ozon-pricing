@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from sqlalchemy import delete as sa_delete, func, select
@@ -111,7 +111,10 @@ async def _get_user_stats_orm(
     )
     # User.created_at 是 String 类型（可能是 epoch 字符串、ISO 日期或空字符串），
     # 不能直接与 int 比较，需要在 Python 侧过滤。
-    today_start_dt = datetime.utcfromtimestamp(today_start)
+    # P4: Py3.12 deprecates datetime.utcfromtimestamp(); use tz-aware UTC then
+    # strip tzinfo so comparisons with naive _parse_user_created_at() results
+    # below stay valid (mixing aware/naive raises TypeError).
+    today_start_dt = datetime.fromtimestamp(today_start, UTC).replace(tzinfo=None)
     user_rows = (
         await session.execute(
             select(User.created_at).where(

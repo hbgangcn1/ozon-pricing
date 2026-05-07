@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import delete, select
@@ -76,7 +76,9 @@ async def validate_and_consume_reset_token(
             await session.rollback()
             return False, None, "used"
 
-        token_row.used_at = datetime.utcnow()
+        # P4: Py3.12 deprecates datetime.utcnow(); use tz-aware UTC then strip
+        # tzinfo because PasswordResetToken.used_at is naive DateTime in DB.
+        token_row.used_at = datetime.now(UTC).replace(tzinfo=None)
         await session.commit()
         return True, user_id, "ok"
 

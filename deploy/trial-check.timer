@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly trigger for CBPrice trial-check.service
+Requires=trial-check.service
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=trial-check.service
+
+[Install]
+WantedBy=timers.target

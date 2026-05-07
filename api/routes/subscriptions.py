@@ -17,6 +17,8 @@ from db.plans import (
     update_plan,
 )
 from db.subscriptions import get_user_subscription_info
+from models.user import User
+from services.trial_service import claim_trial, get_trial_status
 
 router = APIRouter(prefix="/api/subscriptions", tags=["订阅"])
 
@@ -225,3 +227,57 @@ async def toggle_plan_route(
         raise HTTPException(status_code=404, detail="套餐不存在")
     await session.commit()
     return {"is_active": bool(new_status)}
+
+
+class TrialClaimResponse(BaseModel):
+    status: str
+    trial_started_at: int
+    trial_expires_at: int
+
+
+class TrialStatusResponse(BaseModel):
+    eligible: bool
+    in_trial: bool
+    trial_used: bool
+    remaining_seconds: int
+    trial_expires_at: int
+    trial_started_at: int
+
+
+@router.post("/trial/claim", response_model=TrialClaimResponse)
+async def claim_trial_route(
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await claim_trial(session, user_id)
+    if result.status == "user_not_found":
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if result.status == "already_used":
+        raise HTTPException(status_code=409, detail="试用已使用")
+    if result.status == "ineligible_plan":
+        raise HTTPException(status_code=409, detail="当前套餐不可领取试用")
+    await session.commit()
+    return TrialClaimResponse(
+        status=result.status,
+        trial_started_at=result.trial_started_at,
+        trial_expires_at=result.trial_expires_at,
+    )
+
+
+@router.get("/trial/status", response_model=TrialStatusResponse)
+async def trial_status_route(
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    status = get_trial_status(user)
+    return TrialStatusResponse(
+        eligible=status.eligible,
+        in_trial=status.in_trial,
+        trial_used=status.trial_used,
+        remaining_seconds=status.remaining_seconds,
+        trial_expires_at=status.trial_expires_at,
+        trial_started_at=status.trial_started_at,
+    )

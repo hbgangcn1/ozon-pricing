@@ -8,6 +8,7 @@ import LogisticsPagination from './logistics/LogisticsPagination'
 import LogisticsSelectionBar from './logistics/LogisticsSelectionBar'
 import LogisticsTabs from './logistics/LogisticsTabs'
 import { useLogisticsPage } from './logistics/useLogisticsPage'
+import OverflowReselectModal from '../components/OverflowReselectModal'
 
 export default function LogisticsPage() {
   const logistics = useLogisticsPage()
@@ -86,6 +87,11 @@ export default function LogisticsPage() {
         selectedCount={logistics.selectedIds.size}
         onClearSelection={logistics.handleClearSelection}
         onOpenBatchDelete={() => logistics.setBatchDeleteDialogOpen(true)}
+      />
+
+      <OverflowReselectModal
+        items={logistics.logistics}
+        onCompleted={logistics.fetchLogistics}
       />
     </div>
   )

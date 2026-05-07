@@ -209,6 +209,26 @@ else
     warn "HTTPS API 检查返回 HTTP $HTTPS_API"
 fi
 
+# ===== 11.1 安装 trial-check timer (cross-process-safe scheduler) =====
+# gunicorn -w 3 多 worker 不能在 lifespan 启动定时任务（重复触发）。
+# 用 systemd timer + oneshot service 集中调度，FOR UPDATE SKIP LOCKED 兜底。
+log "===== 第11.1步: 安装 trial-check 定时器 ====="
+sudo cp "$PROJECT_DIR/deploy/trial-check.service" /etc/systemd/system/
+sudo cp "$PROJECT_DIR/deploy/trial-check.timer"   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now trial-check.timer
+
+if [ "$(systemctl is-active trial-check.timer)" = "active" ]; then
+    log "trial-check.timer is-active=active ✓"
+else
+    error "trial-check.timer 未激活，部署中止"
+fi
+if [ "$(systemctl is-enabled trial-check.timer)" = "enabled" ]; then
+    log "trial-check.timer is-enabled=enabled ✓"
+else
+    error "trial-check.timer 未启用，部署中止"
+fi
+
 # ===== 完成 =====
 echo ""
 echo "=========================================="

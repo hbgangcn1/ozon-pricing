@@ -32,6 +32,25 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
+# Priority 3 (history-tracking): default test_user fixture is free-tier
+# (logistics_limit=1); these multi-record tests pre-date the limit
+# enforcement added in api/routes/logistics.py:81-88. Bump the user to
+# the professional plan (logistics_limit=10) inline so the test exercises
+# its actual scenario instead of tripping the free-tier guard.
+async def _upgrade_to_professional(user_id: int) -> None:
+    from sqlalchemy import update
+    from database import AsyncSessionLocal
+    from models.user import User
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(subscription_type="professional")
+        )
+        await session.commit()
+
+
 # ---------------------------------------------------------------------------
 # GET /api/logistics — list logistics
 # ---------------------------------------------------------------------------
@@ -52,6 +71,7 @@ class TestListLogistics:
 
     async def test_filters_by_fulfillment_type_and_destination(self, client, test_user):
         uid = test_user["id"]
+        await _upgrade_to_professional(uid)
         _user_override(uid)
         created_ids = []
         try:
@@ -113,6 +133,7 @@ class TestListLogistics:
 
     async def test_filters_by_type(self, client, test_user):
         uid = test_user["id"]
+        await _upgrade_to_professional(uid)
         _user_override(uid)
         created_ids = []
         try:
@@ -286,6 +307,7 @@ class TestLogisticsCRUD:
 class TestBatchDeleteLogistics:
     async def test_batch_delete_success(self, client, test_user):
         uid = test_user["id"]
+        await _upgrade_to_professional(uid)
         _user_override(uid)
         ids = []
         try:

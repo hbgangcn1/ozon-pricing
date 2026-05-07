@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -31,7 +31,7 @@ async def test_password_reset_token_insert_and_query(db_session, test_user):
 async def test_password_reset_token_updates_used_at(db_session, test_user):
     token = PasswordResetToken(jti=_jti(), user_id=test_user["id"])
     token_jti = token.jti
-    used_at = datetime.utcnow() + timedelta(seconds=1)
+    used_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=1)
 
     db_session.add(token)
     await db_session.flush()

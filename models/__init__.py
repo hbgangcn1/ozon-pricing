@@ -30,6 +30,7 @@ from models.log import (  # noqa: E402, F401
 )
 from models.cache import StatisticsCache  # noqa: E402, F401
 from models.password_reset_token import PasswordResetToken  # noqa: E402, F401
+from models.trial_overflow_window import TrialOverflowWindow  # noqa: E402, F401
 
 __all__ = [
     "Base",
@@ -56,4 +57,5 @@ __all__ = [
     "AuditLog",
     "StatisticsCache",
     "PasswordResetToken",
+    "TrialOverflowWindow",
 ]

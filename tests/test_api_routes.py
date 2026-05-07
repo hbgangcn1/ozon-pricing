@@ -36,11 +36,32 @@ MOCK_USER = {
     "remaining_calculations": 100,
 }
 
-app.dependency_overrides[dependencies.get_current_user_id] = lambda: 1
-app.dependency_overrides[dependencies.require_admin] = lambda: 1
-app.dependency_overrides[dependencies.get_current_user] = lambda: MOCK_USER
-
 client = TestClient(app, raise_server_exceptions=False)
+
+
+# Priority 1 (correctness): function-scoped autouse override prevents cross-file
+# pollution. Other test files (test_api_logistics_*) call
+# `app.dependency_overrides.clear()/pop()` in their teardown, which previously
+# wiped module-level overrides set here, causing 401 in subsequent tests when
+# loadscope ordering interleaved them. monkeypatch.setitem auto-restores prior
+# state per test. See openspec/changes/fix-preexisting-test-failures/.
+@pytest.fixture(autouse=True)
+def _mock_auth_dependencies(monkeypatch):
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        dependencies.get_current_user_id,
+        lambda: 1,
+    )
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        dependencies.require_admin,
+        lambda: 1,
+    )
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        dependencies.get_current_user,
+        lambda: MOCK_USER,
+    )
 
 
 @pytest.fixture(autouse=True)

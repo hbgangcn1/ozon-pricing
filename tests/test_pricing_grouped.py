@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pricing.commission import get_commission_rate  # noqa: E402
+from api.routes._pricing_helpers import get_commission_rate  # noqa: E402
 
 
 def _execute_result(category):

@@ -18,6 +18,8 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 describe('Table Header Opacity', () => {
   let styleElement;
 
+  // P3: Tailwind CLI cold start under parallel Vitest load on Windows
+  // can exceed the default 10s hookTimeout. 60s gives ample headroom.
   beforeAll(() => {
     // Synchronously compile Tailwind CSS for the UI elements
     // We run this from the process.cwd() (which should be the frontend folder in vitest)
@@ -30,7 +32,7 @@ describe('Table Header Opacity', () => {
     styleElement = document.createElement('style');
     styleElement.innerHTML = cssOutput;
     document.head.appendChild(styleElement);
-  });
+  }, 60_000);
 
   afterAll(() => {
     if (styleElement) {

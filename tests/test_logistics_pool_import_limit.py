@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -16,6 +16,21 @@ def _db_override(session):
     return override
 
 
+# Priority 3 (correctness): production route wraps DB writes in
+# `async with session.begin_nested():` (commit 220bd2ce, SAVEPOINT for
+# per-row failure isolation). A bare `AsyncMock()` makes `begin_nested()`
+# return a coroutine, not an async context manager, breaking `async with`.
+# This helper builds a session mock whose `begin_nested` returns a proper
+# async context manager so the route can enter/exit the SAVEPOINT.
+def _make_db_session() -> AsyncMock:
+    session = AsyncMock()
+    nested_cm = MagicMock()
+    nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
+    nested_cm.__aexit__ = AsyncMock(return_value=None)
+    session.begin_nested = MagicMock(return_value=nested_cm)
+    return session
+
+
 class TestLogisticsImportLimitFreeTier:
     def setup_method(self):
         self.saved = dict(app.dependency_overrides)
@@ -26,7 +41,7 @@ class TestLogisticsImportLimitFreeTier:
         app.dependency_overrides.update(self.saved)
 
     def test_free_user_first_import_succeeds(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",
@@ -60,7 +75,7 @@ class TestLogisticsImportLimitFreeTier:
         assert response.json() == {"id": 100}
 
     def test_free_user_second_import_rejected(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",
@@ -92,7 +107,7 @@ class TestLogisticsImportLimitEfficiencyTier:
         app.dependency_overrides.update(self.saved)
 
     def test_efficiency_user_third_import_succeeds(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",
@@ -126,7 +141,7 @@ class TestLogisticsImportLimitEfficiencyTier:
         assert response.json() == {"id": 100}
 
     def test_efficiency_user_fourth_import_rejected(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",
@@ -158,7 +173,7 @@ class TestLogisticsImportLimitProfessionalTier:
         app.dependency_overrides.update(self.saved)
 
     def test_professional_user_import_unlimited(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",
@@ -202,7 +217,7 @@ class TestLogisticsBatchImportLimit:
         app.dependency_overrides.update(self.saved)
 
     def test_free_user_batch_import_exceeds_limit(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",
@@ -227,7 +242,7 @@ class TestLogisticsBatchImportLimit:
         assert "最多只能添加 1 条" in response.json()["detail"]
 
     def test_efficiency_user_batch_import_exceeds_limit(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",
@@ -252,7 +267,7 @@ class TestLogisticsBatchImportLimit:
         assert "最多只能添加 3 条" in response.json()["detail"]
 
     def test_batch_import_within_limit_succeeds(self):
-        session = AsyncMock()
+        session = _make_db_session()
         with (
             patch(
                 "api.routes.logistics_pool._get_user_subscription",

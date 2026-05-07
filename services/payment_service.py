@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.order import PaymentOrder
 from models.user import User
+from db.subscriptions import apply_subscription_change
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +126,14 @@ class PaymentService:
         duration_days = _parse_duration(row.duration or "\u6708")
         expiry = current_time + duration_days * 86400
 
-        user.subscription_type = plan_code
+        await apply_subscription_change(
+            self._session,
+            user.id,
+            plan_code,
+            subscription_expires=expiry,
+            source="wechat_notify",
+        )
         user.user_type = plan_code
-        user.subscription_expires = expiry
         user.subscription_start = current_time
         user.remaining_calculations = -1
         logger.info(
@@ -163,9 +169,14 @@ class PaymentService:
 
         order.status = "SUCCESS"
         order.updated_at = current_time
-        user.subscription_type = plan_code
+        await apply_subscription_change(
+            self._session,
+            order.user_id,
+            plan_code,
+            subscription_expires=expiry,
+            source="payment_success",
+        )
         user.user_type = plan_code
-        user.subscription_expires = expiry
         user.subscription_start = current_time
         user.remaining_calculations = -1
         await self._session.commit()
