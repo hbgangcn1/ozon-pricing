@@ -36,5 +36,7 @@
 
 - [x] 5.1 Run full test suite to verify no regressions
   - QA: TestAuth class 21/21 PASS; reset_user_daily 4/4 PASS; flake8 clean on `tests/test_api_routes.py`.
-- [ ] 5.2 Deploy to production and verify migration runs
-- [ ] 5.3 Manually test login flow with limited plan user
+- [x] 5.2 Deploy to production and verify migration runs
+  - QA: deploy.sh 11/11 steps green at 2026-05-08 05:56:12 UTC; HTTPS 200 + trial-check.timer active+enabled; pre-deploy backup tag `pre-deploy-20260508-055612`; alembic chain confirmed `4a1b2c3d5e6f -> b7e2f1a4c5d8 (head)`; prod `users.last_calculations_reset_date` column inspected via SQLAlchemy `inspect()` → `HAS_COLUMN=True`.
+- [x] 5.3 Manually test login flow with limited plan user
+  - QA: created throwaway prod user `qa_daily_reset_test` (id=62, free plan) via `/api/auth/register`; mutated DB to stale state `remaining_calculations=0, last_calculations_reset_date='2026-05-07'`; called `/api/auth/login` → response showed `remaining_calculations=10` (free plan limit); post-login DB state verified: `remaining_calculations=10, last_calculations_reset_date='2026-05-08'` (today); deleted user via admin `DELETE /api/admin/users/62` → `success: true`; post-cleanup `COUNT(*)=0` confirmed zero residue. Zero impact on real production data.
