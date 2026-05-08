@@ -87,14 +87,12 @@ async def overridden_app(db_session, test_user):
 
     with (
         patch(
-            "api.routes.logistics_pool._get_user_subscription",
-            new=AsyncMock(return_value=("user", "free")),
+            "api.routes.logistics_pool.get_effective_logistics_limit",
+            new=AsyncMock(return_value=-1),
         ),
         patch(
-            "api.routes.logistics_pool.get_plan_by_code",
-            new=AsyncMock(
-                return_value={"logistics_limit": -1, "plan_name": "Unlimited"}
-            ),
+            "api.routes.logistics_pool.count_user_active_rules",
+            new=AsyncMock(return_value=0),
         ),
         patch(
             "api.routes.logistics_pool.recalculate_priority_groups",

@@ -30,6 +30,7 @@ from api.routes._pricing_helpers import (
 from pricing.calculate_pricing import calculate_pricing, calculate_pricing_grouped
 from db.subscriptions import decrement_user_calculations
 from services.overflow_service import mark_logistics_used
+from services.plan_resolution import get_effective_plan
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +201,7 @@ async def calculate(
 
     if mode == "precise":
         user = await session.get(User, user_id)
-        if user and user.user_type in ("free", "efficiency"):
+        if user and get_effective_plan(user) in ("free", "efficiency"):
             raise HTTPException(
                 status_code=403, detail="免费版和效率版用户不能使用精准模式"
             )
@@ -303,7 +304,7 @@ async def calculate_grouped(
 
     if mode == "precise":
         user = await session.get(User, user_id)
-        if user and user.user_type in ("free", "efficiency"):
+        if user and get_effective_plan(user) in ("free", "efficiency"):
             raise HTTPException(
                 status_code=403, detail="免费版和效率版用户不能使用精准模式"
             )

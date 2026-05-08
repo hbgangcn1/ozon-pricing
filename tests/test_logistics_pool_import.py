@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from api import dependencies
@@ -21,14 +22,6 @@ def test_import_logistics_pool_returns_423_for_permission_error():
     saved = dict(app.dependency_overrides)
     app.dependency_overrides.clear()
     app.dependency_overrides[dependencies.require_admin] = lambda: 1
-    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: {
-        "id": 1,
-        "username": "admin",
-        "role": "admin",
-        "user_type": "permanent",
-        "subscription_type": "enterprise",
-        "remaining_calculations": -1,
-    }
     app.dependency_overrides[get_db] = _db_override(session)
     try:
         with patch(
@@ -53,19 +46,23 @@ def test_import_logistics_pool_returns_423_for_permission_error():
     assert response.json() == {"detail": "文件被占用，请关闭OneDrive同步后重试"}
 
 
-def test_import_logistics_pool_blocks_non_enterprise_admin():
+def test_import_logistics_pool_blocks_non_admin():
+    """Regression: endpoint MUST be admin-gated.
+
+    Guards against accidental removal of the
+    ``dependencies=[Depends(require_admin)]`` decorator on
+    ``POST /api/logistics-pool/import``. We override ``require_admin``
+    to raise 403 (mirroring its real behavior for non-admin callers)
+    and assert the endpoint propagates the rejection.
+    """
     session = AsyncMock()
+
+    def _raise_admin_required():
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
     saved = dict(app.dependency_overrides)
     app.dependency_overrides.clear()
-    app.dependency_overrides[dependencies.require_admin] = lambda: 1
-    app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: {
-        "id": 2,
-        "username": "testuser",
-        "role": "user",
-        "user_type": "permanent",
-        "subscription_type": "professional",
-        "remaining_calculations": -1,
-    }
+    app.dependency_overrides[dependencies.require_admin] = _raise_admin_required
     app.dependency_overrides[get_db] = _db_override(session)
     try:
         response = client.post(
@@ -83,4 +80,4 @@ def test_import_logistics_pool_blocks_non_enterprise_admin():
         app.dependency_overrides.update(saved)
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "此功能需要企业版或更高订阅等级"}
+    assert response.json() == {"detail": "需要管理员权限"}

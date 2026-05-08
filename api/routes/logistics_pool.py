@@ -9,15 +9,17 @@ from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import (
-    EXCEL_ALLOWED_TIERS,
     get_current_user_id,
-    get_user_with_subscription,
     require_admin,
 )
 from database import get_db
-from db.logistics_crud import create_logistics, get_logistics_by_filters
-from db.plans import get_plan_by_code
+from db.logistics_crud import create_logistics
 from db.priority_group import recalculate_priority_groups
+from models.user import User
+from services.plan_resolution import (
+    count_user_active_rules,
+    get_effective_logistics_limit,
+)
 from db.logistics_pool import (
     delete_all,
     get_all,
@@ -35,17 +37,6 @@ _COPY_EXCLUDE = {"id", "source_file", "imported_at", "is_active"}
 _VALID_VOLUME_MODES = {"none", "max_actual_vs_volume", "longest_side", "sum_of_sides"}
 
 
-def _ensure_enterprise_excel_access(user: dict) -> None:
-    if user.get("role") == "admin":
-        return
-    subscription_type = user.get("subscription_type") or "free"
-    if subscription_type not in EXCEL_ALLOWED_TIERS:
-        raise HTTPException(
-            status_code=403,
-            detail="此功能需要企业版或更高订阅等级",
-        )
-
-
 def _sanitize_pool_data(data: dict) -> dict:
     vm = data.get("volume_mode")
     if vm and vm not in _VALID_VOLUME_MODES:
@@ -57,44 +48,27 @@ def _sanitize_pool_data(data: dict) -> dict:
     return data
 
 
-async def _get_user_subscription(
-    session: AsyncSession,
-    user_id: int,
-) -> tuple[str, str]:
-    from sqlalchemy import text
-    result = await session.execute(
-        text("SELECT role, subscription_type FROM users WHERE id = :user_id"),
-        {"user_id": user_id}
-    )
-    row = result.one_or_none()
-    if not row:
-        return ("", "free")
-    return (row[0], row[1] or "free")
-
-
 async def _check_logistics_limit(
     session: AsyncSession,
     user_id: int,
     import_count: int,
 ) -> None:
-    user_role, subscription_type = await _get_user_subscription(session, user_id)
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
 
-    if user_role == "admin":
+    if getattr(user, "role", None) == "admin":
         return
 
-    plan = await get_plan_by_code(session, subscription_type)
-    if not plan:
-        return
-
-    limit = plan.get("logistics_limit", -1)
+    limit = await get_effective_logistics_limit(session, user)
     if limit == -1:
         return
 
-    _, current_count = await get_logistics_by_filters(session, user_id)
-    if current_count + import_count > limit:
+    current = await count_user_active_rules(session, user_id)
+    if current + import_count > limit:
         raise HTTPException(
             status_code=403,
-            detail=f"您的订阅等级（{plan.get('plan_name', subscription_type)}）最多只能添加 {limit} 条物流规则",
+            detail=f"已达到您当前方案的物流规则上限（{limit} 条）",
         )
 
 
@@ -127,16 +101,13 @@ async def list_logistics_pool(
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
-@router.post("/import")
+@router.post("/import", dependencies=[Depends(require_admin)])
 async def import_logistics_pool(
     file: UploadFile = File(...),
-    admin: int = Depends(require_admin),
-    user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="仅支持 .xlsx 格式文件")
-    _ensure_enterprise_excel_access(user)
     temp_path = ""
     try:
         content = await file.read()

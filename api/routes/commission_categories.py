@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,6 +13,7 @@ from api.dependencies import (
 from api.models.schemas import MessageResponse
 from database import get_db
 from db.commission_categories import create, get_all, get_by_id, soft_delete, update
+from services.plan_resolution import get_effective_plan
 
 router = APIRouter(prefix="/api/commission-categories", tags=["佣金类目"])
 
@@ -19,8 +21,12 @@ router = APIRouter(prefix="/api/commission-categories", tags=["佣金类目"])
 def _ensure_commission_write_access(user: dict) -> int:
     if user.get("role") == "admin":
         return user["id"]
-    subscription_type = user.get("subscription_type") or "free"
-    if subscription_type not in COMMISSION_ALLOWED_TIERS:
+    # get_effective_plan uses getattr() to read subscription_type / trial_expires_at,
+    # which doesn't work on plain dicts (getattr on dict only finds methods, not keys).
+    # Wrap in SimpleNamespace so attribute access resolves to dict values, preserving
+    # the trial overlay (free + active trial -> "professional").
+    effective_plan = get_effective_plan(SimpleNamespace(**user))
+    if effective_plan not in COMMISSION_ALLOWED_TIERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="此功能需要专业版或更高订阅等级",

@@ -52,7 +52,8 @@ class TestCalculateEndpointPreciseMode:
         mock_calc.return_value = _default_calc_return()
 
         mock_user = MagicMock()
-        mock_user.user_type = "free"
+        mock_user.subscription_type = "free"
+        mock_user.trial_expires_at = 0
 
         mock_session = AsyncMock()
         mock_session.execute.return_value = MagicMock(
@@ -88,7 +89,8 @@ class TestCalculateEndpointPreciseMode:
         mock_calc.return_value = _default_calc_return()
 
         mock_user = MagicMock()
-        mock_user.user_type = "efficiency"
+        mock_user.subscription_type = "efficiency"
+        mock_user.trial_expires_at = 0
 
         mock_session = AsyncMock()
         mock_session.execute.return_value = MagicMock(
@@ -123,7 +125,8 @@ class TestCalculateEndpointPreciseMode:
         mock_calc.return_value = _default_calc_return()
 
         mock_user = MagicMock()
-        mock_user.user_type = "enterprise"
+        mock_user.subscription_type = "enterprise"
+        mock_user.trial_expires_at = 0
 
         mock_session = AsyncMock()
         mock_session.execute.return_value = MagicMock(
@@ -500,7 +503,9 @@ class TestCalculateBreakevenResponses:
         mock_session.execute.return_value = MagicMock(
             scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         )
-        mock_session.get.return_value = MagicMock(user_type="enterprise")
+        mock_session.get.return_value = MagicMock(
+            subscription_type="enterprise", trial_expires_at=0
+        )
 
         app.dependency_overrides[get_db] = _db_override(mock_session)
         try:
@@ -569,7 +574,9 @@ class TestCalculateBreakevenResponses:
         mock_grouped.side_effect = side_effect
 
         mock_session = AsyncMock()
-        mock_session.get.return_value = MagicMock(user_type="enterprise")
+        mock_session.get.return_value = MagicMock(
+            subscription_type="enterprise", trial_expires_at=0
+        )
 
         app.dependency_overrides[get_db] = _db_override(mock_session)
         try:

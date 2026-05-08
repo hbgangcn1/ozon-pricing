@@ -27,11 +27,20 @@ _FALLBACK_LIMITS = {
 
 
 def is_in_trial(user) -> bool:
-    """Return True iff user has an unexpired professional trial active."""
-    expires = getattr(user, "trial_expires_at", 0) or 0
+    """Return True iff user has an unexpired professional trial active.
+
+    Narrow defensive cast: only int/float values count as a real trial
+    expiry. Anything else (None, MagicMock from tests, malformed strings,
+    arbitrary objects) is treated as "no trial". The User ORM column is
+    Integer nullable=False default 0, so production values are always
+    int/None — this guard exists so test doubles and edge objects cannot
+    blow up the global plan-gate path with a TypeError.
+    """
+    raw = getattr(user, "trial_expires_at", None)
+    expires = int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 0
     if expires <= 0:
         return False
-    return int(time.time()) < int(expires)
+    return int(time.time()) < expires
 
 
 def get_effective_plan(user) -> str:

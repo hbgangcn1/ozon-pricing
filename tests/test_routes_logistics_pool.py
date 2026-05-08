@@ -39,16 +39,12 @@ def _patch_recalculate():
             new=AsyncMock(),
         ),
         patch(
-            "api.routes.logistics_pool._get_user_subscription",
-            new=AsyncMock(return_value=("admin", "free")),
+            "api.routes.logistics_pool.get_effective_logistics_limit",
+            new=AsyncMock(return_value=-1),
         ),
         patch(
-            "api.routes.logistics_pool.get_plan_by_code",
-            new=AsyncMock(return_value={"logistics_limit": -1, "plan_name": "Unlimited"}),
-        ),
-        patch(
-            "api.routes.logistics_pool.get_logistics_by_filters",
-            new=AsyncMock(return_value=([], 0)),
+            "api.routes.logistics_pool.count_user_active_rules",
+            new=AsyncMock(return_value=0),
         ),
     ):
         yield
