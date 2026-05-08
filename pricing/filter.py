@@ -2,6 +2,8 @@ import math
 import re
 from decimal import Decimal
 
+from pricing._weight import _compute_billable_weight  # pyright: ignore[reportPrivateUsage]
+
 
 def _parse_continue_unit_filter(continue_unit_raw):
     if isinstance(continue_unit_raw, str):
@@ -26,37 +28,15 @@ def _filter_check_weight(logistic, product):
     length_cm = product.get("length_cm", 0)
     width_cm = product.get("width_cm", 0)
     height_cm = product.get("height_cm", 0)
-    volume_mode = logistic.get("volume_mode", "none")
-    volume_coefficient = logistic.get("volume_coefficient", 5000)
-    if volume_mode == "max_actual_vs_volume":
-        volume_weight = (length_cm * width_cm * height_cm) / volume_coefficient
-        actual_weight = product.get("weight_g", 0) / 1000
-        calculated_weight = max(actual_weight, volume_weight) * 1000
-    elif volume_mode == "longest_side":
-        longest_side_threshold = logistic.get("longest_side_threshold", 0)
-        longest_side = max(length_cm, width_cm, height_cm)
-        if longest_side > longest_side_threshold:
-            volume_weight = (length_cm * width_cm * height_cm) / volume_coefficient
-            calculated_weight = volume_weight * 1000
-        else:
-            calculated_weight = product.get("weight_g", 0)
-    elif volume_mode == "sum_of_sides":
-        sum_of_sides_threshold = logistic.get("sum_of_sides_threshold", 0)
-        sum_of_sides_val = length_cm + width_cm + height_cm
-        if sum_of_sides_val > sum_of_sides_threshold:
-            volume_weight = (length_cm * width_cm * height_cm) / volume_coefficient
-            calculated_weight = volume_weight * 1000
-        else:
-            calculated_weight = product.get("weight_g", 0)
-    else:
-        calculated_weight = product.get("weight_g", 0)
-    w = calculated_weight
+    sides = [length_cm, width_cm, height_cm]
+    actual_weight = product.get("weight_g", 0)
+    w, label, _triggered = _compute_billable_weight(logistic, sides, actual_weight)
     min_w = logistic.get("min_weight", 0)
     max_w = logistic.get("max_weight", 10**9)
     if w < min_w:
-        return None, f"重量 {w} g 低于下限 {min_w} g"
+        return None, f"{label} {w:.2f}g 低于下限 {min_w:g}g"
     if w > max_w:
-        return None, f"重量 {w} g 高于上限 {max_w} g"
+        return None, f"{label} {w:.2f}g 超过上限 {max_w:g}g"
     return w, None
 
 
@@ -228,4 +208,4 @@ def _debug_filter_reason(logistic: dict, product: dict) -> str:  # pyright: igno
     err = _filter_check_price_limits(logistic, product, w)
     if err:
         return err
-    return ""
+    return "未识别的淘汰原因"

@@ -254,26 +254,20 @@ def test_dfr_batt_mah():
 
 def test_dfr_batt_mah_zero():
     assert (
-        _debug_filter_reason(
-            dfr_log(allow_battery=True, battery_capacity_limit_wh=10),
-            dfr_prod(
-                has_battery=True,
-                battery_capacity_wh=0,
-                battery_capacity_mah=0,
-                battery_voltage=0,
-            ),
-        )
-        == ""
+        _debug_filter_reason(dfr_log(allow_battery=True, battery_capacity_limit_wh=10),
+        dfr_prod(
+            has_battery=True,
+            battery_capacity_wh=0,
+            battery_capacity_mah=0,
+            battery_voltage=0,
+        ),) == "未识别的淘汰原因"
     )
 
 
 def test_dfr_batt_wh_zero():
     assert (
-        _debug_filter_reason(
-            dfr_log(allow_battery=True, battery_capacity_limit_wh=10),
-            dfr_prod(has_battery=True, battery_capacity_wh=0),
-        )
-        == ""
+        _debug_filter_reason(dfr_log(allow_battery=True, battery_capacity_limit_wh=10),
+        dfr_prod(has_battery=True, battery_capacity_wh=0),) == "未识别的淘汰原因"
     )
 
 
@@ -305,7 +299,7 @@ def test_dfr_cny_over():
 
 
 def test_dfr_cny_ok():
-    assert _debug_filter_reason(dfr_log(price_limit_cny=10**9), dfr_prod()) == ""
+    assert _debug_filter_reason(dfr_log(price_limit_cny=10**9), dfr_prod()) == "未识别的淘汰原因"
 
 
 def test_dfr_cny_over_low_limit():
@@ -317,7 +311,7 @@ def test_dfr_cny_over_low_limit():
 
 
 def test_dfr_cny_ok_high_limit():
-    assert _debug_filter_reason(dfr_log(price_limit_cny=10**9), dfr_prod()) == ""
+    assert _debug_filter_reason(dfr_log(price_limit_cny=10**9), dfr_prod()) == "未识别的淘汰原因"
 
 
 def test_dfr_cny_min():
@@ -345,38 +339,32 @@ def test_dfr_exc():
 
 @pytest.mark.parametrize("u", ["kg", "g", "50g", "1kg", "xyz"])
 def test_dfr_cu(u):
-    assert _debug_filter_reason(dfr_log(continue_unit=u), dfr_prod()) == ""
+    assert _debug_filter_reason(dfr_log(continue_unit=u), dfr_prod()) == "未识别的淘汰原因"
 
 
 def test_dfr_fpc_within():
     assert (
-        _debug_filter_reason(
-            dfr_log(
-                fee_mode="first_plus_continue",
-                first_weight_g=500,
-                first_fee=10.0,
-                continue_fee=1.0,
-                continue_unit=100,
-            ),
-            dfr_prod(weight_g=300),
-        )
-        == ""
+        _debug_filter_reason(dfr_log(
+            fee_mode="first_plus_continue",
+            first_weight_g=500,
+            first_fee=10.0,
+            continue_fee=1.0,
+            continue_unit=100,
+        ),
+        dfr_prod(weight_g=300),) == "未识别的淘汰原因"
     )
 
 
 def test_dfr_fpc_over():
     assert (
-        _debug_filter_reason(
-            dfr_log(
-                fee_mode="first_plus_continue",
-                first_weight_g=50,
-                first_fee=10.0,
-                continue_fee=1.0,
-                continue_unit=100,
-            ),
-            dfr_prod(weight_g=200),
-        )
-        == ""
+        _debug_filter_reason(dfr_log(
+            fee_mode="first_plus_continue",
+            first_weight_g=50,
+            first_fee=10.0,
+            continue_fee=1.0,
+            continue_unit=100,
+        ),
+        dfr_prod(weight_g=200),) == "未识别的淘汰原因"
     )
 
 

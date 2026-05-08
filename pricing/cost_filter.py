@@ -1,9 +1,8 @@
 from decimal import Decimal
 from typing import Any, Callable, List, Tuple
 
-from .logistic_cost import calculate_logistic_cost
-from .filter import _debug_filter_reason
-from .floating_price import calc_floating_price, _get_filter_rates
+from .filter import _debug_filter_reason  # pyright: ignore[reportPrivateUsage]
+from .floating_price import calc_floating_price, _get_filter_rates  # pyright: ignore[reportPrivateUsage]
 
 
 def _to_product_dict(product):
@@ -81,7 +80,7 @@ def _process_one_logistic(
     cost, debug_info = cached_cost(tuple(log_dict.items()), tuple(product_dict.items()))
     all_costs_debug.append({"logistic": log_dict, "cost": cost, "debug": debug_info})
     if cost is None:
-        reason = _debug_filter_reason(log_dict, product_dict)
+        reason = _debug_filter_reason(log_dict, product_dict) or "未识别的淘汰原因"
         _append_filtered(filtered_logistics, is_land, log_dict, reason)
         return None
     base_cost_calc = unit_price + labeling_fee + shipping_fee + cost

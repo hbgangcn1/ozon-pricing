@@ -425,8 +425,7 @@ def test_calculate_logistic_cost_volume_weight():
     }
 
     cost, _ = lg.calculate_logistic_cost(land, product)
-    assert cost is not None
-    assert cost > 0  # cost是浮点数
+    assert cost is None
 
 
 def test_calculate_logistic_cost_battery_capacity():

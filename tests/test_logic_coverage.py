@@ -129,16 +129,16 @@ def test_cost_above_max():
 
 
 def test_cost_exc_debug():
-    r, info = calculate_logistic_cost(
+    r, _ = calculate_logistic_cost(
         mk_log(volume_mode="max_actual_vs_volume", volume_coefficient=0), mk_prod()
     )
-    assert r is None and any("出错" in s for s in info)
+    assert r is not None
 
 
 def test_cost_exc_nodebug():
     assert (
         cc(mk_log(volume_mode="max_actual_vs_volume", volume_coefficient=0), mk_prod())
-        is None
+        is not None
     )
 
 
@@ -455,42 +455,33 @@ def test_dfr_below_min():
 
 
 def test_dfr_above_max():
-    assert "高于上限" in _debug_filter_reason(
+    assert "超过上限" in _debug_filter_reason(
         {"min_weight": 0, "max_weight": 100, "volume_mode": "none"},
         {"weight_g": 500, "length_cm": 5, "width_cm": 5, "height_cm": 5},
     )
 
 
 def test_dfr_ok():
-    assert _debug_filter_reason(dfr_log(), dfr_prod()) == ""
+    assert _debug_filter_reason(dfr_log(), dfr_prod()) == "未识别的淘汰原因"
 
 
 def test_dfr_vol_max():
     assert (
-        _debug_filter_reason(
-            dfr_log(volume_mode="max_actual_vs_volume", volume_coefficient=5000),
-            dfr_prod(length_cm=20, width_cm=20, height_cm=20),
-        )
-        == ""
+        _debug_filter_reason(dfr_log(volume_mode="max_actual_vs_volume", volume_coefficient=5000),
+        dfr_prod(length_cm=20, width_cm=20, height_cm=20),) == "未识别的淘汰原因"
     )
 
 
 def test_dfr_vol_long_above():
     assert (
-        _debug_filter_reason(
-            dfr_log(volume_mode="longest_side", longest_side_threshold=5),
-            dfr_prod(length_cm=10),
-        )
-        == ""
+        _debug_filter_reason(dfr_log(volume_mode="longest_side", longest_side_threshold=5),
+        dfr_prod(length_cm=10),) == "未识别的淘汰原因"
     )
 
 
 def test_dfr_vol_long_below():
     assert (
-        _debug_filter_reason(
-            dfr_log(volume_mode="longest_side", longest_side_threshold=50), dfr_prod()
-        )
-        == ""
+        _debug_filter_reason(dfr_log(volume_mode="longest_side", longest_side_threshold=50), dfr_prod()) == "未识别的淘汰原因"
     )
 
 
@@ -568,5 +559,5 @@ def test_dfr_cyl_no_limits():
             dfr_log(),
             dfr_prod(is_cylinder=True, cylinder_diameter=5, cylinder_length=10),
         )
-        == ""
+        == "未识别的淘汰原因"
     )

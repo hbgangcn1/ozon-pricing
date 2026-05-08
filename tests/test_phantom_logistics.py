@@ -80,7 +80,7 @@ def test_filtered_logistics_keeps_filtered_input_logistic_name():
     assert result["filtered_logistics"]["land"] == [
         {
             "name": "用户被淘汰陆运",
-            "reason": "重量 1000 g 高于上限 500 g",
+            "reason": "实重 1000.00g 超过上限 500g",
         }
     ]
 

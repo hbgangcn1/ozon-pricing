@@ -210,7 +210,7 @@ function FilteredLogisticsPanel({ logistics }) {
                 {(logistics[type] || []).length > 0 ? (
                   <div className="space-y-2">
                     {logistics[type].map((item) => {
-                      const reason = item.reason || ''
+                      const reason = item.reason || '未提供原因'
                       const isUnselected = reason.includes('未被选中')
 
                       return (

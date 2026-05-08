@@ -3,6 +3,8 @@ import re
 from decimal import Decimal
 from typing import List, Optional, Tuple
 
+from pricing._weight import _compute_billable_weight  # pyright: ignore[reportPrivateUsage]
+
 
 def _parse_continue_unit(continue_unit_raw):
     if isinstance(continue_unit_raw, str):
@@ -181,53 +183,26 @@ def _calc_volume_weight(logistic, sides, actual_weight, debug_info):
     volume_mode = logistic.get("volume_mode", "none")
     volume_coefficient = logistic.get("volume_coefficient", 5000)
     debug_info.append(f"体积重量模式: {volume_mode}, 系数: {volume_coefficient}")
-    if volume_mode == "max_actual_vs_volume":
-        volume_weight = (sides[0] * sides[1] * sides[2]) / volume_coefficient
-        actual_weight_kg = actual_weight / 1000
-        calculated_weight = max(actual_weight_kg, volume_weight) * 1000
-        debug_info.append(
-            f"实际重量: {actual_weight:.2f}g, "
-            f"体积重量: {volume_weight * 1000:.2f}g, "
-            f"计费重量: {calculated_weight:.2f}g"
-        )
+    if volume_mode == "sum_of_sides":
+        threshold = logistic.get("sum_of_sides_threshold", 0)
+        message = "三边和超过阈值" if sum(sides) > threshold else "三边和未超过阈值"
+        debug_info.append(message)
     elif volume_mode == "longest_side":
-        longest_side_threshold = logistic.get("longest_side_threshold", 0)
-        longest_side = max(sides)
-        debug_info.append(f"最长边: {longest_side}cm, 阈值: {longest_side_threshold}cm")
-        if longest_side > longest_side_threshold:
-            volume_weight = (sides[0] * sides[1] * sides[2]) / volume_coefficient
-            calculated_weight = volume_weight * 1000
-            debug_info.append(
-                f"最长边超过阈值，按体积重量计费: "
-                f"实际重量: {actual_weight:.2f}g, "
-                f"体积重量: {volume_weight * 1000:.2f}g, "
-                f"计费重量: {calculated_weight:.2f}g"
-            )
-        else:
-            calculated_weight = actual_weight
-            debug_info.append(f"最长边未超过阈值，使用实际重量: {calculated_weight}g")
-    elif volume_mode == "sum_of_sides":
-        sum_of_sides_threshold = logistic.get("sum_of_sides_threshold", 0)
-        sum_of_sides_val = sum(sides)
-        debug_info.append(
-            f"三边和: {sum_of_sides_val}cm, 阈值: {sum_of_sides_threshold}cm"
-        )
-        if sum_of_sides_val > sum_of_sides_threshold:
-            volume_weight = (sides[0] * sides[1] * sides[2]) / volume_coefficient
-            calculated_weight = volume_weight * 1000
-            debug_info.append(
-                f"三边和超过阈值，按体积重量计费: "
-                f"实际重量: {actual_weight:.2f}g, "
-                f"体积重量: {volume_weight * 1000:.2f}g, "
-                f"计费重量: {calculated_weight:.2f}g"
-            )
-        else:
-            calculated_weight = actual_weight
-            debug_info.append(f"三边和未超过阈值，使用实际重量: {calculated_weight}g")
-    else:
-        calculated_weight = actual_weight
-        debug_info.append(f"实际重量: {calculated_weight}g（未启用体积重量）")
-    return calculated_weight
+        threshold = logistic.get("longest_side_threshold", 0)
+        message = "最长边超过阈值" if max(sides) > threshold else "最长边未超过阈值"
+        debug_info.append(message)
+    volume_grams = 0.0
+    if volume_coefficient > 0:
+        volume_grams = (sides[0] * sides[1] * sides[2]) / volume_coefficient * 1000
+    billable_weight, _label, _triggered = _compute_billable_weight(
+        logistic, sides, actual_weight
+    )
+    debug_info.append(
+        f"实际重量：{actual_weight:.2f}g, "
+        f"体积重量：{volume_grams:.2f}g, "
+        f"计费重量：{billable_weight:.2f}g"
+    )
+    return billable_weight
 
 
 def _calc_fee(logistic, w, debug_info):
@@ -289,12 +264,6 @@ def calculate_logistic_cost(
         debug_info.append("重量为0，返回基础费用")
         base_fee = logistic.get("base_fee", Decimal("0"))
         return (base_fee, debug_info)
-    if min_w > 0 and actual_weight < min_w:
-        debug_info.append(f"重量 {actual_weight}g 低于下限 {min_w}g，返回 None")
-        return (None, debug_info)
-    if max_w > 0 and actual_weight > max_w:
-        debug_info.append(f"重量 {actual_weight}g 超过上限 {max_w}g，返回 None")
-        return (None, debug_info)
     debug_info.append(
         f"重量限制: {min_w or '无'}g ~ {max_w or '无'}g, 当前: {actual_weight}g"
     )
@@ -319,6 +288,16 @@ def calculate_logistic_cost(
         calculated_weight = _calc_volume_weight(
             logistic, sides, actual_weight, debug_info
         )
+        if min_w > 0 and calculated_weight < min_w:
+            debug_info.append(
+                f"计费重量 {calculated_weight:.2f}g 低于下限 {min_w}g，返回 None"
+            )
+            return (None, debug_info)
+        if max_w > 0 and calculated_weight > max_w:
+            debug_info.append(
+                f"计费重量 {calculated_weight:.2f}g 超过上限 {max_w}g，返回 None"
+            )
+            return (None, debug_info)
     except (KeyError, TypeError, ZeroDivisionError) as e:
         debug_info.append(f"计算物流成本时出错: {str(e)}")
         return (None, debug_info)
