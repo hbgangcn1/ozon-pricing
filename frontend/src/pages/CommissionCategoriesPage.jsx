@@ -42,6 +42,10 @@ export default function CommissionCategoriesPage() {
   const subscriptionType = user?.subscription_type || user?.user_type || 'free'
 
   const fetchCategories = useCallback(async () => {
+    if (!canManage) {
+      setCategories([])
+      return
+    }
     setIsLoading(true)
     try {
       const data = await commissionCategoriesAPI.getAll()
@@ -53,9 +57,14 @@ export default function CommissionCategoriesPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [canManage])
 
   useEffect(() => {
+    if (!canManage) {
+      setCategories([])
+      setIsLoading(false)
+      return
+    }
     const controller = new AbortController()
     const loadCategories = async () => {
       setIsLoading(true)
@@ -76,7 +85,7 @@ export default function CommissionCategoriesPage() {
     }
     loadCategories()
     return () => controller.abort()
-  }, [])
+  }, [canManage])
 
   const handleOpenDialog = (category = null) => {
     setCurrentCategory(category)
@@ -144,8 +153,8 @@ export default function CommissionCategoriesPage() {
 
       {!canManage && (
         <UpgradePrompt
-          title="升级到专业版，解锁佣金类目管理"
-          description={`当前订阅为 ${subscriptionType}，升级后即可新增、编辑和删除佣金类目。`}
+          title="当前方案暂不支持此功能"
+          description={`当前订阅为 ${subscriptionType}，升级到专业版或企业版即可新增、编辑和删除佣金类目。`}
         />
       )}
 
@@ -183,10 +192,10 @@ export default function CommissionCategoriesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(cat)} disabled={!canManage} title={!canManage ? '此功能需要专业版或更高订阅等级' : undefined}>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(cat)} disabled={!canManage} title={!canManage ? '当前方案暂不支持此功能' : undefined}>
                           <Edit2 className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)} disabled={!canManage} title={!canManage ? '此功能需要专业版或更高订阅等级' : undefined} className="text-error hover:text-error-hover">
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)} disabled={!canManage} title={!canManage ? '当前方案暂不支持此功能' : undefined} className="text-error hover:text-error-hover">
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>

@@ -32,9 +32,14 @@ vi.mock('../services/api', () => ({
   },
 }));
 
-vi.mock('../stores/authStore', () => ({
-  useAuthStore: vi.fn(),
-}));
+vi.mock('../stores/authStore', () => {
+  const useAuthStore = vi.fn()
+  useAuthStore.getState = vi.fn(() => ({
+    hasProfessionalAccess: () => true,
+    setUser: vi.fn(),
+  }))
+  return { useAuthStore }
+});
 
 vi.mock('sonner', () => ({
   toast: {
@@ -253,6 +258,10 @@ describe('PricingPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.mockReturnValue({ user: mockUser });
+    useAuthStore.getState.mockReturnValue({
+      hasProfessionalAccess: () => true,
+      setUser: vi.fn(),
+    });
     productsAPI.getAll.mockResolvedValue([]);
     commissionCategoriesAPI.getAll.mockResolvedValue([]);
     pricingAPI.calculateGrouped.mockResolvedValue(mockGroupedResult);
@@ -350,6 +359,10 @@ describe('PricingPage', () => {
 
   it('shows precise mode disabled label for free users', () => {
     useAuthStore.mockReturnValue({ user: { ...mockUser, user_type: 'free' } });
+    useAuthStore.getState.mockReturnValue({
+      hasProfessionalAccess: () => false,
+      setUser: vi.fn(),
+    });
     renderPage();
     expect(screen.getByText(/精准模式（限专业版\/企业版）/)).toBeInTheDocument();
   });

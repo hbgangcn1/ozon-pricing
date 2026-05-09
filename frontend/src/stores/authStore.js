@@ -49,6 +49,10 @@ const buildPersistedUser = (user) => {
     user_type,
     remaining_calculations,
     has_security_question,
+    trial_used,
+    trial_started_at,
+    trial_expires_at,
+    trial_plan_at_start,
   } = user
 
   return {
@@ -59,6 +63,10 @@ const buildPersistedUser = (user) => {
     user_type,
     remaining_calculations,
     has_security_question,
+    trial_used: trial_used ?? 0,
+    trial_started_at: trial_started_at ?? 0,
+    trial_expires_at: trial_expires_at ?? 0,
+    trial_plan_at_start: trial_plan_at_start ?? '',
   }
 }
 
@@ -213,10 +221,17 @@ export const useAuthStore = create((set, get) => ({
     return user?.subscription_type || user?.user_type || 'free'
   },
 
+  isInTrial: () => {
+    const { user } = get()
+    if (!user || typeof user.trial_expires_at !== 'number') return false
+    return user.trial_expires_at > Math.floor(Date.now() / 1000)
+  },
+
   hasProfessionalAccess: () => {
     if (get().isAdmin()) return true
     const subscriptionType = get().getSubscriptionType()
-    return PROFESSIONAL_TIERS.includes(subscriptionType)
+    if (PROFESSIONAL_TIERS.includes(subscriptionType)) return true
+    return get().isInTrial()
   },
 
   hasEnterpriseAccess: () => {

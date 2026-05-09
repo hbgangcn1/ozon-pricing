@@ -75,10 +75,16 @@ describe('authStore.js', () => {
       expect(state.isAuthenticated).toBe(true)
       expect(state.showSecurityDialog).toBe(true)
 
+      const persistedUser = {
+        id: 2,
+        subscription_type: 'free',
+        trial_used: 0,
+        trial_started_at: 0,
+        trial_expires_at: 0,
+        trial_plan_at_start: '',
+      }
       expect(localStorage.getItem('api_token')).toBeNull()
-      expect(localStorage.getItem('api_user')).toBe(
-        JSON.stringify({ ...mockUser, subscription_type: 'free' })
-      )
+      expect(JSON.parse(localStorage.getItem('api_user'))).toEqual(persistedUser)
     })
 
     it('syncs security dialog from login user flag', () => {
@@ -103,6 +109,10 @@ describe('authStore.js', () => {
         id: 3,
         user_type: 'professional',
         subscription_type: 'professional',
+        trial_used: 0,
+        trial_started_at: 0,
+        trial_expires_at: 0,
+        trial_plan_at_start: '',
       })
     })
   })

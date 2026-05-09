@@ -37,6 +37,10 @@ export function usePricingCalculation(user) {
   const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false)
   const [productForm, setProductForm] = useState(DEFAULT_PRODUCT_FORM)
   const refreshCommissionCategories = useCallback(async () => {
+    if (!useAuthStore.getState().hasProfessionalAccess()) {
+      setCommissionCategories([])
+      return
+    }
     try {
       const data = await commissionCategoriesAPI.getAll()
       setCommissionCategories(Array.isArray(data) ? data : [])
@@ -62,10 +66,11 @@ export function usePricingCalculation(user) {
     let cancelled = false
 
     const loadData = async () => {
+      const canFetchCommission = useAuthStore.getState().hasProfessionalAccess()
       try {
         const [productData, commissionData] = await Promise.all([
           productsAPI.getAll(),
-          commissionCategoriesAPI.getAll(),
+          canFetchCommission ? commissionCategoriesAPI.getAll() : Promise.resolve([]),
         ])
 
         if (!cancelled) {

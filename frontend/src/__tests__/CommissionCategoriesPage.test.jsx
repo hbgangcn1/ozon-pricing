@@ -238,8 +238,24 @@ describe('CommissionCategoriesPage', () => {
     });
   });
 
-  it('shows upgrade prompt and hides create button for free tier', async () => {
+  it('shows upgrade prompt and skips fetch for free tier without trial', async () => {
     useAuthStore.mockReturnValue(makeStore('free'));
+
+    render(<CommissionCategoriesPage />);
+
+    expect(screen.getByText('当前方案暂不支持此功能')).toBeInTheDocument();
+    expect(screen.queryByText('新增类目')).not.toBeInTheDocument();
+    expect(screen.getByText('暂无佣金类目数据')).toBeInTheDocument();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(commissionCategoriesAPI.getAll).not.toHaveBeenCalled();
+  });
+
+  it('grants full management UI to free tier user during active trial', async () => {
+    useAuthStore.mockReturnValue({
+      user: { subscription_type: 'free' },
+      hasProfessionalAccess: () => true,
+    });
 
     render(<CommissionCategoriesPage />);
 
@@ -247,13 +263,9 @@ describe('CommissionCategoriesPage', () => {
       expect(screen.getByText('服装')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('升级到专业版，解锁佣金类目管理')).toBeInTheDocument();
-    expect(screen.queryByText('新增类目')).not.toBeInTheDocument();
-    const actionButtons = screen.getAllByRole('button');
-    expect(actionButtons).toHaveLength(4);
-    actionButtons.forEach((button) => {
-      expect(button).toBeDisabled();
-    });
+    expect(screen.queryByText('当前方案暂不支持此功能')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新增类目' })).toBeInTheDocument();
+    expect(commissionCategoriesAPI.getAll).toHaveBeenCalled();
   });
 
   it('shows normal management UI for professional tier', async () => {
@@ -265,7 +277,7 @@ describe('CommissionCategoriesPage', () => {
       expect(screen.getByText('服装')).toBeInTheDocument();
     });
 
-    expect(screen.queryByText('升级到专业版，解锁佣金类目管理')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前方案暂不支持此功能')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新增类目' })).toBeInTheDocument();
 
     const buttons = screen.getAllByRole('button');
