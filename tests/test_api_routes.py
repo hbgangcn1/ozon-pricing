@@ -248,6 +248,10 @@ class TestAuth:
         mock_reset.return_value = True
         refreshed = MagicMock()
         refreshed.remaining_calculations = 10
+        refreshed.trial_used = 0
+        refreshed.trial_started_at = 0
+        refreshed.trial_expires_at = 0
+        refreshed.trial_plan_at_start = ""
         mock_get_user_by_id.return_value = refreshed
         mock_access_token.return_value = "tokR"
         mock_refresh_token.return_value = "refR"

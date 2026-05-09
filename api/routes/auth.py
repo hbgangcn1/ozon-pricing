@@ -207,6 +207,10 @@ async def login(
             subscription_type=user.get("subscription_type", "free"),
             remaining_calculations=refreshed_user.remaining_calculations if refreshed_user else -1,
             has_security_question=bool(user.get("security_q1")),
+            trial_used=(refreshed_user.trial_used or 0) if refreshed_user else 0,
+            trial_started_at=(refreshed_user.trial_started_at or 0) if refreshed_user else 0,
+            trial_expires_at=(refreshed_user.trial_expires_at or 0) if refreshed_user else 0,
+            trial_plan_at_start=(refreshed_user.trial_plan_at_start or "") if refreshed_user else "",
         ),
     )
     response = JSONResponse(content=body.model_dump())
@@ -349,6 +353,10 @@ async def register(
             has_security_question=bool(
                 user_data.security_question and user_data.security_answer
             ),
+            trial_used=0,
+            trial_started_at=0,
+            trial_expires_at=0,
+            trial_plan_at_start="",
         ),
     )
     response = JSONResponse(content=body.model_dump())
@@ -492,6 +500,10 @@ async def get_me(
             if user.get("remaining_calculations") is not None
             else -1
         ),
+        trial_used=user.get("trial_used") or 0,
+        trial_started_at=user.get("trial_started_at") or 0,
+        trial_expires_at=user.get("trial_expires_at") or 0,
+        trial_plan_at_start=user.get("trial_plan_at_start") or "",
     )
 
 

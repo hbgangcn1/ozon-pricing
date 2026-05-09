@@ -9,7 +9,6 @@ import openpyxl
 import pytest
 
 from api.dependencies import (
-    get_current_user_id,
     get_user_with_subscription,
     require_admin,
 )
@@ -104,14 +103,11 @@ def _category_row(category_id: int, user_id: int, name: str) -> dict:
     }
 
 
-def _override_current_user(user_id: int) -> None:
-    app.dependency_overrides[get_current_user_id] = lambda: user_id
-
-
 def _override_subscription_user(
     user_id: int,
     subscription_type: str,
     role: str = "user",
+    trial_expires_at: int = 0,
 ) -> None:
     app.dependency_overrides[get_user_with_subscription] = lambda: {
         "id": user_id,
@@ -120,6 +116,10 @@ def _override_subscription_user(
         "user_type": "permanent",
         "subscription_type": subscription_type,
         "remaining_calculations": 100,
+        "trial_used": 1 if trial_expires_at else 0,
+        "trial_started_at": 0,
+        "trial_expires_at": trial_expires_at,
+        "trial_plan_at_start": subscription_type if trial_expires_at else "",
     }
 
 
@@ -156,7 +156,7 @@ class TestCommissionUserIsolation:
     async def test_user_a_cannot_see_user_b_commission_categories(self, client):
         user_a = _unique_id()
         own_name = _unique_name("own_category")
-        _override_current_user(user_a)
+        _override_subscription_user(user_a, "professional")
 
         with patch(
             "api.routes.commission_categories.get_all",
@@ -333,9 +333,9 @@ class TestCommissionSubscriptionGating:
         created_data = _await_args(mock_create).args[1]
         assert created_data["user_id"] == user_id
 
-    async def test_free_tier_user_can_still_get_commission_categories(self, client):
+    async def test_free_tier_user_blocked_on_get_commission_categories(self, client):
         user_id = _unique_id()
-        _override_current_user(user_id)
+        _override_subscription_user(user_id, "free")
 
         with patch(
             "api.routes.commission_categories.get_all",
@@ -343,12 +343,9 @@ class TestCommissionSubscriptionGating:
         ) as mock_get_all:
             response = await client.get("/api/commission-categories")
 
-        assert response.status_code == 200
-        assert response.json() == []
-        assert _await_args(mock_get_all).kwargs == {
-            "include_inactive": False,
-            "user_id": user_id,
-        }
+        assert response.status_code == 403
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
+        mock_get_all.assert_not_awaited()
 
     async def test_commission_category_403_contains_chinese_message(self, client):
         _override_subscription_user(_unique_id(), "free")
@@ -359,7 +356,93 @@ class TestCommissionSubscriptionGating:
         )
 
         assert response.status_code == 403
-        assert response.json()["detail"] == "此功能需要专业版或更高订阅等级"
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
+
+    async def test_free_tier_trial_active_user_can_create_commission_category(
+        self,
+        client,
+    ):
+        user_id = _unique_id()
+        category_name = _unique_name("free_trial_allowed")
+        future_expiry = int(time.time()) + 3600
+        _override_subscription_user(
+            user_id, "free", trial_expires_at=future_expiry,
+        )
+
+        with (
+            patch(
+                "api.routes.commission_categories.create",
+                new=AsyncMock(return_value=33),
+            ),
+            patch(
+                "api.routes.commission_categories.get_by_id",
+                new=AsyncMock(return_value=_category_row(33, user_id, category_name)),
+            ),
+        ):
+            response = await client.post(
+                "/api/commission-categories",
+                json=_commission_payload(category_name),
+            )
+
+        assert response.status_code == 201
+        assert response.json()["user_id"] == user_id
+
+    async def test_efficiency_tier_trial_active_user_can_get_commission_categories(
+        self,
+        client,
+    ):
+        user_id = _unique_id()
+        category_name = _unique_name("eff_trial_get")
+        future_expiry = int(time.time()) + 3600
+        _override_subscription_user(
+            user_id, "efficiency", trial_expires_at=future_expiry,
+        )
+
+        with patch(
+            "api.routes.commission_categories.get_all",
+            new=AsyncMock(return_value=[_category_row(44, user_id, category_name)]),
+        ):
+            response = await client.get("/api/commission-categories")
+
+        assert response.status_code == 200
+        assert response.json()[0]["user_id"] == user_id
+
+    async def test_free_tier_trial_expired_user_blocked_on_create(self, client):
+        user_id = _unique_id()
+        past_expiry = int(time.time()) - 3600
+        _override_subscription_user(
+            user_id, "free", trial_expires_at=past_expiry,
+        )
+
+        with patch(
+            "api.routes.commission_categories.create",
+            new=AsyncMock(),
+        ) as mock_create:
+            response = await client.post(
+                "/api/commission-categories",
+                json=_commission_payload(_unique_name("expired_blocked")),
+            )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
+        mock_create.assert_not_awaited()
+
+    async def test_free_tier_trial_expired_user_blocked_on_get(self, client):
+        user_id = _unique_id()
+        past_expiry = int(time.time()) - 3600
+        _override_subscription_user(
+            user_id, "free", trial_expires_at=past_expiry,
+        )
+
+        with patch(
+            "api.routes.commission_categories.get_all",
+            new=AsyncMock(return_value=[_category_row(55, user_id, "preserved")]),
+        ) as mock_get_all:
+            response = await client.get("/api/commission-categories")
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
+        mock_get_all.assert_not_awaited()
 
 
 class TestExcelImportSubscriptionGating:

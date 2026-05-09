@@ -151,6 +151,10 @@ async def get_current_user(
         "subscription_type": user.subscription_type or "free",
         "remaining_calculations": user.remaining_calculations,
         "security_q1": user.security_q1,
+        "trial_used": user.trial_used or 0,
+        "trial_started_at": user.trial_started_at or 0,
+        "trial_expires_at": user.trial_expires_at or 0,
+        "trial_plan_at_start": user.trial_plan_at_start or "",
     }
 
 
@@ -168,6 +172,10 @@ async def get_user_with_subscription(
         "user_type": user.user_type,
         "subscription_type": user.subscription_type or "free",
         "remaining_calculations": user.remaining_calculations,
+        "trial_used": user.trial_used or 0,
+        "trial_started_at": user.trial_started_at or 0,
+        "trial_expires_at": user.trial_expires_at or 0,
+        "trial_plan_at_start": user.trial_plan_at_start or "",
     }
 
 

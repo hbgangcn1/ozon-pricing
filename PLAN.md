@@ -833,3 +833,54 @@ DB_POOL_MAX=15
 - flake8: **0 errors**
 - 前端 build: ✅
 - lint: 0 warnings
+
+### Phase 26: 试用期佣金管理闸门修复 🔄
+
+**OpenSpec change**: `openspec/changes/fix-trial-aware-commission-gating/`
+- 状态：🔄 proposal 完成（4/4 artifacts），等待 `/opsx-apply` 实施
+- 验证：`openspec validate fix-trial-aware-commission-gating --strict` ✅ 已通过
+
+**根因**：
+- 后端 `/api/auth/me` (`api/routes/auth.py:479-496`) 返回的 `UserResponse` 不携带 `trial_started_at` / `trial_expires_at` / `trial_used` / `trial_plan_at_start`，前端无从判断试用状态。
+- 前端 `authStore.hasProfessionalAccess()` (`frontend/src/stores/authStore.js:216-220`) 只看 `subscription_type ∈ {professional, enterprise, gratitude, test}`，不看试用字段。
+- 后端 `api/routes/commission_categories.py` GET 端点未加订阅闸门，但前端 `CommissionCategoriesPage.jsx` 在 `hasProfessionalAccess()` 为 false 时直接返回升级提示页，导致试用用户看不到也读不到佣金数据。
+- `PricingPage.jsx:12` 存在 `subscription_type === 'efficiency'` 永真表达式 bug。
+
+**修复目标**：
+- 试用期内 free/efficiency 用户：佣金管理完整可用（view/create/edit/delete）+ PricingPage 精准模式入口放行。
+- 试用过期：完整拦截页（无读、无写）；DB 数据保留。
+- 升级 professional/enterprise：立即恢复访问历史数据。
+
+**关键决策**（详见 `openspec/changes/fix-trial-aware-commission-gating/design.md`）：
+- D1: 单一 trial-aware `hasProfessionalAccess()` + 新增 `isInTrial()` selector，不引入 `hasCommissionAccess()`。
+- D2: 后端 `/me` + `get_current_user()` 携带 trial 四字段（epoch 秒），`UserResponse` 新增 4 字段。
+- D3: 后端 commission GET 增加订阅闸门（与 POST/PATCH/DELETE 共享 `_ensure_commission_access` helper），返回 403 + 通用文案，不暴露内部 plan 标签。
+- D4: 前端 `useQuery({ enabled: canManage })` 不发 GET（避免 403 噪音）；后端 GET 仍 403（defense-in-depth）。
+- D5: PricingPage 顺手修复 `'efficiency'` 永真表达式 bug。
+- D6: Manual QA 试用过期模拟使用 psql SQL 直改 `trial_expires_at`（Oracle A1 决策），不新增 `/api/dev/*` 端点。
+
+**Spec 变更**：
+- MODIFIED `subscription-feature-gating`（commission GET 闸门 + 前端等价 + 公共物流池端点边界澄清）
+- MODIFIED `pro-trial`（`/me` + `get_current_user` 携带 trial 四字段）
+
+**任务清单**（详见 `openspec/changes/fix-trial-aware-commission-gating/tasks.md`）：
+
+| 组 | 任务 | 描述 |
+|----|------|------|
+| T1 | 后端 schema | `UserResponse` + `/me` + `get_current_user` 加 trial 四字段 |
+| T2 | 后端闸门 | `commission_categories.py` GET 加订阅闸门 + `_ensure_commission_access` helper |
+| T3 | 后端测试 | `tests/test_api_commission_categories.py` + `tests/test_api_auth.py` 新增 trial-aware 用例 |
+| T4 | 前端 store | `authStore.js` 加 `isInTrial()` + `hasProfessionalAccess()` trial-aware + `buildPersistedUser` 加 trial_* |
+| T5 | 前端页面 | `CommissionCategoriesPage.jsx` 用 `useQuery({ enabled: canManage })` + 拦截页文案区分试用过期 |
+| T6 | PricingPage 修复 | 修 `'efficiency'` 永真表达式 bug |
+| T7 | 前端测试 | `frontend/src/__tests__/authStore.test.js` + `CommissionCategoriesPage.test.jsx` + `PricingPage.test.jsx` |
+| T8 | E2E/Manual QA | Playwright 8+ 截图，使用 psql SQL 模拟过期 |
+| T9 | Lint/全套测试 | flake8 + Pylance + Pyright + 后端全套 pytest + 前端全套 vitest + Playwright |
+| T10 | 提交+归档 | 2 atomic commits（backend / frontend）+ `openspec archive` |
+
+**OpenSpec 产出**：
+- `openspec/changes/fix-trial-aware-commission-gating/proposal.md`
+- `openspec/changes/fix-trial-aware-commission-gating/design.md`（6 decisions，Oracle A1 + B1 已折叠）
+- `openspec/changes/fix-trial-aware-commission-gating/specs/subscription-feature-gating/spec.md`
+- `openspec/changes/fix-trial-aware-commission-gating/specs/pro-trial/spec.md`
+- `openspec/changes/fix-trial-aware-commission-gating/tasks.md`

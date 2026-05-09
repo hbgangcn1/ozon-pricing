@@ -27,6 +27,10 @@ def _make_user(
     subscription_type: Optional[str] = "free",
     remaining_calculations=10,
     is_frozen=0,
+    trial_used=0,
+    trial_started_at=0,
+    trial_expires_at=0,
+    trial_plan_at_start="",
 ):
     user = MagicMock()
     user.id = user_id
@@ -36,6 +40,10 @@ def _make_user(
     user.subscription_type = subscription_type
     user.remaining_calculations = remaining_calculations
     user.is_frozen = is_frozen
+    user.trial_used = trial_used
+    user.trial_started_at = trial_started_at
+    user.trial_expires_at = trial_expires_at
+    user.trial_plan_at_start = trial_plan_at_start
     return user
 
 
@@ -171,6 +179,10 @@ class TestGetCurrentUser:
             "subscription_type": "free",
             "remaining_calculations": 500,
             "security_q1": None,
+            "trial_used": 0,
+            "trial_started_at": 0,
+            "trial_expires_at": 0,
+            "trial_plan_at_start": "",
         }
 
 
@@ -199,6 +211,10 @@ class TestGetUserWithSubscription:
             "user_type": "permanent",
             "subscription_type": "enterprise",
             "remaining_calculations": 500,
+            "trial_used": 0,
+            "trial_started_at": 0,
+            "trial_expires_at": 0,
+            "trial_plan_at_start": "",
         }
 
     @patch("api.dependencies._get_user", new_callable=AsyncMock)

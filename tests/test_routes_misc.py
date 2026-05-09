@@ -297,15 +297,17 @@ class TestCommissionCategorySubscriptionGating:
             "remaining_calculations": -1,
         }
 
-    def test_get_list_allows_free_tier(self):
+    def test_get_list_blocks_free_tier(self):
         saved = dict(app.dependency_overrides)
         app.dependency_overrides.clear()
-        app.dependency_overrides[dependencies.get_current_user_id] = lambda: 1
+        app.dependency_overrides[dependencies.get_user_with_subscription] = lambda: (
+            self._with_subscription("free")
+        )
         try:
             with patch(
                 "api.routes.commission_categories.get_all",
                 new=AsyncMock(return_value=[]),
-            ):
+            ) as mock_get_all:
                 response = client.get(
                     "/api/commission-categories",
                     headers={"Authorization": "Bearer faketoken"},
@@ -314,8 +316,9 @@ class TestCommissionCategorySubscriptionGating:
             app.dependency_overrides.clear()
             app.dependency_overrides.update(saved)
 
-        assert response.status_code == 200
-        assert response.json() == []
+        assert response.status_code == 403
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
+        mock_get_all.assert_not_awaited()
 
     def test_create_blocks_free_tier(self):
         saved = dict(app.dependency_overrides)
@@ -343,7 +346,7 @@ class TestCommissionCategorySubscriptionGating:
             app.dependency_overrides.update(saved)
 
         assert response.status_code == 403
-        assert response.json()["detail"] == "此功能需要专业版或更高订阅等级"
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
         mock_create.assert_not_awaited()
 
     def test_update_blocks_efficiency_tier(self):
@@ -373,7 +376,7 @@ class TestCommissionCategorySubscriptionGating:
             app.dependency_overrides.update(saved)
 
         assert response.status_code == 403
-        assert response.json()["detail"] == "此功能需要专业版或更高订阅等级"
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
         mock_update.assert_not_awaited()
 
     def test_delete_blocks_free_tier(self):
@@ -396,5 +399,5 @@ class TestCommissionCategorySubscriptionGating:
             app.dependency_overrides.update(saved)
 
         assert response.status_code == 403
-        assert response.json()["detail"] == "此功能需要专业版或更高订阅等级"
+        assert response.json()["detail"] == "当前方案暂不支持此功能"
         mock_delete.assert_not_awaited()

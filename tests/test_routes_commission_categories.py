@@ -61,7 +61,21 @@ def _reset_dependencies():
 
 def test_list_categories_success():
     session = AsyncMock()
-    app.dependency_overrides[dependencies.get_current_user_id] = lambda: 7
+    pro_user = {
+        "id": 7,
+        "username": "pro_user",
+        "role": "user",
+        "user_type": "permanent",
+        "subscription_type": "professional",
+        "remaining_calculations": -1,
+        "trial_used": 0,
+        "trial_started_at": 0,
+        "trial_expires_at": 0,
+        "trial_plan_at_start": "",
+    }
+    app.dependency_overrides[dependencies.get_user_with_subscription] = (
+        lambda: pro_user
+    )
     app.dependency_overrides[get_db] = _db_override(session)
 
     with patch(

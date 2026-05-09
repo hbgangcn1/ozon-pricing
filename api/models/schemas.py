@@ -32,6 +32,10 @@ class UserResponse(UserBase):
     subscription_type: str = "free"
     remaining_calculations: int = -1
     has_security_question: bool = False
+    trial_used: int = 0
+    trial_started_at: int = 0
+    trial_expires_at: int = 0
+    trial_plan_at_start: str = ""
 
     model_config = ConfigDict(from_attributes=True)
 

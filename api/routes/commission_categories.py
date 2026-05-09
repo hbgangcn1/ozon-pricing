@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import (
     COMMISSION_ALLOWED_TIERS,
-    get_current_user_id,
     get_user_with_subscription,
 )
 from api.models.schemas import MessageResponse
@@ -18,18 +17,14 @@ from services.plan_resolution import get_effective_plan
 router = APIRouter(prefix="/api/commission-categories", tags=["佣金类目"])
 
 
-def _ensure_commission_write_access(user: dict) -> int:
+def _ensure_commission_access(user: dict) -> int:
     if user.get("role") == "admin":
         return user["id"]
-    # get_effective_plan uses getattr() to read subscription_type / trial_expires_at,
-    # which doesn't work on plain dicts (getattr on dict only finds methods, not keys).
-    # Wrap in SimpleNamespace so attribute access resolves to dict values, preserving
-    # the trial overlay (free + active trial -> "professional").
     effective_plan = get_effective_plan(SimpleNamespace(**user))
     if effective_plan not in COMMISSION_ALLOWED_TIERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="此功能需要专业版或更高订阅等级",
+            detail="当前方案暂不支持此功能",
         )
     return user["id"]
 
@@ -64,9 +59,10 @@ class CategoryOut(BaseModel):
 
 @router.get("", response_model=list[CategoryOut])
 async def list_categories(
-    user_id: int = Depends(get_current_user_id),
+    user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
+    user_id = _ensure_commission_access(user)
     return await get_all(session, include_inactive=False, user_id=user_id)
 
 
@@ -76,7 +72,7 @@ async def create_category(
     user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
-    user_id = _ensure_commission_write_access(user)
+    user_id = _ensure_commission_access(user)
     data = body.model_dump()
     data["user_id"] = user_id
     data["fbp_tier1_rate"] = round(body.rfbs_tier1_rate - 0.01, 4)
@@ -99,7 +95,7 @@ async def update_category(
     user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
-    user_id = _ensure_commission_write_access(user)
+    user_id = _ensure_commission_access(user)
     if not await get_by_id(session, category_id, user_id):
         raise HTTPException(status_code=404, detail="佣金类目不存在")
     data = body.model_dump(exclude_unset=True)
@@ -128,7 +124,7 @@ async def delete_category(
     user: dict = Depends(get_user_with_subscription),
     session: AsyncSession = Depends(get_db),
 ):
-    user_id = _ensure_commission_write_access(user)
+    user_id = _ensure_commission_access(user)
     if not await soft_delete(session, category_id, user_id):
         raise HTTPException(status_code=404, detail="佣金类目不存在")
     return MessageResponse(message="删除成功")
