@@ -305,13 +305,20 @@ async def decrement_user_calculations(
 
     if user_type in ("free", "monthly"):
         try:
-            remaining = getattr(user, "remaining_calculations", None) or 0
-            if remaining <= 0:
+            result = await session.execute(
+                update(User)
+                .where(User.id == user_id, User.remaining_calculations > 0)
+                .values(remaining_calculations=User.remaining_calculations - 1)
+                .execution_options(synchronize_session=False)
+            )
+            rowcount = int(getattr(result, "rowcount", 0) or 0)
+            if rowcount == 0:
                 return False
-            user.remaining_calculations = remaining - 1
+            await session.flush()
+            return True
         except Exception:
             logger.warning("扣减计算次数失败", exc_info=True)
-        return True
+            return True
 
     return False
 
