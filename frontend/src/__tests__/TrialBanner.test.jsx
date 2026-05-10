@@ -4,11 +4,15 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import TrialBanner from '../components/TrialBanner';
 import { trialAPI } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 
 vi.mock('../services/api', () => ({
   trialAPI: {
     getStatus: vi.fn(),
     claim: vi.fn(),
+  },
+  authAPI: {
+    getMe: vi.fn(),
   },
 }));
 
@@ -20,10 +24,12 @@ describe('TrialBanner', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    useAuthStore.setState({ user: null, isAuthenticated: false, token: null });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    useAuthStore.setState({ user: null, isAuthenticated: false, token: null });
   });
 
   it('renders claim button when eligible and not yet used', async () => {
@@ -81,5 +87,17 @@ describe('TrialBanner', () => {
 
     render(<TrialBanner />);
     expect(await screen.findByText(/剩余/)).toBeInTheDocument();
+  });
+
+  it('renders nothing for admin role and does not call trial API', async () => {
+    useAuthStore.setState({
+      user: { id: 1, username: 'admin', role: 'admin', subscription_type: 'permanent' },
+      isAuthenticated: true,
+    });
+    const { container } = render(<TrialBanner />);
+    await waitFor(() => {
+      expect(container.firstChild).toBeNull();
+    });
+    expect(trialAPI.getStatus).not.toHaveBeenCalled();
   });
 });

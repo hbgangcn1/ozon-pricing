@@ -38,7 +38,7 @@ describe('AppLayout', () => {
     )
 
   it('does not render SecurityQuestionRequiredDialog when showSecurityDialog is false', () => {
-    useAuthStore.mockImplementation((selector) => selector({ showSecurityDialog: false }))
+    useAuthStore.mockImplementation((selector) => selector({ showSecurityDialog: false, isAdmin: () => false }))
 
     renderLayout()
 
@@ -47,7 +47,7 @@ describe('AppLayout', () => {
   })
 
   it('renders SecurityQuestionRequiredDialog when showSecurityDialog is true', () => {
-    useAuthStore.mockImplementation((selector) => selector({ showSecurityDialog: true }))
+    useAuthStore.mockImplementation((selector) => selector({ showSecurityDialog: true, isAdmin: () => false }))
 
     renderLayout()
 
@@ -55,7 +55,7 @@ describe('AppLayout', () => {
   })
 
   it('passes open prop true to dialog when shown', () => {
-    useAuthStore.mockImplementation((selector) => selector({ showSecurityDialog: true }))
+    useAuthStore.mockImplementation((selector) => selector({ showSecurityDialog: true, isAdmin: () => false }))
 
     renderLayout()
 

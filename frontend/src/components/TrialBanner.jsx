@@ -21,6 +21,7 @@ function isDismissed() {
 }
 
 export default function TrialBanner() {
+  const isAdmin = useAuthStore((s) => s.isAdmin());
   const [status, setStatus] = useState(null);
   const [, forceTick] = useState(0);
 
@@ -34,10 +35,13 @@ export default function TrialBanner() {
   }, []);
 
   useEffect(() => {
+    if (isAdmin) return undefined;
     fetchStatus();
     const id = setInterval(fetchStatus, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [fetchStatus]);
+  }, [fetchStatus, isAdmin]);
+
+  if (isAdmin) return null;
 
   const handleClaim = async () => {
     try {

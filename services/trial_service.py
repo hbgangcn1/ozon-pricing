@@ -92,7 +92,21 @@ async def claim_trial(session: AsyncSession, user_id: int) -> ClaimResult:
 
 
 def get_trial_status(user) -> TrialStatus:
-    """Compute TrialStatus from a User instance (no DB I/O)."""
+    """Compute TrialStatus from a User instance (no DB I/O).
+
+    Admin users are exempt from the trial banner: they always have full
+    professional access via role, so reporting eligible/in_trial would be
+    misleading. We return an inert status (everything False/0) for admins.
+    """
+    if (getattr(user, "role", None) or "").lower() == "admin":
+        return TrialStatus(
+            eligible=False,
+            in_trial=False,
+            trial_used=False,
+            remaining_seconds=0,
+            trial_expires_at=0,
+            trial_started_at=0,
+        )
     trial_used = bool((getattr(user, "trial_used", 0) or 0) == 1)
     expires = int(getattr(user, "trial_expires_at", 0) or 0)
     started = int(getattr(user, "trial_started_at", 0) or 0)

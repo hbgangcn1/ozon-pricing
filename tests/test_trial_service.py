@@ -132,11 +132,13 @@ class _U:
         trial_used=0,
         trial_started_at=0,
         trial_expires_at=0,
+        role=None,
     ):
         self.subscription_type = subscription_type
         self.trial_used = trial_used
         self.trial_started_at = trial_started_at
         self.trial_expires_at = trial_expires_at
+        self.role = role
 
 
 def test_get_trial_status_eligible_never_claimed():
@@ -188,3 +190,28 @@ def test_get_trial_status_ineligible_plan_even_if_unused():
 def test_eligible_plans_constant_unchanged():
     """Sentinel: tests below assume free+efficiency are the only eligible plans."""
     assert ELIGIBLE_PLANS_FOR_TRIAL == ("free", "efficiency")
+
+
+def test_get_trial_status_admin_role_short_circuits_to_inert():
+    now = int(time.time())
+    u = _U(
+        role="admin",
+        subscription_type="free",
+        trial_used=1,
+        trial_started_at=now - 3600,
+        trial_expires_at=now + 7 * 86400,
+    )
+    s = get_trial_status(u)
+    assert s.eligible is False
+    assert s.in_trial is False
+    assert s.trial_used is False
+    assert s.remaining_seconds == 0
+    assert s.trial_expires_at == 0
+    assert s.trial_started_at == 0
+
+
+def test_get_trial_status_admin_role_case_insensitive():
+    u = _U(role="ADMIN", subscription_type="free", trial_used=0)
+    s = get_trial_status(u)
+    assert s.eligible is False
+    assert s.in_trial is False
