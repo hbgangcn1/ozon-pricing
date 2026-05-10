@@ -78,6 +78,7 @@ async def auto_trim_user_rules(
             Logistics.disabled_by_overflow == 0,
         )
         .order_by(Logistics.last_used_at.desc(), Logistics.id.desc())
+        .with_for_update()
     )
     rows = (await session.execute(stmt)).all()
     all_ids = [r[0] for r in rows]
