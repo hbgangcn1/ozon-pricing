@@ -99,6 +99,13 @@ else
     上传: scp -r frontend/dist/ SSH_USER@SERVER_IP:$PROJECT_DIR/frontend/dist/"
 fi
 
+# 修复 scp 上传后可能继承自 Windows 的 700 目录权限,确保 nginx (www-data) 可读
+# 历史教训: scp -r 从 Windows 上传后 dist/assets/ 经常变成 drwx------,导致 nginx 404 全站白屏
+log "修复前端静态资源权限 (dir 755 / file 644) ..."
+find "$PROJECT_DIR/frontend/dist" -type d -exec chmod 755 {} \;
+find "$PROJECT_DIR/frontend/dist" -type f -exec chmod 644 {} \;
+log "前端静态资源权限就绪 ✓"
+
 # ===== 6. 创建日志目录 =====
 log "===== 第6步: 创建日志目录 ====="
 sudo mkdir -p "$LOG_DIR"
