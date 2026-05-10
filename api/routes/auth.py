@@ -430,6 +430,15 @@ async def refresh_access_token_bearer(
 
     payload = decode_access_token_unsafe(token)
     user_id = int(payload["sub"])
+    sid = payload.get("sid")
+
+    if sid:
+        session_row = await get_session(session, sid)
+        if not session_row or not session_row.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="会话无效或已失效",
+            )
 
     user = await session.get(User, user_id)
     if not user or bool(user.is_frozen):
@@ -438,6 +447,8 @@ async def refresh_access_token_bearer(
             detail="用户不存在或已冻结",
         )
 
+    if sid:
+        await update_session_activity(session, sid, time.time())
     access_token = create_access_token_from_payload(payload)
     return JSONResponse(content=RefreshResponse(access_token=access_token).model_dump())
 

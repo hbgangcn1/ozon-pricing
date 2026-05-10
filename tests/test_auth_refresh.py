@@ -176,3 +176,87 @@ class TestRefreshAccessEndpoint:
         data = response.json()
         new_payload = decode_access_token(data["access_token"])
         assert new_payload["role"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_inactive_session_with_sid_returns_401(
+        self, client, test_user, db_session
+    ):
+        from uuid import uuid4
+        from db.sessions_crud import insert_session
+        from models.session import ActiveSession
+
+        sid = f"refresh-inactive-{uuid4().hex}"
+        await insert_session(
+            db_session,
+            session_id=sid,
+            user_id=test_user["id"],
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+            now=1.0,
+        )
+        session_row = await db_session.get(ActiveSession, sid)
+        session_row.is_active = False
+        session_row.inactive_reason = "logout"
+        await db_session.commit()
+
+        token = create_access_token(
+            user_id=test_user["id"],
+            username=test_user["username"],
+            role="user",
+            extra_claims={"sid": sid},
+        )
+        response = await client.post(
+            "/api/auth/refresh-access",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+        assert "会话" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_active_session_with_sid_succeeds(
+        self, client, test_user, db_session
+    ):
+        from uuid import uuid4
+        from db.sessions_crud import insert_session
+
+        sid = f"refresh-active-{uuid4().hex}"
+        await insert_session(
+            db_session,
+            session_id=sid,
+            user_id=test_user["id"],
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+            now=1.0,
+        )
+        await db_session.commit()
+
+        token = create_access_token(
+            user_id=test_user["id"],
+            username=test_user["username"],
+            role="user",
+            extra_claims={"sid": sid},
+        )
+        response = await client.post(
+            "/api/auth/refresh-access",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        new_payload = decode_access_token(response.json()["access_token"])
+        assert new_payload["sid"] == sid
+
+    @pytest.mark.asyncio
+    async def test_missing_session_with_sid_returns_401(self, client, test_user):
+        from uuid import uuid4
+
+        token = create_access_token(
+            user_id=test_user["id"],
+            username=test_user["username"],
+            role="user",
+            extra_claims={"sid": f"refresh-missing-{uuid4().hex}"},
+        )
+        response = await client.post(
+            "/api/auth/refresh-access",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+        assert "会话" in response.json()["detail"]
