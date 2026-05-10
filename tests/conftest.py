@@ -164,6 +164,27 @@ async def db_session():
             await cleanup.rollback()
 
 
+@pytest.fixture(autouse=True)
+def _clear_dependency_overrides():
+    """Clear app.dependency_overrides after every test.
+
+    Without this, a test that calls app.dependency_overrides[X] = Y leaks the
+    override into every subsequent test on the same xdist worker, producing
+    order-dependent failures (e.g. TestCookieAuth tests get a fake authed
+    user because some earlier test overrode get_current_user and never
+    cleaned up).
+
+    Production-code grep (api/**) shows ZERO writes to dependency_overrides,
+    so the canonical baseline at app boot is empty — therefore "clear" is
+    safe and correct (snapshot/restore would lock in whatever was poisoned
+    BEFORE the very first test ran on each worker, defeating the fix).
+    """
+    yield
+    from api.main import app
+
+    app.dependency_overrides.clear()
+
+
 @pytest.fixture
 async def client():
     """Provide an async test client with dependency overrides."""
