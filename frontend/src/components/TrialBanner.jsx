@@ -3,7 +3,8 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
-import { trialAPI } from '../services/api';
+import { trialAPI, authAPI } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 
 const POLL_INTERVAL_MS = 60_000;
 const DISMISS_DURATION_MS = 24 * 3600 * 1000;
@@ -43,6 +44,12 @@ export default function TrialBanner() {
       await trialAPI.claim();
       toast.success('已开启 7 天专业版试用');
       await fetchStatus();
+      try {
+        const me = await authAPI.getMe();
+        useAuthStore.getState().setUser(me);
+      } catch (_) {
+        void 0;
+      }
     } catch (err) {
       toast.error(err?.userMessage || err?.response?.data?.detail || '领取试用失败');
     }

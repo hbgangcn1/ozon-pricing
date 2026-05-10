@@ -7,10 +7,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import PaymentQRDialog from '../components/PaymentQRDialog'
 import { toast } from 'sonner'
 import { useAuthStore } from '../stores/authStore'
-import { subscriptionsAPI, trialAPI } from '../services/api'
+import { subscriptionsAPI, trialAPI, authAPI } from '../services/api'
 
 function SubscriptionPage() {
-  const { user } = useAuthStore()
+  const { user, setUser } = useAuthStore()
   const [currentPlan, setCurrentPlan] = useState(null)
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(false)
@@ -38,12 +38,18 @@ function SubscriptionPage() {
       await trialAPI.claim()
       toast.success('已开启 7 天专业版试用')
       await fetchTrialStatus()
+      try {
+        const me = await authAPI.getMe()
+        setUser(me)
+      } catch (_) {
+        void 0
+      }
     } catch (err) {
       toast.error(err?.userMessage || err?.response?.data?.detail || '领取试用失败')
     } finally {
       setClaimingTrial(false)
     }
-  }, [fetchTrialStatus])
+  }, [fetchTrialStatus, setUser])
 
   const fetchSubscription = useCallback(async () => {
     try {
