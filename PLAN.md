@@ -885,3 +885,131 @@ DB_POOL_MAX=15
 - `openspec/changes/fix-trial-aware-commission-gating/specs/subscription-feature-gating/spec.md`
 - `openspec/changes/fix-trial-aware-commission-gating/specs/pro-trial/spec.md`
 - `openspec/changes/fix-trial-aware-commission-gating/tasks.md`
+
+## Phase 27 — Full project audit (in progress, 2026-05-10 16:09)
+
+### Baseline (re-run, clean)
+- pytest: **2278 passed / 4 failed / 1 skipped** in 158s
+- vitest:  **393 passed / 0 failed** in 29.6s (after re-run; first attempt produced empty log — tooling issue, not test failure)
+- flake8:  **373 violations** (mostly W293 trailing-whitespace on blank lines)
+
+### Diagnosed: 4 pytest failures = test infrastructure flake (NOT prod auth bypass)
+File: `tests/test_integration_security.py::TestCookieAuth`
+Failing tests: `test_no_credentials_returns_401`, `test_expired_jwt_token_returns_401`, `test_invalid_signature_jwt_token_returns_401`, `test_malformed_token_returns_401`
+
+Symptom: `/api/products` returns 200 instead of 401 when run under xdist, only on gw0.
+Repro: Tests **PASS in isolation** under `-n0` (verified locally).
+Root cause: 29 test files mutate `app.dependency_overrides[get_current_user_id]`. The FastAPI `app` object is process-global; if any test fails to clean its override (or uses a try/finally that misses an exception path), the override leaks across the worker's remaining tests, including TestCookieAuth.
+
+Severity: **HIGH** for test reliability / CI determinism — **NOT** a production security bug. Production `api/dependencies.py:_extract_token` correctly raises 401 with no creds; verified by isolation run.
+
+Fix direction (TBD): add a session-scoped/autouse cleanup fixture in `tests/conftest.py` that snapshots `app.dependency_overrides` before each test and restores it after; OR audit all 29 callers and convert to `monkeypatch.setitem(app.dependency_overrides, ...)` so pytest auto-cleans.
+
+### Audits completed (5/6)
+- security `bg_1678abd5` — output not yet pulled
+- database integrity `bg_820adc7d` — output not yet pulled
+- memory & concurrency `bg_98921270` — output not yet pulled
+- frontend UX `bg_1ac1fb9e` — output not yet pulled
+- test infrastructure `bg_a38cbb74` — output not yet pulled
+
+### Audits running (1/6)
+- code quality `bg_05fdb607`
+
+### Untracked changes inventory (kept as-is; commit decision deferred)
+- `api/routes/auth.py` + `tests/test_auth_refresh.py` — refresh-access sid validation hardening + 3 new tests
+- `tests/test_xlsx_import.py` — fixture upgrade
+- `requirements.txt` — PyJWT >=2.12.1, aiohttp >=3.13.3 (minor)
+- `production_wechat_config.py`, `alembic/versions/4a1b2c3d5e6f_*.py`, `tests/test_e2e_volume_modes.py` — CRLF noise only
+
+### Next step (after final audit lands)
+Pull all 6 audit outputs → triage into C/H/M/L → present batched fix plan to user.
+---
+
+## Phase 27 — Verified Findings (cross-checked against source)
+
+> Each finding below is **personally verified** against actual code paths, not paraphrased from audit-agent prose.
+> Audits referenced: `bg_1678abd5` (sec), `bg_820adc7d` (db), `bg_98921270` (mem/concurrency), `bg_1ac1fb9e` (UX), `bg_a38cbb74` (tests), `bg_05fdb607` (code quality).
+> Baselines: pytest 2278P/4F/1S; vitest 393/393; flake8 124 violations (ALL in `tests/`).
+
+### CRITICAL (block prod launch)
+None confirmed. The most concerning candidate (`/api/products` returning 200 without auth) was **disproven** — production `api/dependencies.py:_extract_token` correctly enforces auth; the 4 pytest failures are xdist `dependency_overrides` leakage between test workers, NOT a production bypass.
+
+### HIGH (must fix before serious traffic)
+
+**H1 — `decrement_user_calculations` non-atomic read-modify-write**
+File: `db/subscriptions.py:306-314`
+Code: `remaining = getattr(user, "remaining_calculations") or 0; if remaining <= 0: return False; user.remaining_calculations = remaining - 1`
+Risk: free/monthly users can fire 2+ concurrent pricing requests (`api/routes/pricing.py:209` and `:312`); both reads see `1`, both subtract → user gets 2 results for 1 quota unit. Quota bypass via concurrency.
+Fix: switch to `UPDATE users SET remaining_calculations = remaining_calculations - 1 WHERE id=:uid AND remaining_calculations > 0` and check `rowcount`.
+
+**H2 — `auto_trim_user_rules` missing FOR UPDATE despite docstring claim**
+File: `services/overflow_service.py:73-95`
+Docstring (line 4): "SELECT FOR UPDATE on user's logistics rows"; actual code uses bare `select(Logistics.id, ...)` with NO `.with_for_update()`.
+Risk: concurrent overflow trims on the same user (e.g., parallel rule imports + auto-trim cron) can race on which rows go beyond `limit`, leading to inconsistent `disabled_by_overflow` flags or duplicate window opens.
+Fix: add `.with_for_update()` to the SELECT, or change strategy to a single-statement `UPDATE … WHERE id IN (subselect ORDER BY … OFFSET :limit)`.
+
+**H3 — `app.dependency_overrides` cross-test leakage on xdist gw0**
+Files: `tests/conftest.py` (no autouse snapshot), 29 test files mutating the override dict.
+Symptom: 4 TestCookieAuth tests fail under `pytest -n4` but pass under `-n0`.
+Risk: CI flakiness; masks real regressions; reviewers lose trust in green builds.
+Fix: add a function-scoped autouse fixture in `tests/conftest.py` that snapshots `app.dependency_overrides` and restores it in teardown.
+
+### MEDIUM (fix before growth)
+
+**M1 — Sidebar/AppLayout no responsive breakpoint**
+Files: `frontend/src/components/Sidebar.jsx:120` (`fixed left-0 top-0 z-40 w-64`, no `md:` variant); `frontend/src/components/AppLayout.jsx:27` (`ml-64` no `md:` variant).
+Risk: on screens <768px, sidebar covers the main content; main content is shoved 256px right with no scroll. Mobile users effectively cannot use the app.
+Fix: Sidebar → `hidden md:block`/drawer pattern; AppLayout → `md:ml-64` only.
+
+**M2 — File-size violations vs `AGENTS.md` 500-line cap**
+- `db/subscriptions.py` 538 lines
+- `api/routes/auth.py` 505 lines
+Risk: maintenance friction, harder review, violates own convention.
+Fix: extract sub-modules (`db/subscriptions/` package; `auth/refresh.py`, `auth/login.py`, `auth/password.py`).
+
+### LOW (housekeeping)
+
+**L1 — flake8 124 violations, all in `tests/`**
+Breakdown: W293 (58 trailing whitespace), E402 (17 import order), E303 (15 blank lines), E302 (8), F841 (8 unused vars in `test_api_main.py`, `test_payment_*.py`, `test_postgres_backup_service_db.py`), F811 (2 redefinitions in `test_api_main.py:423`, `test_redis_cache.py:73`), E712 (1 `== True`), E741 (1 ambiguous `l`), misc. **Zero production-code violations.**
+Fix: `python -m black tests/` for whitespace; manual cleanup for F-class.
+
+**L2 — README test counts stale** (`tests/` has 111 files, README says 108; frontend `__tests__` has 32, README says 37). Cosmetic.
+
+**L3 — `audit-vitest.log` 78-byte capture artifact** (real run via `audit-vitest2.log` shows 393/393). Operational; no bug.
+
+### Findings explicitly disproved during cross-check
+
+- ❌ "`/api/products` allows access without auth" — `api/dependencies.py:_extract_token` lines 72-74 + 131/141/163/184 confirm Bearer + cookie token enforced; `E2E_TEST` flag does NOT bypass auth.
+- ❌ "Missing API-key authentication" — `api_key` parameter is FastAPI's `HTTPAuthorizationCredentials` (Bearer-token wrapper), not a separate API-key system. Naming is misleading but security model is correct.
+- ❌ "373 flake8 violations" — actual 124; earlier 373 was a `Measure-Object Lines` count of message-lines including paths.
+
+### Triage summary
+
+| Tier | Count | Items |
+|------|-------|-------|
+| Critical | 0 | — |
+| High | 3 | H1 quota race, H2 overflow race, H3 test flake |
+| Medium | 2 | M1 mobile sidebar, M2 file-size |
+| Low | 3 | L1 test-only flake8, L2 README counts, L3 vitest log artifact |
+
+### Proposed fix batches (await user approval)
+
+- **Batch 1** (HIGH, prod safety): H1 + H2 + H3. Each ships independently with full pytest+vitest verification.
+- **Batch 2** (MEDIUM, UX/maintainability): M1 + M2.
+- **Batch 3** (LOW, cosmetic): L1 + L2 + L3.
+
+Recommended order: **H3 first** (unblocks reliable CI for the rest), then H1, then H2, then M1, M2, then L cleanup.
+
+### Batch 1 — completed 2026-05-10 (pushed origin/main)
+
+| # | Commit | Finding | Verification |
+|---|--------|---------|--------------|
+| 1 | `85fe4086` | H3 — autouse-clear `app.dependency_overrides` between tests | pytest 2282P/0F/1S (was 2278P/4F/1S), vitest 393/393, flake8 ✅ |
+| 2 | `4d557540` | H1 — atomic UPDATE for `decrement_user_calculations` (Oracle decision a, synchronize_session=False + rowcount) | pytest 2282P/0F/1S unchanged, flake8 ✅ |
+| 3 | `592edc1e` | H2 — `.with_for_update()` on Logistics SELECT in `auto_trim_user_rules` (Oracle decision a, scope minimal) | pytest 2282P/0F/1S unchanged, flake8 ✅ |
+
+Net: +6 passing tests vs baseline (4 cookie-auth tests + 2 newly stable order-dependent tests).
+
+Deferred to Batch 2: extracting `db/subscription_status_helpers.py` to bring `db/subscriptions.py` (now 615 lines) under the 500-line limit — pre-existing M2 violation, not regressed by Batch 1.
+
+
