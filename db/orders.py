@@ -44,7 +44,7 @@ async def get_user_orders(
     stmt = (
         select(PaymentOrder)
         .where(*filters)
-        .order_by(PaymentOrder.created_at.desc())
+        .order_by(PaymentOrder.created_at.desc(), PaymentOrder.id.desc())
         .limit(effective_limit)
         .offset(effective_offset)
     )

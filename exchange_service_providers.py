@@ -96,8 +96,8 @@ class ExchangeRateProvider:
             if cls._shared_session is not None:
                 try:
                     cls._shared_session.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"关闭共享汇率会话失败: {e}", exc_info=True)
                 cls._shared_session = None
 
     def is_available(self) -> bool:
