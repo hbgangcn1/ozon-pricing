@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from typing import Literal, Optional
 
@@ -11,6 +12,7 @@ from api.dependencies import get_current_user_id
 from database import get_db
 from db.config import is_registration_open
 from db.plans import get_plan_by_code, get_plan_price
+from models.log import WechatNotifyAuditLog
 from services.payment_service import (
     PaymentService,
     SuspiciousWechatNotifyError,
@@ -28,6 +30,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/payments", tags=["payment"])
+WECHAT_NOTIFY_ACK = {"code": "SUCCESS", "message": "OK"}
+MAX_AUDIT_RAW_BODY_LENGTH = 8192
 
 
 def _is_wechat_response_signature_error(exc: Exception) -> bool:
@@ -78,6 +82,65 @@ class PaymentStatusResponse(BaseModel):
 class NotifyResponse(BaseModel):
     code: str
     message: str
+
+
+def _success_ack() -> NotifyResponse:
+    return NotifyResponse(**WECHAT_NOTIFY_ACK)
+
+
+def _decode_audit_raw_body(body: bytes) -> str:
+    text = body.decode("utf-8", errors="replace")
+    return text[:MAX_AUDIT_RAW_BODY_LENGTH]
+
+
+def _parse_raw_notify_identifiers(body: bytes) -> tuple[str | None, str | None]:
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    out_trade_no = data.get("out_trade_no")
+    transaction_id = data.get("transaction_id")
+    return _safe_identifier(out_trade_no), _safe_identifier(transaction_id)
+
+
+def _safe_identifier(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text[:64]
+
+
+async def _write_notify_audit_log(
+    session: AsyncSession,
+    *,
+    body: bytes,
+    verified: bool,
+    response_code: str,
+    response_message: str,
+) -> None:
+    out_trade_no, transaction_id = _parse_raw_notify_identifiers(body)
+    session.add(
+        WechatNotifyAuditLog(
+            out_trade_no=out_trade_no,
+            transaction_id=transaction_id,
+            signature_verified=verified,
+            raw_body=_decode_audit_raw_body(body),
+            response_code=response_code,
+            response_message=response_message[:256],
+        )
+    )
+    await session.flush()
+
+
+def _extract_wechat_success_fields(data: dict) -> tuple[str, str, int, str]:
+    out_trade_no = data["out_trade_no"]
+    transaction_id = data["transaction_id"]
+    amount = data["amount"]
+    amount_total = amount["total"]
+    currency = amount["currency"]
+    return out_trade_no, transaction_id, amount_total, currency
 
 
 def _to_cents(amount: float) -> int:
@@ -164,42 +227,48 @@ async def payment_notify(
 ):
     body = await request.body()
     if not _wechat_available or wechat_pay_v3 is None:
-        return JSONResponse(
-            status_code=400,
-            content={"code": "FAIL", "message": "签名验证失败"},
+        await _write_notify_audit_log(
+            session,
+            body=body,
+            verified=False,
+            response_code="SUCCESS",
+            response_message="OK",
         )
+        logger.warning("微信支付模块不可用，通知仅审计并返回成功确认")
+        return _success_ack()
 
-    result = await asyncio.to_thread(wechat_pay_v3.process_notify, dict(request.headers), body)
-    if not result.get("success"):
-        message = result.get("message", "通知处理失败")
-        logger.warning("微信支付通知处理失败: %s", message)
-        return JSONResponse(
-            status_code=400,
-            content={"code": "FAIL", "message": message},
+    payload = None
+    verified = False
+    try:
+        payload, verified = await asyncio.to_thread(
+            wechat_pay_v3.process_notify,
+            dict(request.headers),
+            body,
         )
+    except Exception:
+        logger.warning("微信支付通知解析异常，仅审计并返回成功确认", exc_info=True)
+    await _write_notify_audit_log(
+        session,
+        body=body,
+        verified=verified,
+        response_code="SUCCESS",
+        response_message="OK",
+    )
 
-    data = result.get("data")
-    if not isinstance(data, dict):
-        return JSONResponse(
-            status_code=400,
-            content={"code": "FAIL", "message": "通知数据缺失"},
-        )
+    if not verified or not isinstance(payload, dict):
+        logger.warning("微信支付通知未验签或无有效交易载荷，仅写入审计日志")
+        return _success_ack()
 
     try:
-        out_trade_no = data["out_trade_no"]
-        transaction_id = data["transaction_id"]
-        amount = data["amount"]
-        amount_total = amount["total"]
-        currency = amount["currency"]
+        out_trade_no, transaction_id, amount_total, currency = (
+            _extract_wechat_success_fields(payload)
+        )
     except (KeyError, TypeError) as exc:
         logger.warning("微信支付通知缺少必要字段: %s", exc)
-        return JSONResponse(
-            status_code=400,
-            content={"code": "FAIL", "message": "通知字段缺失"},
-        )
+        return _success_ack()
 
-    appid = data.get("appid")
-    mchid = data.get("mchid")
+    appid = payload.get("appid")
+    mchid = payload.get("mchid")
 
     try:
         await svc.apply_wechat_payment_success(
@@ -209,22 +278,33 @@ async def payment_notify(
             currency=currency,
             appid=appid,
             mchid=mchid,
-            raw_notify=data,
+            raw_notify=payload,
         )
-        return NotifyResponse(code="SUCCESS", message="成功")
+        return _success_ack()
     except SuspiciousWechatNotifyError as exc:
-        # Suspicious 异常时 CAS UPDATE 已写入但校验失败：必须显式
-        # rollback 以撤销脏状态，再返回 SUCCESS 阻止微信无限重试。
+        # Suspicious 异常时 CAS UPDATE 已写入但校验失败：必须显式 rollback
+        # 以撤销脏状态；随后重写审计行，仍返回 SUCCESS 阻止微信重试风暴。
         await session.rollback()
+        await _write_notify_audit_log(
+            session,
+            body=body,
+            verified=verified,
+            response_code="SUCCESS",
+            response_message="OK",
+        )
         logger.error("wechat notify rejected as suspicious: %s", exc)
-        return NotifyResponse(code="SUCCESS", message="成功")
+        return _success_ack()
     except Exception:
         await session.rollback()
-        logger.error("wechat notify processing failed unexpectedly", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"code": "FAIL", "message": "系统错误"},
+        await _write_notify_audit_log(
+            session,
+            body=body,
+            verified=verified,
+            response_code="SUCCESS",
+            response_message="OK",
         )
+        logger.error("wechat notify processing failed unexpectedly", exc_info=True)
+        return _success_ack()
 
 
 @router.get("/{order_id}/status", response_model=PaymentStatusResponse)
