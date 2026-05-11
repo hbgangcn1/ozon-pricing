@@ -71,6 +71,13 @@ class TestSubscriptionsPlans:
         data = resp.json()
         assert isinstance(data, list)
 
+    async def test_plans_returns_empty_list_when_backend_fails(self, client):
+        with patch("api.routes.subscriptions.is_registration_open", side_effect=RuntimeError("boom")):
+            resp = await client.get("/api/subscriptions/plans")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
     async def test_plans_schema_when_data_present(self, client):
         resp = await client.get("/api/subscriptions/plans")
         assert resp.status_code == 200
@@ -126,6 +133,25 @@ class TestSubscriptionsCurrent:
             assert "expired_at" in data
         finally:
             _clear_overrides()
+
+    async def test_current_falls_back_to_free_when_plan_missing(
+        self, client, test_user
+    ):
+        _set_user(test_user["id"])
+        with patch(
+            "api.routes.subscriptions.get_plan_by_code",
+            side_effect=[None, {"calc_limit": -1, "logistics_limit": 1}],
+        ):
+            try:
+                resp = await client.get("/api/subscriptions/current")
+            finally:
+                _clear_overrides()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["plan_code"] == "free"
+        assert data["calc_limit"] == -1
+        assert data["logistics_limit"] == 1
 
     async def test_current_plan_code_matches_user_type(self, client, test_user):
         _set_user(test_user["id"])

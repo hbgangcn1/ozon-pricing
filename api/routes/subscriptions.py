@@ -134,7 +134,7 @@ async def get_plans_route(
         plans = await get_plans(session, active_only=active_only)
     except Exception as e:
         logger.exception(f"获取套餐列表失败: {e}")
-        raise HTTPException(status_code=500, detail="获取套餐列表失败")
+        return []
     return [_to_plan_response(plan, use_test_price=use_test) for plan in plans]
 
 
@@ -143,12 +143,27 @@ async def get_current_subscription(
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
-    info = await get_user_subscription_info(session, user_id)
+    try:
+        info = await get_user_subscription_info(session, user_id)
+    except Exception as e:
+        logger.exception(f"获取当前订阅信息失败: user_id={user_id}, error={e}")
+        raise HTTPException(status_code=404, detail="用户不存在")
     if not info:
         raise HTTPException(status_code=404, detail="用户不存在")
 
     plan_code = info.get("subscription_type") or info.get("user_type") or "free"
-    plan = await get_plan_by_code(session, plan_code)
+    try:
+        plan = await get_plan_by_code(session, plan_code)
+    except Exception as e:
+        logger.exception(f"获取订阅套餐失败: user_id={user_id}, plan_code={plan_code}, error={e}")
+        plan = None
+    if not plan and plan_code != "free":
+        plan_code = "free"
+        try:
+            plan = await get_plan_by_code(session, plan_code)
+        except Exception as e:
+            logger.exception(f"获取默认订阅套餐失败: user_id={user_id}, error={e}")
+            plan = None
     calc_limit = plan.get("calc_limit", -1) if plan else -1
     logistics_limit = plan.get("logistics_limit", 1) if plan else 1
 
