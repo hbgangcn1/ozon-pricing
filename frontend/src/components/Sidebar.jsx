@@ -108,7 +108,7 @@ const menuItems = [
   { path: '/about', icon: Info, label: '关于系统', adminOnly: false },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileMenuOpen, setMobileMenuOpen }) {
   const location = useLocation();
   const { isAdmin } = useAuthStore();
 
@@ -116,8 +116,21 @@ export default function Sidebar() {
     !item.adminOnly || isAdmin()
   );
 
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen?.(false);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [mobileMenuOpen, setMobileMenuOpen]);
+
   return (
-    <div className="bg-surface border-r border-surface-high h-screen fixed left-0 top-0 z-40 w-64">
+    <div className={cn(
+      "bg-surface border-r border-surface-high h-screen fixed left-0 top-0 z-50 w-64 transition-transform duration-300 ease-in-out md:translate-x-0",
+      mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+    )}>
       {/* Logo */}
       <div className="p-4 border-b border-surface-high">
         <div className="flex items-center">
@@ -138,6 +151,7 @@ export default function Sidebar() {
             <Link
               key={item.path}
               to={item.path}
+              onClick={() => setMobileMenuOpen?.(false)}
               className={cn(
                 'flex items-center px-3 py-2 rounded-md transition-colors relative',
                 'hover:bg-surface',

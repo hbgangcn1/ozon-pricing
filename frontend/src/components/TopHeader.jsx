@@ -1,9 +1,9 @@
 import React from 'react';
-import { LogOut, Package } from 'lucide-react';
+import { LogOut, Package, Menu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
-const TopHeader = () => {
+const TopHeader = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
 
@@ -13,10 +13,16 @@ const TopHeader = () => {
   };
 
   return (
-    <div className="h-14 bg-surface border-b border-surface-high flex items-center justify-between px-6 sticky top-0 z-30">
+    <div className="h-14 bg-surface border-b border-surface-high flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
       {/* 左侧：系统标题 */}
       <div className="flex items-center gap-2">
-        <Package className="w-4 h-4 text-text-secondary" />
+        <button 
+          className="md:hidden p-1 mr-1 text-text-secondary hover:text-text-primary transition-colors"
+          onClick={onMenuClick}
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <Package className="w-4 h-4 text-text-secondary hidden md:block" />
         <span className="text-sm font-medium text-text-secondary">物流定价系统</span>
       </div>
 
