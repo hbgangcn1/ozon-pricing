@@ -135,6 +135,84 @@ ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && bash deploy/rollback.sh pre-
 - FastAPI 启动失败 → `ssh SSH_USER@... 'tail -50 /var/log/cbprice/error.log'`（systemd journal 当前在该用户下不可读）
 - nginx `conflicting server name` 警告 → pre-existing 历史配置残留，不影响功能，可忽略
 
+### SECRET_KEY 轮换流程
+
+**触发条件**：定期轮换（每 6 个月）/ 怀疑泄漏 / 关键员工离职
+
+**前置检查**：
+- security/tokens.py 已实现 SECRET_KEY 长度 ≥32 校验 + lru_cache + 无默认值
+- 当前 .env 中 SECRET_KEY 必须为 32 字符以上随机字符串
+
+**轮换步骤**：
+1. **生成新密钥**（本地）：
+   ```powershell
+   .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(64))"
+   ```
+2. **备份当前 .env**：`Copy-Item .env .env.backup-$(Get-Date -Format yyyyMMdd-HHmmss)`
+3. **生产服务器更新**（SSH）：
+   ```bash
+   ssh SSH_USER@SERVER_IP
+   cd /var/www/ozon-pricing
+   cp .env .env.backup-$(date +%Y%m%d-%H%M%S)
+   # 编辑 .env，替换 SECRET_KEY
+   nano .env
+   sudo systemctl restart fastapi-app
+   ```
+4. **验证**：
+   ```bash
+   sudo systemctl status fastapi-app | head -10
+   curl -s https://www.cbprice.cn/api/exchange/rates | head -5
+   ```
+5. **副作用**：
+   - 所有现存 JWT token 立即失效（用户被强制重新登录）
+   - 监控 `/var/log/cbprice/error.log` 1 小时，确认无异常 401 spike
+
+**回滚**：恢复 .env.backup → systemctl restart fastapi-app
+
+### WeChat Pay 审计日志排查
+
+**审计表**：`wechat_notify_audit_logs`（迁移 c8f3d6b9e2a1 引入）
+
+**字段**：
+- `id` / `out_trade_no` / `transaction_id` / `signature_verified` / `raw_body` / `response_code` / `response_message` / `created_at`
+
+**常见排查场景**：
+
+1. **签名失败 spike**（疑似攻击或证书漂移）：
+   ```sql
+   SELECT date_trunc('hour', created_at), COUNT(*) AS bad_sig_count
+   FROM wechat_notify_audit_logs
+   WHERE signature_verified = false
+     AND created_at >= NOW() - INTERVAL '24 hours'
+   GROUP BY 1 ORDER BY 1 DESC;
+   ```
+   - 单小时 >100 条 → 立即检查微信支付平台证书是否过期 + nginx access log 看 IP 分布
+
+2. **某订单未入账**（用户报"已付款未到账"）：
+   ```sql
+   SELECT * FROM wechat_notify_audit_logs
+   WHERE out_trade_no = '<订单号>'
+   ORDER BY created_at DESC;
+   ```
+   - 若 `signature_verified = false` → 微信侧支付成功但回调被拒，需手工对账后补发权益
+   - 若 `signature_verified = true` 且无对应 payment_orders 入账 → 检查 services/payment_service.py CAS 逻辑 + with_for_update lock
+
+3. **重试风暴检测**（同一 transaction_id 多次回调）：
+   ```sql
+   SELECT transaction_id, COUNT(*) AS retry_count
+   FROM wechat_notify_audit_logs
+   WHERE created_at >= NOW() - INTERVAL '1 hour'
+   GROUP BY transaction_id HAVING COUNT(*) > 3;
+   ```
+   - 正常情况下 ≤2 次（微信偶尔重发已确认通知），>3 次需排查路由 200 OK 是否正常返回
+
+**保留策略**：
+- 审计表无自动清理；建议每月归档 90 天前数据到冷存储
+- 切勿信任 raw_body 内容（未验签 payload 不可作为业务依据）
+
+**告警**：
+- 接入 ops 监控：每 5 分钟统计 `WHERE signature_verified=false AND created_at>=NOW()-INTERVAL '5 min'` > 阈值时告警
+
 **禁止事项**
 - ❌ SSH 进生产 `vim` 改代码（除紧急 schema 修复，且必须事后回填到 repo）
 - ❌ 跳过 deploy.sh 直接 `systemctl restart fastapi-app`（绕过 schema 守卫 + 备份 + 健康检查）
