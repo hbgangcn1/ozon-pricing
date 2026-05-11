@@ -1012,4 +1012,38 @@ Net: +6 passing tests vs baseline (4 cookie-auth tests + 2 newly stable order-de
 
 Deferred to Batch 2: extracting `db/subscription_status_helpers.py` to bring `db/subscriptions.py` (now 615 lines) under the 500-line limit — pre-existing M2 violation, not regressed by Batch 1.
 
+### Batch 2 + 3 — completed 2026-05-11 (pushed origin/main)
+
+Wave 0 (housekeeping commits, parallel agents):
+
+| # | Commit | Finding | Notes |
+|---|--------|---------|-------|
+| 1 | `6df35e51` | (W0-T1) audit-time fix kept: refresh-access bearer flow validates session sid | Already verified part of H/M sweep; surfaced for atomic landing. |
+| 2 | `7c9df3a8` | (W0-T2) bump PyJWT >=2.12.1 + aiohttp >=3.13.3 (security floor) + 2 EOL normalizations | requirements floor bump only; no runtime API change. |
+| 3 | `2b83527a` | (W0-T3) refresh xlsx reference-workbook fixtures to current snapshot | Pure test fixture update. |
+
+Wave 1 (Batch 2 medium severity, atomic per finding):
+
+| # | Commit | Finding | Verification |
+|---|--------|---------|--------------|
+| 4 | `10f2807e` | M2-B — split `api/routes/auth.py` 564L into `api/routes/auth/` package (login/refresh/me/password/helpers/_router/__init__) | Backward compatible (`from api.routes.auth import router` returns 12 routes); backend smoke: login 401, refresh-access 401, refresh 403, me 401, register 422 (all expected). |
+| 5 | `37f212a4` | M2-A — extract `db/subscription_quota.py` (328L) from `db/subscriptions.py` (615L → 257L); re-export keeps `from db.subscriptions import decrement_user_calculations` working | flake8 ✅; pytest 2278P/5S/0F (no test changes needed). |
+| 6 | `ef79f530` | M1 — mobile responsive shell: Sidebar `hidden md:block` + drawer; AppLayout `md:ml-64`; TopHeader hamburger button visible only <md | vitest 393/393; visual: 3 viewport screenshots reviewed (desktop unchanged, mobile drawer + backdrop work). |
+
+Wave 2 (Batch 3 low/cosmetic):
+
+| # | Commit | Finding | Notes |
+|---|--------|---------|-------|
+| 7 | `436b3728` | L2 — refresh README.md test counts (108 → 123 backend, 37 → 50 frontend) | Verified by `Get-ChildItem` count. |
+
+Wave 2 also did L3 housekeeping locally (audit-*.err / t*v-*.err / wave1-*.err / m1-*.png removed; not committed since these were local artifacts).
+
+Wave 3 final QA gate (full repo, post-Batch 2+3):
+- pytest: **2278 passed / 5 skipped / 0 failed** (5 skips: 4× e2e_volume_modes need running backend + 1 integration_subs_settings no-active-plans seed; matches earlier baselines)
+- vitest: **50 files / 393 tests / 0 failed** (re-run after one OOM crash that was concurrency-related, not code-related)
+- flake8: **0 violations** in entire repo
+- size sweep: all production source files <500L; `tests/test_api_routes.py` 880L > 800L cap is **pre-existing**, not regressed by this batch (deferred)
+
+L1 (test-only flake8) was already absorbed during prior cleanup; the cap is now 0 violations across the whole tree.
+
 
