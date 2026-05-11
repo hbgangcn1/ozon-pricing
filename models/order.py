@@ -1,11 +1,17 @@
 from typing import Optional
-from sqlalchemy import String, Integer, Float, text
+from sqlalchemy import String, Integer, Float, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 
 
 class PaymentOrder(Base):
     __tablename__ = "payment_orders"
+    __table_args__ = (
+        UniqueConstraint(
+            "wechat_transaction_id",
+            name="uq_payment_orders_wechat_transaction_id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[str] = mapped_column(

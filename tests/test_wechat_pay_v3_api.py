@@ -187,7 +187,7 @@ class TestWeChatPayV3API:
         assert result == {}
 
     def test_process_notify_missing_timestamp(self, api, mock_config):
-        result = api.process_notify(
+        payload, verified = api.process_notify(
             {
                 "Wechatpay-Nonce": "n",
                 "Wechatpay-Signature": "s",
@@ -196,11 +196,11 @@ class TestWeChatPayV3API:
             b"{}",
         )
 
-        assert result["success"] is False
-        assert "Wechatpay-Timestamp" in result["message"]
+        assert verified is False
+        assert payload is None
 
     def test_process_notify_expired_timestamp(self, api, mock_config):
-        result = api.process_notify(
+        payload, verified = api.process_notify(
             _wechatpay_headers(
                 mock_config,
                 **{"Wechatpay-Timestamp": str(int(time.time()) - 400)}
@@ -208,33 +208,33 @@ class TestWeChatPayV3API:
             b"{}",
         )
 
-        assert result["success"] is False
-        assert "过期" in result["message"]
+        assert verified is False
+        assert payload is None
 
     def test_process_notify_invalid_timestamp_format(self, api, mock_config):
-        result = api.process_notify(
+        payload, verified = api.process_notify(
             _wechatpay_headers(mock_config, **{"Wechatpay-Timestamp": "not_a_number"}),
             b"{}",
         )
 
-        assert result["success"] is False
-        assert "格式非法" in result["message"]
+        assert verified is False
+        assert payload is None
 
     def test_process_notify_signature_verification_fails(self, api, mock_config):
         mock_config.platform_public_key.verify.side_effect = ValueError("bad sig")
 
-        result = api.process_notify(_wechatpay_headers(mock_config), b"{}")
+        payload, verified = api.process_notify(_wechatpay_headers(mock_config), b"{}")
 
-        assert result["success"] is False
-        assert "平台签名验证失败" in result["message"]
+        assert verified is False
+        assert payload is None
 
     def test_process_notify_non_transaction_success(self, api, mock_config):
         body = json.dumps({"event_type": "OTHER_EVENT"}).encode("utf-8")
 
-        result = api.process_notify(_wechatpay_headers(mock_config), body)
+        payload, verified = api.process_notify(_wechatpay_headers(mock_config), body)
 
-        assert result["success"] is False
-        assert "非支付成功通知" in result["message"]
+        assert verified is True
+        assert payload is None
 
     def test_process_notify_success(self, api, mock_config):
         body = json.dumps(
@@ -250,10 +250,13 @@ class TestWeChatPayV3API:
                 "trade_state": "SUCCESS",
             },
         ):
-            result = api.process_notify(_wechatpay_headers(mock_config), body)
+            payload, verified = api.process_notify(
+                _wechatpay_headers(mock_config), body
+            )
 
-        assert result["success"] is True
-        assert result["out_trade_no"] == "order123"
+        assert verified is True
+        assert payload is not None
+        assert payload["out_trade_no"] == "order123"
 
     def test_verify_notify_signature_with_public_key_no_config(
         self, api, mock_config

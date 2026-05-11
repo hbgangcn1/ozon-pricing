@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, text
+from sqlalchemy import String, Integer, Float, DateTime, Boolean, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 
@@ -130,4 +130,29 @@ class AuditLog(Base):
     timestamp: Mapped[Optional[datetime]] = mapped_column(
         DateTime,
         server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+
+class WechatNotifyAuditLog(Base):
+    __tablename__ = "wechat_notify_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    out_trade_no: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        index=True,
+        nullable=True,
+    )
+    transaction_id: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        index=True,
+        nullable=True,
+    )
+    signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    raw_body: Mapped[str] = mapped_column(Text, nullable=False)
+    response_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    response_message: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )

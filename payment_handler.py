@@ -84,7 +84,7 @@ class PaymentHandler:
     async def handle_payment_success(order_id: str) -> None:
         async with AsyncSessionLocal() as session:
             try:
-                stmt = select(PaymentOrder).where(PaymentOrder.order_id == order_id)
+                stmt = select(PaymentOrder).where(PaymentOrder.order_id == order_id).with_for_update()
                 result = await session.execute(stmt)
                 order = result.scalar_one_or_none()
                 if order is None:

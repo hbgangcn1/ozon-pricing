@@ -314,28 +314,33 @@ class WeChatPayV3API:
             logger.warning("解密回调数据失败", exc_info=True)
             return {}
 
-    def process_notify(self, headers: Dict[str, Any], body: bytes) -> Dict[str, Any]:
+    def process_notify(
+        self, headers: Dict[str, Any], body: bytes
+    ) -> tuple[dict | None, bool]:
+        """处理微信支付回调通知。
+
+        Returns:
+            (payload, verified):
+            - payload: 解析并解密后的通知数据；失败时为 None
+            - verified: 平台签名是否验证通过
+        """
         try:
             self.verify_platform_signature(headers, body)
+        except SignatureVerificationError as exc:
+            logger.warning("【安全告警】支付回调签名验证失败: %s", exc, exc_info=True)
+            return None, False
+
+        try:
             notify_data = json.loads(body.decode("utf-8"))
             if notify_data.get("event_type") != "TRANSACTION.SUCCESS":
-                return {"success": False, "message": "非支付成功通知"}
+                return None, True
             decrypted_data = self._decrypt_resource(notify_data.get("resource", {}))
             if not decrypted_data:
-                return {"success": False, "message": "解密失败"}
-            return {
-                "success": True,
-                "out_trade_no": decrypted_data.get("out_trade_no"),
-                "transaction_id": decrypted_data.get("transaction_id"),
-                "trade_state": decrypted_data.get("trade_state"),
-                "data": decrypted_data,
-            }
-        except SignatureVerificationError as exc:
-            logger.error("【安全告警】支付回调签名验证失败: %s", exc)
-            return {"success": False, "message": str(exc)}
+                return None, False
+            return decrypted_data, True
         except Exception as exc:
-            logger.error("处理支付通知失败: %s", exc, exc_info=True)
-            return {"success": False, "message": f"通知处理失败: {str(exc)}"}
+            logger.warning("处理支付通知失败: %s", exc, exc_info=True)
+            return None, False
 
     def verify_notify_signature_with_public_key(
         self, timestamp: str, nonce: str, body: str, signature: str, serial: str = ""

@@ -550,18 +550,20 @@ def test_process_notify_signature_failure(api):
         "verify_platform_signature",
         side_effect=SignatureVerificationError("bad signature"),
     ):
-        result = api.process_notify({}, b"{}")
+        payload, verified = api.process_notify({}, b"{}")
 
-    assert result == {"success": False, "message": "bad signature"}
+    assert payload is None
+    assert verified is False
 
 
 def test_process_notify_non_transaction_success(api):
     body = json.dumps({"event_type": "REFUND.SUCCESS"}).encode("utf-8")
 
     with patch.object(api, "verify_platform_signature", return_value=None):
-        result = api.process_notify({}, body)
+        payload, verified = api.process_notify({}, body)
 
-    assert result == {"success": False, "message": "非支付成功通知"}
+    assert payload is None
+    assert verified is True
 
 
 def test_process_notify_decrypt_failure(api):
@@ -571,14 +573,15 @@ def test_process_notify_decrypt_failure(api):
 
     with patch.object(api, "verify_platform_signature", return_value=None):
         with patch.object(api, "_decrypt_resource", return_value={}):
-            result = api.process_notify({}, body)
+            payload, verified = api.process_notify({}, body)
 
-    assert result == {"success": False, "message": "解密失败"}
+    assert payload is None
+    assert verified is False
 
 
 def test_process_notify_success(api, rsa_material, monkeypatch):
     monkeypatch.setattr(wechat_pay_v3_api_module.time, "time", lambda: 1_700_000_000)
-    payload = {
+    payload_dict = {
         "event_type": "TRANSACTION.SUCCESS",
         "resource": _encrypt_resource(
             {
@@ -588,23 +591,24 @@ def test_process_notify_success(api, rsa_material, monkeypatch):
             }
         ),
     }
-    body = json.dumps(payload).encode("utf-8")
+    body = json.dumps(payload_dict).encode("utf-8")
     headers = _signed_headers(api, rsa_material["platform_private_key"], body)
 
-    result = api.process_notify(headers, body)
+    payload, verified = api.process_notify(headers, body)
 
-    assert result["success"] is True
-    assert result["out_trade_no"] == "order-6"
-    assert result["transaction_id"] == "tx-6"
-    assert result["trade_state"] == "SUCCESS"
+    assert verified is True
+    assert payload is not None
+    assert payload["out_trade_no"] == "order-6"
+    assert payload["transaction_id"] == "tx-6"
+    assert payload["trade_state"] == "SUCCESS"
 
 
 def test_process_notify_general_exception(api):
     with patch.object(api, "verify_platform_signature", return_value=None):
-        result = api.process_notify({}, b"not-json")
+        payload, verified = api.process_notify({}, b"not-json")
 
-    assert result["success"] is False
-    assert "通知处理失败" in result["message"]
+    assert payload is None
+    assert verified is False
 
 
 def test_verify_notify_signature_with_public_key_success(api, monkeypatch):
