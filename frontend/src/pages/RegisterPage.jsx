@@ -350,6 +350,7 @@ function RegisterPage() {
               checked={agreedToEULA}
               onCheckedChange={(checked) => setAgreedToEULA(!!checked)}
               className="text-text-secondary"
+              data-testid="eula-checkbox"
             />
             <span className="text-text-secondary text-sm">
               我已阅读并同意

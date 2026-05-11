@@ -2,38 +2,19 @@ import { test, expect } from '@playwright/test'
 import { API_BASE } from '../fixtures/test-data.js'
 import { getAdminToken } from '../helpers/admin-token.js'
 import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js'
+import { cleanupPool, seedMyLogistics, seedPool } from '../fixtures/logistics-pool-fixture.js'
+
+test.describe.configure({ mode: 'serial' })
 
 test.describe('物流管理 — 全选与批量删除', () => {
   test.describe.configure({ mode: 'serial' })
   test.setTimeout(90000)
 
   let adminToken
-  const ruleNames = []
 
   test.beforeAll(async ({ request }) => {
     adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
-
-    for (let i = 0; i < 3; i++) {
-      const name = `BatchTest_${Date.now()}_${i}`
-      const resp = await fetch(`${API_BASE}/logistics`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify({
-          name,
-          type: 'land',
-          base_fee: 10,
-          first_fee: 5,
-          first_weight_g: 500,
-          continue_fee: 2,
-          continue_unit: 'g',
-        }),
-      })
-      expect(resp.status).toBeLessThan(300)
-      ruleNames.push(name)
-    }
+    seedMyLogistics('admin')
   })
 
   test.afterAll(async () => {
@@ -44,7 +25,7 @@ test.describe('物流管理 — 全选与批量删除', () => {
       const data = await resp.json()
       const items = data.items || data || []
       for (const item of items) {
-        if (ruleNames.includes(item.name)) {
+        if (item.name?.startsWith('BatchTest_E2E_Land_')) {
           await fetch(`${API_BASE}/logistics/${item.id}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${adminToken}` },
@@ -152,19 +133,14 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   test.setTimeout(90000)
 
   let adminToken
-  let hasPoolData = false
 
   test.beforeAll(async ({ request }) => {
     adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
+    seedPool()
+  })
 
-    const resp = await fetch(`${API_BASE}/logistics-pool?limit=5`, {
-      headers: { Authorization: `Bearer ${adminToken}` },
-    })
-    if (resp.ok) {
-      const data = await resp.json()
-      const items = data.items || data || []
-      hasPoolData = items.length > 0
-    }
+  test.afterAll(async () => {
+    cleanupPool()
   })
 
   async function goPool(page) {
@@ -179,8 +155,6 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   test('表头全选 checkbox 可见', async ({ page }) => {
-    test.skip(!hasPoolData, '物流池无数据，跳过')
-
     await goPool(page)
 
     const headerCheckbox = page.getByLabel('全选')
@@ -188,8 +162,6 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   test('点击表头全选后选中所有行', async ({ page }) => {
-    test.skip(!hasPoolData, '物流池无数据，跳过')
-
     await goPool(page)
 
     const headerCheckbox = page.getByLabel('全选')
@@ -204,8 +176,6 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   test('浮动栏包含全部添加和取消按钮', async ({ page }) => {
-    test.skip(!hasPoolData, '物流池无数据，跳过')
-
     await goPool(page)
 
     const headerCheckbox = page.getByLabel('全选')
@@ -224,8 +194,6 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   test('点击取消后浮动栏消失', async ({ page }) => {
-    test.skip(!hasPoolData, '物流池无数据，跳过')
-
     await goPool(page)
 
     const headerCheckbox = page.getByLabel('全选')
@@ -242,11 +210,9 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   test('单个 checkbox 可选中和取消', async ({ page }) => {
-    test.skip(!hasPoolData, '物流池无数据，跳过')
-
     await goPool(page)
 
-    const rows = page.locator('table tbody tr')
+    const rows = page.locator('[data-row]')
     await expect(rows.first()).toBeVisible({ timeout: 8000 })
 
     const firstCheckbox = rows.first().locator('button[role="checkbox"]')
@@ -264,11 +230,9 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   test('选中行有高亮样式', async ({ page }) => {
-    test.skip(!hasPoolData, '物流池无数据，跳过')
-
     await goPool(page)
 
-    const rows = page.locator('table tbody tr')
+    const rows = page.locator('[data-row]')
     await expect(rows.first()).toBeVisible({ timeout: 8000 })
 
     const firstRow = rows.first()
@@ -285,15 +249,13 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   test('POST /api/logistics-pool/batch-add-to-my-logistics 返回 200', async ({ request }) => {
-    test.skip(!hasPoolData, '物流池无数据，跳过')
-
     const listResp = await request.get(`${API_BASE}/logistics-pool?limit=1`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     })
     expect(listResp.status()).toBe(200)
     const listData = await listResp.json()
     const items = listData.items || listData || []
-    test.skip(items.length === 0, '无物流池数据')
+    expect(items.length).toBeGreaterThan(0)
 
     const ids = [items[0].id]
 

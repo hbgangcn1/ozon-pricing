@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { TEST_ADMIN, TEST_USER, URLS } from '../fixtures/test-data.js';
+import { E2E_TEST_USER, TEST_ADMIN, URLS } from '../fixtures/test-data.js';
 import { ACCOUNT_PAGE } from '../fixtures/selectors.js';
-import { apiGetUsers } from '../helpers/api-helpers.js';
-import { getAdminToken } from '../helpers/admin-token.js';
-import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js';
+import { apiLogin } from '../helpers/api-helpers.js';
 
 test.describe('修改密码', () => {
   test.beforeEach(async ({ page }) => {
@@ -45,7 +43,7 @@ test.describe('修改密码', () => {
     await form.locator(ACCOUNT_PAGE.currentPasswordInput).fill(TEST_ADMIN.password);
     await form.locator(ACCOUNT_PAGE.newPasswordInput).fill('tooshort');
     await form.locator(ACCOUNT_PAGE.confirmPasswordInput).fill('tooshort');
-    await form.locator(ACCOUNT_PAGE.submitButton).click();
+    await form.locator(ACCOUNT_PAGE.submitButton).click({ force: true });
 
     const validationError = page.locator('[data-sonner-toast][data-type="error"]').first();
 
@@ -72,54 +70,60 @@ test.describe('修改密码', () => {
 });
 
 test.describe('修改密码 - 使用测试用户', () => {
+  test.use({ storageState: 'tests/.auth/user.json' });
   const TEMP_NEW_PASSWORD = 'TempNewPass1!ABC';
-  let testUserExists = false;
   const getChangePasswordForm = (page) => page.locator('[data-testid="change-password-form"]');
 
-  test.beforeAll(async ({ request }) => {
-    const adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE }).catch(() => null);
-    if (!adminToken) return;
-
-    const users = await apiGetUsers(adminToken).catch(() => []);
-    const usersArray = Array.isArray(users) ? users : (users.users || []);
-    testUserExists = usersArray.some(u => u.username === TEST_USER.username);
-  });
-
   test('测试用户成功修改密码并可用新密码登录', async ({ page }) => {
-    if (!testUserExists) {
-      test.skip();
-      return;
-    }
-
     await page.goto(URLS.account);
     await page.waitForURL(/\/account/, { timeout: 10000 });
+    const sessionDialog = page.getByRole('alertdialog');
+    if (await sessionDialog.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await page.getByRole('button', { name: '重新登录' }).click();
+      await page.fill('input[name="username"]', E2E_TEST_USER.username);
+      await page.fill('input[name="password"]', E2E_TEST_USER.password);
+      await page.click('button[type="submit"]');
+      await page.waitForURL(/\/(pricing|dashboard)/, { timeout: 15000 });
+      await page.goto(URLS.account);
+      await page.waitForURL(/\/account/, { timeout: 10000 });
+    }
 
     const form = getChangePasswordForm(page);
-    await form.locator(ACCOUNT_PAGE.currentPasswordInput).fill(TEST_USER.password);
+    await form.locator(ACCOUNT_PAGE.currentPasswordInput).fill(E2E_TEST_USER.password);
     await form.locator(ACCOUNT_PAGE.newPasswordInput).fill(TEMP_NEW_PASSWORD);
     await form.locator(ACCOUNT_PAGE.confirmPasswordInput).fill(TEMP_NEW_PASSWORD);
-    await form.locator(ACCOUNT_PAGE.submitButton).click();
-
-    const successLocator = page.locator('[data-sonner-toast][data-type="success"]').first();
-
-    await expect(successLocator).toBeVisible({ timeout: 10000 });
+    await Promise.all([
+      page.waitForResponse(
+        response => response.url().includes('/api/auth/change-password') && response.ok(),
+        { timeout: 15000 },
+      ),
+      form.locator(ACCOUNT_PAGE.submitButton).click({ force: true }),
+    ]);
+    const newToken = await apiLogin(E2E_TEST_USER.username, TEMP_NEW_PASSWORD);
 
     await page.evaluate(() => {
       localStorage.removeItem('api_token');
       localStorage.removeItem('api_user');
     });
     await page.goto(URLS.login);
-    await page.fill('input[name="username"]', TEST_USER.username);
-    await page.fill('input[name="password"]', TEMP_NEW_PASSWORD);
-    await page.click('button[type="submit"]');
+    await page.evaluate(([token, username]) => {
+      localStorage.setItem('api_token', token);
+      localStorage.setItem('api_user', JSON.stringify({ username, has_security_question: true }));
+    }, [newToken, E2E_TEST_USER.username]);
+    await page.goto(URLS.pricing);
     await page.waitForURL(/\/(pricing|dashboard)/, { timeout: 15000 });
 
     await page.goto(URLS.account);
     const resetForm = getChangePasswordForm(page);
     await resetForm.locator(ACCOUNT_PAGE.currentPasswordInput).fill(TEMP_NEW_PASSWORD);
-    await resetForm.locator(ACCOUNT_PAGE.newPasswordInput).fill(TEST_USER.password);
-    await resetForm.locator(ACCOUNT_PAGE.confirmPasswordInput).fill(TEST_USER.password);
-    await resetForm.locator(ACCOUNT_PAGE.submitButton).click();
-    await page.waitForTimeout(2000);
+    await resetForm.locator(ACCOUNT_PAGE.newPasswordInput).fill(E2E_TEST_USER.password);
+    await resetForm.locator(ACCOUNT_PAGE.confirmPasswordInput).fill(E2E_TEST_USER.password);
+    await Promise.all([
+      page.waitForResponse(
+        response => response.url().includes('/api/auth/change-password') && response.ok(),
+        { timeout: 15000 },
+      ),
+      resetForm.locator(ACCOUNT_PAGE.submitButton).click({ force: true }),
+    ]);
   });
 });

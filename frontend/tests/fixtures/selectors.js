@@ -11,7 +11,7 @@ export const REGISTER_PAGE = {
   confirmPasswordInput: 'input[name="confirmPassword"]',
   securityQuestionSelect: '#security_question',
   securityAnswerInput: 'input[name="security_answer"]',
-  eulaCheckbox: 'button[role="checkbox"]',
+  eulaCheckbox: '[data-testid="eula-checkbox"]',
   submitButton: 'button[type="submit"]',
 };
 

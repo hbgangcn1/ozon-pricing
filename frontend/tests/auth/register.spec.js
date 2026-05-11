@@ -53,7 +53,16 @@ test.describe('注册流程', () => {
       }
     }
 
+    const responsePromise = page.waitForResponse(
+      r => r.url().includes('/api/auth/register'),
+      { timeout: 15000 }
+    ).catch(() => null);
     await page.click(REGISTER_PAGE.submitButton);
+    const response = await responsePromise;
+
+    if (response) {
+      expect([200, 201]).toContain(response.status());
+    }
 
     await Promise.race([
       page.waitForURL(/\/login/, { timeout: 15000 }),
@@ -117,10 +126,7 @@ test.describe('注册流程', () => {
     const eulaCheckbox = page.locator(REGISTER_PAGE.eulaCheckbox);
     const hasEula = await eulaCheckbox.isVisible({ timeout: 2000 }).catch(() => false);
 
-    if (!hasEula) {
-      test.skip();
-      return;
-    }
+    expect(hasEula).toBeTruthy();
 
     const isChecked = await eulaCheckbox.isChecked().catch(() => false);
     if (isChecked) {
@@ -130,6 +136,7 @@ test.describe('注册流程', () => {
     await page.fill(REGISTER_PAGE.usernameInput, `eula_${Date.now()}`);
     await page.fill(REGISTER_PAGE.passwordInput, TEST_PASSWORD);
     await page.fill(REGISTER_PAGE.confirmPasswordInput, TEST_PASSWORD);
+    await page.locator(REGISTER_PAGE.securityQuestionSelect).selectOption({ index: 1 });
     await page.fill(REGISTER_PAGE.securityAnswerInput, 'test');
 
     await page.click(REGISTER_PAGE.submitButton);
@@ -138,7 +145,7 @@ test.describe('注册流程', () => {
   });
 
   test('关闭注册时提交表单显示禁止提示', async ({ page }) => {
-    await apiToggleRegistration(adminToken, false);
+    await apiToggleRegistration(adminToken, false).catch(() => null);
 
     try {
       await page.goto(URLS.register);
