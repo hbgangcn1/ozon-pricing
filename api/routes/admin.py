@@ -151,6 +151,11 @@ async def reset_user_password(
     admin: int = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
 ):
+    target_user = await session.get(User, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if target_user.role == "admin" and target_user.id != admin:
+        raise HTTPException(status_code=403, detail="禁止重置其他管理员密码")
     reset_password = await db_admin.reset_user_password(session, user_id, admin)
     if not reset_password:
         raise HTTPException(status_code=404, detail="用户不存在")

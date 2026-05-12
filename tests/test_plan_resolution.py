@@ -9,6 +9,7 @@ Plus count_user_active_rules excluding disabled_by_overflow.
 import time
 
 import pytest
+from sqlalchemy import text
 
 from services.plan_resolution import (
     count_user_active_rules,
@@ -22,6 +23,14 @@ class _U:
     def __init__(self, subscription_type="free", trial_expires_at=0):
         self.subscription_type = subscription_type
         self.trial_expires_at = trial_expires_at
+
+
+async def _override_plan_limit(session, code: str, limit: int) -> None:
+    await session.execute(
+        text("UPDATE plans SET logistics_limit = :lim WHERE plan_code = :c"),
+        {"lim": limit, "c": code},
+    )
+    await session.commit()
 
 
 def test_in_trial_user_resolves_to_professional():
@@ -49,19 +58,27 @@ def test_no_trial_unset_user_defaults_free():
 
 @pytest.mark.asyncio
 async def test_get_effective_logistics_limit_uses_plans_table(db_session):
-    u = _U(subscription_type="professional", trial_expires_at=0)
-    limit = await get_effective_logistics_limit(db_session, u)
-    assert limit == 10
+    await _override_plan_limit(db_session, "professional", 10)
+    try:
+        u = _U(subscription_type="professional", trial_expires_at=0)
+        limit = await get_effective_logistics_limit(db_session, u)
+        assert limit == 10
+    finally:
+        await _override_plan_limit(db_session, "professional", -1)
 
 
 @pytest.mark.asyncio
 async def test_get_effective_logistics_limit_trial_overlay(db_session):
-    u = _U(
-        subscription_type="free",
-        trial_expires_at=int(time.time()) + 3600,
-    )
-    limit = await get_effective_logistics_limit(db_session, u)
-    assert limit == 10
+    await _override_plan_limit(db_session, "professional", 10)
+    try:
+        u = _U(
+            subscription_type="free",
+            trial_expires_at=int(time.time()) + 3600,
+        )
+        limit = await get_effective_logistics_limit(db_session, u)
+        assert limit == 10
+    finally:
+        await _override_plan_limit(db_session, "professional", -1)
 
 
 @pytest.mark.asyncio

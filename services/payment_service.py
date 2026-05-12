@@ -3,7 +3,7 @@ import time
 import uuid
 from typing import Literal, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.order import PaymentOrder
@@ -71,60 +71,63 @@ class PaymentService:
         _ = raw_notify
         self._validate_wechat_notify_identity(currency, appid, mchid)
 
-        stmt = (
-            update(PaymentOrder)
-            .where(
-                PaymentOrder.order_id == out_trade_no,
-                PaymentOrder.status.in_(["PENDING", "PAID"]),
-                PaymentOrder.wechat_transaction_id.is_(None),
-            )
-            .values(
-                status="SUCCESS",
-                wechat_transaction_id=transaction_id,
-                updated_at=int(time.time()),
-            )
-            .returning(
-                PaymentOrder.id,
-                PaymentOrder.user_id,
-                PaymentOrder.amount,
-                PaymentOrder.description,
-                PaymentOrder.duration,
-            )
-        )
+        stmt = select(PaymentOrder).where(
+            PaymentOrder.order_id == out_trade_no,
+        ).with_for_update()
         result = await self._session.execute(stmt)
-        row = result.first()
-        if row is None:
+        order = result.scalar_one_or_none()
+        if order is None:
             return await self._classify_wechat_cas_miss(
                 out_trade_no=out_trade_no,
                 transaction_id=transaction_id,
             )
 
-        if row.amount != amount_total:
+        if order.status in ("SUCCESS", "PAID"):
+            return self._classify_locked_paid_order(
+                order,
+                out_trade_no=out_trade_no,
+                transaction_id=transaction_id,
+            )
+
+        if order.status != "PENDING":
+            logger.warning(
+                "wechat notify on non-pending order: order=%s status=%s",
+                out_trade_no,
+                order.status,
+            )
+            raise SuspiciousWechatNotifyError(
+                f"order in non-pending state: {order.status}"
+            )
+
+        if order.amount != amount_total:
             logger.error(
                 "wechat notify amount mismatch: order=%s stored=%s notify=%s",
                 out_trade_no,
-                row.amount,
+                order.amount,
                 amount_total,
             )
             raise SuspiciousWechatNotifyError(
-                f"amount mismatch: order={row.amount} notify={amount_total}"
+                f"amount mismatch: order={order.amount} notify={amount_total}"
             )
 
-        user = await self._session.get(User, row.user_id)
+        user = await self._session.get(User, order.user_id)
         if not user:
             logger.error(
                 "wechat notify user missing: order=%s user_id=%s",
                 out_trade_no,
-                row.user_id,
+                order.user_id,
             )
             raise SuspiciousWechatNotifyError(
-                f"user not found: {row.user_id}"
+                f"user not found: {order.user_id}"
             )
 
         current_time = int(time.time())
-        plan_code = _extract_plan_code(row.description or "")
-        duration_days = _parse_duration(row.duration or "\u6708")
+        plan_code = _extract_plan_code(order.description or "")
+        duration_days = _parse_duration(order.duration or "\u6708")
         expiry = current_time + duration_days * 86400
+        order.status = "SUCCESS"
+        order.wechat_transaction_id = transaction_id
+        order.updated_at = current_time
 
         await apply_paid_subscription(
             self._session,
@@ -137,10 +140,35 @@ class PaymentService:
         logger.info(
             "wechat notify processed: order=%s user=%s plan=%s",
             out_trade_no,
-            row.user_id,
+            order.user_id,
             plan_code,
         )
+        await self._session.commit()
         return "processed"
+
+    def _classify_locked_paid_order(
+        self,
+        order: PaymentOrder,
+        *,
+        out_trade_no: str,
+        transaction_id: str,
+    ) -> Literal["duplicate"]:
+        if order.wechat_transaction_id == transaction_id:
+            logger.warning(
+                "wechat notify duplicate (same txid): order=%s txid=%s",
+                out_trade_no,
+                _redact_txid(transaction_id),
+            )
+            return "duplicate"
+        logger.error(
+            "wechat notify txid conflict: order=%s stored=%s incoming=%s",
+            out_trade_no,
+            _redact_txid(order.wechat_transaction_id),
+            _redact_txid(transaction_id),
+        )
+        raise SuspiciousWechatNotifyError(
+            "txid conflict on already-paid order"
+        )
 
     async def handle_payment_success(self, order_id: str) -> None:
         stmt = select(PaymentOrder).where(

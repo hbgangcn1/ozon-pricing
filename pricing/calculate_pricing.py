@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedImport=false
 from decimal import Decimal
 import logging
 from .cost_filter import cost_and_filter
@@ -12,7 +13,8 @@ from ._pricing_helpers import (
     _extract_savings,
     _error_result,
     _RESULT_HELPERS,
-)
+    _to_decimal,
+)  # pyright: ignore[reportPrivateUsage]
 
 logger = logging.getLogger(__name__)
 
@@ -354,9 +356,9 @@ def _run_calculation(
     priority,
     filtered_logistics,
 ):
-    unit_price = product.get("unit_price") or Decimal("0")
-    labeling_fee = product.get("labeling_fee") or Decimal("0")
-    shipping_fee = product.get("shipping_fee") or Decimal("0")
+    unit_price = _to_decimal(product.get("unit_price") or Decimal("0"))
+    labeling_fee = _to_decimal(product.get("labeling_fee") or Decimal("0"))
+    shipping_fee = _to_decimal(product.get("shipping_fee") or Decimal("0"))
     fees = (unit_price, labeling_fee, shipping_fee)
     rate, _ = _get_exchange_rates()
     phase1 = _phase1_filter_price(
@@ -406,7 +408,7 @@ def calculate_pricing(
     except AttributeError:
         raise
     except (ValueError, TypeError, KeyError) as e:
-        logger.error("计算定价时发生错误: %s", e)
+        logger.error("计算定价时发生错误: %s", e, exc_info=True)
         return _error_result(product)
 
 
@@ -415,4 +417,4 @@ from .grouped_pricing import (  # noqa: E402,F401
     calculate_pricing_grouped,
     _estimate_and_select_rate,
     _estimate_price_rub,
-)
+)  # pyright: ignore[reportPrivateUsage,reportUnusedImport]

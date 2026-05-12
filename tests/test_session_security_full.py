@@ -416,7 +416,7 @@ class TestCreateSession:
         sid = await SessionSecurityEnhanced.create_session(
             42, {"ip_address": "1.2.3.4", "user_agent": "UA"}
         )
-        assert sid is not None and len(sid) == 64
+        assert sid is not None and len(sid) == 43
 
     @patch("session_security.insert_session", new_callable=AsyncMock)
     @patch("session_security.AsyncSessionLocal")
@@ -769,7 +769,7 @@ class TestSessionSecurityMisc:
 
     def test_generate_session_id(self):
         sid = SessionSecurityEnhanced.generate_session_id(1)
-        assert isinstance(sid, str) and len(sid) == 64
+        assert isinstance(sid, str) and len(sid) == 43
 
     def test_generate_session_id_unique(self):
         ids = {SessionSecurityEnhanced.generate_session_id(1) for _ in range(5)}

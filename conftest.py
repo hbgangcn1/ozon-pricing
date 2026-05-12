@@ -294,6 +294,7 @@ def _master_setup_test_schemas() -> None:
         create_all_in_schema,
         create_worker_schema,
         drop_test_schemas,
+        seed_default_plans,
         worker_schema_name,
     )
 
@@ -301,6 +302,7 @@ def _master_setup_test_schemas() -> None:
     schema = worker_schema_name()
     create_worker_schema(schema)
     create_all_in_schema(schema)
+    seed_default_plans(schema)
 
 
 def pytest_sessionstart(session):

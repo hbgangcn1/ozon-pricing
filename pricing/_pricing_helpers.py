@@ -1,12 +1,35 @@
-from decimal import Decimal
 import logging
+import os
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+
 from .logistic_cost import calculate_logistic_cost
 
 logger = logging.getLogger(__name__)
 
 _RESULT_HELPERS = __import__(f"{__package__}._result_helpers", fromlist=["*"])
 _FBP_ELIMINATED_REASON = "该物流无法覆盖更高成本"
+_DEFAULT_WX_PAY_FALLBACK_RATE = Decimal("0.0904")
+_DEFAULT_USD_FALLBACK_RATE = Decimal("7.2")
+
+
+def get_wx_pay_fallback_rate():
+    raw_rate = os.getenv("WX_PAY_FALLBACK_RATE")
+    if raw_rate:
+        try:
+            return Decimal(raw_rate)
+        except (InvalidOperation, ValueError):
+            logger.warning(
+                "Invalid WX_PAY_FALLBACK_RATE=%r; using default %s",
+                raw_rate,
+                _DEFAULT_WX_PAY_FALLBACK_RATE,
+            )
+    else:
+        logger.warning(
+            "WX_PAY_FALLBACK_RATE is not configured; using default %s",
+            _DEFAULT_WX_PAY_FALLBACK_RATE,
+        )
+    return _DEFAULT_WX_PAY_FALLBACK_RATE
 
 
 def _to_decimal(value):
@@ -89,10 +112,14 @@ def _get_exchange_rates():
     except ImportError:
 
         def get_fallback_exchange_rate():
-            return Decimal("0.0904")
+            return get_wx_pay_fallback_rate()
 
         def get_fallback_usd_rate():
-            return Decimal("7.2")
+            logger.warning(
+                "USD fallback exchange service unavailable; using default %s",
+                _DEFAULT_USD_FALLBACK_RATE,
+            )
+            return _DEFAULT_USD_FALLBACK_RATE
 
     return _to_decimal(get_fallback_exchange_rate()), _to_decimal(
         get_fallback_usd_rate()

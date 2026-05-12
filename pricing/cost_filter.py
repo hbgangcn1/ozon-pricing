@@ -36,14 +36,14 @@ def _to_log_dict(log):
 
 
 def _check_price_upper(log_dict, rough):
-    log_limit_value = log_dict.get("price_limit_cny") or Decimal("0")
+    log_limit_value = _to_decimal(log_dict.get("price_limit_cny") or Decimal("0"))
     if log_limit_value > 0 and rough > log_limit_value:
         return f"估算售价 {rough:.2f} CNY 超过价格上限 {log_limit_value:.2f} CNY"
     return None
 
 
 def _check_price_lower(log_dict, rough, debug_info):
-    log_min_value = log_dict.get("price_min_cny") or Decimal("0")
+    log_min_value = _to_decimal(log_dict.get("price_min_cny") or Decimal("0"))
     debug_info.append(
         f"价格下限检查: min_value={log_min_value:.2f} CNY, rough={rough:.2f} CNY"
     )
@@ -122,7 +122,7 @@ def _process_one_logistic(
         numerator += actual_payment_rub * rate
     else:
         denom_deductions += payment_rate
-    denominator = 1 - denom_deductions
+    denominator = Decimal("1") - denom_deductions
     if denominator <= 0:
         debug_info.append(f"定价分母不合法 ({denominator:.4f})，跳过此物流方案")
         _append_filtered(
@@ -164,6 +164,12 @@ def _process_one_logistic(
     return (log_dict, cost)
 
 
+def _to_decimal(value):
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
 def cost_and_filter(
     logistics: Any,
     product: Any,
@@ -179,7 +185,10 @@ def cost_and_filter(
     res = []
     product_dict = _to_product_dict(product)
     is_land = logistics is land_logistics
-    for _, log in _iter_logistics(logistics):
+    candidates = _iter_logistics(logistics)
+    if not candidates:
+        return []
+    for _, log in candidates:
         log_dict = _to_log_dict(log)
         result = _process_one_logistic(
             log_dict,

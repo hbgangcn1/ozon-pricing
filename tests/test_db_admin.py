@@ -3,6 +3,8 @@ from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from sqlalchemy import select, text
+
 from db.admin_helpers import (
     _build_users_filter,
     _format_audit_log_rows,
@@ -529,6 +531,90 @@ class TestDeleteUserAdmin:
 
         result = await delete_user_admin(db_session, tmp_id, test_admin["id"])
         assert result is True
+
+
+class TestAdjustCalculations:
+    async def test_atomic_update_adds_delta(self, db_session, test_user):
+        from db.admin import adjust_calculations
+        from models.user import User
+
+        user = await db_session.get(User, test_user["id"])
+        user.remaining_calculations = 7
+        await db_session.commit()
+
+        ok = await adjust_calculations(db_session, test_user["id"], 5)
+        await db_session.commit()
+
+        assert ok is True
+        value = (
+            await db_session.execute(
+                select(User.remaining_calculations)
+                .where(User.id == test_user["id"])
+            )
+        ).scalar_one()
+        assert value == 12
+
+    async def test_atomic_update_floors_at_zero(self, db_session, test_user):
+        from db.admin import adjust_calculations
+        from models.user import User
+
+        user = await db_session.get(User, test_user["id"])
+        user.remaining_calculations = 3
+        await db_session.commit()
+
+        ok = await adjust_calculations(db_session, test_user["id"], -99)
+        await db_session.commit()
+
+        assert ok is True
+        value = (
+            await db_session.execute(
+                select(User.remaining_calculations)
+                .where(User.id == test_user["id"])
+            )
+        ).scalar_one()
+        assert value == 0
+
+    async def test_atomic_update_matches_raw_returning_sql(
+        self,
+        db_session,
+        test_user,
+    ):
+        from models.user import User
+
+        await db_session.execute(
+            text(
+                """
+                UPDATE users
+                SET remaining_calculations = 2
+                WHERE id = :user_id
+                """
+            ),
+            {"user_id": test_user["id"]},
+        )
+        await db_session.commit()
+
+        result = await db_session.execute(
+            text(
+                """
+                UPDATE users
+                SET remaining_calculations = GREATEST(
+                    0,
+                    COALESCE(remaining_calculations, 0) + :delta
+                )
+                WHERE id = :user_id
+                RETURNING remaining_calculations
+                """
+            ),
+            {"user_id": test_user["id"], "delta": -5},
+        )
+        await db_session.commit()
+
+        assert result.scalar_one() == 0
+
+    async def test_missing_user_returns_false(self, db_session):
+        from db.admin import adjust_calculations
+
+        assert await adjust_calculations(db_session, 999999999, 1) is False
 
 
 class TestBatchUpdateUsers:

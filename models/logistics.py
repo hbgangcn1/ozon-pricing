@@ -1,12 +1,18 @@
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import String, Integer, Float, Numeric, text
+from sqlalchemy import CheckConstraint, String, Integer, Float, Numeric, text
 from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 
 
 class Logistics(Base):
     __tablename__ = "logistics"
+    __table_args__ = (
+        CheckConstraint(
+            "volume_mode IN ('none', 'max_actual_vs_volume', 'longest_side', 'sum_of_sides')",
+            name="logistics_volume_mode_check",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)

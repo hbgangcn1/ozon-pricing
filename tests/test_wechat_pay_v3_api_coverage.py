@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import wechat_pay_v3_api as wechat_pay_v3_api_module
 from wechat_pay_v3_api import (
     SignatureVerificationError,
+    WeChatPayError,
     WeChatPayV3API,
     WechatResponseSignatureError,
 )
@@ -550,20 +551,18 @@ def test_process_notify_signature_failure(api):
         "verify_platform_signature",
         side_effect=SignatureVerificationError("bad signature"),
     ):
-        payload, verified = api.process_notify({}, b"{}")
-
-    assert payload is None
-    assert verified is False
+        with pytest.raises(WeChatPayError, match="signature verification failed"):
+            api.process_notify({}, b"{}")
 
 
 def test_process_notify_non_transaction_success(api):
     body = json.dumps({"event_type": "REFUND.SUCCESS"}).encode("utf-8")
 
     with patch.object(api, "verify_platform_signature", return_value=None):
-        payload, verified = api.process_notify({}, body)
+        with patch.object(api, "_extract_header", return_value="nonce-ok"):
+            payload = api.process_notify({}, body)
 
     assert payload is None
-    assert verified is True
 
 
 def test_process_notify_decrypt_failure(api):
@@ -572,11 +571,10 @@ def test_process_notify_decrypt_failure(api):
     ).encode("utf-8")
 
     with patch.object(api, "verify_platform_signature", return_value=None):
-        with patch.object(api, "_decrypt_resource", return_value={}):
-            payload, verified = api.process_notify({}, body)
-
-    assert payload is None
-    assert verified is False
+        with patch.object(api, "_extract_header", return_value="nonce-ok"):
+            with patch.object(api, "_decrypt_resource", return_value={}):
+                with pytest.raises(WeChatPayError):
+                    api.process_notify({}, body)
 
 
 def test_process_notify_success(api, rsa_material, monkeypatch):
@@ -594,9 +592,7 @@ def test_process_notify_success(api, rsa_material, monkeypatch):
     body = json.dumps(payload_dict).encode("utf-8")
     headers = _signed_headers(api, rsa_material["platform_private_key"], body)
 
-    payload, verified = api.process_notify(headers, body)
-
-    assert verified is True
+    payload = api.process_notify(headers, body)
     assert payload is not None
     assert payload["out_trade_no"] == "order-6"
     assert payload["transaction_id"] == "tx-6"
@@ -605,10 +601,9 @@ def test_process_notify_success(api, rsa_material, monkeypatch):
 
 def test_process_notify_general_exception(api):
     with patch.object(api, "verify_platform_signature", return_value=None):
-        payload, verified = api.process_notify({}, b"not-json")
-
-    assert payload is None
-    assert verified is False
+        with patch.object(api, "_extract_header", return_value="nonce-ok"):
+            with pytest.raises(WeChatPayError):
+                api.process_notify({}, b"not-json")
 
 
 def test_verify_notify_signature_with_public_key_success(api, monkeypatch):

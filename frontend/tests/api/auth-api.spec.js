@@ -201,12 +201,30 @@ test.describe('Auth API - 注册', () => {
     expect(lastStatus).toBe(403)
   })
 
-  test('POST /api/auth/register - 注册开放时弱密码返回 400', async ({ request }) => {
-    // 开启注册
+  // 开启注册并轮询直到设置真正生效（与关闭注册测试对称，避免并行 race）
+  async function ensureRegistrationOpen(request) {
     const adminToken = await getToken(request, ADMIN_USER, ADMIN_PASS)
     await request.put('/api/settings/open-registration?enabled=true', {
       headers: authHeaders(adminToken),
     })
+    // 轮询：用一个一定会被业务层后续校验拒绝（弱密码）的 probe，
+    // 只要返回不再是 403（注册关闭），就说明开启已生效
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 300))
+      const probe = await request.post('/api/auth/register', {
+        data: {
+          username: `probe_open_${Date.now()}_${i}`,
+          password: 'x', // 故意弱密码，保证不会真正创建用户
+          security_question: 'probe',
+          security_answer: 'probe',
+        },
+      })
+      if (probe.status() !== 403) return
+    }
+  }
+
+  test('POST /api/auth/register - 注册开放时弱密码返回 400', async ({ request }) => {
+    await ensureRegistrationOpen(request)
 
     const resp = await request.post('/api/auth/register', {
       data: {
@@ -220,10 +238,7 @@ test.describe('Auth API - 注册', () => {
   })
 
   test('POST /api/auth/register - 注册开放时无效用户名返回 400', async ({ request }) => {
-    const adminToken = await getToken(request, ADMIN_USER, ADMIN_PASS)
-    await request.put('/api/settings/open-registration?enabled=true', {
-      headers: authHeaders(adminToken),
-    })
+    await ensureRegistrationOpen(request)
 
     const resp = await request.post('/api/auth/register', {
       data: {

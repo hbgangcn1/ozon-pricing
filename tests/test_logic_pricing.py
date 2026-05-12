@@ -440,7 +440,7 @@ class TestComputeBillableWeight:
             300,
         )
 
-        assert weight == pytest.approx(5333.333333, abs=0.01)
+        assert float(weight) == pytest.approx(5333.333333, abs=0.01)
         assert label == "体积重"
         assert triggered is True
 

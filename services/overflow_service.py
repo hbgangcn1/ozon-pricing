@@ -2,7 +2,8 @@
 
 Concurrency model:
   - auto_trim_user_rules: SELECT FOR UPDATE on user's logistics rows + window
-    insert in same transaction. Caller commits.
+    insert in an explicit transaction. Uses SAVEPOINT when the caller already
+    has an open transaction; otherwise commits its own transaction.
   - reselect_kept_rules: validates ownership + count BEFORE mutating; closes
     open window with reason='reselected' atomically.
   - close_expired_windows: bulk UPDATE used by scheduler; idempotent.
@@ -65,10 +66,26 @@ async def auto_trim_user_rules(
     Only acts on is_active=1 AND disabled_by_overflow=0 rows.
     Idempotent if no overflow exists (returns trimmed_count=0, may still open
     a window if none open — caller checks). limit < 0 means unlimited (no-op).
-    Caller MUST commit.
+    Commits when called standalone; when called inside a caller-owned
+    transaction, uses a nested SAVEPOINT and the outer caller commits.
     """
     if limit < 0:
         return TrimResult(0, [], [], 0)
+
+    if session.in_transaction():
+        async with session.begin_nested():
+            return await _auto_trim_user_rules_locked(session, user_id, limit)
+
+    async with session.begin():
+        return await _auto_trim_user_rules_locked(session, user_id, limit)
+
+
+async def _auto_trim_user_rules_locked(
+    session: AsyncSession,
+    user_id: int,
+    limit: int,
+) -> TrimResult:
+    """Implementation body for auto_trim_user_rules transaction wrapper."""
 
     stmt = (
         select(Logistics.id, Logistics.last_used_at)

@@ -72,7 +72,10 @@ class SessionSecurityEnhanced:
                     return False, f"会话创建失败: {str(e)}"
         finally:
             if acquired:
-                await loop.run_in_executor(None, lock.release)
+                try:
+                    await loop.run_in_executor(None, lock.release)
+                except Exception:
+                    logger.warning("释放会话创建锁失败", exc_info=True)
 
     @staticmethod
     async def update_session_activity_atomic(session_id: str) -> bool:
@@ -114,11 +117,9 @@ class SessionSecurityEnhanced:
 
     @staticmethod
     def generate_session_id(user_id: int) -> str:
-        import hashlib
-        import os
+        import secrets
 
-        data = f"{user_id}{time.time()}{os.urandom(16)}"
-        return hashlib.sha256(data.encode()).hexdigest()
+        return secrets.token_urlsafe(32)
 
     @staticmethod
     async def create_session(user_id: int, user_info: dict) -> Optional[str]:

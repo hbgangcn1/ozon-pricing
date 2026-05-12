@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 import bcrypt
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -465,15 +465,23 @@ async def adjust_calculations(
     user_id,
     delta: int,
 ) -> bool:
-    stmt = select(User).where(User.id == user_id)
-    result = await session.execute(stmt)
-    user = result.scalar_one_or_none()
-    if not user:
+    result = await session.execute(
+        text(
+            """
+            UPDATE users
+            SET remaining_calculations = GREATEST(
+                0,
+                COALESCE(remaining_calculations, 0) + :delta
+            )
+            WHERE id = :user_id
+            RETURNING remaining_calculations
+            """
+        ),
+        {"user_id": user_id, "delta": delta},
+    )
+    if result.scalar_one_or_none() is None:
         logger.warning("adjust_calculations failed: user %s not found", user_id)
         return False
-
-    current = user.remaining_calculations or 0
-    user.remaining_calculations = max(0, current + delta)
     await session.flush()
     return True
 

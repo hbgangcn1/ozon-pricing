@@ -49,6 +49,15 @@ def _is_wechat_response_signature_error(exc: Exception) -> bool:
     return bool(error_cls) and isinstance(exc, error_cls)
 
 
+def _is_wechat_pay_signature_error(exc: Exception) -> bool:
+    if wechat_pay_v3_api_module is None:
+        return False
+    error_cls = getattr(wechat_pay_v3_api_module, "WeChatPayError", None)
+    return bool(error_cls) and isinstance(exc, error_cls) and (
+        str(exc) == "signature verification failed"
+    )
+
+
 async def _reconcile_order_after_signature_failure(
     order_id: str,
     svc: PaymentService,
@@ -317,15 +326,19 @@ async def payment_notify(
         )
 
     payload = None
-    verified = False
+    verified = True
     try:
-        payload, verified = await asyncio.to_thread(
+        payload = await asyncio.to_thread(
             wechat_pay_v3.process_notify,
             dict(request.headers),
             body,
         )
-    except Exception:
-        logger.warning("微信支付通知解析异常，仅审计并返回成功确认", exc_info=True)
+    except Exception as exc:
+        verified = False
+        if _is_wechat_pay_signature_error(exc):
+            logger.warning("微信支付通知签名验证失败，仅审计并返回成功确认")
+        else:
+            logger.warning("微信支付通知解析异常，仅审计并返回成功确认", exc_info=True)
     await _write_notify_audit_log(
         session,
         body=body,
@@ -334,7 +347,7 @@ async def payment_notify(
         response_message="OK",
     )
 
-    if not verified or not isinstance(payload, dict):
+    if not isinstance(payload, dict):
         logger.warning("微信支付通知未验签或无有效交易载荷，仅写入审计日志")
         return _success_ack()
 

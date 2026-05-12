@@ -6,6 +6,7 @@ import os
 import subprocess
 import threading
 import time
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -98,9 +99,31 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
             return False
 
     def _build_env(self) -> Dict[str, str]:
-        env = os.environ.copy()
-        env["PGPASSWORD"] = POSTGRES_CONFIG.get("password", "")
-        return env
+        return os.environ.copy()
+
+    def _build_pgpass_file(self) -> str:
+        pgpass_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
+        try:
+            pgpass_file.write(
+                ":".join(
+                    [
+                        str(POSTGRES_CONFIG.get("host", "localhost")),
+                        str(POSTGRES_CONFIG.get("port", 5432)),
+                        str(POSTGRES_CONFIG.get("database", "postgres")),
+                        str(POSTGRES_CONFIG.get("user", "postgres")),
+                        str(POSTGRES_CONFIG.get("password", "")),
+                    ]
+                )
+                + "\n"
+            )
+            pgpass_file.flush()
+        finally:
+            pgpass_file.close()
+        try:
+            os.chmod(pgpass_file.name, 0o600)
+        except OSError as exc:
+            logger.warning("无法设置 pgpass 文件权限为 0600: {}", exc)
+        return pgpass_file.name
 
     def _build_filename(self, prefix: str) -> str:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -128,13 +151,20 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
             cmd.extend(["-o", options])
         cmd.append(POSTGRES_CONFIG.get("database", "postgres"))
         logger.debug("执行 pg_dump: {}", " ".join(cmd))
-        subprocess.run(
-            cmd,
-            check=True,
-            env=self._build_env(),
-            capture_output=True,
-            text=True,
-        )
+        pgpass_file = self._build_pgpass_file()
+        try:
+            subprocess.run(
+                cmd,
+                check=True,
+                env={**self._build_env(), "PGPASSFILE": pgpass_file},
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            try:
+                os.remove(pgpass_file)
+            except OSError as exc:
+                logger.warning("无法删除临时 pgpass 文件: {}", exc)
         logger.debug("pg_dump 执行成功")
 
     def _filter_backup_files(self) -> List[BackupRecord]:
@@ -181,6 +211,10 @@ class PostgresBackupSystem(PostgresBackupDatabaseMixin):
         backup_path = self._build_backup_path(prefix)
         try:
             self._run_pg_dump(backup_path)
+            try:
+                os.chmod(backup_path, 0o600)
+            except OSError as exc:
+                logger.warning("无法将备份文件权限设置为 0600: {}", exc)
             if not self.verify_backup(backup_path):
                 logger.error("❌ 备份验证失败: {}", os.path.basename(backup_path))
                 os.remove(backup_path)

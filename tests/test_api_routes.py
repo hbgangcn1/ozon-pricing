@@ -214,10 +214,12 @@ class TestAuth:
         assert r.json()["user"]["has_security_question"] is True
 
     @patch("api.routes.auth.verify_user", new_callable=AsyncMock)
-    def test_login_bad_credentials(self, mock_verify):
+    @patch("api.routes.auth.login.bcrypt.checkpw")
+    def test_login_bad_credentials(self, mock_checkpw, mock_verify):
         mock_verify.return_value = None
         r = client.post("/api/auth/login", json={"username": "u", "password": "wrong"})
         assert r.status_code == 401
+        mock_checkpw.assert_called_once()
 
     @patch("api.routes.auth.get_user_by_id", new_callable=AsyncMock)
     @patch("api.routes.auth.reset_user_daily_calculations", new_callable=AsyncMock)
@@ -393,9 +395,7 @@ class TestAuth:
         )
         assert r.status_code == 400
         body = r.json()
-        assert body["detail"] == "该用户名不可用"
-        assert "已存在" not in body["detail"]
-        assert "占用" not in body["detail"]
+        assert body["detail"] == "用户名或密码错误"
 
     @patch("api.routes.auth.update_user_password", new_callable=AsyncMock)
     @patch("api.routes.auth.get_user_by_id", new_callable=AsyncMock)
@@ -442,28 +442,20 @@ class TestAuth:
         assert r.status_code == 401
         assert r.json()["detail"] == "认证已失效"
 
-    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
-    def test_check_username_available(self, mock_find):
-        mock_find.return_value = None
+    def test_check_username_available(self):
         r = client.get("/api/auth/check-username", params={"username": "newuser"})
         assert r.status_code == 200
-        assert r.json() == {"available": True, "reason": None}
+        assert r.json() == {"available": True}
 
-    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
-    def test_check_username_taken(self, mock_find):
-        mock_find.return_value = {"id": 1, "username": "taken"}
+    def test_check_username_taken(self):
         r = client.get("/api/auth/check-username", params={"username": "taken"})
         assert r.status_code == 200
-        body = r.json()
-        assert body["available"] is False
-        assert "占用" in body["reason"]
+        assert r.json() == {"available": True}
 
     def test_check_username_invalid_format(self):
         r = client.get("/api/auth/check-username", params={"username": "ab"})
         assert r.status_code == 200
-        body = r.json()
-        assert body["available"] is False
-        assert body["reason"] is not None
+        assert r.json() == {"available": True}
 
     def test_security_questions_endpoint_returns_preset_list(self):
         r = client.get("/api/auth/security-questions")
@@ -480,15 +472,11 @@ class TestAuth:
             params={"username": "bad name!"},
         )
         assert r.status_code == 200
-        body = r.json()
-        assert body["available"] is False
-        assert body["reason"] is not None
+        assert r.json() == {"available": True}
 
-    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
-    def test_check_username_rate_limit_single_ip_returns_429(self, mock_find):
-        mock_find.return_value = None
+    def test_check_username_rate_limit_single_ip_returns_429(self):
         headers = {"X-Forwarded-For": "203.0.113.10"}
-        for _ in range(10):
+        for _ in range(5):
             response = client.get(
                 "/api/auth/check-username",
                 params={"username": "newuser"},
@@ -504,13 +492,11 @@ class TestAuth:
         assert response.status_code == 429
         assert response.json()["detail"] == "请求过于频繁，请稍后再试"
 
-    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
-    def test_check_username_rate_limit_different_ips_independent(self, mock_find):
-        mock_find.return_value = None
+    def test_check_username_rate_limit_different_ips_independent(self):
         ip1_headers = {"X-Forwarded-For": "203.0.113.11"}
         ip2_headers = {"X-Forwarded-For": "203.0.113.12"}
 
-        for _ in range(10):
+        for _ in range(5):
             response = client.get(
                 "/api/auth/check-username",
                 params={"username": "newuser"},
@@ -539,20 +525,17 @@ class TestAuth:
         )
         assert response.status_code == 200
 
-    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
     def test_check_username_rate_limit_window_resets_after_60_seconds(
         self,
-        mock_find,
     ):
-        mock_find.return_value = None
         headers = {"X-Forwarded-For": "203.0.113.13"}
         fake_time = MagicMock()
-        fake_time.time.side_effect = [1000.0] * 10 + [1061.0]
+        fake_time.time.side_effect = [1000.0] * 5 + [1061.0]
         with patch(
             "api.middleware.username_check_limiter.time",
             fake_time,
         ):
-            for _ in range(10):
+            for _ in range(5):
                 response = client.get(
                     "/api/auth/check-username",
                     params={"username": "newuser"},
@@ -568,11 +551,9 @@ class TestAuth:
             assert response.status_code == 200
 
     @patch("api.routes.auth.logger.warning")
-    @patch("api.routes.auth.find_by_username", new_callable=AsyncMock)
-    def test_check_username_rate_limit_logs_warning(self, mock_find, mock_warning):
-        mock_find.return_value = None
+    def test_check_username_rate_limit_logs_warning(self, mock_warning):
         headers = {"X-Forwarded-For": "203.0.113.14"}
-        for _ in range(10):
+        for _ in range(5):
             response = client.get(
                 "/api/auth/check-username",
                 params={"username": "newuser"},
@@ -903,11 +884,26 @@ class TestAdmin:
     @patch("api.routes.admin.db_admin.reset_user_password", new_callable=AsyncMock)
     def test_reset_password(self, mock_reset):
         mock_reset.return_value = "new_pass_123"
-        r = client.post(
-            "/api/admin/users/2/reset-password",
-            headers={"Authorization": "Bearer faketoken"},
-        )
-        assert r.status_code == 200
+        mock_user = MagicMock()
+        mock_user.id = 2
+        mock_user.username = "u2"
+        mock_user.role = "user"
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = mock_user
+
+        async def override_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            r = client.post(
+                "/api/admin/users/2/reset-password",
+                headers={"Authorization": "Bearer faketoken"},
+            )
+            assert r.status_code == 200
+        finally:
+            del app.dependency_overrides[get_db]
 
     @patch("api.routes.admin.db_admin.delete_user_admin", new_callable=AsyncMock)
     def test_delete_admin_user(self, mock_del):

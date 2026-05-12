@@ -1,7 +1,8 @@
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+import jwt
+from sqlalchemy import delete, select, text
 
 from database import AsyncSessionLocal
 from models.password_reset_token import PasswordResetToken
@@ -52,7 +53,19 @@ async def validate_and_consume_reset_token(
     except TokenExpiredError:
         return False, None, "expired"
     except TokenInvalidError:
-        return False, None, "invalid"
+        try:
+            payload = jwt.decode(
+                token,
+                options={
+                    "verify_signature": False,
+                    "verify_exp": False,
+                    "verify_aud": False,
+                },
+            )
+        except jwt.InvalidTokenError:
+            return False, None, "invalid"
+        if payload.get("purpose") != _RESET_PURPOSE:
+            return False, None, "invalid"
 
     if payload.get("purpose") != _RESET_PURPOSE:
         return False, None, "invalid"
@@ -64,23 +77,34 @@ async def validate_and_consume_reset_token(
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(PasswordResetToken)
-            .where(PasswordResetToken.jti == jti)
-            .with_for_update()
+            text(
+                """
+                UPDATE password_reset_tokens
+                SET used_at = NOW()
+                WHERE jti = :jti
+                  AND used_at IS NULL
+                  AND created_at + (:ttl_seconds * INTERVAL '1 second') > NOW()
+                RETURNING jti, user_id
+                """
+            ),
+            {"jti": jti, "ttl_seconds": int(_RESET_TTL.total_seconds())},
         )
-        token_row = result.scalar_one_or_none()
+        row = result.mappings().one_or_none()
+        if row is not None and row["user_id"] == user_id:
+            await session.commit()
+            return True, user_id, "ok"
+
+        existing = await session.execute(
+            select(PasswordResetToken.user_id, PasswordResetToken.used_at)
+            .where(PasswordResetToken.jti == jti)
+        )
+        token_row = existing.one_or_none()
+        await session.rollback()
         if token_row is None or token_row.user_id != user_id:
-            await session.rollback()
             return False, None, "invalid"
         if token_row.used_at is not None:
-            await session.rollback()
             return False, None, "used"
-
-        # P4: Py3.12 deprecates datetime.utcnow(); use tz-aware UTC then strip
-        # tzinfo because PasswordResetToken.used_at is naive DateTime in DB.
-        token_row.used_at = datetime.now(UTC).replace(tzinfo=None)
-        await session.commit()
-        return True, user_id, "ok"
+        return False, None, "expired"
 
 
 async def purge_user_reset_tokens(user_id: int) -> int:

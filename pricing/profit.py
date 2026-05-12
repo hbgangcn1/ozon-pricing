@@ -3,13 +3,19 @@ from typing import Optional, Tuple
 
 
 def _get_profit_rates(product):
-    target_margin = product.get("target_profit_margin", Decimal("0.2"))
-    promotion_rate = product.get("promotion_cost_rate", Decimal("0"))
-    commission_rate = product.get("commission_rate", Decimal("0.08"))
-    withdrawal_rate = product.get("withdrawal_fee_rate", Decimal("0.02"))
-    payment_rate = product.get("payment_processing_fee", Decimal("0"))
-    return_rate = product.get("return_rate", Decimal("0"))
-    vat_rate = product.get("vat_rate", Decimal("0"))
+    target_margin = _to_decimal(product.get("target_profit_margin", Decimal("0.2")))
+    promotion_rate = _to_decimal(
+        product.get("promotion_cost_rate", Decimal("0"))
+    )
+    commission_rate = _to_decimal(product.get("commission_rate", Decimal("0.08")))
+    withdrawal_rate = _to_decimal(
+        product.get("withdrawal_fee_rate", Decimal("0.02"))
+    )
+    payment_rate = _to_decimal(
+        product.get("payment_processing_fee", Decimal("0"))
+    )
+    return_rate = _to_decimal(product.get("return_rate", Decimal("0")))
+    vat_rate = _to_decimal(product.get("vat_rate", Decimal("0")))
     if target_margin >= 1:
         target_margin /= 100
     if promotion_rate >= 1:
@@ -31,6 +37,12 @@ def _get_profit_rates(product):
         return_rate,
         vat_rate,
     )
+
+
+def _to_decimal(value):
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
 
 
 def _append_profit_debug(
@@ -98,6 +110,26 @@ def _append_profit_debug(
     debug_list.append(f"  利润率差异: {profit_margin - target_margin * 100:+.2f}%")
 
 
+def _pricing_mode_has_numerator_commission(pricing_mode: Optional[str]) -> bool:
+    if pricing_mode is None:
+        return False
+    modes = {part.strip() for part in pricing_mode.split(",")}
+    allowed_modes = {
+        "代理费在分子中",
+        "代理费在分母中",
+        "收单费在分子中",
+        "收单费在分母中",
+    }
+    unknown_modes = modes - allowed_modes
+    if unknown_modes:
+        raise ValueError(f"未知定价模式: {pricing_mode}")
+    if "代理费在分子中" in modes:
+        return True
+    if "代理费在分母中" in modes:
+        return False
+    return False
+
+
 def calc_profit(
     price: Decimal,
     cost: Decimal,
@@ -131,7 +163,7 @@ def calc_profit(
     revenue_deductions = (
         promotion_rate + commission_rate + withdrawal_rate + return_rate + vat_rate
     )
-    if "代理费在分子中" in (pricing_mode or ""):
+    if _pricing_mode_has_numerator_commission(pricing_mode):
         total_cost += commission_fee
     else:
         revenue_deductions += Decimal("0.02")

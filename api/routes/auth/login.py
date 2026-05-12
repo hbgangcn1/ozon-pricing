@@ -2,6 +2,7 @@ import re
 import time
 from typing import cast
 
+import bcrypt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,11 @@ from .helpers import (
 )
 
 
+_DUMMY_HASH = bcrypt.hashpw(b"dummy_password_for_timing", bcrypt.gensalt())
+
+username_check_limiter.max_requests = 5
+
+
 @router.post("/login")
 async def login(
     credentials: UserLogin,
@@ -42,6 +48,7 @@ async def login(
 
     user = await auth.verify_user(session, credentials.username, credentials.password)
     if not user:
+        bcrypt.checkpw(credentials.password.encode("utf-8"), _DUMMY_HASH)
         login_limiter.record_attempt(client_ip)
         logger.warning(
             "auth.login.failed username=%s ip=%s",
@@ -60,7 +67,8 @@ async def login(
         user["username"],
         client_ip,
     )
-    await auth.reset_user_daily_calculations(session, user["id"])
+    if await auth.reset_user_daily_calculations(session, user["id"]):
+        await session.commit()
     refreshed_user = await auth.get_user_by_id(session, user["id"])
     access_token, refresh_token = await issue_auth_tokens(
         session=session,
@@ -101,7 +109,6 @@ async def check_username(
 ):
     # 不抛 4xx：前端 axios 拦截器会把 4xx 当全局错误，破坏注册表单的 inline 提示
     client_ip = get_username_check_client_ip(request)
-    auth = auth_module()
     try:
         username_check_limiter.check(client_ip)
     except HTTPException as exc:
@@ -114,12 +121,8 @@ async def check_username(
             )
         raise
 
-    if not re.match(r"^[a-zA-Z0-9_]{3,50}$", username):
-        return {"available": False, "reason": "用户名只能包含字母、数字和下划线，长度3-50位"}
-    existing = await auth.find_by_username(session, username)
-    if existing:
-        return {"available": False, "reason": "用户名已被占用"}
-    return {"available": True, "reason": None}
+    re.match(r"^[a-zA-Z0-9_]{3,50}$", username)
+    return {"available": True}
 
 
 @router.get("/security-questions")
@@ -159,7 +162,7 @@ async def register(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="该用户名不可用",
+            detail="用户名或密码错误",
         )
 
     user_id = await auth.create_user(

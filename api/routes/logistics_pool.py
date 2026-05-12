@@ -146,10 +146,13 @@ async def import_logistics_pool(
                 max_import_rows=_MAX_IMPORT_ROWS,
             )
         except ValueError as exc:
-            logger.warning("物流池导入解析失败: %s", exc)
+            logger.exception("物流池导入解析失败")
             detail = str(exc)
             if "导入行数不能超过" in detail:
-                raise HTTPException(status_code=413, detail=detail) from exc
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"导入行数不能超过 {_MAX_IMPORT_ROWS} 行",
+                ) from exc
             raise HTTPException(
                 status_code=400,
                 detail="上传文件格式有误，请检查后重试",

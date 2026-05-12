@@ -33,8 +33,14 @@ class WechatResponseSignatureError(PlatformSignatureError):
     """Outbound WeChat API response signature verification failed."""
 
 
+class WeChatPayError(Exception):
+    """WeChat Pay processing failed."""
+
+
 class WeChatPayV3API:
     """微信支付v3 API类。"""
+
+    NOTIFY_NONCE_TTL_SECONDS = 600
 
     def __init__(self, config=None):
         self.config = config or wechat_config
@@ -161,6 +167,27 @@ class WeChatPayV3API:
             )
         except Exception as exc:
             raise SignatureVerificationError("平台签名验证失败") from exc
+
+    def _is_notify_nonce_replay(self, nonce: str) -> bool:
+        """使用 Redis 原子占位检测回调 nonce 重放；Redis 不可用时 fail-open。"""
+        try:
+            from redis_cache import get_redis_client
+
+            client = get_redis_client()
+            if client is None:
+                logger.warning("Redis不可用，跳过微信回调nonce重放检查")
+                return False
+            key = f"wxpay:nonce:{nonce}"
+            stored = client.set(
+                key,
+                "1",
+                ex=self.NOTIFY_NONCE_TTL_SECONDS,
+                nx=True,
+            )
+            return not bool(stored)
+        except Exception:
+            logger.warning("微信回调nonce重放检查异常，按fail-open放行", exc_info=True)
+            return False
 
     def _parse_verified_response(
         self,
@@ -314,33 +341,36 @@ class WeChatPayV3API:
             logger.warning("解密回调数据失败", exc_info=True)
             return {}
 
-    def process_notify(
-        self, headers: Dict[str, Any], body: bytes
-    ) -> tuple[dict | None, bool]:
+    def process_notify(self, headers: Dict[str, Any], body: bytes) -> dict | None:
         """处理微信支付回调通知。
 
         Returns:
-            (payload, verified):
-            - payload: 解析并解密后的通知数据；失败时为 None
-            - verified: 平台签名是否验证通过
+            payload: 解析并解密后的通知数据；非成功事件或重放通知时为 None。
         """
         try:
             self.verify_platform_signature(headers, body)
         except SignatureVerificationError as exc:
             logger.warning("【安全告警】支付回调签名验证失败: %s", exc, exc_info=True)
-            return None, False
+            raise WeChatPayError("signature verification failed") from exc
+
+        nonce = self._extract_header(headers, "Wechatpay-Nonce")
+        if self._is_notify_nonce_replay(nonce):
+            logger.warning("【安全告警】微信支付回调nonce重放: %s", nonce)
+            return None
 
         try:
             notify_data = json.loads(body.decode("utf-8"))
             if notify_data.get("event_type") != "TRANSACTION.SUCCESS":
-                return None, True
+                return None
             decrypted_data = self._decrypt_resource(notify_data.get("resource", {}))
             if not decrypted_data:
-                return None, False
-            return decrypted_data, True
+                raise WeChatPayError("notify resource decryption failed")
+            return decrypted_data
         except Exception as exc:
+            if isinstance(exc, WeChatPayError):
+                raise
             logger.warning("处理支付通知失败: %s", exc, exc_info=True)
-            return None, False
+            raise WeChatPayError("notify processing failed") from exc
 
     def verify_notify_signature_with_public_key(
         self, timestamp: str, nonce: str, body: str, signature: str, serial: str = ""

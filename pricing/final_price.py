@@ -1,6 +1,8 @@
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Tuple
 
+from ._constants import CONVERGENCE_THRESHOLD, RUB_CENT
+
 
 def calc_final_commission(
     cost_input: Decimal,
@@ -56,6 +58,9 @@ def calc_final_commission(
         new_commission_rub = max(
             Decimal("15"),
             min(Decimal("200"), price_rub * Decimal("0.02")),
+        ).quantize(
+            RUB_CENT,
+            rounding=ROUND_HALF_UP,
         )
         new_commission_fee = new_commission_rub * rate_input
         if payment_rate_input > 0:
@@ -65,7 +70,7 @@ def calc_final_commission(
                 payment_fee_fixed = Decimal("10") * rate_input
             else:
                 use_fixed_payment = False
-        if abs(new_commission_fee - commission_fee) < Decimal("0.01"):
+        if abs(new_commission_fee - commission_fee) < CONVERGENCE_THRESHOLD:
             break
         commission_fee = new_commission_fee
 
@@ -82,13 +87,23 @@ def calc_final_commission(
 
 
 def _get_final_rates(product):
-    final_target_margin = product.get("target_profit_margin", Decimal("0.2"))
-    final_promotion_rate = product.get("promotion_cost_rate", Decimal("0"))
-    final_commission_rate = product.get("commission_rate", Decimal("0.08"))
-    final_withdrawal_rate = product.get("withdrawal_fee_rate", Decimal("0.02"))
-    final_payment_rate = product.get("payment_processing_fee", Decimal("0"))
-    final_return_rate = product.get("return_rate", Decimal("0"))
-    final_vat_rate = product.get("vat_rate", Decimal("0"))
+    final_target_margin = _to_decimal(
+        product.get("target_profit_margin", Decimal("0.2"))
+    )
+    final_promotion_rate = _to_decimal(
+        product.get("promotion_cost_rate", Decimal("0"))
+    )
+    final_commission_rate = _to_decimal(
+        product.get("commission_rate", Decimal("0.08"))
+    )
+    final_withdrawal_rate = _to_decimal(
+        product.get("withdrawal_fee_rate", Decimal("0.02"))
+    )
+    final_payment_rate = _to_decimal(
+        product.get("payment_processing_fee", Decimal("0"))
+    )
+    final_return_rate = _to_decimal(product.get("return_rate", Decimal("0")))
+    final_vat_rate = _to_decimal(product.get("vat_rate", Decimal("0")))
     if final_target_margin >= 1:
         final_target_margin /= 100
     if final_promotion_rate >= 1:
@@ -114,6 +129,12 @@ def _get_final_rates(product):
     )
 
 
+def _to_decimal(value):
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
 def _append_final_price_debug(
     debug_list,
     actual_commission,
@@ -136,7 +157,7 @@ def _append_final_price_debug(
 ):
     debug_list.append(f"代理费判断: actual_commission={actual_commission:.15f}")
     rounded_commission = actual_commission.quantize(
-        Decimal("0.01"),
+        RUB_CENT,
         rounding=ROUND_HALF_UP,
     )
     debug_list.append(f"  四舍五入后: {rounded_commission}")
@@ -215,7 +236,7 @@ def _calc_numerator_denom(
     rate,
 ):
     actual_commission_rounded = actual_commission.quantize(
-        Decimal("0.01"),
+        RUB_CENT,
         rounding=ROUND_HALF_UP,
     )
     commission_in_num = actual_commission_rounded <= Decimal(
@@ -382,6 +403,9 @@ def compute_final_price(
     final_actual_commission = max(
         Decimal("15"),
         min(Decimal("200"), final_price_rub * Decimal("0.02")),
+    ).quantize(
+        RUB_CENT,
+        rounding=ROUND_HALF_UP,
     )
     final_actual_payment_rub, final_fixed_payment = _calc_final_payment(
         final_price_rub, final_payment_rate

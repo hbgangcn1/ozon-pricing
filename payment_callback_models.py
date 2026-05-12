@@ -8,12 +8,14 @@ payment_callback_enhanced 仍作为统一导入入口（re-export）。
 
 import logging
 import logging.handlers
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 
 # 告警日志使用 RotatingFileHandler 防止无限增长
-_alert_logger = logging.getLogger("payment_alerts")
+alert_logger: logging.Logger = logging.getLogger("payment_alerts")
+_alert_logger: logging.Logger = alert_logger
 _alert_handler = logging.handlers.RotatingFileHandler(
     "payment_alerts.log",
     maxBytes=5 * 1024 * 1024,
@@ -37,6 +39,7 @@ class PaymentRetryRecord:
     next_retry_time: float
     error_message: Optional[str] = None
     max_retries: int = 5
+    enqueued_at: float = field(default_factory=time.time)
 
 
 @dataclass

@@ -195,9 +195,11 @@ def test_is_database_connectable_unexpected_exception_returns_false(backup_syste
 
 def test_run_pg_dump_builds_command_with_options(backup_system):
     run_mock = MagicMock(return_value=MagicMock(returncode=0, stdout="ok", stderr=""))
+    pgpass_mock = MagicMock(return_value="C:/temp/pgpassfile")
 
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr(service_module.subprocess, "run", run_mock)
+        monkeypatch.setattr(backup_system, "_build_pgpass_file", pgpass_mock)
         backup_system._run_pg_dump("target.dump")
 
     args = run_mock.call_args.kwargs
@@ -217,10 +219,11 @@ def test_run_pg_dump_builds_command_with_options(backup_system):
         "--role=test_role",
         "db-name",
     ]
-    assert args["env"]["PGPASSWORD"] == "db-pass"
+    assert args["env"]["PGPASSFILE"] == "C:/temp/pgpassfile"
     assert args["check"] is True
     assert args["capture_output"] is True
     assert args["text"] is True
+    pgpass_mock.assert_called_once_with()
 
 
 def test_create_backup_success_cleans_old_files(backup_system, tmp_path):

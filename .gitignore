@@ -216,3 +216,20 @@ wave*.pid
 frontend/wave*.txt
 frontend/wave*.err.txt
 frontend/wave*.pid
+
+
+# Test artifacts (pytest/vitest/playwright/flake8 output logs)
+pytest_*.txt
+pytest_*.err.txt
+pytest_*.log
+vitest_*.txt
+vitest_*.log
+vitest_*.err.log
+playwright_*.txt
+playwright_*.log
+playwright_*.err.log
+flake8_*.txt
+backend.log
+backend.err.log
+frontend.log
+frontend.err.log

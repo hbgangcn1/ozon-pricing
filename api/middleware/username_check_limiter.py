@@ -42,4 +42,4 @@ class UsernameCheckRateLimiter:
             del self.attempts[key]
 
 
-username_check_limiter = UsernameCheckRateLimiter()
+username_check_limiter = UsernameCheckRateLimiter(max_requests=5)

@@ -328,14 +328,15 @@ class TestFunnelSourceTagging:
         )
 
         session = _mock_session()
-        row = MagicMock()
-        row.id = 1
-        row.user_id = 1
-        row.amount = 2990
-        row.description = "效率版月套餐"
-        row.duration = "month"
+        row = _make_order(
+            order_id="ord_wx_001",
+            user_id=1,
+            amount=2990,
+            description="效率版月套餐",
+            duration="month",
+        )
         result = MagicMock()
-        result.first.return_value = row
+        result.scalar_one_or_none.return_value = row
         session.execute.return_value = result
         session.get.return_value = _make_user()
 
@@ -360,12 +361,10 @@ class TestFunnelSourceTagging:
         import payment_handler
 
         src = inspect.getsource(payment_handler)
-        assert 'source="wechat_pay_legacy"' in src or \
-            "source='wechat_pay_legacy'" in src, \
-            "payment_handler.py must funnel through apply_paid_subscription " \
-            "with source='wechat_pay_legacy'"
-        assert "apply_paid_subscription" in src, \
-            "payment_handler.py must use apply_paid_subscription funnel"
+        assert "PaymentService" in src, \
+            "payment_handler.py must route legacy calls through PaymentService"
+        assert "with_for_update" not in src, \
+            "payment_handler.py must not keep a separate lock-based path"
 
 
 class TestApplyPaidSubscriptionDirect:

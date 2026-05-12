@@ -1,15 +1,19 @@
+import os
 from datetime import timedelta
 
 import pytest
+import jwt
 
 from sqlalchemy import select
 
 from models.password_reset_token import PasswordResetToken
 from security.tokens import (
+    ALGORITHM,
+    AUDIENCE,
+    ISSUER,
     TokenInvalidError,
     create_access_token,
     decode_access_token,
-    decode_password_reset_token,
 )
 from services.password_reset_service import (
     create_reset_token,
@@ -18,9 +22,19 @@ from services.password_reset_service import (
 )
 
 
+def _decode_reset_token(token: str) -> dict:
+    return jwt.decode(
+        token,
+        os.environ["JWT_SECRET_KEY"],
+        algorithms=[ALGORITHM],
+        audience=AUDIENCE,
+        issuer=ISSUER,
+    )
+
+
 async def test_create_reset_token_success(db_session, test_user):
     token = await create_reset_token(test_user["id"])
-    payload = decode_password_reset_token(token)
+    payload = _decode_reset_token(token)
 
     result = await db_session.execute(
         select(PasswordResetToken).where(PasswordResetToken.jti == payload["jti"])
@@ -34,7 +48,7 @@ async def test_create_reset_token_success(db_session, test_user):
 
 async def test_validate_and_consume_reset_token_marks_used(db_session, test_user):
     token = await create_reset_token(test_user["id"])
-    payload = decode_password_reset_token(token)
+    payload = _decode_reset_token(token)
 
     ok, user_id, reason = await validate_and_consume_reset_token(token)
     db_session.expire_all()
@@ -81,8 +95,8 @@ async def test_validate_and_consume_reset_token_rejects_wrong_purpose(test_user)
 async def test_purge_user_reset_tokens_returns_deleted_count(db_session, test_user):
     first_token = await create_reset_token(test_user["id"])
     second_token = await create_reset_token(test_user["id"])
-    first = decode_password_reset_token(first_token)
-    second = decode_password_reset_token(second_token)
+    first = _decode_reset_token(first_token)
+    second = _decode_reset_token(second_token)
     await validate_and_consume_reset_token(first_token)
 
     deleted = await purge_user_reset_tokens(test_user["id"])

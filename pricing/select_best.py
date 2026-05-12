@@ -1,6 +1,8 @@
 from decimal import Decimal
 from typing import List, Optional, Tuple
 
+PRIORITY_GROUPS = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
+
 
 def _speed_key(candidate):
     log = candidate[0]
@@ -9,7 +11,7 @@ def _speed_key(candidate):
     candidate_min_days = log.get("min_days") or 0
     candidate_max_days = log.get("max_days") or 0
     candidate_avg_time = (candidate_min_days + candidate_max_days) / 2
-    group_priority = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}.get(priority_group, 4)
+    group_priority = PRIORITY_GROUPS.get(priority_group, 4)
     return group_priority, cost, candidate_avg_time
 
 
@@ -20,7 +22,7 @@ def _price_key(candidate):
     candidate_min_days = log.get("min_days") or 0
     candidate_max_days = log.get("max_days") or 0
     candidate_avg_time = (candidate_min_days + candidate_max_days) / 2
-    group_priority = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}.get(priority_group, 4)
+    group_priority = PRIORITY_GROUPS.get(priority_group, 4)
     return cost, group_priority, candidate_avg_time
 
 

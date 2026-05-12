@@ -19,11 +19,17 @@ def _decode_features(raw) -> list[str]:
     return []
 
 
+def _text_or_empty(value) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
 def _plan_to_dict(plan: Plan) -> dict:
     return {
         "id": plan.id,
-        "plan_code": plan.plan_code,
-        "plan_name": plan.plan_name,
+        "plan_code": _text_or_empty(plan.plan_code),
+        "plan_name": _text_or_empty(plan.plan_name),
         "display_price_month": plan.display_price_month,
         "display_price_year": plan.display_price_year,
         "actual_price_month": plan.actual_price_month,
@@ -32,7 +38,7 @@ def _plan_to_dict(plan: Plan) -> dict:
         "test_price_year": plan.test_price_year,
         "calc_limit": plan.calc_limit,
         "logistics_limit": plan.logistics_limit,
-        "description": plan.description,
+        "description": _text_or_empty(plan.description),
         "features": _decode_features(plan.features),
         "is_active": plan.is_active,
         "sort_order": plan.sort_order,

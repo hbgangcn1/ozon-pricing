@@ -1,13 +1,22 @@
 from decimal import Decimal
 from typing import Tuple
 
+from ._constants import CONVERGENCE_THRESHOLD
+
 __all__ = ["calc_floating_price", "_get_filter_rates"]
 
 
 def _normalize_rate(value):
+    value = _to_decimal(value)
     if value >= 1:
         return value / 100
     return value
+
+
+def _to_decimal(value):
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
 
 
 def calc_floating_price(
@@ -70,7 +79,7 @@ def calc_floating_price(
                 payment_fee_fixed = Decimal("10") * rate_input
             else:
                 use_fixed_payment = False
-        if abs(new_commission_fee - commission_fee) < Decimal("0.001"):
+        if abs(new_commission_fee - commission_fee) < CONVERGENCE_THRESHOLD:
             break
         commission_fee = new_commission_fee
 

@@ -80,12 +80,16 @@ async def test_invalid_signature_writes_audit_log_with_verified_false(
     db_session,
     audit_client,
 ):
-    """签名失败：process_notify 返回 (None, False)，必须写一行 verified=False
+    """签名失败：process_notify 抛 WeChatPayError，必须写一行 verified=False
     审计日志，response_code=SUCCESS（阻止微信重试风暴），raw_body 持久化，
     out_trade_no/transaction_id 从 raw body 解析提取。
     """
     client, mock_svc = audit_client
-    mock_wechat.process_notify.return_value = (None, False)
+    import wechat_pay_v3_api
+
+    mock_wechat.process_notify.side_effect = wechat_pay_v3_api.WeChatPayError(
+        "signature verification failed"
+    )
     body = {
         "event_type": "TRANSACTION.SUCCESS",
         "out_trade_no": "audit_bad_sig_ord_001",
@@ -134,7 +138,7 @@ async def test_valid_signature_writes_audit_log_with_verified_true(
     db_session,
     audit_client,
 ):
-    """签名成功：process_notify 返回 (payload, True)，必须写一行 verified=True
+    """签名成功：process_notify 返回 payload，必须写一行 verified=True
     审计日志，response_code=SUCCESS，raw_body 持久化，标识符提取正确。
     """
     client, mock_svc = audit_client
@@ -145,7 +149,7 @@ async def test_valid_signature_writes_audit_log_with_verified_true(
         "appid": "wx_app",
         "mchid": "wx_mch",
     }
-    mock_wechat.process_notify.return_value = (payload, True)
+    mock_wechat.process_notify.return_value = payload
     body = {
         "event_type": "TRANSACTION.SUCCESS",
         "resource": {"ciphertext": "encrypted_payload"},

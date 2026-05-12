@@ -362,7 +362,7 @@ class TestPaymentNotify:
             "appid": "wx_app",
             "mchid": "wx_mch",
         }
-        mock_wechat.process_notify.return_value = payload, True
+        mock_wechat.process_notify.return_value = payload
         body = {
             "event_type": "TRANSACTION.SUCCESS",
             "resource": {"ciphertext": "encrypted"},
@@ -404,7 +404,11 @@ class TestPaymentNotify:
         _setup_overrides,
     ):
         mock_session, mock_svc = _setup_overrides
-        mock_wechat.process_notify.return_value = None, False
+        import wechat_pay_v3_api
+
+        mock_wechat.process_notify.side_effect = wechat_pay_v3_api.WeChatPayError(
+            "signature verification failed"
+        )
         body = {
             "event_type": "TRANSACTION.SUCCESS",
             "out_trade_no": "test_notify_bad_sig_ord",
@@ -437,7 +441,7 @@ class TestPaymentNotify:
             "out_trade_no": "test_idemp_ord",
             "transaction_id": "wx_tx_002",
             "amount": {"total": 2990, "currency": "CNY"},
-        }, True
+        }
         body = {
             "event_type": "TRANSACTION.SUCCESS",
             "out_trade_no": "test_idemp_ord",
@@ -506,7 +510,7 @@ class TestPaymentNotify:
             "out_trade_no": "test_notify_exception_ord",
             "transaction_id": "wx_tx_003",
             "amount": {"total": 2990, "currency": "CNY"},
-        }, True
+        }
         body = {
             "event_type": "TRANSACTION.SUCCESS",
             "out_trade_no": "test_notify_exception_ord",
@@ -533,7 +537,7 @@ class TestPaymentNotify:
         _, mock_svc = _setup_overrides
         mock_wechat.process_notify.return_value = {
             "out_trade_no": "test_notify_missing_ord",
-        }, True
+        }
 
         resp = client.post(
             "/api/payments/notify",
@@ -558,7 +562,7 @@ class TestPaymentNotify:
             "out_trade_no": "test_notify_error_ord",
             "transaction_id": "wx_tx_004",
             "amount": {"total": 2990, "currency": "CNY"},
-        }, True
+        }
         body = {
             "event_type": "TRANSACTION.SUCCESS",
             "out_trade_no": "test_notify_error_ord",

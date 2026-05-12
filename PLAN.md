@@ -58,6 +58,10 @@
 | B30 | ✅ | `api/routes/logistics_pool.py`, `logger_config.py`, `tests/test_api_logistics_pool_batch_add.py`, `tests/test_logger_intercept.py`, `tests/test_routes_logistics_pool.py` | 公共物流池"全部添加到我的物流"返回 "Internal server error" — 根因: `batch_add_to_my_logistics` (line 233) 用 `session.begin_nested()` + 手动 `await savepoint.commit()`，async SQLAlchemy 触发 `AsyncContextNotStarted` 异常；同时 `logger_config.format_log` 缺 `{exception}` 模板变量导致 traceback 不落盘 — 已修复 (OpenSpec change `fix-logistics-pool-batch-add-savepoint`): (1) batch + 单条路由改用 `async with session.begin_nested():` 上下文管理器 (2) batch 加 scoped except `(IntegrityError, DataError, StatementError, DBAPIError)`，`connection_invalidated` re-raise，AttributeError 等程序错误透传到 500 (3) `format_log` 末尾追加 `\n{exception}` (4) 测试 21/21 PASS (8 batch + 1 logger + 12 routes)，curl 三场景全 PASS (用户原 9 项 bug 场景 added=9 errors=0)，Playwright manual QA 1 passed + 3 截图 (73/78/77KB) (5) 已知 pre-existing pytest-xdist asyncio race 与本 change 无关，应作为独立 change 处理 |
 | B29 | ✅ | `api/routes/statistics.py` | 统计页面 `GET /api/statistics/overview` 报 `DatetimeFieldOverflowError` — 根因: `User.created_at` 和 `User.last_login` 存储为 epoch 字符串(如"1775470954")，但 SQL 查询对其直接 `func.date()` 或 `.cast(DateTime)` 转换失败 — 已修复: (1) `new_users_today` 改为 Python 侧安全解析 (复用 `db/statistics.py._parse_user_created_at`) (2) `_last_login_expr()` 改为 `CASE WHEN ~ '^\d+$' THEN to_timestamp(::float) ELSE NULL END` 安全转换 — 测试: 1610 passed, 0 failed |
 | B31 | ✅ | `services/trial_service.py`, `frontend/src/components/TrialBanner.jsx`, `tests/test_trial_service.py`, `frontend/src/__tests__/TrialBanner.test.jsx`, `frontend/src/__tests__/AppLayout.test.jsx` | admin 账号登录后顶部错误显示"专业版试用中"TrialBanner — 根因: `get_trial_status` 仅按 `trial_expires_at > now` 判定 in_trial，admin 账户若曾领取试用或被脚本写入 trial 字段也会被判为试用中；前端 TrialBanner 也未对 admin 角色做豁免 — 已修复 (commit `0945b2ee`，dual-layer 防御): (1) `services/trial_service.py:get_trial_status` 顶部判 `user.role.lower() == 'admin'` 直接返回 inert `TrialStatus(全 False/0)`，不影响 `is_in_trial` 等其它依赖 (2) `frontend/src/components/TrialBanner.jsx` 用 `useAuthStore(s => s.isAdmin())` selector 守卫，`useEffect` 内 admin 早返跳过 polling，render admin 返 null (3) 后端测试 `_U` 加 role 字段 + 2 个 admin 测试，前端补 TrialBanner admin null 测试 + AppLayout 3 处 mock 补 `isAdmin: () => false` — 测试: 后端 trial 35/35 + 前端 vitest 393/393 (50 files) PASS，flake8 + ESLint clean，npm run build 成功，scp dist + 生产 deploy.sh 健康检查全 200 ✓ |
+| MEM-1 | ✅ | `payment_callback_enhanced.py` | 重试队列新增 90% 水位背压：超过 9000 条提前拒绝并触发告警，保留 10000 上限兜底 |
+| MEM-2 | ✅ | `postgres_backup_service.py` | 自动备份停止时线程 join 超时从 10s 提升到 30s |
+| MEM-3 | ✅ | `exchange_service_providers.py` | 共享 requests.Session 统一经 `_session_lock` 保护；所有 `session.request()`/`get()` 调用改为锁内执行 |
+| DB-6 | ✅ | `db_config.py`, `database.py` | 连接池预算与 3-worker 关系已文档化；启动时若单 worker `pool_size + max_overflow` > 30 记录 warning |
 
 ---
 
@@ -714,6 +718,22 @@ frontend/tests/
 - flake8: 0 errors
 - 前端 build: ✅
 
+### Phase 21: Pricing Decimal 正确性缺陷修复 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| 21.1 | ✅ | PP-2：`pricing/_weight.py` 计费重量返回值统一为 `Decimal`，体积重计算也改为 Decimal 链路 |
+| 21.2 | ✅ | PP-3：`pricing/grouped_pricing.py` 移除 silent clamp，分母 `<=0` 直接 `ValueError`；调用方经 `calculate_pricing`/FastAPI 全局异常路径处理业务错误 |
+| 21.3 | ✅ | PP-5/PP-12：`pricing/logistic_cost.py` 电池 Wh 计算去除 float 除法；圆柱 sides 复用 `_check_cylinder_limits` 返回值 |
+| 21.4 | ✅ | PP-9/PP-10：新增 `pricing/_constants.py`，统一收敛阈值 `Decimal("0.0001")`；佣金 RUB 按 `ROUND_HALF_UP` 量化到分 |
+| 21.5 | ✅ | PP-11/PP-13：`pricing/profit.py` 显式解析 `pricing_mode` 并拒绝未知值；`calculate_pricing.py` 错误日志增加 `exc_info=True` |
+| 21.6 | ✅ | 新增 `tests/test_pricing_correctness_bugs.py` 覆盖分母校验、RUB 量化、圆柱 sides 去重 |
+
+**验证**：
+- LSP diagnostics：所有修改的 pricing 文件 + 新测试文件 clean
+- flake8：`python -m flake8 pricing/_constants.py pricing/_weight.py pricing/grouped_pricing.py pricing/logistic_cost.py pricing/final_price.py pricing/floating_price.py pricing/profit.py pricing/calculate_pricing.py` → 0 errors
+- pytest：`python -m pytest tests/test_pricing_grouped.py tests/test_pricing_mark_used.py tests/test_pricing_overflow_filter.py tests/test_pricing_result_helpers.py tests/test_pricing_format_result.py tests/test_pricing_calculation_edges_critical.py tests/test_pricing_correctness_bugs.py -n0 --tb=short -q` → 39 passed
+
 ### Phase 21: 套餐编辑"无限"开关 UI ✅
 
 已在 Phase 18 开发周期中实现完成。`PlanManagementPage.jsx` 的 PlanEditForm 已包含 calcLimit 和 logisticsTemplate 的 Switch 无限切换（-1）+ 恢复上次数值（_prev 临时字段）+ handleSubmit 剔除临时字段。
@@ -1045,5 +1065,4 @@ Wave 3 final QA gate (full repo, post-Batch 2+3):
 - size sweep: all production source files <500L; `tests/test_api_routes.py` 880L > 800L cap is **pre-existing**, not regressed by this batch (deferred)
 
 L1 (test-only flake8) was already absorbed during prior cleanup; the cap is now 0 violations across the whole tree.
-
 

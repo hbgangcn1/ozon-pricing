@@ -4,6 +4,8 @@ from datetime import timedelta
 import pytest
 
 from security.tokens import (
+    AUDIENCE,
+    ISSUER,
     create_access_token,
     create_access_token_from_payload,
     create_refresh_token,
@@ -32,6 +34,8 @@ class TestCreateAccessToken:
         assert payload["sub"] == "42"
         assert payload["username"] == "bob"
         assert payload["role"] == "admin"
+        assert payload["iss"] == ISSUER
+        assert payload["aud"] == AUDIENCE
         assert "iat" in payload
         assert "exp" in payload
 
@@ -62,6 +66,42 @@ class TestDecodeAccessToken:
         assert payload["sub"] == "1"
         assert payload["username"] == "alice"
 
+    def test_missing_iss_raises(self):
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            {
+                "sub": "1",
+                "username": "alice",
+                "type": TOKEN_TYPE_ACCESS,
+                "iat": 1,
+                "exp": 2,
+                "aud": AUDIENCE,
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        with pytest.raises(TokenInvalidError):
+            decode_access_token(token)
+
+    def test_missing_aud_raises(self):
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            {
+                "sub": "1",
+                "username": "alice",
+                "type": TOKEN_TYPE_ACCESS,
+                "iat": 1,
+                "exp": 2,
+                "iss": ISSUER,
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        with pytest.raises(TokenInvalidError):
+            decode_access_token(token)
+
     def test_expired_token_raises(self):
         token = create_access_token(
             user_id=1,
@@ -88,7 +128,15 @@ class TestDecodeAccessToken:
     def test_wrong_secret_raises(self):
         import jwt as pyjwt
 
-        payload = {"sub": "1", "username": "alice"}
+        payload = {
+            "sub": "1",
+            "username": "alice",
+            "type": TOKEN_TYPE_ACCESS,
+            "iat": 1,
+            "exp": 2,
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+        }
         wrong_key = "wrong-secret-that-is-long-enough-for-hmac-sha256"
         token = pyjwt.encode(payload, wrong_key, algorithm=ALGORITHM)
         with pytest.raises(TokenInvalidError):
@@ -112,14 +160,34 @@ class TestGetUserIdFromToken:
     def test_missing_sub_raises(self):
         import jwt as pyjwt
 
-        token = pyjwt.encode({"username": "alice"}, SECRET_KEY, algorithm=ALGORITHM)
+        token = pyjwt.encode(
+            {
+                "username": "alice",
+                "iat": 1,
+                "exp": 9999999999,
+                "iss": ISSUER,
+                "aud": AUDIENCE,
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
         with pytest.raises(TokenInvalidError, match="sub"):
             get_user_id_from_token(token)
 
     def test_non_numeric_sub_raises(self):
         import jwt as pyjwt
 
-        token = pyjwt.encode({"sub": "not-a-number"}, SECRET_KEY, algorithm=ALGORITHM)
+        token = pyjwt.encode(
+            {
+                "sub": "not-a-number",
+                "iat": 1,
+                "exp": 9999999999,
+                "iss": ISSUER,
+                "aud": AUDIENCE,
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
         with pytest.raises(TokenInvalidError):
             get_user_id_from_token(token)
 
@@ -189,7 +257,14 @@ class TestDecodeRefreshToken:
         import jwt as pyjwt
 
         token = pyjwt.encode(
-            {"sub": "1", "type": TOKEN_TYPE_REFRESH},
+            {
+                "sub": "1",
+                "type": TOKEN_TYPE_REFRESH,
+                "iat": 1,
+                "exp": 9999999999,
+                "iss": ISSUER,
+                "aud": AUDIENCE,
+            },
             SECRET_KEY,
             algorithm=ALGORITHM,
         )
@@ -200,7 +275,15 @@ class TestDecodeRefreshToken:
         import jwt as pyjwt
 
         token = pyjwt.encode(
-            {"sub": "1", "sid": "x", "type": "other"},
+            {
+                "sub": "1",
+                "sid": "x",
+                "type": "other",
+                "iat": 1,
+                "exp": 9999999999,
+                "iss": ISSUER,
+                "aud": AUDIENCE,
+            },
             SECRET_KEY,
             algorithm=ALGORITHM,
         )

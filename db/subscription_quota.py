@@ -114,7 +114,7 @@ async def reset_user_daily_calculations(
 
         user.remaining_calculations = calc_limit
         user.last_calculations_reset_date = today
-        await session.commit()
+        await session.flush()
         return True
     except Exception:
         logger.warning("重置用户每日计算次数失败", exc_info=True)

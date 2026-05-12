@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from enhanced_exchange_service import *
+from pricing._pricing_helpers import get_wx_pay_fallback_rate
 
 # Provide fallback functions if not available
 try:
@@ -13,7 +14,7 @@ try:
 except ImportError:
 
     def get_fallback_exchange_rate():
-        return Decimal("0.0904")
+        return get_wx_pay_fallback_rate()
 
     def get_fallback_usd_rate():
         return Decimal("7.2")

@@ -172,6 +172,26 @@ class TestPaymentCallbackEnhanced:
                 assert monitor.stats["queue_full_count"] == 1
                 mock_alert.assert_called_once()
 
+    def test_add_to_retry_queue_backpressure(self, monitor):
+        from payment_callback_enhanced import PaymentRetryRecord
+
+        monitor.MAX_RETRY_QUEUE_SIZE = 1000
+        with monitor.retry_lock:
+            for i in range(901):
+                monitor.retry_queue.append(
+                    PaymentRetryRecord(
+                        order_id=f"order{i}",
+                        retry_count=0,
+                        first_attempt_time=time.time(),
+                        last_attempt_time=time.time(),
+                        next_retry_time=time.time(),
+                    )
+                )
+        with patch("payment_callback_enhanced.logger"):
+            result = monitor._add_to_retry_queue("order_backpressure", 0, "error")
+            assert result["success"] is False
+            assert "重试队列已满" in result["message"]
+
     def test_process_retry_queue_empty(self, monitor):
         with patch("payment_callback_enhanced.logger"):
             monitor.process_retry_queue()

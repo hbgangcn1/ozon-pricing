@@ -24,11 +24,12 @@ import time
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from database import AsyncSessionLocal
 from models.order import PaymentOrder
 from models.user import User
+import services.payment_service as payment_service
 from services.payment_service import (
     DuplicateWechatNotifyError,
     PaymentService,
@@ -179,3 +180,76 @@ async def test_sequential_duplicate_after_success_returns_duplicate(test_user):
     assert first == "processed", f"first call should win, got {first}"
     assert second == "duplicate", f"second call should be dedup, got {second}"
     assert third == "duplicate", f"third call should be dedup, got {third}"
+
+
+@pytest.mark.asyncio
+async def test_two_simultaneous_callbacks_only_one_grants_subscription(
+    test_user,
+    monkeypatch,
+):
+    """Regression guard for SELECT→UPDATE race: two workers, one grant."""
+    user_id = test_user["id"]
+    out_trade_no = await _seed_pending_order(user_id)
+    transaction_id = f"wx_txid_{uuid.uuid4().hex[:16]}"
+    grant_calls = 0
+
+    async def _counting_grant(session, *args, **kwargs):
+        nonlocal grant_calls
+        grant_calls += 1
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.subscription_type = "efficiency"
+        user.user_type = "efficiency"
+        user.remaining_calculations = -1
+        user.subscription_start = int(time.time())
+        return None
+
+    monkeypatch.setattr(
+        payment_service,
+        "apply_paid_subscription",
+        _counting_grant,
+    )
+
+    outcomes = await asyncio.gather(
+        _invoke_wechat_notify(out_trade_no, transaction_id),
+        _invoke_wechat_notify(out_trade_no, transaction_id),
+    )
+
+    assert sorted(outcomes) == ["duplicate", "processed"]
+    assert grant_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_already_paid_order_short_circuits_without_grant(
+    test_user,
+    monkeypatch,
+):
+    """WeChat retry after commit must ACK duplicate without re-granting."""
+    user_id = test_user["id"]
+    out_trade_no = await _seed_pending_order(user_id)
+    transaction_id = f"wx_txid_{uuid.uuid4().hex[:16]}"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(PaymentOrder)
+            .where(PaymentOrder.order_id == out_trade_no)
+            .values(
+                status="SUCCESS",
+                wechat_transaction_id=transaction_id,
+                updated_at=int(time.time()),
+            )
+        )
+        await session.commit()
+
+    async def _fail_if_called(*args, **kwargs):
+        raise AssertionError("duplicate callback must not grant subscription")
+
+    monkeypatch.setattr(
+        payment_service,
+        "apply_paid_subscription",
+        _fail_if_called,
+    )
+
+    outcome = await _invoke_wechat_notify(out_trade_no, transaction_id)
+
+    assert outcome == "duplicate"

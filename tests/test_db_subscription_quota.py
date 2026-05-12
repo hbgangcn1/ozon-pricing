@@ -5,7 +5,7 @@ the atomic decrement floor for free/monthly users, and the daily reset
 behaviour that powers the cron jobs.
 """
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from db.subscription_quota import (
     decrement_user_calculations,
@@ -215,6 +215,7 @@ async def test_reset_user_daily_skips_when_already_reset_today(
     user.remaining_calculations = 5
     user.last_calculations_reset_date = date.today().isoformat()
     await db_session.commit()
+    db_session.expire_all()
 
     ok = await reset_user_daily_calculations(db_session, uid)
 
@@ -244,3 +245,41 @@ async def test_reset_user_daily_resets_free_user_first_time_today(
         select(User.remaining_calculations).where(User.id == uid)
     )
     assert fresh.scalar_one() == 10
+
+
+@pytest.mark.asyncio
+async def test_reset_user_daily_flushes_without_commit(db_session, test_user):
+    await _seed_plan(db_session, "free", 10)
+    uid = test_user["id"]
+    await db_session.execute(
+        text(
+            """
+            UPDATE users
+            SET subscription_type = 'free',
+                remaining_calculations = 0,
+                last_calculations_reset_date = '2020-01-01'
+            WHERE id = :uid
+            """
+        ),
+        {"uid": uid},
+    )
+    await db_session.commit()
+    # Raw SQL bypasses ORM identity map; expire so the function re-reads from DB.
+    db_session.expire_all()
+
+    ok = await reset_user_daily_calculations(db_session, uid)
+
+    assert ok is True
+    in_txn_value = (
+        await db_session.execute(
+            select(User.remaining_calculations).where(User.id == uid)
+        )
+    ).scalar_one()
+    assert in_txn_value == 10
+    await db_session.rollback()
+    rolled_back = (
+        await db_session.execute(
+            select(User.remaining_calculations).where(User.id == uid)
+        )
+    ).scalar_one()
+    assert rolled_back == 0

@@ -21,7 +21,7 @@ def _session():
 def _execute_result(*, first=None, scalar=None):
     result = MagicMock()
     result.first.return_value = first
-    result.scalar_one_or_none.return_value = scalar
+    result.scalar_one_or_none.return_value = scalar if scalar is not None else first
     return result
 
 
@@ -106,6 +106,7 @@ async def test_apply_wechat_payment_success_amount_mismatch(monkeypatch):
             amount=1990,
             description="效率版月套餐",
             duration="1月",
+            status="PENDING",
         )
     )
     service = PaymentService(session)
@@ -133,6 +134,7 @@ async def test_apply_wechat_payment_success_user_missing(monkeypatch):
             amount=2990,
             description="效率版月套餐",
             duration="1月",
+            status="PENDING",
         )
     )
     session.get.return_value = None
@@ -161,12 +163,18 @@ async def test_apply_wechat_payment_success_happy_path(monkeypatch):
             amount=2990,
             description="企业版年套餐",
             duration="1年",
+            status="PENDING",
+            plan_code="enterprise",
         )
     )
     user = _user()
     session.get.return_value = user
     service = PaymentService(session)
     monkeypatch.setattr(payment_service.time, "time", lambda: 1_700_000_000)
+    monkeypatch.setattr(
+        "db.subscriptions.apply_subscription_change",
+        AsyncMock(return_value={"ok": True}),
+    )
 
     result = await service.apply_wechat_payment_success(
         out_trade_no="ord-1",
@@ -179,10 +187,8 @@ async def test_apply_wechat_payment_success_happy_path(monkeypatch):
     )
 
     assert result == "processed"
-    assert user.subscription_type == "enterprise"
     assert user.user_type == "enterprise"
     assert user.subscription_start == 1_700_000_000
-    assert user.subscription_expires == 1_700_000_000 + 365 * 86400
     assert user.remaining_calculations == -1
 
 

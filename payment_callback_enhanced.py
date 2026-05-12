@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-增强支付回调处理系统
-解决高优先级问题：支付回调处理可靠性
-"""
+"""增强支付回调处理系统。"""
 
 import asyncio
 import time
@@ -13,7 +10,7 @@ from datetime import datetime
 from payment_callback_models import (
     PaymentAlert,
     PaymentRetryRecord,
-    _alert_logger,
+    alert_logger,
 )
 
 try:
@@ -40,6 +37,7 @@ class PaymentCallbackEnhanced:
     """增强支付回调处理器"""
 
     MAX_RETRY_QUEUE_SIZE = 10000
+    RETRY_QUEUE_TTL_SECONDS = 3600
 
     def __init__(
         self,
@@ -57,11 +55,9 @@ class PaymentCallbackEnhanced:
         self.retry_interval = retry_interval
         self.check_interval = check_interval
 
-        # 重试队列（延迟重试）
         self.retry_queue: List[PaymentRetryRecord] = []
         self.retry_lock = threading.Lock()
 
-        # 统计信息
         self.stats = {
             "processed": 0,
             "failed": 0,
@@ -71,11 +67,9 @@ class PaymentCallbackEnhanced:
         }
         self.stats_lock = threading.Lock()
 
-        # 告警记录
         self.alerts: List[PaymentAlert] = []
         self.alert_lock = threading.Lock()
 
-        # 监控状态
         self.monitoring = False
         self.monitor_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -114,20 +108,28 @@ class PaymentCallbackEnhanced:
         asyncio.run(_runner())
 
     def _reject_retry_queue_entry(
-        self, order_id: str, error_message: Optional[str] = None
+        self,
+        order_id: str,
+        error_message: Optional[str] = None,
+        *,
+        alert_type: str = "queue_full",
+        alert_level: str = "critical",
+        response_message: str = "重试队列已满，订单已被拒绝",
+        log_method: str = "critical",
+        status_code: int = 503,
     ) -> Dict[str, Any]:
-        """拒绝新增重试记录并触发严重告警。"""
+        """拒绝新增重试记录并触发告警。"""
         message = (
-            f"严重告警：重试队列已达到上限 "
+            f"重试队列压力过高 "
             f"({len(self.retry_queue)}/{self.MAX_RETRY_QUEUE_SIZE})，拒绝订单 {order_id}"
         )
         with self.stats_lock:
             self.stats["queue_full_count"] += 1
 
-        logger.critical(message)
+        getattr(logger, log_method, logger.error)(message)
         self.record_alert(
-            "queue_full",
-            "critical",
+            alert_type,
+            alert_level,
             message,
             {
                 "order_id": order_id,
@@ -136,31 +138,47 @@ class PaymentCallbackEnhanced:
                 "error_message": error_message,
             },
         )
-        return {"success": False, "message": "重试队列已满，订单已被拒绝"}
+        return {
+            "success": False,
+            "message": response_message,
+            "status_code": status_code,
+        }
 
     def _add_to_retry_queue(
         self, order_id: str, retry_count: int, error_message: Optional[str] = None
     ) -> Dict[str, Any]:
         """添加订单到重试队列"""
         with self.retry_lock:
-            # 检查是否已在重试队列中
             existing = next(
                 (r for r in self.retry_queue if r.order_id == order_id), None
             )
             if existing:
                 existing.retry_count += 1
                 existing.last_attempt_time = time.time()
-                # 递增重试间隔：1s, 5s, 30s
                 retry_intervals = [1, 5, 30]
                 interval_index = min(existing.retry_count - 1, len(retry_intervals) - 1)
                 next_interval = retry_intervals[interval_index]
                 existing.next_retry_time = time.time() + next_interval
                 existing.error_message = error_message
             else:
-                if len(self.retry_queue) >= self.MAX_RETRY_QUEUE_SIZE:
-                    return self._reject_retry_queue_entry(order_id, error_message)
+                queue_size = len(self.retry_queue)
+                if queue_size >= self.MAX_RETRY_QUEUE_SIZE:
+                    return self._reject_retry_queue_entry(
+                        order_id,
+                        error_message,
+                    )
 
-                # 递增重试间隔：1s, 5s, 30s
+                if queue_size > int(self.MAX_RETRY_QUEUE_SIZE * 0.9):
+                    return self._reject_retry_queue_entry(
+                        order_id,
+                        error_message,
+                        alert_type="queue_backpressure",
+                        alert_level="warning",
+                        response_message="重试队列已满，当前繁忙，请稍后重试",
+                        log_method="error",
+                        status_code=503,
+                    )
+
                 retry_intervals = [1, 5, 30]
                 interval_index = min(retry_count, len(retry_intervals) - 1)
                 next_interval = retry_intervals[interval_index]
@@ -204,7 +222,6 @@ class PaymentCallbackEnhanced:
                 self.stats["failed"] += 1
             logger.error(f"❌ 订单处理失败: {order_id}, 错误: {e}")
 
-            # 添加到重试队列
             retry_count = self._get_retry_count(order_id)
             if retry_count < self.max_retries:
                 self._add_to_retry_queue(order_id, retry_count, str(e))
@@ -232,15 +249,21 @@ class PaymentCallbackEnhanced:
         retries_to_process = []
 
         with self.retry_lock:
-            # 找出需要重试的订单
             remaining_retries = []
             for retry_record in self.retry_queue:
+                enqueued_at = retry_record.enqueued_at or retry_record.first_attempt_time
+                if current_time - enqueued_at > self.RETRY_QUEUE_TTL_SECONDS:
+                    logger.warning(
+                        "丢弃过期支付重试记录: order_id=%s age_seconds=%.1f",
+                        retry_record.order_id,
+                        current_time - enqueued_at,
+                    )
+                    continue
                 if current_time >= retry_record.next_retry_time:
                     if retry_record.retry_count < retry_record.max_retries:
                         retries_to_process.append(retry_record)
                         remaining_retries.append(retry_record)
                     else:
-                        # 重试次数已耗尽，记录告警
                         alert_msg = f"订单 {retry_record.order_id} 重试次数已耗尽"
                         logger.critical(alert_msg)
                         self.record_alert(
@@ -257,7 +280,6 @@ class PaymentCallbackEnhanced:
 
             self.retry_queue = remaining_retries
 
-        # 处理需要重试的订单
         for retry_record in retries_to_process:
             logger.info(
                 f"重试处理订单: {retry_record.order_id}, "
@@ -265,7 +287,6 @@ class PaymentCallbackEnhanced:
             )
             success = self.process_order(retry_record.order_id)
             if success:
-                # 从重试队列中移除
                 with self.retry_lock:
                     self.retry_queue = [
                         r
@@ -340,7 +361,6 @@ class PaymentCallbackEnhanced:
                 existing_unresolved[0].stats = alert_stats
                 return
 
-            # 创建新告警
             alert = PaymentAlert(
                 timestamp=time.time(),
                 alert_type=alert_type,
@@ -350,24 +370,21 @@ class PaymentCallbackEnhanced:
             )
             self.alerts.append(alert)
 
-            # 只保留最近100条告警
             if len(self.alerts) > 100:
                 self.alerts = self.alerts[-100:]
 
-            # 记录日志
             if level == "critical":
                 logger.critical(message)
             else:
                 logger.warning(message)
 
-            # 发送告警通知
             PaymentCallbackEnhanced.send_alert_notification(alert)
 
     @staticmethod
     def send_alert_notification(alert: PaymentAlert):
         """发送告警通知"""
         try:
-            _alert_logger.info(
+            alert_logger.info(
                 "%s [%s] [%s] %s",
                 datetime.fromtimestamp(alert.timestamp).isoformat(),
                 alert.level.upper(),
@@ -379,13 +396,8 @@ class PaymentCallbackEnhanced:
 
     def check_and_monitor(self):
         """执行检查和监控"""
-        # 检查队列状态
         self.check_queue_status()
-
-        # 检查失败率
         self.check_failure_rate()
-
-        # 处理重试队列
         self.process_retry_queue()
 
         with self.stats_lock:
@@ -444,9 +456,25 @@ class PaymentCallbackEnhanced:
         """停止监控"""
         self.monitoring = False
         self._stop_event.set()
+        self._drain_retry_queue_before_stop(timeout_seconds=30)
         if self.monitor_thread:
             self.monitor_thread.join(timeout=5)
         logger.info("支付回调监控已停止")
+
+    def _drain_retry_queue_before_stop(self, timeout_seconds: float = 30.0) -> None:
+        """停止前尽量处理完内存重试队列，超时后保留剩余记录并告警。"""
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            with self.retry_lock:
+                if not self.retry_queue:
+                    return
+                retry_record = self.retry_queue.pop(0)
+            logger.info("停止监控前处理待重试订单: %s", retry_record.order_id)
+            self.process_order(retry_record.order_id)
+        with self.retry_lock:
+            pending = len(self.retry_queue)
+        if pending:
+            logger.warning("停止监控前重试队列未排空，剩余 %s 条", pending)
 
     def _monitor_loop(self):
         """监控循环"""
@@ -456,7 +484,6 @@ class PaymentCallbackEnhanced:
             except Exception as e:
                 logger.error(f"监控检查异常: {e}")
 
-            # 等待下次检查
             self._stop_event.wait(self.check_interval)
 
 

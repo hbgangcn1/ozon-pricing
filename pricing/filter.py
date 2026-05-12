@@ -2,6 +2,7 @@ import math
 import re
 from decimal import Decimal
 
+from pricing._pricing_helpers import get_wx_pay_fallback_rate
 from pricing._weight import _compute_billable_weight  # pyright: ignore[reportPrivateUsage]
 
 
@@ -126,11 +127,16 @@ def _filter_check_special(logistic, product):
                 mah = product.get("battery_capacity_mah", 0)
                 v = product.get("battery_voltage", 0)
                 if not (mah <= 0 and v <= 0):
-                    wh = mah * v / 1000.0
-                    if 0 < limit_wh < wh:
+                    wh = (
+                        Decimal(str(mah))
+                        * Decimal(str(v))
+                        / Decimal("1000")
+                    )
+                    limit_wh_dec = Decimal(str(limit_wh))
+                    if 0 < limit_wh_dec < wh:
                         return f"电池容量 {wh} Wh 超过物流限制 {limit_wh} Wh"
             else:
-                if wh > 0 and 0 < limit_wh < wh:
+                if wh > 0 and 0 < Decimal(str(limit_wh)) < Decimal(str(wh)):
                     return f"电池容量 {wh} Wh 超过物流限制 {limit_wh} Wh"
         if logistic.get("require_msds") and not product.get("has_msds"):
             return "物流要求 MSDS 但产品未提供"
@@ -159,7 +165,7 @@ def _filter_check_price_limits(logistic, product, w):
         try:
             from exchange_service import get_fallback_exchange_rate
         except ImportError:
-            rate = Decimal("0.0904")
+            rate = get_wx_pay_fallback_rate()
         else:
             raw_rate = get_fallback_exchange_rate()
             rate = raw_rate if isinstance(raw_rate, Decimal) else Decimal(str(raw_rate))

@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, ForeignKey, text
+from sqlalchemy import CheckConstraint, String, Integer, ForeignKey, text
 from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 
@@ -14,6 +14,12 @@ class TrialOverflowWindow(Base):
     """
 
     __tablename__ = "trial_overflow_window"
+    __table_args__ = (
+        CheckConstraint(
+            "close_reason IN ('', 'expired', 'upgraded', 'reselected')",
+            name="ck_trial_overflow_window_close_reason",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(

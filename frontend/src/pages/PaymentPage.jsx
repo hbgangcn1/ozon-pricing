@@ -45,6 +45,9 @@ function PaymentPage() {
   const [total, setTotal] = useState(0)
   const [refreshKey, setRefreshKey] = useState(0)
   const pageSize = 10
+  // 搜索时拉取全部订单做客户端过滤（用户级订单量小，单用户通常 < 数百条），
+  // 否则按页拉取以减少负载。无搜索 + 分页 → 后端分页；有搜索 → 全量过滤。
+  const isSearching = searchText.trim() !== ''
 
   useEffect(() => {
     const controller = new AbortController()
@@ -52,7 +55,9 @@ function PaymentPage() {
     const fetchOrders = async () => {
       setLoading(true)
       try {
-        const params = { page: currentPage, page_size: pageSize }
+        const params = isSearching
+          ? { page: 1, page_size: 1000 }
+          : { page: currentPage, page_size: pageSize }
         if (statusFilter !== 'all') params.status = statusFilter
         const data = await ordersAPI.getAll(params)
         if (!controller.signal.aborted) {
@@ -72,7 +77,7 @@ function PaymentPage() {
 
     fetchOrders()
     return () => controller.abort()
-  }, [currentPage, statusFilter, refreshKey])
+  }, [currentPage, statusFilter, refreshKey, isSearching])
 
   const filteredOrders = orders.filter(o => 
     (o.order_id || '').toLowerCase().includes(searchText.toLowerCase()) ||
@@ -121,7 +126,7 @@ function PaymentPage() {
               <Input
                 placeholder="搜索订单号或套餐"
                 value={searchText}
-                onChange={e => setSearchText(e.target.value)}
+                onChange={e => { setSearchText(e.target.value); setCurrentPage(1) }}
                 className="pl-10 w-full sm:w-64 transition-all duration-200"
               />
             </div>
@@ -206,7 +211,7 @@ function PaymentPage() {
           </div>
           
           {/* 分页 */}
-          {!loading && total > 0 && (
+          {!loading && total > 0 && !isSearching && (
             <div className="flex items-center justify-between mt-4">
               <div className="text-sm text-text-secondary">
                 共 {total} 条记录，第 {currentPage} / {totalPages} 页

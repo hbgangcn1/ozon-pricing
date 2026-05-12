@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Optional
 
-_Q4 = Decimal("0.0001")
+from ._constants import CONVERGENCE_THRESHOLD as _Q4  # noqa: F401
 
 
 def select_commission_rate_from_category(

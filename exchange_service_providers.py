@@ -91,6 +91,14 @@ class ExchangeRateProvider:
             return cls._shared_session
 
     @classmethod
+    def _session_request(cls, method: str, url: str, **kwargs):
+        http = cls._get_session()
+        if http is None:
+            return None
+        with cls._session_lock:
+            return getattr(http, method)(url, **kwargs)
+
+    @classmethod
     def close_shared_session(cls):
         with cls._session_lock:
             if cls._shared_session is not None:
@@ -128,11 +136,9 @@ class ExchangeRateAPIProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            http = self._get_session()
-            if http is None:
+            response = self._session_request("get", self.url, timeout=self.timeout)
+            if response is None:
                 return None
-
-            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -164,11 +170,9 @@ class MOEXProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            http = self._get_session()
-            if http is None:
+            response = self._session_request("get", self.url, timeout=self.timeout)
+            if response is None:
                 return None
-
-            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -208,11 +212,9 @@ class FixerIOProvider(ExchangeRateProvider):
             return None
 
         try:
-            http = self._get_session()
-            if http is None:
+            response = self._session_request("get", self.url, timeout=self.timeout)
+            if response is None:
                 return None
-
-            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -252,11 +254,9 @@ class CurrencyLayerProvider(ExchangeRateProvider):
             return None
 
         try:
-            http = self._get_session()
-            if http is None:
+            response = self._session_request("get", self.url, timeout=self.timeout)
+            if response is None:
                 return None
-
-            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -350,11 +350,9 @@ class USDExchangeRateAPIProvider(ExchangeRateProvider):
 
     def get_rate(self) -> Optional[ExchangeRateData]:
         try:
-            http = self._get_session()
-            if http is None:
+            response = self._session_request("get", self.url, timeout=self.timeout)
+            if response is None:
                 return None
-
-            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -390,11 +388,9 @@ class USDFixerIOProvider(ExchangeRateProvider):
             return None
 
         try:
-            http = self._get_session()
-            if http is None:
+            response = self._session_request("get", self.url, timeout=self.timeout)
+            if response is None:
                 return None
-
-            response = http.get(self.url, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 

@@ -1,4 +1,4 @@
-import { useState, useEffect , useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { UserPlus, Key, Trash2, RefreshCw, Search, X, User, Lock, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import { adminAPI } from '../services/api'
@@ -56,34 +56,11 @@ function UserManagementPage() {
   }
 
   useEffect(() => {
-    const controller = new AbortController()
-    const loadUsers = async () => {
-      setLoading(true)
-      try {
-        const response = await adminAPI.getUsers(1, 20, '')
-        if (!controller.signal.aborted) {
-          setUsers(response.users || [])
-          setTotal(response.total || 0)
-          setCurrentPage(response.page || 1)
-          setTotalPages(Math.ceil((response.total || 0) / 20))
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          toast.error(error.userMessage || error.response?.data?.detail || '获取用户列表失败')
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false)
-        }
-      }
-    }
-    loadUsers()
-    return () => controller.abort()
-  }, [])
-
-  const filteredUsers = useMemo(() => users.filter(u =>
-    u.username.toLowerCase().includes(searchText.toLowerCase())
-  ), [users, searchText])
+    const timer = setTimeout(() => {
+      fetchUsers(1, pageSize, searchText)
+    }, searchText === '' ? 0 : 250)
+    return () => clearTimeout(timer)
+  }, [searchText, pageSize])
 
   const handleAddUser = async (e) => {
     e.preventDefault()
@@ -357,7 +334,7 @@ function UserManagementPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.map(user => (
+              {users.map(user => (
                 <TableRow 
                   key={user.id}
                   onClick={() => setSelectedUser(user)}

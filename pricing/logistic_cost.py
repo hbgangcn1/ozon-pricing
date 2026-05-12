@@ -1,9 +1,12 @@
 import math
+import logging
 import re
 from decimal import Decimal
 from typing import List, Optional, Tuple
 
 from pricing._weight import _compute_billable_weight  # pyright: ignore[reportPrivateUsage]
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_continue_unit(continue_unit_raw):
@@ -77,9 +80,6 @@ def _get_sides(logistic, product, debug_info, is_fast_mode):
         sides = _check_cylinder_limits(logistic, product, debug_info, is_fast_mode)
         if sides is None:
             return None
-        cylinder_diameter = product.get("cylinder_diameter", 0)
-        cylinder_length = product.get("cylinder_length", 0)
-        sides = [cylinder_diameter, cylinder_diameter, cylinder_length]
     else:
         sides = [
             product.get("length_cm", 0),
@@ -160,7 +160,12 @@ def _check_special_items(logistic, product, debug_info):
                 if mah <= 0 and v <= 0:
                     debug_info.append("电池容量mAh和V都为0，跳过容量限制判断")
                 else:
-                    wh = mah * v / 1000.0
+                    wh = (
+                        Decimal(str(mah))
+                        * Decimal(str(v))
+                        / Decimal("1000")
+                    )
+                    limit_wh = Decimal(str(limit_wh))
                     debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
                     if 0 < limit_wh < wh:
                         debug_info.append("电池容量超限，返回 None")
@@ -170,7 +175,7 @@ def _check_special_items(logistic, product, debug_info):
                     debug_info.append("电池容量Wh为0，跳过容量限制判断")
                 else:
                     debug_info.append(f"电池容量: {wh}Wh, 限制: {limit_wh}Wh")
-                    if 0 < limit_wh < wh:
+                    if 0 < Decimal(str(limit_wh)) < Decimal(str(wh)):
                         debug_info.append("电池容量超限，返回 None")
                         return False
         if logistic.get("require_msds") and not product.get("has_msds"):
@@ -181,19 +186,30 @@ def _check_special_items(logistic, product, debug_info):
 
 def _calc_volume_weight(logistic, sides, actual_weight, debug_info):
     volume_mode = logistic.get("volume_mode", "none")
-    volume_coefficient = logistic.get("volume_coefficient", 5000)
+    volume_coefficient = _to_decimal(logistic.get("volume_coefficient", 5000))
+    decimal_sides = [_to_decimal(side) for side in sides]
     debug_info.append(f"体积重量模式: {volume_mode}, 系数: {volume_coefficient}")
     if volume_mode == "sum_of_sides":
-        threshold = logistic.get("sum_of_sides_threshold", 0)
-        message = "三边和超过阈值" if sum(sides) > threshold else "三边和未超过阈值"
+        threshold = _to_decimal(logistic.get("sum_of_sides_threshold", 0))
+        message = "三边和超过阈值"
+        if sum(decimal_sides) <= threshold:
+            message = "三边和未超过阈值"
         debug_info.append(message)
     elif volume_mode == "longest_side":
-        threshold = logistic.get("longest_side_threshold", 0)
-        message = "最长边超过阈值" if max(sides) > threshold else "最长边未超过阈值"
+        threshold = _to_decimal(logistic.get("longest_side_threshold", 0))
+        message = "最长边超过阈值"
+        if max(decimal_sides) <= threshold:
+            message = "最长边未超过阈值"
         debug_info.append(message)
-    volume_grams = 0.0
+    volume_grams = Decimal("0")
     if volume_coefficient > 0:
-        volume_grams = (sides[0] * sides[1] * sides[2]) / volume_coefficient * 1000
+        volume_grams = (
+            decimal_sides[0]
+            * decimal_sides[1]
+            * decimal_sides[2]
+            / volume_coefficient
+            * Decimal("1000")
+        )
     billable_weight, _label, _triggered = _compute_billable_weight(
         logistic, sides, actual_weight
     )
@@ -217,13 +233,13 @@ def _calc_fee(logistic, w, debug_info):
     if fee_mode in ("base_weight", "base_plus_continue"):
         units = math.ceil(w / continue_unit)
         base_fee_raw = logistic.get("base_fee")
-        base_fee = Decimal(str(base_fee_raw)) if base_fee_raw is not None else Decimal("0")
+        base_fee = _to_decimal(base_fee_raw) if base_fee_raw is not None else Decimal("0")
         cost = base_fee + continue_fee * units
         debug_info.append(f"基础费用: {base_fee}, 单位数: {units}, 运费: {cost}")
     else:
-        first_weight = logistic.get("first_weight_g", 0)
+        first_weight = _to_decimal(logistic.get("first_weight_g", 0))
         first_fee_raw = logistic.get("first_fee")
-        first_fee = Decimal(str(first_fee_raw)) if first_fee_raw is not None else Decimal("0")
+        first_fee = _to_decimal(first_fee_raw) if first_fee_raw is not None else Decimal("0")
         if w <= first_weight:
             cost = first_fee
             debug_info.append(f"首重费用: {first_fee}，在首重范围内")
@@ -235,6 +251,12 @@ def _calc_fee(logistic, w, debug_info):
             )
     debug_info.append(f"最终运费: {cost}")
     return cost
+
+
+def _to_decimal(value) -> Decimal:
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
 
 
 def calculate_logistic_cost(
@@ -272,7 +294,6 @@ def calculate_logistic_cost(
         if sides is None:
             return (None, debug_info)
         debug_info.append(f"三边: {sides}, 三边和: {sum(sides)}, 最长边: {max(sides)}")
-        is_fast_mode = product.get("name") == "极速模式产品"
         if is_fast_mode:
             debug_info.append("极速模式，跳过所有尺寸限制检查")
         else:
@@ -299,6 +320,7 @@ def calculate_logistic_cost(
             )
             return (None, debug_info)
     except (KeyError, TypeError, ZeroDivisionError) as e:
+        logger.warning("计算物流成本时出错", exc_info=True)
         debug_info.append(f"计算物流成本时出错: {str(e)}")
         return (None, debug_info)
     cost = _calc_fee(logistic, calculated_weight, debug_info)

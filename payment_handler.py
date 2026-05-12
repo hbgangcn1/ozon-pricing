@@ -8,10 +8,7 @@ import logging
 from typing import Dict, Any
 
 from database import AsyncSessionLocal
-from sqlalchemy import select
-from models.order import PaymentOrder
-from models.user import User
-from db.subscriptions import apply_paid_subscription
+from services.payment_service import PaymentService
 
 logger = logging.getLogger(__name__)
 
@@ -81,56 +78,22 @@ class PaymentHandler:
 
     @staticmethod
     async def handle_payment_success(order_id: str) -> None:
+        logger.warning(
+            "payment_handler.PaymentHandler is deprecated; "
+            "use services.payment_service.PaymentService instead"
+        )
         async with AsyncSessionLocal() as session:
-            try:
-                stmt = select(PaymentOrder).where(PaymentOrder.order_id == order_id).with_for_update()
-                result = await session.execute(stmt)
-                order = result.scalar_one_or_none()
-                if order is None:
-                    raise ValueError(f"订单不存在: {order_id}")
-                if order.status == "SUCCESS":
-                    logger.info(f"订单已处于SUCCESS状态，跳过: {order_id}")
-                    return
-                current_time = int(time.time())
-                order.status = "SUCCESS"
-                order.updated_at = current_time
-                plan_code = _extract_plan_code(order.description or "")
-                duration_days = _parse_duration(order.duration or "月")
-                expiry = current_time + duration_days * 86400
-                user = await session.get(User, order.user_id)
-                if user:
-                    await apply_paid_subscription(
-                        session,
-                        order.user_id,
-                        plan_code,
-                        subscription_expires=expiry,
-                        started_at=current_time,
-                        source="wechat_pay_legacy",
-                    )
-                await session.commit()
-                logger.info(f"支付成功处理完成: 订单{order_id}, 用户{order.user_id}")
-            except ValueError:
-                raise
-            except Exception as e:
-                await session.rollback()
-                logger.error(f"处理支付成功时出错: {e}")
-                raise
+            service = PaymentService(session)
+            await service.handle_payment_success(order_id)
 
     @staticmethod
     async def update_order_status(order_id: str, status: str) -> None:
+        logger.warning(
+            "payment_handler.PaymentHandler is deprecated; "
+            "use services.payment_service.PaymentService instead"
+        )
         async with AsyncSessionLocal() as session:
-            try:
-                order = (
-                    await session.execute(
-                        select(PaymentOrder).where(PaymentOrder.order_id == order_id)
-                    )
-                ).scalar_one_or_none()
-                if order:
-                    order.status = status
-                    order.updated_at = int(time.time())
-                await session.commit()
-                logger.info(f"订单状态已更新: {order_id} -> {status}")
-            except Exception as e:
-                await session.rollback()
-                logger.error(f"更新订单状态时出错: {e}")
-                raise
+            service = PaymentService(session)
+            await service.update_order_status(order_id, status)
+            await session.commit()
+            logger.info(f"订单状态已更新: {order_id} -> {status}")

@@ -27,6 +27,8 @@ def _get_jwt_secret() -> str:
 
 _secret_key_cache: Optional[str] = None
 ALGORITHM = "HS256"
+ISSUER = "cbprice-api"
+AUDIENCE = "cbprice-web"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.environ.get(
         "ACCESS_TOKEN_EXPIRE_MINUTES", os.environ.get("JWT_EXPIRE_MINUTES", "15")
@@ -87,6 +89,8 @@ def create_access_token(
         "username": username,
         "role": role,
         "type": TOKEN_TYPE_ACCESS,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
         "iat": now,
         "exp": now + expires_delta,
     }
@@ -112,6 +116,8 @@ def create_access_token_from_payload(
         "username": payload["username"],
         "role": payload["role"],
         "type": TOKEN_TYPE_ACCESS,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
         "iat": now,
         "exp": now + expires_delta,
     }
@@ -137,6 +143,8 @@ def create_refresh_token(
         "sub": str(user_id),
         "sid": sid,
         "type": TOKEN_TYPE_REFRESH,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
         "iat": now,
         "exp": now + expires_delta,
     }
@@ -146,7 +154,14 @@ def create_refresh_token(
 def decode_access_token(token: str) -> dict:
     """Raises TokenExpiredError or TokenInvalidError."""
     try:
-        payload = jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            _get_secret_key(),
+            algorithms=[ALGORITHM],
+            audience=AUDIENCE,
+            issuer=ISSUER,
+            options={"require": ["exp", "iat", "iss", "aud"]},
+        )
         # 拒绝把 refresh token 当 access token 用（防 token 类型混淆攻击）
         if payload.get("type") == TOKEN_TYPE_REFRESH:
             raise TokenInvalidError("Refresh token 不能用作 access token")
@@ -159,9 +174,10 @@ def decode_access_token(token: str) -> dict:
         raise TokenInvalidError(f"Token 无效: {e}")
 
 
-def decode_access_token_unsafe(token: str) -> dict:
-    """解码 access token，不验证 exp。用于 proactive refresh 场景。
+def _decode_access_token_unsafe_for_testing(token: str) -> dict:
+    """TESTING ONLY — NEVER call from production code.
 
+    解码 access token，不验证 exp。
     Raises TokenInvalidError。
     """
     try:
@@ -169,7 +185,9 @@ def decode_access_token_unsafe(token: str) -> dict:
             token,
             _get_secret_key(),
             algorithms=[ALGORITHM],
-            options={"verify_exp": False},
+            audience=AUDIENCE,
+            issuer=ISSUER,
+            options={"verify_exp": False, "require": ["iat", "iss", "aud"]},
         )
         if payload.get("type") == TOKEN_TYPE_REFRESH:
             raise TokenInvalidError("Refresh token 不能用作 access token")
@@ -199,7 +217,14 @@ def decode_password_reset_token(token: str) -> dict:
 def decode_refresh_token(token: str) -> dict:
     """Raises TokenExpiredError or TokenInvalidError."""
     try:
-        payload = jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            _get_secret_key(),
+            algorithms=[ALGORITHM],
+            audience=AUDIENCE,
+            issuer=ISSUER,
+            options={"require": ["exp", "iat", "iss", "aud"]},
+        )
     except jwt.ExpiredSignatureError:
         raise TokenExpiredError("Refresh token 已过期")
     except jwt.InvalidTokenError as e:

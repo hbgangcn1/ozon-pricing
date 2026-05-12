@@ -9,7 +9,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from models.password_reset_token import PasswordResetToken
 from security.tokens import create_access_token
@@ -67,6 +67,65 @@ async def test_validate_used_token_returns_used(test_user):
     assert ok is False
     assert returned_uid is None
     assert reason == "used"
+
+
+@pytest.mark.asyncio
+async def test_validate_consumes_token_with_single_atomic_update(
+    db_session,
+    test_user,
+    monkeypatch,
+):
+    uid = test_user["id"]
+    token = await create_reset_token(uid)
+    statements = []
+
+    original_execute = db_session.__class__.execute
+
+    async def spy_execute(self, statement, *args, **kwargs):
+        statements.append(str(statement))
+        return await original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session.__class__, "execute", spy_execute)
+
+    ok, returned_uid, reason = await validate_and_consume_reset_token(token)
+
+    assert (ok, returned_uid, reason) == (True, uid, "ok")
+    combined = "\n".join(statements).upper()
+    assert "UPDATE PASSWORD_RESET_TOKENS" in combined
+    assert "RETURNING" in combined
+    assert "USED_AT IS NULL" in combined
+    assert "CREATED_AT +" in combined
+
+
+@pytest.mark.asyncio
+async def test_validate_returns_expired_when_db_row_ttl_elapsed(
+    db_session,
+    test_user,
+):
+    uid = test_user["id"]
+    token = await create_reset_token(uid)
+    jti = (
+        await db_session.execute(
+            select(PasswordResetToken.jti)
+            .where(PasswordResetToken.user_id == uid)
+            .order_by(PasswordResetToken.created_at.desc())
+        )
+    ).scalar_one()
+    await db_session.execute(
+        text(
+            """
+            UPDATE password_reset_tokens
+            SET created_at = NOW() - INTERVAL '10 minutes'
+            WHERE jti = :jti
+            """
+        ),
+        {"jti": jti},
+    )
+    await db_session.commit()
+
+    ok, returned_uid, reason = await validate_and_consume_reset_token(token)
+
+    assert (ok, returned_uid, reason) == (False, None, "expired")
 
 
 @pytest.mark.asyncio

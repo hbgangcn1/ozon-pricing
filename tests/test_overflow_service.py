@@ -48,6 +48,7 @@ async def _seed_rules(session, user_id, specs):
 
 
 async def _list_disabled(session, user_id):
+    session.expire_all()
     res = await session.execute(
         select(Logistics.id).where(
             Logistics.user_id == user_id,
@@ -278,11 +279,37 @@ async def test_mark_logistics_used_throttle(db_session, test_user):
     await db_session.commit()
     assert n2 == 0
 
-    # After throttle window — writes again
+    await db_session.commit()
+
+    # After throttle window — writes again, using a new session so the test
+    # observes the committed row state instead of the identity-map snapshot.
     n3 = await mark_logistics_used(
         db_session, uid, ids, now=now + MARK_USED_THROTTLE_SECONDS + 1
     )
     await db_session.commit()
+
+    assert n3 == 2
+
+
+@pytest.mark.asyncio
+async def test_mark_logistics_used_throttle_without_intermediate_commit(
+    db_session, test_user,
+):
+    uid = test_user["id"]
+    ids = await _seed_rules(db_session, uid, [("a", 0), ("b", 0)])
+    now = int(time.time())
+
+    n1 = await mark_logistics_used(db_session, uid, ids, now=now)
+    n2 = await mark_logistics_used(
+        db_session, uid, ids, now=now + (MARK_USED_THROTTLE_SECONDS - 1)
+    )
+    n3 = await mark_logistics_used(
+        db_session, uid, ids, now=now + MARK_USED_THROTTLE_SECONDS + 1
+    )
+    await db_session.commit()
+
+    assert n1 == 2
+    assert n2 == 0
     assert n3 == 2
 
 
@@ -312,9 +339,13 @@ async def test_close_expired_windows_only_past_due(db_session, test_user):
     await db_session.commit()
     assert closed_again == 0
 
-    await db_session.refresh(past)
-    assert past.closed_at == now
-    assert past.close_reason == "expired"
+    refreshed_past = (
+        await db_session.execute(
+            select(TrialOverflowWindow).where(TrialOverflowWindow.id == past.id)
+        )
+    ).scalar_one()
+    assert refreshed_past.closed_at == now
+    assert refreshed_past.close_reason == "expired"
 
     # Now open a future-dated window; close_expired should leave it alone
     future = TrialOverflowWindow(
@@ -330,5 +361,9 @@ async def test_close_expired_windows_only_past_due(db_session, test_user):
     closed_future = await close_expired_windows(db_session, now=now)
     await db_session.commit()
     assert closed_future == 0
-    await db_session.refresh(future)
-    assert future.closed_at == 0
+    refreshed_future = (
+        await db_session.execute(
+            select(TrialOverflowWindow).where(TrialOverflowWindow.id == future.id)
+        )
+    ).scalar_one()
+    assert refreshed_future.closed_at == 0

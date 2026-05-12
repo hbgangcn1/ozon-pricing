@@ -51,7 +51,7 @@ class TestBuildEnv:
         from postgres_backup_service import PostgresBackupSystem
         system = PostgresBackupSystem()
         env = system._build_env()
-        assert "PGPASSWORD" in env
+        assert "PGPASSWORD" not in env
         assert isinstance(env, dict)
 
 

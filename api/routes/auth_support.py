@@ -11,17 +11,16 @@ from security.tokens import (
     decode_refresh_token,
 )
 
-_is_production = (
-    os.environ.get("PRODUCTION_MODE", "").lower() == "true"
-    or os.environ.get("APP_ENV", "").lower() == "production"
-    or os.environ.get("ENVIRONMENT", "").lower() == "production"
-)
-_cookie_secure = (
-    os.environ.get("COOKIE_SECURE", "true" if _is_production else "false").lower()
-    == "true"
-)
 _ACCESS_COOKIE_MAX_AGE = 15 * 60
 _REFRESH_COOKIE_MAX_AGE = 7 * 24 * 3600
+
+
+def _cookie_secure() -> bool:
+    return os.getenv("ENV", "development") == "production"
+
+
+def _cookie_domain() -> str | None:
+    return ".cbprice.cn" if os.getenv("ENV", "development") == "production" else None
 
 
 def get_request_user_agent(user_agent: str | None) -> str:
@@ -39,11 +38,14 @@ def set_token_cookie(
     access_token: str,
     refresh_token: str,
 ) -> None:
+    cookie_secure = _cookie_secure()
+    cookie_domain = _cookie_domain()
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=_cookie_secure,
+        secure=cookie_secure,
+        domain=cookie_domain,
         samesite="strict",
         max_age=_ACCESS_COOKIE_MAX_AGE,
         path="/",
@@ -52,7 +54,8 @@ def set_token_cookie(
         key="csrf_token",
         value=generate_csrf_token(),
         httponly=False,
-        secure=_cookie_secure,
+        secure=cookie_secure,
+        domain=cookie_domain,
         samesite="strict",
         max_age=_REFRESH_COOKIE_MAX_AGE,
         path="/",
@@ -61,7 +64,8 @@ def set_token_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=_cookie_secure,
+        secure=cookie_secure,
+        domain=cookie_domain,
         samesite="strict",
         max_age=_REFRESH_COOKIE_MAX_AGE,
         path="/",
@@ -69,25 +73,30 @@ def set_token_cookie(
 
 
 def clear_token_cookies(response: JSONResponse) -> None:
+    cookie_secure = _cookie_secure()
+    cookie_domain = _cookie_domain()
     response.delete_cookie(
         key="access_token",
         path="/",
         httponly=True,
-        secure=_cookie_secure,
+        secure=cookie_secure,
+        domain=cookie_domain,
         samesite="strict",
     )
     response.delete_cookie(
         key="refresh_token",
         path="/",
         httponly=True,
-        secure=_cookie_secure,
+        secure=cookie_secure,
+        domain=cookie_domain,
         samesite="strict",
     )
     response.delete_cookie(
         key="csrf_token",
         path="/",
         httponly=False,
-        secure=_cookie_secure,
+        secure=cookie_secure,
+        domain=cookie_domain,
         samesite="strict",
     )
 

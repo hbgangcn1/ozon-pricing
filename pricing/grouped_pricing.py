@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
@@ -6,7 +7,7 @@ from ._pricing_helpers import (
     _get_exchange_rates,
     _make_cached_cost,
     _FBP_ELIMINATED_REASON,
-)
+)  # pyright: ignore[reportPrivateUsage]
 
 
 def _estimate_price_rub(product):
@@ -18,8 +19,13 @@ def _estimate_price_rub(product):
     if margin >= 1:
         margin /= 100
     total_cost = unit_price + labeling_fee + shipping_fee
-    denom = max(1 - margin - Decimal("0.1"), Decimal("0.3"))
-    price_cny = total_cost / denom if denom > 0 else total_cost * 2
+    denom = Decimal("1") - margin - Decimal("0.1")
+    if denom <= 0:
+        raise ValueError(
+            f"定价分母不合法 ({denom:.4f})，"
+            "请检查目标利润率（目标利润率 + 佣金估算不得 >= 1）"
+        )
+    price_cny = total_cost / denom
     return price_cny / rate if rate > 0 else Decimal("0")
 
 
