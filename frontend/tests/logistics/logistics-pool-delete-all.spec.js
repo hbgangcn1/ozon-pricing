@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { API_BASE } from '../fixtures/test-data.js'
 import { getAdminToken } from '../helpers/admin-token.js'
 import { ADMIN_AUTH_FILE, ADMIN_MARKER_FILE } from '../helpers/auth-paths.js'
+import { seedPool } from '../fixtures/logistics-pool-fixture.js'
 
 test.describe('公共物流池 — 删除全部', () => {
   test.setTimeout(60000)
@@ -10,6 +11,14 @@ test.describe('公共物流池 — 删除全部', () => {
 
   test.beforeAll(async ({ request }) => {
     adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
+  })
+
+  test.beforeEach(async () => {
+    seedPool()
+  })
+
+  test.afterEach(async () => {
+    seedPool()
   })
 
   test('删除全部按钮可见', async ({ page }) => {

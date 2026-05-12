@@ -53,8 +53,8 @@ describe('usePricingCalculation commission gating', () => {
 
     await waitFor(() => {
       expect(commissionCategoriesAPI.getAll).toHaveBeenCalledTimes(1)
+      expect(result.current.commissionCategories.length).toBe(1)
     })
-    expect(result.current.commissionCategories.length).toBe(1)
     expect(result.current.commissionCategories[0].name).toBe('服装')
   })
 

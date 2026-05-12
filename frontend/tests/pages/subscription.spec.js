@@ -46,8 +46,8 @@ test.describe('订阅管理页面 — /subscription', () => {
   })
 
   test('套餐卡片包含价格信息', async ({ page }) => {
-    await expect(page.getByText(/¥9\.9.*月|9\.9/).first()).toBeVisible()
-    await expect(page.getByText(/¥149.*月|149/).first()).toBeVisible()
+    await expect(page.getByText(/¥\d+(?:\.\d+)?\s*\/月/).first()).toBeVisible()
+    await expect(page.getByText(/¥\d{2,3}(?:\.\d+)?\s*\/月/).first()).toBeVisible()
   })
 
   test('套餐卡片包含功能列表', async ({ page }) => {

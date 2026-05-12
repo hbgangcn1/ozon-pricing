@@ -7,6 +7,8 @@ test.describe('关于页面 — /about', () => {
   })
 
   test('页面加载不崩溃', async ({ page }) => {
+    // W10 fix: wait for h1 render before reading innerText to eliminate race
+    await expect(page.locator('h1')).toBeVisible()
     const bodyText = await page.evaluate(() => document.body.innerText)
     expect(bodyText.length).toBeGreaterThan(50)
   })

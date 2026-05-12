@@ -3,6 +3,11 @@
  * Manual QA evidence for OpenSpec change `fix-logistics-pool-batch-add-savepoint`.
  */
 import { test, expect } from '@playwright/test'
+import { seedPool } from './fixtures/logistics-pool-fixture.js'
+
+test.beforeEach(async () => {
+  seedPool()
+})
 
 test('QA: admin batch-add all logistics-pool items shows success toast (no 500)', async ({ page }) => {
   const consoleErrors = []

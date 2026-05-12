@@ -8,7 +8,7 @@ We never read-then-write because that races.
 """
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal, cast
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,7 +80,7 @@ async def claim_trial(session: AsyncSession, user_id: int) -> ClaimResult:
         )
     )
     result = await session.execute(stmt)
-    if (result.rowcount or 0) == 0:
+    if (cast(Any, result).rowcount or 0) == 0:
         return ClaimResult(status="already_used")
 
     await session.commit()

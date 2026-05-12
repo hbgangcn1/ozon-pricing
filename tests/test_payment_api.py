@@ -3,6 +3,7 @@
 import sys
 import os
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,6 +15,7 @@ from api.main import app  # noqa: E402
 from api import dependencies  # noqa: E402
 from api.routes.payment import get_payment_service  # noqa: E402
 from database import get_db  # noqa: E402
+from models.order import PaymentOrder  # noqa: E402
 from services.payment_service import SuspiciousWechatNotifyError  # noqa: E402
 from wechat_pay_v3_api import WechatResponseSignatureError  # noqa: E402
 
@@ -239,6 +241,78 @@ class TestCreatePayment:
         "api.routes.payment.is_registration_open",
         new_callable=AsyncMock,
     )
+    def test_signature_failure_query_success_reconciles_and_commits(
+        self,
+        mock_is_open,
+        mock_price,
+        mock_plan,
+        mock_wechat,
+        _setup_overrides,
+    ):
+        """W8 fix: signature failure → query SUCCESS → apply credit + commit + 502."""
+        mock_session, mock_svc = _setup_overrides
+        mock_is_open.return_value = True
+        mock_price.return_value = 29.9
+        mock_plan.return_value = {"plan_name": "Pro"}
+        mock_wechat.create_native_order.side_effect = WechatResponseSignatureError(
+            "平台签名验证失败"
+        )
+        mock_wechat.query_order.return_value = {
+            "success": True,
+            "trade_state": "SUCCESS",
+            "data": {
+                "out_trade_no": "test_ord_recon",
+                "transaction_id": "wx_tx_recon",
+                "amount": {"total": 2990, "currency": "CNY"},
+                "appid": "wx_app",
+                "mchid": "wx_mch",
+            },
+        }
+        mock_svc.apply_wechat_payment_success = AsyncMock(return_value="processed")
+        mock_order = MagicMock()
+        mock_order.order_id = "test_ord_recon"
+        mock_order.description = "订阅Pro"
+        mock_order.status = "PENDING"
+        mock_svc.create_order.return_value = mock_order
+
+        resp = client.post(
+            "/api/payments/create",
+            json={
+                "plan_code": "pro",
+                "billing_cycle": "month",
+                "amount": 29.9,
+            },
+        )
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "微信支付订单创建状态未确认，请重试"
+        mock_wechat.query_order.assert_called_once_with("test_ord_recon")
+        assert mock_svc.apply_wechat_payment_success.await_count == 1
+        mock_svc.apply_wechat_payment_success.assert_awaited_once_with(
+            out_trade_no="test_ord_recon",
+            transaction_id="wx_tx_recon",
+            amount_total=2990,
+            currency="CNY",
+            appid="wx_app",
+            mchid="wx_mch",
+            raw_notify=mock_wechat.query_order.return_value["data"],
+        )
+        mock_session.commit.assert_awaited()
+
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    @patch(
+        "api.routes.payment.get_plan_by_code",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "api.routes.payment.get_plan_price",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "api.routes.payment.is_registration_open",
+        new_callable=AsyncMock,
+    )
     def test_wechat_fails(
         self,
         mock_is_open,
@@ -387,6 +461,36 @@ class TestPaymentNotify:
         assert resp.status_code == 200
         assert resp.json() == {"code": "SUCCESS", "message": "OK"}
 
+    @patch("api.routes.payment._wechat_available", False)
+    def test_wechat_unavailable_in_production_returns_503(self, _setup_overrides):
+        with patch("api.routes.payment._is_production", return_value=True):
+            with patch.dict(os.environ, {"E2E_TEST": ""}, clear=False):
+                os.environ.pop("E2E_TEST", None)
+                resp = client.post(
+                    "/api/payments/notify",
+                    json={"out_trade_no": "prod_notify_ord"},
+                    headers=SIGNED_NOTIFY_HEADERS,
+                )
+
+        assert resp.status_code == 503
+        assert resp.json() == {"code": "FAIL", "message": "微信支付模块不可用"}
+
+    @patch("api.routes.payment._wechat_available", False)
+    def test_wechat_unavailable_in_production_allows_e2e_success(
+        self,
+        _setup_overrides,
+    ):
+        with patch("api.routes.payment._is_production", return_value=True):
+            with patch.dict(os.environ, {"E2E_TEST": "1"}, clear=False):
+                resp = client.post(
+                    "/api/payments/notify",
+                    json={"out_trade_no": "e2e_notify_ord"},
+                    headers=SIGNED_NOTIFY_HEADERS,
+                )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"code": "SUCCESS", "message": "OK"}
+
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)
     def test_suspicious_returns_success_to_stop_retries(
@@ -467,8 +571,9 @@ class TestPaymentNotify:
             headers=SIGNED_NOTIFY_HEADERS,
         )
 
-        assert resp.status_code == 200
-        assert resp.json() == {"code": "SUCCESS", "message": "OK"}
+        # W9 SEC#1: generic exceptions must FAIL the notify so WeChat retries
+        assert resp.status_code == 503
+        assert resp.json() == {"code": "FAIL", "message": "处理失败，请重试"}
         mock_session.rollback.assert_awaited_once()
 
 
@@ -512,3 +617,136 @@ class TestPaymentStatus:
         mock_svc.get_user_order.return_value = None
         resp = client.get("/api/payments/test_ord_789/status")
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    async def test_query_success_applies_wechat_validation_and_persists_txid(
+        self,
+        mock_wechat,
+        db_session,
+        test_user,
+        monkeypatch,
+    ):
+        from api.routes.payment import get_payment_status
+        from services import overflow_service as _ovf
+        from db import subscriptions as _subs
+        import services.payment_service as payment_service
+
+        monkeypatch.setattr(payment_service.time, "time", lambda: 1_700_000_000)
+        monkeypatch.setattr(_subs, "get_plan_by_code", AsyncMock(return_value=None))
+        monkeypatch.setattr(_subs, "_count_active_rules", AsyncMock(return_value=0))
+        monkeypatch.setattr(_ovf, "restore_all_overflow", AsyncMock(return_value=0))
+
+        order_id = "status_success_ord"
+        order = PaymentOrder(
+            order_id=order_id,
+            user_id=test_user["id"],
+            amount=2990,
+            description="订阅专业版",
+            duration="month",
+            status="PENDING",
+            created_at=int(time.time()),
+        )
+        db_session.add(order)
+        await db_session.flush()
+        order_pk = order.id
+        await db_session.commit()
+        order = await db_session.get(PaymentOrder, order_pk)
+        mock_wechat.query_order.return_value = {
+            "success": True,
+            "trade_state": "SUCCESS",
+            "data": {
+                "out_trade_no": order_id,
+                "transaction_id": "wx_tx_123",
+                "amount": {"total": 2990, "currency": "CNY"},
+                "appid": None,
+                "mchid": None,
+            },
+        }
+        real_svc = __import__(
+            "services.payment_service", fromlist=["PaymentService"]
+        ).PaymentService(db_session)
+        real_svc.get_user_order = AsyncMock(return_value=order)
+        real_apply = real_svc.apply_wechat_payment_success
+        real_svc.apply_wechat_payment_success = AsyncMock(side_effect=real_apply)
+        svc = real_svc
+
+        resp = await get_payment_status(order_id, test_user["id"], svc)
+
+        assert resp.status == "SUCCESS"
+        svc.apply_wechat_payment_success.assert_awaited_once_with(
+            out_trade_no=order_id,
+            transaction_id="wx_tx_123",
+            amount_total=2990,
+            currency="CNY",
+            appid=None,
+            mchid=None,
+            raw_notify=mock_wechat.query_order.return_value["data"],
+        )
+        await db_session.refresh(order)
+        assert order.status == "SUCCESS"
+        assert order.wechat_transaction_id == "wx_tx_123"
+        svc.get_user_order.assert_awaited_once_with(order_id, test_user["id"])
+
+    @pytest.mark.asyncio
+    @patch("api.routes.payment.wechat_pay_v3")
+    @patch("api.routes.payment._wechat_available", True)
+    async def test_query_success_amount_mismatch_keeps_pending(
+        self,
+        mock_wechat,
+        db_session,
+        test_user,
+        monkeypatch,
+    ):
+        from api.routes.payment import get_payment_status
+        from services import overflow_service as _ovf
+        from db import subscriptions as _subs
+        import services.payment_service as payment_service
+
+        monkeypatch.setattr(payment_service.time, "time", lambda: 1_700_000_000)
+        monkeypatch.setattr(_subs, "get_plan_by_code", AsyncMock(return_value=None))
+        monkeypatch.setattr(_subs, "_count_active_rules", AsyncMock(return_value=0))
+        monkeypatch.setattr(_ovf, "restore_all_overflow", AsyncMock(return_value=0))
+
+        order_id = "status_mismatch_ord"
+        order = PaymentOrder(
+            order_id=order_id,
+            user_id=test_user["id"],
+            amount=2990,
+            description="订阅专业版",
+            duration="month",
+            status="PENDING",
+            created_at=int(time.time()),
+        )
+        db_session.add(order)
+        await db_session.flush()
+        order_pk = order.id
+        await db_session.commit()
+        order = await db_session.get(PaymentOrder, order_pk)
+        mock_wechat.query_order.return_value = {
+            "success": True,
+            "trade_state": "SUCCESS",
+            "data": {
+                "out_trade_no": order_id,
+                "transaction_id": "wx_tx_bad_amount",
+                "amount": {"total": 1990, "currency": "CNY"},
+                "appid": None,
+                "mchid": None,
+            },
+        }
+        real_svc = __import__(
+            "services.payment_service", fromlist=["PaymentService"]
+        ).PaymentService(db_session)
+        real_svc.get_user_order = AsyncMock(return_value=order)
+        real_apply = real_svc.apply_wechat_payment_success
+        real_svc.apply_wechat_payment_success = AsyncMock(side_effect=real_apply)
+        svc = real_svc
+
+        resp = await get_payment_status(order_id, test_user["id"], svc)
+
+        assert resp.status == "PENDING"
+        svc.apply_wechat_payment_success.assert_awaited_once()
+        stored_order = await db_session.get(PaymentOrder, order_pk)
+        assert stored_order.status == "PENDING"
+        assert stored_order.wechat_transaction_id is None

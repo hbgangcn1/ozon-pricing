@@ -123,7 +123,25 @@ class TestRefreshAccessEndpoint:
         assert data["access_token"] != token
 
     @pytest.mark.asyncio
-    async def test_expired_token_still_works_for_refresh(self, client, test_user):
+    async def test_invalid_token_returns_401(self, client, test_user):
+        """Tampered signature must trigger TokenInvalidError → 401 (W8/W9 fix)."""
+        token = create_access_token(
+            user_id=test_user["id"],
+            username=test_user["username"],
+            role="user",
+        )
+        parts = token.split(".")
+        assert len(parts) == 3
+        tampered = f"{parts[0]}.{parts[1]}.invalidsignaturepayload"
+        response = await client.post(
+            "/api/auth/refresh-access",
+            headers={"Authorization": f"Bearer {tampered}"},
+        )
+        assert response.status_code == 401
+        assert "无效" in response.json()["detail"] or "过期" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_expired_token_returns_401_proactive_refresh(self, client, test_user):
         from datetime import timedelta
 
         token = create_access_token(
@@ -136,9 +154,8 @@ class TestRefreshAccessEndpoint:
             "/api/auth/refresh-access",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert "access_token" in data
+        assert response.status_code == 401
+        assert "过期" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_new_token_has_correct_expiry(self, client, test_user):

@@ -199,7 +199,8 @@ describe('UserManagementPage', () => {
 
     fireEvent.click(screen.getByText(/重置密码/));
     await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('密码已重置'));
+      expect(toast.success).toHaveBeenCalledWith('密码已重置');
+      expect(toast.success).not.toHaveBeenCalledWith(expect.stringContaining('123'));
     });
   });
 

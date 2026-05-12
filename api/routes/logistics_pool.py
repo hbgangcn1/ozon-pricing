@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,9 +33,27 @@ from xlsx_import import parse_file
 
 router = APIRouter(prefix="/api/logistics-pool", tags=["物流池"])
 logger = logging.getLogger(__name__)
-_MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+_MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
+_MAX_IMPORT_ROWS = 50000
 _COPY_EXCLUDE = {"id", "source_file", "imported_at", "is_active"}
 _VALID_VOLUME_MODES = {"none", "max_actual_vs_volume", "longest_side", "sum_of_sides"}
+
+
+def _raise_upload_too_large() -> None:
+    raise HTTPException(
+        status_code=413,
+        detail=f"文件大小超过限制（最大 {_MAX_UPLOAD_SIZE // 1024 // 1024}MB）",
+    )
+
+
+async def _read_upload_content(file: UploadFile) -> bytes:
+    size = getattr(file, "size", None)
+    if size is not None and size > _MAX_UPLOAD_SIZE:
+        _raise_upload_too_large()
+    content = await file.read(_MAX_UPLOAD_SIZE + 1)
+    if len(content) > _MAX_UPLOAD_SIZE:
+        _raise_upload_too_large()
+    return content
 
 
 def _sanitize_pool_data(data: dict) -> dict:
@@ -60,6 +79,10 @@ async def _check_logistics_limit(
     if getattr(user, "role", None) == "admin":
         return
 
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": user_id},
+    )
     limit = await get_effective_logistics_limit(session, user)
     if limit == -1:
         return
@@ -110,26 +133,25 @@ async def import_logistics_pool(
         raise HTTPException(status_code=400, detail="仅支持 .xlsx 格式文件")
     temp_path = ""
     try:
-        content = await file.read()
-        if len(content) > _MAX_UPLOAD_SIZE:
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    f"文件大小超过限制"
-                    f"（最大 {_MAX_UPLOAD_SIZE // 1024 // 1024}MB）"
-                ),
-            )
+        content = await _read_upload_content(file)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
             temp_file.write(content)
             temp_path = temp_file.name
         try:
-            result = parse_file(temp_path, source_file=file.filename or None)
+            result = parse_file(
+                temp_path,
+                source_file=file.filename or None,
+                max_import_rows=_MAX_IMPORT_ROWS,
+            )
         except ValueError as exc:
             logger.warning("物流池导入解析失败: %s", exc)
+            detail = str(exc)
+            if "导入行数不能超过" in detail:
+                raise HTTPException(status_code=413, detail=detail) from exc
             raise HTTPException(
                 status_code=400,
                 detail="上传文件格式有误，请检查后重试",
-            )
+            ) from exc
         except PermissionError as exc:
             logger.warning("物流池导入文件被占用: %s", exc)
             raise HTTPException(
@@ -139,7 +161,13 @@ async def import_logistics_pool(
         imported = 0
         skipped = result.get("skipped", 0)
         errors = list(result.get("errors", []))
-        for index, row in enumerate(result.get("rows", []), start=1):
+        rows = result.get("rows", [])
+        if len(rows) > _MAX_IMPORT_ROWS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"导入行数不能超过 {_MAX_IMPORT_ROWS} 行",
+            )
+        for index, row in enumerate(rows, start=1):
             try:
                 await upsert(session, row)
                 imported += 1

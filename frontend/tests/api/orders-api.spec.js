@@ -41,10 +41,6 @@ test.describe('Orders API - 订单接口', () => {
     const resp = await request.get('/api/orders', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(data).toHaveProperty('orders')
@@ -57,10 +53,6 @@ test.describe('Orders API - 订单接口', () => {
     const resp = await request.get('/api/orders', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     const data = await resp.json()
     expect(Array.isArray(data.orders)).toBeTruthy()
   })
@@ -92,10 +84,6 @@ test.describe('Orders API - 订单接口', () => {
     const resp = await request.get('/api/orders', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(Array.isArray(data.orders)).toBeTruthy()

@@ -23,7 +23,10 @@ HEADER_ROW = 5
 
 
 def parse(
-    source: object, filepath: str | None = None, source_file: str | None = None
+    source: object,
+    filepath: str | None = None,
+    source_file: str | None = None,
+    max_import_rows: int | None = None,
 ) -> dict:
     wb, should_close = load_workbook_source(source)
     try:
@@ -32,10 +35,18 @@ def parse(
         source_name = finalize_source_file(actual_path, source_file)
         result = {"rows": [], "skipped": 0, "errors": []}
         carry: dict[int, object] = {0: "", 1: "", 2: "", 3: ""}
-        for row_num in range(HEADER_ROW + 1, ws.max_row + 1):
-            values: list[object] = [
-                cast(object, ws.cell(row_num, col).value) for col in range(1, 19)
-            ]
+        rows = ws.iter_rows(
+            min_row=HEADER_ROW + 1,
+            max_col=18,
+            values_only=True,
+        )
+        for row_num, row in enumerate(rows, start=HEADER_ROW + 1):
+            if (
+                max_import_rows is not None
+                and row_num - HEADER_ROW > max_import_rows
+            ):
+                raise ValueError(f"导入行数不能超过 {max_import_rows} 行")
+            values: list[object] = [cast(object, value) for value in row]
             if is_blank_row(values):
                 continue
             if is_transition_row(values):

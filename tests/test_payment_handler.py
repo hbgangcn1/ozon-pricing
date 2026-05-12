@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pyright: reportPrivateUsage=false
 import asyncio
 import time
 import unittest
@@ -8,7 +9,6 @@ from payment_handler import (
     PaymentHandler,
     _extract_plan_code,
     _parse_duration,
-    payment_handler,
 )
 
 
@@ -151,7 +151,7 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
     def test_plan_code_efficiency(self, mock_sl):
         order = _make_order(description="效率版年套餐", duration="1年")
         user = _make_user()
-        mock_cm, mock_session = _make_session_mock(order=order, user=user)
+        mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
         asyncio.run(PaymentHandler.handle_payment_success("ord_eff"))
         self.assertEqual(user.subscription_type, "efficiency")
@@ -160,7 +160,7 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
     def test_plan_code_professional(self, mock_sl):
         order = _make_order(description="专业版月套餐", duration="1月")
         user = _make_user()
-        mock_cm, mock_session = _make_session_mock(order=order, user=user)
+        mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
         asyncio.run(PaymentHandler.handle_payment_success("ord_pro"))
         self.assertEqual(user.subscription_type, "professional")
@@ -169,7 +169,7 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
     def test_plan_code_enterprise(self, mock_sl):
         order = _make_order(description="企业版年套餐", duration="1年")
         user = _make_user()
-        mock_cm, mock_session = _make_session_mock(order=order, user=user)
+        mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
         asyncio.run(PaymentHandler.handle_payment_success("ord_ent"))
         self.assertEqual(user.subscription_type, "enterprise")
@@ -179,7 +179,7 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         now = int(time.time())
         order = _make_order(description="效率版年套餐", duration="1年")
         user = _make_user()
-        mock_cm, mock_session = _make_session_mock(order=order, user=user)
+        mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
         asyncio.run(PaymentHandler.handle_payment_success("ord_yr"))
         expiry = user.subscription_expires
@@ -190,7 +190,7 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         now = int(time.time())
         order = _make_order(description="专业版月套餐", duration="1月")
         user = _make_user()
-        mock_cm, mock_session = _make_session_mock(order=order, user=user)
+        mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
         asyncio.run(PaymentHandler.handle_payment_success("ord_mo"))
         expiry = user.subscription_expires
@@ -218,70 +218,6 @@ class TestPaymentHandlerUpdateOrderStatus(unittest.TestCase):
         with self.assertRaises(Exception) as c:
             asyncio.run(PaymentHandler.update_order_status("ord_fail", "PAID"))
         self.assertIn("update failed", str(c.exception))
-
-
-class TestPaymentHandlerProcessNotify(unittest.TestCase):
-    @patch("payment_handler._wechat_available", True)
-    @patch("payment_handler.wechat_pay_v3")
-    @patch("payment_handler.AsyncSessionLocal")
-    def test_successful_notify_calls_update_order_status(self, mock_sl, mock_wechat):
-        order = _make_order(status="PENDING")
-        mock_cm, mock_session = _make_session_mock(order=order)
-        mock_sl.return_value = mock_cm
-        mock_wechat.process_notify.return_value = {
-            "success": True,
-            "out_trade_no": "trade_123",
-            "transaction_id": "tx_abc",
-            "trade_state": "SUCCESS",
-        }
-        result = asyncio.run(payment_handler.process_wechat_notify({"key": "val"}))
-        self.assertTrue(result["success"])
-        self.assertEqual(result["out_trade_no"], "trade_123")
-        mock_session.commit.assert_called_once()
-
-    @patch("payment_handler._wechat_available", False)
-    @patch("payment_handler.wechat_pay_v3", None)
-    def test_wechat_unavailable_returns_error(self):
-        result = asyncio.run(payment_handler.process_wechat_notify({}))
-        self.assertFalse(result["success"])
-        self.assertEqual(result["message"], "微信支付模块不可用")
-        self.assertIn("out_trade_no", result)
-
-    @patch("payment_handler._wechat_available", True)
-    @patch("payment_handler.wechat_pay_v3")
-    def test_wechat_returns_failure(self, mock_wechat):
-        mock_wechat.process_notify.return_value = {
-            "success": False,
-            "message": "签名验证失败",
-            "out_trade_no": "",
-        }
-        result = asyncio.run(payment_handler.process_wechat_notify({"data": "x"}))
-        self.assertFalse(result["success"])
-        self.assertEqual(result["message"], "签名验证失败")
-        self.assertIn("out_trade_no", result)
-
-    @patch("payment_handler._wechat_available", True)
-    @patch("payment_handler.wechat_pay_v3")
-    def test_out_trade_no_always_present(self, mock_wechat):
-        mock_wechat.process_notify.return_value = {
-            "success": True,
-            "transaction_id": "tx_999",
-        }
-        result = asyncio.run(payment_handler.process_wechat_notify({}))
-        self.assertIn("out_trade_no", result)
-
-    @patch("payment_handler._wechat_available", True)
-    @patch("payment_handler.wechat_pay_v3")
-    @patch("payment_handler.AsyncSessionLocal")
-    def test_no_update_when_empty_out_trade_no(self, mock_sl, mock_wechat):
-        mock_cm, mock_session = _make_session_mock()
-        mock_sl.return_value = mock_cm
-        mock_wechat.process_notify.return_value = {
-            "success": True,
-            "out_trade_no": "",
-        }
-        asyncio.run(payment_handler.process_wechat_notify({}))
-        mock_session.commit.assert_not_called()
 
 
 class TestHelpers(unittest.TestCase):
@@ -343,17 +279,6 @@ class TestDbUnavailablePaths(unittest.TestCase):
         with self.assertRaises(Exception) as ctx:
             asyncio.run(PaymentHandler.update_order_status("order_any", "PAID"))
         self.assertIsNotNone(ctx.exception)
-
-
-class TestProcessWechatNotifyException(unittest.TestCase):
-    @patch("payment_handler._wechat_available", True)
-    @patch("payment_handler.wechat_pay_v3")
-    def test_exception_in_process_notify(self, mock_wechat):
-        mock_wechat.process_notify.side_effect = RuntimeError("notify boom")
-        result = asyncio.run(payment_handler.process_wechat_notify({"data": "x"}))
-        self.assertFalse(result["success"])
-        self.assertIn("处理通知失败", result["message"])
-        self.assertEqual(result["out_trade_no"], "")
 
 
 class TestImportFallbacks(unittest.TestCase):

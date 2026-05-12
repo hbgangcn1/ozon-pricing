@@ -11,7 +11,11 @@ from security.tokens import (
     decode_refresh_token,
 )
 
-_is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
+_is_production = (
+    os.environ.get("PRODUCTION_MODE", "").lower() == "true"
+    or os.environ.get("APP_ENV", "").lower() == "production"
+    or os.environ.get("ENVIRONMENT", "").lower() == "production"
+)
 _cookie_secure = (
     os.environ.get("COOKIE_SECURE", "true" if _is_production else "false").lower()
     == "true"

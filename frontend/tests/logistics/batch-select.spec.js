@@ -136,6 +136,12 @@ test.describe('公共物流池 — 批量选择与添加', () => {
 
   test.beforeAll(async ({ request }) => {
     adminToken = await getAdminToken(request, { authFile: ADMIN_AUTH_FILE, markerFile: ADMIN_MARKER_FILE })
+  })
+
+  // Re-seed before EVERY test in this group: another parallel spec
+  // (logistics-pool-delete-all.spec.js) calls DELETE /api/logistics-pool/all
+  // which wipes shared seed data. Per-test seed prevents the race.
+  test.beforeEach(async () => {
     seedPool()
   })
 
@@ -144,9 +150,19 @@ test.describe('公共物流池 — 批量选择与添加', () => {
   })
 
   async function goPool(page) {
-    await page.goto('/logistics-pool')
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(500)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await page.goto('/logistics-pool')
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
+
+      const rowCount = await page.locator('[data-row]').count().catch(() => 0)
+      if (rowCount > 0) return
+
+      seedPool()
+      await page.waitForTimeout(500)
+    }
+
+    throw new Error('goPool: pool stayed empty after 3 reseed attempts')
   }
 
   test('公共物流池页面加载成功', async ({ page }) => {

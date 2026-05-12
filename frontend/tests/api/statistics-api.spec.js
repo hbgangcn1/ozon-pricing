@@ -27,10 +27,6 @@ test.describe('Statistics API - 概览', () => {
     const resp = await request.get('/api/statistics/overview', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(data).toHaveProperty('total_users')
@@ -102,10 +98,6 @@ test.describe('Statistics API - 登录日志', () => {
     const resp = await request.get('/api/statistics/login-logs?page=1&page_size=20', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(data).toHaveProperty('items')
@@ -141,10 +133,6 @@ test.describe('Statistics API - 管理员日志', () => {
     const resp = await request.get('/api/statistics/admin-logs?page=1&page_size=20', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(data).toHaveProperty('items')
@@ -166,10 +154,6 @@ test.describe('Statistics API - 活跃用户', () => {
     const resp = await request.get('/api/statistics/active-users', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(data).toHaveProperty('daily')

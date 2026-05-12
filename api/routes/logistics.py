@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -78,14 +78,19 @@ async def create_logistics_endpoint(
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
-    effective_limit = await get_effective_logistics_limit(session, user)
-    if effective_limit >= 0:
-        active_count = await count_user_active_rules(session, user_id)
-        if active_count >= effective_limit:
-            raise HTTPException(
-                status_code=403,
-                detail=f"已达到当前套餐物流规则上限（{effective_limit}）",
-            )
+    if getattr(user, "role", None) != "admin":
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": user_id},
+        )
+        effective_limit = await get_effective_logistics_limit(session, user)
+        if effective_limit >= 0:
+            active_count = await count_user_active_rules(session, user_id)
+            if active_count >= effective_limit:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"已达到当前套餐物流规则上限（{effective_limit}）",
+                )
     data = logistics.model_dump()
     for key in OPTIONAL_LOGISTICS_FIELDS:
         if key not in data:

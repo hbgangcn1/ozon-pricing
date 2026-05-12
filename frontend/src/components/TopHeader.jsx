@@ -19,6 +19,7 @@ const TopHeader = ({ onMenuClick }) => {
         <button 
           className="md:hidden p-1 mr-1 text-text-secondary hover:text-text-primary transition-colors"
           onClick={onMenuClick}
+          aria-label="打开菜单"
         >
           <Menu className="w-5 h-5" />
         </button>

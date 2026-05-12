@@ -1,3 +1,4 @@
+/* eslint-env node */
 import { execSync } from 'node:child_process'
 import { existsSync, unlinkSync, readFileSync } from 'node:fs'
 import path from 'node:path'

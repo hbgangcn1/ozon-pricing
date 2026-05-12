@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -34,6 +35,13 @@ WECHAT_NOTIFY_ACK = {"code": "SUCCESS", "message": "OK"}
 MAX_AUDIT_RAW_BODY_LENGTH = 8192
 
 
+def _is_production() -> bool:
+    app_env = os.getenv("APP_ENV") or os.getenv("ENVIRONMENT")
+    if app_env:
+        return app_env.lower() == "production"
+    return os.getenv("PRODUCTION_MODE", "").lower() == "true"
+
+
 def _is_wechat_response_signature_error(exc: Exception) -> bool:
     if wechat_pay_v3_api_module is None:
         return False
@@ -44,16 +52,19 @@ def _is_wechat_response_signature_error(exc: Exception) -> bool:
 async def _reconcile_order_after_signature_failure(
     order_id: str,
     svc: PaymentService,
-) -> None:
+) -> bool:
     if wechat_pay_v3 is None:
-        return
+        return False
     logger.error("微信下单响应验签失败，开始对账: %s", order_id)
     query_result = await asyncio.to_thread(wechat_pay_v3.query_order, order_id)
     if query_result.get("success") and query_result.get("trade_state") == "SUCCESS":
-        try:
-            await svc.handle_payment_success(order_id)
-        except Exception:
-            logger.error("验签失败后的对账补账失败: %s", order_id, exc_info=True)
+        return await _apply_wechat_query_success(
+            order_id,
+            query_result,
+            svc,
+            "验签失败后的对账补账失败",
+        )
+    return False
 
 
 async def get_payment_service(
@@ -143,6 +154,56 @@ def _extract_wechat_success_fields(data: dict) -> tuple[str, str, int, str]:
     return out_trade_no, transaction_id, amount_total, currency
 
 
+async def _apply_wechat_query_success(
+    order_id: str,
+    result: dict,
+    svc: PaymentService,
+    log_message: str,
+) -> bool:
+    data = result.get("data")
+    if not isinstance(data, dict):
+        logger.warning("微信订单查询成功但缺少交易数据: %s", order_id)
+        return False
+    try:
+        out_trade_no, transaction_id, amount_total, currency = (
+            _extract_wechat_success_fields(data)
+        )
+    except (KeyError, TypeError) as exc:
+        logger.warning("微信订单查询成功但缺少必要字段: %s", exc)
+        return False
+    if out_trade_no != order_id:
+        logger.error(
+            "微信订单查询结果订单号不匹配: expected=%s actual=%s",
+            order_id,
+            out_trade_no,
+        )
+        return False
+
+    try:
+        await svc.apply_wechat_payment_success(
+            out_trade_no=out_trade_no,
+            transaction_id=transaction_id,
+            amount_total=amount_total,
+            currency=currency,
+            appid=data.get("appid"),
+            mchid=data.get("mchid"),
+            raw_notify=data,
+        )
+        return True
+    except SuspiciousWechatNotifyError as exc:
+        session = getattr(svc, "_session", None)
+        if session is not None:
+            await session.rollback()
+        logger.error("%s: %s", log_message, exc)
+        return False
+    except Exception:
+        session = getattr(svc, "_session", None)
+        if session is not None:
+            await session.rollback()
+        logger.error("%s: %s", log_message, order_id, exc_info=True)
+        return False
+
+
 def _to_cents(amount: float) -> int:
     return int(round(amount * 100))
 
@@ -197,7 +258,11 @@ async def create_payment(
         )
     except Exception as exc:
         if _is_wechat_response_signature_error(exc):
-            await _reconcile_order_after_signature_failure(order.order_id, svc)
+            credited = await _reconcile_order_after_signature_failure(
+                order.order_id, svc
+            )
+            if credited:
+                await session.commit()
             raise HTTPException(
                 status_code=502,
                 detail="微信支付订单创建状态未确认，请重试",
@@ -227,15 +292,29 @@ async def payment_notify(
 ):
     body = await request.body()
     if not _wechat_available or wechat_pay_v3 is None:
+        is_prod = _is_production()
+        allow_success = not is_prod or os.getenv("E2E_TEST") == "1"
+        response_code = "SUCCESS" if allow_success else "FAIL"
+        response_message = (
+            "OK"
+            if allow_success
+            else "微信支付模块不可用 (生产环境拒绝 ACK 以触发微信重试)"
+        )
         await _write_notify_audit_log(
             session,
             body=body,
             verified=False,
-            response_code="SUCCESS",
-            response_message="OK",
+            response_code=response_code,
+            response_message=response_message,
         )
-        logger.warning("微信支付模块不可用，通知仅审计并返回成功确认")
-        return _success_ack()
+        if allow_success:
+            logger.warning("微信支付模块不可用，通知仅审计并返回成功确认")
+            return _success_ack()
+        logger.error("微信支付模块不可用，生产环境返回 503 触发微信重试")
+        return JSONResponse(
+            status_code=503,
+            content={"code": "FAIL", "message": "微信支付模块不可用"},
+        )
 
     payload = None
     verified = False
@@ -300,11 +379,11 @@ async def payment_notify(
             session,
             body=body,
             verified=verified,
-            response_code="SUCCESS",
-            response_message="OK",
+            response_code="FAIL",
+            response_message="processing failed",
         )
         logger.error("wechat notify processing failed unexpectedly", exc_info=True)
-        return _success_ack()
+        return JSONResponse({"code": "FAIL", "message": "处理失败，请重试"}, 503)
 
 
 @router.get("/{order_id}/status", response_model=PaymentStatusResponse)
@@ -332,14 +411,20 @@ async def get_payment_status(
 
     result = await asyncio.to_thread(wechat_pay_v3.query_order, order_id)
     trade_state = result.get("trade_state") if result.get("success") else None
+    credited = False
+    original_status = order.status or "PENDING"
     if trade_state == "SUCCESS":
-        try:
-            await svc.handle_payment_success(order_id)
-        except Exception:
-            logger.error("查询时处理支付成功失败: %s", order_id, exc_info=True)
+        credited = await _apply_wechat_query_success(
+            order_id,
+            result,
+            svc,
+            "查询时处理支付成功失败",
+        )
+        if credited:
+            order.status = "SUCCESS"
 
     return PaymentStatusResponse(
         order_id=order_id,
-        status=order.status or "PENDING",
+        status="SUCCESS" if credited else original_status,
         trade_state=trade_state,
     )

@@ -38,9 +38,13 @@ def get_request_ip(request: Request) -> str:
 
 def get_username_check_client_ip(request: Request) -> str:
     client_ip = get_request_ip(request)
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for and client_ip in _TRUSTED_RATE_LIMIT_PROXIES:
-        return forwarded_for.split(",")[0].strip()
+    if client_ip in _TRUSTED_RATE_LIMIT_PROXIES:
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
     return client_ip
 
 

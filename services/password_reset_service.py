@@ -9,7 +9,7 @@ from security.tokens import (
     TokenExpiredError,
     TokenInvalidError,
     create_access_token,
-    decode_access_token,
+    decode_password_reset_token,
 )
 
 _RESET_PURPOSE = "password_reset"
@@ -48,7 +48,7 @@ async def validate_and_consume_reset_token(
     token: str,
 ) -> tuple[bool, int | None, str]:
     try:
-        payload = decode_access_token(token)
+        payload = decode_password_reset_token(token)
     except TokenExpiredError:
         return False, None, "expired"
     except TokenInvalidError:

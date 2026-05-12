@@ -109,7 +109,7 @@ function UserManagementPage() {
   const handleResetPassword = async (user) => {
     try {
       await adminAPI.resetPassword(user.id)
-      toast.success(`密码已重置为默认密码: ${user.username}123`)
+      toast.success('密码已重置')
     } catch (error) {
       toast.error(error.response?.data?.detail || '重置密码失败')
     }

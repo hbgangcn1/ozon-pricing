@@ -2,7 +2,7 @@ import logging
 import os
 import time
 from collections import defaultdict
-from typing import Dict, List, Set
+from typing import Dict, List
 
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -28,25 +28,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         app,
         max_requests: int = 100,
         window_seconds: int = 60,
-        trusted_proxies: Set[str] | None = None,
+        trusted_proxies: set[str] | None = None,
     ):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests: Dict[str, List[float]] = defaultdict(list)
-        self.trusted_proxies: Set[str] = trusted_proxies or {
+        # trust-proxy gate：仅当 peer_ip 来自此集合才信任 X-Real-IP / X-Forwarded-For。
+        # nginx 反代生产 peer_ip 永远 = 127.0.0.1；testclient 用于单元测试。
+        self.trusted_proxies: set[str] = trusted_proxies or {
             "127.0.0.1",
             "::1",
+            "testclient",
         }
         self._is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
 
     def _get_client_ip(self, request: Request) -> str:
         peer_ip = request.client.host if request.client else "unknown"
-
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for and peer_ip in self.trusted_proxies:
-            return forwarded_for.split(",")[0].strip()
-
+        if peer_ip in self.trusted_proxies:
+            real_ip = request.headers.get("X-Real-IP")
+            if real_ip:
+                return real_ip.strip()
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                return forwarded_for.split(",")[0].strip()
         return peer_ip
 
     def _check_rate_limit_redis(self, client_ip: str, redis_client) -> bool:

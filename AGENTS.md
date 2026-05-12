@@ -494,20 +494,53 @@ Get-Content backend.log -Tail 20
 - ❌ 假设单步 <30s 就豁免进度回报 — 串行起来就是长程任务
 
 ### 后端/前端进程启动规则（用户已授权 agent 自主管理）
-  - **历史教训**：直接 `uvicorn api.main:app` 或 `npm run dev` 在前台运行会阻塞 agent shell
-  - **正确做法**：必须用 `Start-Process` 后台启动 + 重定向 stdout/stderr 到文件,**绝不前台运行**
-  - **启动后端模板**（必须设 ALLOWED_ORIGINS,否则 cookie csrf 路径全 403）：
-    ```powershell
-    $env:ALLOWED_ORIGINS='http://localhost:3001'
-    $env:E2E_TEST='1'
-    $env:E2E_DISABLE_NEW_LOGIN_SESSION_KICK='1'
-    Start-Process -FilePath ".\.venv\Scripts\python.exe" `
-      -ArgumentList "-m","uvicorn","api.main:app","--host","0.0.0.0","--port","8003" `
-      -RedirectStandardOutput "backend.log" -RedirectStandardError "backend.err.log" `
-      -NoNewWindow -PassThru
-    ```
-  - **关后端**：`Get-NetTCPConnection -LocalPort 8003 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
-  - **验证存活**：`Invoke-WebRequest http://localhost:8003/docs -Method Head -TimeoutSec 3`
+
+  > ⚠️ **历史教训（R-START-HANG，反复出现 5+ 次，2026-05-11 终极方案落地）**
+
+  **根因总结**（按时间顺序的失败方案）：
+  1. ❌ `Start-Process -NoNewWindow -PassThru -RedirectStandardOutput`：父 PowerShell 持有子进程 stdout/stderr 句柄，uvicorn 喷 alembic/loguru 日志触发管道死锁，bash 工具卡 60-120s 超时才返回
+  2. ❌ `cmd /c "start /B `"`" python ... > log 2>log"`：`cmd /c` 外层 cmd shell 持有重定向句柄，bash 工具的 PowerShell 不见 EOF，仍偶发卡 60s+ 才返回（用户报"启动后端又没反应"）
+  3. ✅ **终极方案**：bash 调用 `Start-Process powershell.exe -WindowStyle Hidden -PassThru` 启动一个**独立 PowerShell 子进程**，子进程内部自己负责重定向到日志文件 — 父 bash 工具的 PowerShell **不持有任何子进程句柄**，立即返回（实测 564ms）
+
+  **强制做法**：使用项目封装的启动脚本 `scripts/start_backend_detached.ps1` / `scripts/start_frontend_detached.ps1`。**禁止**直接在 bash 调用里写 `Start-Process -RedirectStandardOutput`、`cmd /c start /B > log`、`uvicorn` 前台等任何变体。
+
+  **启动后端**（推荐，bash 工具 <1s 返回）：
+  ```powershell
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start_backend_detached.ps1" -LogFile "backend.log"
+  ```
+  - 输出 `backend_launcher_pid=<pid>`（这是 launcher PowerShell 的 pid，真正 uvicorn 是它的子进程）
+  - 真正 uvicorn pid 通过 `Get-NetTCPConnection -LocalPort 8003` 查
+  - 自动设置 `ALLOWED_ORIGINS=http://localhost:3001` + `E2E_TEST=1` + `E2E_DISABLE_NEW_LOGIN_SESSION_KICK=1`
+
+  **启动前端**：
+  ```powershell
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start_frontend_detached.ps1" -LogFile "frontend.log"
+  ```
+
+  **必读：启动后必须按"长程命令进度可见性规则"拆分 bash 调用** ——
+  - 调用 1：`scripts/start_backend_detached.ps1`（瞬时返回 launcher pid）
+  - 调用 2：`Start-Sleep -Seconds 6`（uvicorn 冷启动 + alembic 需要 4-6s）
+  - 调用 3：`(iwr http://localhost:8003/docs -Method Head).StatusCode` + `Get-Content backend.log -Tail 5`
+  - 不要把这 3 步塞一个 bash 调用，否则用户面对 6s+ 黑屏
+
+  **关后端/前端**：
+  ```powershell
+  Get-NetTCPConnection -LocalPort 8003 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+  Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+  ```
+
+  **失去响应排查清单**（出现"启动后端没响应/卡住"时按序检查，3 步内定位）：
+  1. **不要重启** —— 先 `Get-NetTCPConnection -LocalPort 8003` 确认是否 LISTENING
+  2. 如已 LISTENING → 后端实际正常，只是 bash 返回流卡了 → 直接 `iwr http://localhost:8003/docs -Method Head` 验证 200
+  3. 如未 LISTENING → `Get-Content backend.log -Tail 30` 找真实错误（用 detach 脚本时所有 stdout+stderr 都在 backend.log，无 backend.err.log）
+  4. 真要重启 → 必须先 `Stop-Process` 杀 8003 旧 pid，再调 detach 脚本
+
+  **绝对禁用的反模式**:
+  - ❌ `Start-Process -NoNewWindow -PassThru -RedirectStandardOutput "x.log"`（方案 1，已废弃）
+  - ❌ `Start-Process -WindowStyle Hidden -RedirectStandardOutput "x.log"`（无 detach，主机仍持有句柄）
+  - ❌ `cmd /c "start /B ... > log 2>log"`（方案 2，已废弃，cmd 外层持有句柄）
+  - ❌ `nohup`（Windows 没这命令）
+  - ❌ 任何不通过 `scripts/start_*_detached.ps1` 的启动方式
 
 ### 验证原则
 - **Agent 必须自己完成验证**：不要让用户手动操作来验证 agent 的修改结果

@@ -6,11 +6,19 @@ import { apiLogin, apiToggleRegistration, apiGetUsers, apiDeleteUser } from '../
 const REG_USERNAME = `e2e_reg_${Date.now()}`;
 
 test.describe('注册流程', () => {
+  test.describe.configure({ mode: 'serial' });
+
   let adminToken;
 
   test.beforeAll(async () => {
     adminToken = await apiLogin(TEST_ADMIN.username, TEST_ADMIN.password);
     await apiToggleRegistration(adminToken, true);
+  });
+
+  test.beforeEach(async () => {
+    if (adminToken) {
+      await apiToggleRegistration(adminToken, true).catch(() => null);
+    }
   });
 
   test.afterAll(async () => {

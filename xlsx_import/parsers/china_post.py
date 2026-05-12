@@ -157,13 +157,25 @@ def _resolve_cis_destination(method_name: str) -> str | None:
     return None
 
 
-def _parse_sheet(ws, source_name: str, fixed_destination: str | None) -> dict:
+def _parse_sheet(
+    ws,
+    source_name: str,
+    fixed_destination: str | None,
+    max_import_rows: int | None = None,
+    start_count: int = 0,
+) -> dict:
     result: dict = {"rows": [], "skipped": 0, "errors": []}
-    for row_num in range(HEADER_ROW + 1, ws.max_row + 1):
-        values: list[object] = [
-            cast(object, ws.cell(row_num, col).value)
-            for col in range(1, MAX_COL + 1)
-        ]
+    seen_rows = start_count
+    rows = ws.iter_rows(
+        min_row=HEADER_ROW + 1,
+        max_col=MAX_COL,
+        values_only=True,
+    )
+    for row_num, row in enumerate(rows, start=HEADER_ROW + 1):
+        seen_rows += 1
+        if max_import_rows is not None and seen_rows > max_import_rows:
+            raise ValueError(f"导入行数不能超过 {max_import_rows} 行")
+        values: list[object] = [cast(object, value) for value in row]
         if is_blank_row(values):
             continue
         name_text = normalize_text(values[COL_METHOD])
@@ -214,6 +226,7 @@ def _parse_sheet(ws, source_name: str, fixed_destination: str | None) -> dict:
         except Exception as exc:
             result["skipped"] += 1
             result["errors"].append(f"row {row_num}: {exc}")
+    result["_seen_rows"] = seen_rows
     return result
 
 
@@ -227,7 +240,10 @@ def _select_target_sheets(wb) -> list[tuple[object, str | None]]:
 
 
 def parse(
-    source: object, filepath: str | None = None, source_file: str | None = None
+    source: object,
+    filepath: str | None = None,
+    source_file: str | None = None,
+    max_import_rows: int | None = None,
 ) -> dict:
     wb, should_close = load_workbook_source(source)
     try:
@@ -242,8 +258,16 @@ def parse(
             )
 
         merged: dict = {"rows": [], "skipped": 0, "errors": []}
+        seen_rows = 0
         for ws, fixed_destination in sheets:
-            sub = _parse_sheet(ws, source_name, fixed_destination)
+            sub = _parse_sheet(
+                ws,
+                source_name,
+                fixed_destination,
+                max_import_rows,
+                seen_rows,
+            )
+            seen_rows = sub.pop("_seen_rows", seen_rows)
             merged["rows"].extend(sub["rows"])
             merged["skipped"] += sub["skipped"]
             merged["errors"].extend(sub["errors"])

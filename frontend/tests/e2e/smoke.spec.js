@@ -9,8 +9,13 @@ test.describe('核心冒烟测试', () => {
     // 等待重定向完成（已登录则直接跳转，未登录则显示登录页）
     await page.waitForLoadState('networkidle');
 
-    const url = page.url();
-    if (url.includes('/login')) {
+    const continueBtn = page.getByRole('button', { name: '继续使用' });
+    if (await continueBtn.isVisible().catch(() => false)) {
+      // 已登录状态：登录页展示“继续使用”，直接继续
+      await continueBtn.click();
+      await page.waitForURL(/\/(pricing|dashboard)/);
+      await expect(page).toHaveURL(/\/(pricing|dashboard)/);
+    } else if (page.url().includes('/login')) {
       // 未登录状态：正常填写表单
       await expect(page.getByRole('heading', { name: '物流定价系统' })).toBeVisible();
       await page.fill('input[name="username"]', 'admin');
@@ -19,7 +24,7 @@ test.describe('核心冒烟测试', () => {
       await page.waitForURL(/\/(pricing|dashboard)/);
       await expect(page).toHaveURL(/\/(pricing|dashboard)/);
     } else {
-      // 已登录状态：已经跳转到主页
+      // 已登录且已跳转到主页
       await expect(page).toHaveURL(/\/(pricing|dashboard)/);
     }
   });

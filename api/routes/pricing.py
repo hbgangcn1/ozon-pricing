@@ -263,11 +263,7 @@ async def calculate(
             rate,
         )
 
-    all_res = await asyncio.to_thread(
-        calculate_pricing,
-        product, land_rules, air_rules,
-        mode=mode, priority="低价优先",
-    )
+    all_res = raw_res.get("低价优先", {})
     filtered_logistics = all_res.get("filtered_logistics", {"land": [], "air": []})
 
     winner_ids = _collect_winner_ids_from_res_dict(raw_res)

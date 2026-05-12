@@ -159,5 +159,9 @@ def is_transition_row(values: list[Any]) -> bool:
 
 def load_workbook_source(source: Any):
     if isinstance(source, str):
-        return openpyxl.load_workbook(source, data_only=True), True
+        return openpyxl.load_workbook(
+            source,
+            read_only=True,
+            data_only=True,
+        ), True
     return source, False

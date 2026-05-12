@@ -18,10 +18,6 @@ async function getToken(request, username, password) {
 test.describe('Subscriptions API - 订阅计划', () => {
   test('GET /api/subscriptions/plans - 无需认证返回计划列表', async ({ request }) => {
     const resp = await request.get('/api/subscriptions/plans')
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(Array.isArray(data)).toBeTruthy()
@@ -29,10 +25,6 @@ test.describe('Subscriptions API - 订阅计划', () => {
 
   test('GET /api/subscriptions/plans - 返回计划有正确结构', async ({ request }) => {
     const resp = await request.get('/api/subscriptions/plans')
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     const data = await resp.json()
     expect(Array.isArray(data)).toBeTruthy()
     if (data.length > 0) {
@@ -55,10 +47,6 @@ test.describe('Subscriptions API - 订阅计划', () => {
 
   test('GET /api/subscriptions/plans - 所有返回计划的 status 为 true', async ({ request }) => {
     const resp = await request.get('/api/subscriptions/plans')
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     const data = await resp.json()
     for (const plan of data) {
       expect(plan.status).toBe(true)
@@ -89,10 +77,6 @@ test.describe('Subscriptions API - 当前订阅', () => {
     const resp = await request.get('/api/subscriptions/current', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     expect(resp.status()).toBe(200)
     const data = await resp.json()
     expect(data).toHaveProperty('plan_code')
@@ -105,10 +89,6 @@ test.describe('Subscriptions API - 当前订阅', () => {
     const resp = await request.get('/api/subscriptions/current', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     const data = await resp.json()
     expect(typeof data.plan_code).toBe('string')
     expect(data.plan_code.length).toBeGreaterThan(0)
@@ -119,10 +99,6 @@ test.describe('Subscriptions API - 当前订阅', () => {
     const resp = await request.get('/api/subscriptions/current', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (resp.status() === 500) {
-      test.skip()
-      return
-    }
     const data = await resp.json()
     expect(typeof data.calc_limit).toBe('number')
     expect(typeof data.logistics_limit).toBe('number')

@@ -67,7 +67,10 @@ def _apply_volume_mode(item: dict, values: list[object], is_kz_by: bool) -> None
 
 
 def parse(
-    source: object, filepath: str | None = None, source_file: str | None = None
+    source: object,
+    filepath: str | None = None,
+    source_file: str | None = None,
+    max_import_rows: int | None = None,
 ) -> dict:
     wb, should_close = load_workbook_source(source)
     try:
@@ -82,10 +85,11 @@ def parse(
         ]
         for ws in sheets:
             is_kz_by = "kz & by" in ws.title.lower()
-            for row_num in range(6, ws.max_row + 1):
-                values: list[object] = [
-                    cast(object, ws.cell(row_num, col).value) for col in range(1, 21)
-                ]
+            rows = ws.iter_rows(min_row=6, max_col=20, values_only=True)
+            for row_num, row in enumerate(rows, start=6):
+                if max_import_rows is not None and row_num - 5 > max_import_rows:
+                    raise ValueError(f"导入行数不能超过 {max_import_rows} 行")
+                values: list[object] = [cast(object, value) for value in row]
                 if is_blank_row(values):
                     continue
                 if is_transition_row(values):

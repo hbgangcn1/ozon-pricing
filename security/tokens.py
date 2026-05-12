@@ -150,6 +150,8 @@ def decode_access_token(token: str) -> dict:
         # 拒绝把 refresh token 当 access token 用（防 token 类型混淆攻击）
         if payload.get("type") == TOKEN_TYPE_REFRESH:
             raise TokenInvalidError("Refresh token 不能用作 access token")
+        if payload.get("purpose") == "password_reset":
+            raise TokenInvalidError("Password reset token 不能用作 access token")
         return payload
     except jwt.ExpiredSignatureError:
         raise TokenExpiredError("Token 已过期")
@@ -171,9 +173,27 @@ def decode_access_token_unsafe(token: str) -> dict:
         )
         if payload.get("type") == TOKEN_TYPE_REFRESH:
             raise TokenInvalidError("Refresh token 不能用作 access token")
+        if payload.get("purpose") == "password_reset":
+            raise TokenInvalidError("Password reset token 不能用作 access token")
         return payload
     except jwt.InvalidTokenError as e:
         raise TokenInvalidError(f"Token 无效: {e}")
+
+
+def decode_password_reset_token(token: str) -> dict:
+    """Decode password reset token; raises TokenExpiredError or TokenInvalidError."""
+    try:
+        payload = jwt.decode(token, _get_secret_key(), algorithms=[ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise TokenExpiredError("Token 已过期")
+    except jwt.InvalidTokenError as e:
+        raise TokenInvalidError(f"Token 无效: {e}")
+
+    if payload.get("type") == TOKEN_TYPE_REFRESH:
+        raise TokenInvalidError("Refresh token 不能用作 password reset token")
+    if payload.get("purpose") != "password_reset":
+        raise TokenInvalidError("Token 不是 password reset 类型")
+    return payload
 
 
 def decode_refresh_token(token: str) -> dict:

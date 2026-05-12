@@ -192,10 +192,10 @@ export default function CommissionCategoriesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(cat)} disabled={!canManage} title={!canManage ? '当前方案暂不支持此功能' : undefined}>
+                        <Button variant="ghost" size="icon" aria-label="编辑佣金分类" onClick={() => handleOpenDialog(cat)} disabled={!canManage} title={!canManage ? '当前方案暂不支持此功能' : undefined}>
                           <Edit2 className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)} disabled={!canManage} title={!canManage ? '当前方案暂不支持此功能' : undefined} className="text-error hover:text-error-hover">
+                        <Button variant="ghost" size="icon" aria-label="删除佣金分类" onClick={() => handleDelete(cat.id)} disabled={!canManage} title={!canManage ? '当前方案暂不支持此功能' : undefined} className="text-error hover:text-error-hover">
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>

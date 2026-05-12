@@ -11,7 +11,9 @@ from security.tokens import (
     create_access_token,
     create_access_token_from_payload,
     create_refresh_token,
-    decode_access_token_unsafe,
+    decode_access_token,
+    TokenExpiredError,
+    TokenInvalidError,
 )
 from api.dependencies import validate_cookie_csrf
 from api.models.schemas import RefreshResponse
@@ -77,8 +79,8 @@ async def refresh_access_token_bearer(
     """Proactive access token refresh via Bearer auth (no CSRF).
 
     Frontend calls this when token is near expiry (< 5 min remaining).
-    Decodes the Bearer token (without exp verification), verifies user
-    exists and not frozen, then issues a fresh access token.
+    Decodes the Bearer token, verifies user exists and not frozen, then
+    issues a fresh access token.
     """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -88,7 +90,13 @@ async def refresh_access_token_bearer(
         )
     token = auth_header[7:]
 
-    payload = decode_access_token_unsafe(token)
+    try:
+        payload = decode_access_token(token)
+    except (TokenExpiredError, TokenInvalidError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token 无效或已过期",
+        )
     user_id = int(payload["sub"])
     sid = payload.get("sid")
 

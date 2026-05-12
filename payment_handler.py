@@ -3,7 +3,6 @@
 支付处理模块
 为物流支付系统提供核心支付处理功能
 """
-
 import time
 import logging
 from typing import Dict, Any
@@ -135,40 +134,3 @@ class PaymentHandler:
                 await session.rollback()
                 logger.error(f"更新订单状态时出错: {e}")
                 raise
-
-
-class _PaymentHandlerModule:
-    """模块级支付处理器，处理微信支付回调通知"""
-
-    async def process_wechat_notify(
-        self, notify_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        if not _wechat_available or wechat_pay_v3 is None:
-            return {
-                "success": False,
-                "message": "微信支付模块不可用",
-                "out_trade_no": "",
-            }
-
-        try:
-            result = wechat_pay_v3.process_notify(notify_data)
-
-            if "out_trade_no" not in result:
-                result["out_trade_no"] = ""
-
-            if result.get("success"):
-                out_trade_no = result.get("out_trade_no", "")
-                if out_trade_no:
-                    await PaymentHandler.update_order_status(out_trade_no, "PAID")
-
-            return result
-        except Exception as e:
-            logger.error(f"处理微信通知时出错: {e}")
-            return {
-                "success": False,
-                "message": "处理通知失败",
-                "out_trade_no": "",
-            }
-
-
-payment_handler = _PaymentHandlerModule()

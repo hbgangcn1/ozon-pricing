@@ -20,6 +20,16 @@ PARSERS = {
 
 _MAX_RETRIES = 3
 _INITIAL_BACKOFF = 0.1
+MAX_IMPORT_ROWS = 50000
+
+
+def _load_workbook_read_only(path: str):
+    try:
+        return openpyxl.load_workbook(path, read_only=True, data_only=True)
+    except TypeError as exc:
+        if "read_only" not in str(exc):
+            raise
+        return openpyxl.load_workbook(path, data_only=True)
 
 
 def _open_workbook_with_retry(filepath: str):
@@ -30,7 +40,7 @@ def _open_workbook_with_retry(filepath: str):
         for attempt in range(_MAX_RETRIES + 1):
             candidate = temp_path or filepath
             try:
-                workbook = openpyxl.load_workbook(candidate, data_only=True)
+                workbook = _load_workbook_read_only(candidate)
                 return workbook, temp_path
             except PermissionError as exc:
                 last_error = exc
@@ -52,11 +62,26 @@ def _open_workbook_with_retry(filepath: str):
         raise
 
 
-def parse_file(filepath: str, source_file: str | None = None) -> dict:
+def parse_file(
+    filepath: str,
+    source_file: str | None = None,
+    max_import_rows: int | None = None,
+) -> dict:
     workbook, temp_path = _open_workbook_with_retry(filepath)
     try:
         fmt = detect_format(workbook)
-        result = PARSERS[fmt](workbook, filepath, source_file)
+        limit = max_import_rows or MAX_IMPORT_ROWS
+        if max_import_rows is None:
+            result = PARSERS[fmt](workbook, filepath, source_file)
+        else:
+            result = PARSERS[fmt](
+                workbook,
+                filepath,
+                source_file,
+                max_import_rows=limit,
+            )
+        if len(result.get("rows", [])) > limit:
+            raise ValueError(f"导入行数不能超过 {limit} 行")
         result["format"] = fmt
         return result
     finally:

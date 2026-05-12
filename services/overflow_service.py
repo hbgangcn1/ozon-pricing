@@ -16,7 +16,7 @@ call. Tradeoff: MRU may lag <60s, acceptable for trim ordering.
 """
 import time
 from dataclasses import dataclass
-from typing import Iterable, Literal
+from typing import Any, Iterable, Literal, cast
 
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -191,7 +191,7 @@ async def restore_all_overflow(
         )
         .values(disabled_by_overflow=0)
     )
-    restored = res.rowcount or 0
+    restored = cast(Any, res).rowcount or 0
 
     win = await _get_open_window(session, user_id)
     if win is not None:
@@ -225,7 +225,7 @@ async def mark_logistics_used(
         )
         .values(last_used_at=cur)
     )
-    return res.rowcount or 0
+    return cast(Any, res).rowcount or 0
 
 
 async def close_expired_windows(
@@ -247,7 +247,7 @@ async def close_expired_windows(
         )
         .values(closed_at=cur, close_reason="expired")
     )
-    return res.rowcount or 0
+    return cast(Any, res).rowcount or 0
 
 
 __all__ = [
