@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import tempfile
@@ -138,7 +139,8 @@ async def import_logistics_pool(
             temp_file.write(content)
             temp_path = temp_file.name
         try:
-            result = parse_file(
+            result = await asyncio.to_thread(
+                parse_file,
                 temp_path,
                 source_file=file.filename or None,
                 max_import_rows=_MAX_IMPORT_ROWS,

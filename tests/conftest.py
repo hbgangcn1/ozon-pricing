@@ -43,12 +43,14 @@ def _install_worker_schema_isolation() -> None:
         create_worker_schema,
         make_worker_engine,
         make_worker_sessionmaker,
+        seed_default_plans,
         worker_schema_name,
     )
 
     schema = worker_schema_name()
     create_worker_schema(schema)
     create_all_in_schema(schema)
+    seed_default_plans(schema)
 
     worker_engine = make_worker_engine(schema)
     worker_sessionmaker = make_worker_sessionmaker(worker_engine)

@@ -5,6 +5,7 @@ import openpyxl
 def create_pool_xlsx(output_path: str) -> None:
     wb = openpyxl.Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = "China RFBS"
 
     headers = [
@@ -14,7 +15,7 @@ def create_pool_xlsx(output_path: str) -> None:
         "Col15", "Col16", "Volume Mode", "Volume Coeff",
     ]
     for col, val in enumerate(headers, start=1):
-        ws.cell(5, col).value = val
+        ws.cell(row=5, column=col, value=val)
 
     entries = [
         ("A", "land", "", "E2E_Pool_Test_1", "", "7-14", "10+2/100g", "No", "No", "", 0, 2000, "", "", "", "", "physical weight", "5000"),
@@ -25,7 +26,7 @@ def create_pool_xlsx(output_path: str) -> None:
     for i, entry in enumerate(entries):
         row = 6 + i
         for col, val in enumerate(entry, start=1):
-            ws.cell(row, col).value = val
+            ws.cell(row=row, column=col, value=val)
 
     wb.save(output_path)
 

@@ -280,6 +280,147 @@ class TestGetOrder:
         assert result is None
 
 
+class TestFunnelSourceTagging:
+    """Enforces the 3-source funnel taxonomy (regression guard)."""
+
+    @pytest.mark.asyncio
+    async def test_payment_success_uses_source_payment_success(self, monkeypatch):
+        captured = {}
+
+        async def _fake_apply(session, user_id, plan_code, **kwargs):
+            captured["source"] = kwargs.get("source")
+            captured["plan_code"] = plan_code
+            captured["user_id"] = user_id
+            captured["subscription_expires"] = kwargs.get("subscription_expires")
+            captured["started_at"] = kwargs.get("started_at")
+            return MagicMock()
+
+        monkeypatch.setattr(
+            "services.payment_service.apply_paid_subscription", _fake_apply
+        )
+
+        session = _mock_session()
+        order = _make_order(description="效率版月套餐", duration="month")
+        user = _make_user()
+        _setup_session_execute(session, order)
+        session.get.return_value = user
+
+        svc = PaymentService(session)
+        await svc.handle_payment_success("ord_001")
+
+        assert captured["source"] == "payment_success"
+        assert captured["plan_code"] == "efficiency"
+        assert captured["user_id"] == 1
+        assert captured["started_at"] is not None
+        assert captured["subscription_expires"] > captured["started_at"]
+
+    @pytest.mark.asyncio
+    async def test_wechat_notify_uses_source_wechat_notify(self, monkeypatch):
+        captured = {}
+
+        async def _fake_apply(session, user_id, plan_code, **kwargs):
+            captured["source"] = kwargs.get("source")
+            captured["plan_code"] = plan_code
+            return MagicMock()
+
+        monkeypatch.setattr(
+            "services.payment_service.apply_paid_subscription", _fake_apply
+        )
+
+        session = _mock_session()
+        row = MagicMock()
+        row.id = 1
+        row.user_id = 1
+        row.amount = 2990
+        row.description = "效率版月套餐"
+        row.duration = "month"
+        result = MagicMock()
+        result.first.return_value = row
+        session.execute.return_value = result
+        session.get.return_value = _make_user()
+
+        svc = PaymentService(session)
+        outcome = await svc.apply_wechat_payment_success(
+            out_trade_no="ord_wx_001",
+            transaction_id="tx_001",
+            amount_total=2990,
+            currency="CNY",
+            appid=None,
+            mchid=None,
+            raw_notify={},
+        )
+
+        assert outcome == "processed"
+        assert captured["source"] == "wechat_notify"
+        assert captured["plan_code"] == "efficiency"
+
+    @pytest.mark.asyncio
+    async def test_legacy_handler_uses_source_wechat_pay_legacy(self):
+        import inspect
+        import payment_handler
+
+        src = inspect.getsource(payment_handler)
+        assert 'source="wechat_pay_legacy"' in src or \
+            "source='wechat_pay_legacy'" in src, \
+            "payment_handler.py must funnel through apply_paid_subscription " \
+            "with source='wechat_pay_legacy'"
+        assert "apply_paid_subscription" in src, \
+            "payment_handler.py must use apply_paid_subscription funnel"
+
+
+class TestApplyPaidSubscriptionDirect:
+    """Verifies paid funnel writes user_type, subscription_start, quota=-1."""
+
+    @pytest.mark.asyncio
+    async def test_writes_user_type_and_started_at_and_unlimited_quota(
+        self, db_session, test_user
+    ):
+        from db.subscriptions import apply_paid_subscription
+        from models.user import User
+
+        uid = test_user["id"]
+        started_at = int(time.time())
+        expires = started_at + 30 * 86400
+
+        await apply_paid_subscription(
+            db_session,
+            uid,
+            "efficiency",
+            subscription_expires=expires,
+            started_at=started_at,
+            source="test_direct",
+        )
+        await db_session.commit()
+
+        user = await db_session.get(User, uid)
+        assert user.user_type == "efficiency"
+        assert user.subscription_start == started_at
+        assert user.remaining_calculations == -1
+        assert user.subscription_type == "efficiency"
+        assert user.subscription_expires == expires
+
+    @pytest.mark.asyncio
+    async def test_admin_grant_does_not_reset_quota_when_using_change_only(
+        self, db_session, test_user
+    ):
+        from db.subscriptions import apply_subscription_change
+        from models.user import User
+
+        uid = test_user["id"]
+        user = await db_session.get(User, uid)
+        user.remaining_calculations = 7
+        await db_session.commit()
+
+        await apply_subscription_change(
+            db_session, uid, "professional", source="admin_grant",
+        )
+        await db_session.commit()
+
+        user = await db_session.get(User, uid)
+        assert user.subscription_type == "professional"
+        assert user.remaining_calculations == 7
+
+
 class TestGetUserOrder:
     @pytest.mark.asyncio
     async def test_found_correct_user(self):

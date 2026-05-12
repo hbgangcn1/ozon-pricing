@@ -29,6 +29,7 @@ reset_user_daily_calculations = _quota.reset_user_daily_calculations
 __all__ = [
     "ChangeAction",
     "ChangeResult",
+    "apply_paid_subscription",
     "apply_subscription_change",
     "check_user_subscription_status",
     "decrement_user_calculations",
@@ -99,6 +100,92 @@ async def _count_active_rules(session: AsyncSession, user_id: int) -> int:
     return int((await session.execute(stmt)).scalar_one() or 0)
 
 
+async def _apply_noop_change(
+    session: AsyncSession,
+    user: User,
+    user_id: int,
+    old_plan: str,
+    new_plan_norm: str,
+    billing_cycle: Optional[str],
+    subscription_expires: Optional[int],
+    source: str,
+) -> ChangeResult:
+    if billing_cycle is not None:
+        user.billing_cycle = billing_cycle
+    if subscription_expires is not None:
+        user.subscription_expires = subscription_expires
+    active_count = await _count_active_rules(session, user_id)
+    new_limit = await _resolve_plan_limit(session, new_plan_norm)
+    logger.info(
+        "subscription_change noop: user=%d plan=%s source=%s",
+        user_id, new_plan_norm, source,
+    )
+    return ChangeResult(
+        action="noop",
+        old_plan=old_plan,
+        new_plan=new_plan_norm,
+        new_limit=new_limit,
+        active_count=active_count,
+    )
+
+
+async def _apply_upgrade_change(
+    session: AsyncSession,
+    user_id: int,
+    old_plan: str,
+    new_plan_norm: str,
+    new_limit: int,
+    active_count: int,
+    source: str,
+) -> ChangeResult:
+    from services import overflow_service
+    restored = await overflow_service.restore_all_overflow(
+        session, user_id, reason="upgraded",
+    )
+    logger.info(
+        "subscription_change upgrade: user=%d %s→%s restored=%d source=%s",
+        user_id, old_plan, new_plan_norm, restored, source,
+    )
+    return ChangeResult(
+        action="upgraded",
+        old_plan=old_plan,
+        new_plan=new_plan_norm,
+        new_limit=new_limit,
+        active_count=active_count,
+        restored_count=restored,
+    )
+
+
+async def _apply_downgrade_change(
+    session: AsyncSession,
+    user_id: int,
+    old_plan: str,
+    new_plan_norm: str,
+    new_limit: int,
+    active_count: int,
+    source: str,
+) -> ChangeResult:
+    from services import overflow_service
+    trim = await overflow_service.auto_trim_user_rules(
+        session, user_id, new_limit,
+    )
+    logger.info(
+        "subscription_change downgrade: user=%d %s→%s trimmed=%d "
+        "window=%d source=%s",
+        user_id, old_plan, new_plan_norm, trim.trimmed_count,
+        trim.window_id, source,
+    )
+    return ChangeResult(
+        action="downgraded",
+        old_plan=old_plan,
+        new_plan=new_plan_norm,
+        new_limit=new_limit,
+        active_count=active_count,
+        trimmed_count=trim.trimmed_count,
+        window_id=trim.window_id,
+    )
+
+
 async def apply_subscription_change(
     session: AsyncSession,
     user_id: int,
@@ -110,23 +197,9 @@ async def apply_subscription_change(
 ) -> ChangeResult:
     """ONLY allowed entry point for writing users.subscription_type.
 
-    Transactional steps (caller commits):
-      1. Load user (404 → ValueError).
-      2. Read old plan code.
-      3. Same plan + same expires → idempotent noop (still updates billing_cycle
-         if provided; does NOT touch subscription_expires unless given).
-      4. Write subscription_type / billing_cycle / subscription_expires.
-      5. Resolve new plan's logistics_limit.
-      6. UPGRADE branch: new plan in {professional, enterprise} OR new_limit==-1
-         OR new_limit > old active_count → restore_all_overflow(reason='upgraded').
-      7. DOWNGRADE branch: new_limit > 0 AND new_limit < active_count
-         → auto_trim_user_rules(user_id, new_limit).
-      8. Otherwise: same_tier (e.g. monthly→yearly free).
-
-    `source` is for audit logging only (e.g. 'wechat_pay', 'admin_grant').
-    Returns ChangeResult with audit fields. Caller commits.
+    Steps (caller commits): noop / upgrade (restore_all_overflow) /
+    downgrade (auto_trim) / same_tier. `source` is for audit logs.
     """
-    from services import overflow_service  # lazy: see module-level note
     user = await session.get(User, user_id)
     if user is None:
         raise ValueError(f"user not found: id={user_id}")
@@ -134,25 +207,10 @@ async def apply_subscription_change(
     old_plan = (user.subscription_type or "free").strip() or "free"
     new_plan_norm = (new_plan or "free").strip() or "free"
 
-    # Idempotent same-plan path: still allow billing_cycle / expires refresh
-    # (e.g. renewal of same tier extends expiry without overflow recompute).
     if old_plan == new_plan_norm:
-        if billing_cycle is not None:
-            user.billing_cycle = billing_cycle
-        if subscription_expires is not None:
-            user.subscription_expires = subscription_expires
-        active_count = await _count_active_rules(session, user_id)
-        new_limit = await _resolve_plan_limit(session, new_plan_norm)
-        logger.info(
-            "subscription_change noop: user=%d plan=%s source=%s",
-            user_id, new_plan_norm, source,
-        )
-        return ChangeResult(
-            action="noop",
-            old_plan=old_plan,
-            new_plan=new_plan_norm,
-            new_limit=new_limit,
-            active_count=active_count,
+        return await _apply_noop_change(
+            session, user, user_id, old_plan, new_plan_norm,
+            billing_cycle, subscription_expires, source,
         )
 
     user.subscription_type = new_plan_norm
@@ -171,39 +229,15 @@ async def apply_subscription_change(
     )
 
     if is_upgrade:
-        restored = await overflow_service.restore_all_overflow(
-            session, user_id, reason="upgraded",
-        )
-        logger.info(
-            "subscription_change upgrade: user=%d %s→%s restored=%d source=%s",
-            user_id, old_plan, new_plan_norm, restored, source,
-        )
-        return ChangeResult(
-            action="upgraded",
-            old_plan=old_plan,
-            new_plan=new_plan_norm,
-            new_limit=new_limit,
-            active_count=active_count,
-            restored_count=restored,
+        return await _apply_upgrade_change(
+            session, user_id, old_plan, new_plan_norm,
+            new_limit, active_count, source,
         )
 
     if new_limit > 0 and active_count > new_limit:
-        trim = await overflow_service.auto_trim_user_rules(
-            session, user_id, new_limit,
-        )
-        logger.info(
-            "subscription_change downgrade: user=%d %s→%s trimmed=%d window=%d source=%s",
-            user_id, old_plan, new_plan_norm, trim.trimmed_count,
-            trim.window_id, source,
-        )
-        return ChangeResult(
-            action="downgraded",
-            old_plan=old_plan,
-            new_plan=new_plan_norm,
-            new_limit=new_limit,
-            active_count=active_count,
-            trimmed_count=trim.trimmed_count,
-            window_id=trim.window_id,
+        return await _apply_downgrade_change(
+            session, user_id, old_plan, new_plan_norm,
+            new_limit, active_count, source,
         )
 
     logger.info(
@@ -297,3 +331,37 @@ async def check_user_subscription_status(
         return await _check_new_tier_status(session, user_info, user_type, user_id)
 
     return {"valid": False, "message": "未知用户类型", "user_type": user_type}
+
+
+# --- apply_paid_subscription --------------------------------------------------
+#
+# Single funnel for ALL paid (WeChat + legacy) subscription activations.
+# Wraps apply_subscription_change and centralises the paid-only side effects:
+# user_type / subscription_start / remaining_calculations. Direct writes to
+# these three fields outside this helper are forbidden in payment paths so a
+# future refactor of activation semantics only needs to touch one place.
+
+async def apply_paid_subscription(
+    session: AsyncSession,
+    user_id: int,
+    plan_code: str,
+    *,
+    subscription_expires: int,
+    started_at: int,
+    source: str,
+    billing_cycle: Optional[str] = None,
+) -> ChangeResult:
+    result = await apply_subscription_change(
+        session,
+        user_id,
+        plan_code,
+        billing_cycle=billing_cycle,
+        subscription_expires=subscription_expires,
+        source=source,
+    )
+    user = await session.get(User, user_id)
+    if user is not None:
+        user.user_type = plan_code
+        user.subscription_start = started_at
+        user.remaining_calculations = -1
+    return result

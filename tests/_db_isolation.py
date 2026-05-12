@@ -158,6 +158,58 @@ def create_all_in_schema(schema_name: str) -> None:
         sync_engine.dispose()
 
 
+def seed_default_plans(schema_name: str) -> None:
+    """Insert the four production-equivalent rows into ``plans``.
+
+    Mirrors production ``plans`` table (free / efficiency / professional
+    / enterprise) so per-worker schemas can serve subscription-related
+    tests without each test re-seeding. Idempotent: ``ON CONFLICT
+    (plan_code) DO NOTHING``. Sync psycopg2 to fit the existing
+    sessionstart sync setup path.
+    """
+    rows = [
+        ("free", "免费版", "适合初次体验的用户",
+         "基础物流模板|每日10次计算|基础功能", 10, 1, 0),
+        ("efficiency", "效率版", "适合中小规模卖家",
+         "极速模式|3个物流模板|无限次计算|优先客服", -1, 3, 1),
+        ("professional", "专业版", "适合大规模专业卖家",
+         "极速模式|10个物流模板|无限次计算|专属客服|数据导出", -1, -1, 2),
+        ("enterprise", "企业版", "适合企业团队使用",
+         "极速模式|无限物流模板|无限次计算|API接口|定制开发|7x24服务",
+         -1, -1, 3),
+    ]
+    sync_engine = _build_sync_engine_for_schema(schema_name)
+    try:
+        with sync_engine.begin() as conn:
+            conn.execute(text(f'SET search_path TO "{schema_name}"'))
+            for code, name, desc, feats, calc_limit, log_limit, sort_order in rows:
+                conn.execute(
+                    text(
+                        "INSERT INTO plans (plan_code, plan_name, description, "
+                        "features, "
+                        "display_price_month, display_price_year, "
+                        "actual_price_month, actual_price_year, "
+                        "test_price_month, test_price_year, "
+                        "calc_limit, logistics_limit, is_active, sort_order) "
+                        "VALUES (:code, :name, :desc, :feats, "
+                        "0, 0, 0, 0, 0, 0, "
+                        ":calc, :log, 1, :sort) "
+                        "ON CONFLICT (plan_code) DO NOTHING"
+                    ),
+                    {
+                        "code": code,
+                        "name": name,
+                        "desc": desc,
+                        "feats": feats,
+                        "calc": calc_limit,
+                        "log": log_limit,
+                        "sort": sort_order,
+                    },
+                )
+    finally:
+        sync_engine.dispose()
+
+
 def drop_test_schemas() -> None:
     """DROP every ``test_*`` schema CASCADE owned by the current user.
 

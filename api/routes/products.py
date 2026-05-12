@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 import os
@@ -183,6 +184,90 @@ async def delete_product_endpoint(
     return MessageResponse(message="删除成功")
 
 
+def _parse_xlsx_preview(temp_path: str) -> ProductImportPreview:
+    workbook = openpyxl.load_workbook(
+        temp_path,
+        read_only=True,
+        data_only=True,
+    )
+    try:
+        sheet = workbook.active
+        if sheet is None:
+            return ProductImportPreview(columns=[], preview_rows=[])
+        row_iterator = sheet.iter_rows(values_only=True)
+        try:
+            header_row = next(row_iterator)
+        except StopIteration:
+            return ProductImportPreview(columns=[], preview_rows=[])
+        headers = [
+            str(value).strip() if value is not None else ""
+            for value in header_row
+        ]
+        headers = [h for h in headers if h]
+        preview_rows = []
+        for row_count, row in enumerate(row_iterator, start=1):
+            if row_count > MAX_IMPORT_ROWS:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"导入行数不能超过 {MAX_IMPORT_ROWS} 行",
+                )
+            row_dict = {}
+            for index, column in enumerate(headers):
+                if column:
+                    row_dict[column] = (
+                        _safe_value(row[index])
+                        if index < len(row)
+                        else None
+                    )
+            preview_rows.append(row_dict)
+        return ProductImportPreview(
+            columns=headers,
+            preview_rows=preview_rows,
+        )
+    finally:
+        workbook.close()
+
+
+def _parse_xls_preview(temp_path: str) -> ProductImportPreview:
+    import xlrd
+    workbook = xlrd.open_workbook(temp_path)
+    sheet = workbook.sheet_by_index(0)
+    if sheet.nrows == 0:
+        return ProductImportPreview(columns=[], preview_rows=[])
+    if sheet.nrows - 1 > MAX_IMPORT_ROWS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"导入行数不能超过 {MAX_IMPORT_ROWS} 行",
+        )
+    header_row = sheet.row_values(0)
+    if not header_row:
+        return ProductImportPreview(columns=[], preview_rows=[])
+    headers = [
+        str(value).strip() if value is not None else ""
+        for value in header_row
+    ]
+    headers = [h for h in headers if h]
+    preview_rows = []
+    for row_idx in range(1, sheet.nrows):
+        row = sheet.row_values(row_idx)
+        row_dict = {}
+        for index, column in enumerate(headers):
+            if column:
+                row_dict[column] = (
+                    _safe_value(row[index]) if index < len(row) else None
+                )
+        preview_rows.append(row_dict)
+    return ProductImportPreview(columns=headers, preview_rows=preview_rows)
+
+
+def _parse_product_import_file(
+    temp_path: str, suffix: str
+) -> ProductImportPreview:
+    if suffix == ".xlsx":
+        return _parse_xlsx_preview(temp_path)
+    return _parse_xls_preview(temp_path)
+
+
 @router.post("/import/preview", response_model=ProductImportPreview)
 async def preview_product_import(
     file: UploadFile,
@@ -202,80 +287,9 @@ async def preview_product_import(
             temp_file.write(contents)
             temp_path = temp_file.name
 
-        if suffix == ".xlsx":
-            workbook = openpyxl.load_workbook(
-                temp_path,
-                read_only=True,
-                data_only=True,
-            )
-            try:
-                sheet = workbook.active
-                if sheet is None:
-                    return ProductImportPreview(columns=[], preview_rows=[])
-                row_iterator = sheet.iter_rows(values_only=True)
-                try:
-                    header_row = next(row_iterator)
-                except StopIteration:
-                    return ProductImportPreview(columns=[], preview_rows=[])
-                headers = [
-                    str(value).strip() if value is not None else ""
-                    for value in header_row
-                ]
-                headers = [h for h in headers if h]
-                preview_rows = []
-                for row_count, row in enumerate(row_iterator, start=1):
-                    if row_count > MAX_IMPORT_ROWS:
-                        raise HTTPException(
-                            status_code=413,
-                            detail=f"导入行数不能超过 {MAX_IMPORT_ROWS} 行",
-                        )
-                    row_dict = {}
-                    for index, column in enumerate(headers):
-                        if column:
-                            row_dict[column] = (
-                                _safe_value(row[index])
-                                if index < len(row)
-                                else None
-                            )
-                    preview_rows.append(row_dict)
-                return ProductImportPreview(
-                    columns=headers,
-                    preview_rows=preview_rows,
-                )
-            finally:
-                workbook.close()
-
-        else:
-            import xlrd
-            workbook = xlrd.open_workbook(temp_path)
-            sheet = workbook.sheet_by_index(0)
-            if sheet.nrows == 0:
-                return ProductImportPreview(columns=[], preview_rows=[])
-            if sheet.nrows - 1 > MAX_IMPORT_ROWS:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"导入行数不能超过 {MAX_IMPORT_ROWS} 行",
-                )
-            header_row = sheet.row_values(0)
-            rows = (
-                sheet.row_values(row_idx)
-                for row_idx in range(1, sheet.nrows)
-            )
-        if not header_row:
-            return ProductImportPreview(columns=[], preview_rows=[])
-
-        headers = [str(value).strip() if value is not None else "" for value in header_row]
-        headers = [h for h in headers if h]
-        preview_rows = []
-        for row in rows:
-            row_dict = {}
-            for index, column in enumerate(headers):
-                if column:
-                    row_dict[column] = (
-                        _safe_value(row[index]) if index < len(row) else None
-                    )
-            preview_rows.append(row_dict)
-        return ProductImportPreview(columns=headers, preview_rows=preview_rows)
+        return await asyncio.to_thread(
+            _parse_product_import_file, temp_path, suffix
+        )
     except HTTPException:
         raise
     except Exception as exc:

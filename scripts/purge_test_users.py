@@ -27,6 +27,105 @@ CONDITION = (
 )
 
 
+def _print_dry_run_sample(c, count: int) -> None:
+    c.execute(
+        sql.SQL(
+            "SELECT id, username, role, is_test_user FROM {} "
+            "WHERE {} ORDER BY id LIMIT 20"
+        ).format(
+            sql.Identifier("users"),
+            sql.SQL(CONDITION),
+        )
+    )
+    print("\nSample (first 20):")
+    for row in c.fetchall():
+        print(f"  id={row[0]}, user={row[1]}, role={row[2]}, is_test={row[3]}")
+    remaining = count - min(count, 20)
+    if remaining > 0:
+        print(f"  ... and {remaining} more")
+    print("\nDry-run mode. Use --execute to delete.")
+
+
+def _delete_dependent_rows(c, conn) -> None:
+    id_sub = sql.SQL("SELECT id FROM {} WHERE {}").format(
+        sql.Identifier("users"),
+        sql.SQL(CONDITION),
+    )
+    name_sub = sql.SQL("SELECT username FROM {} WHERE {}").format(
+        sql.Identifier("users"),
+        sql.SQL(CONDITION),
+    )
+
+    for table in [
+        "products",
+        "logistics",
+        "payment_orders",
+        "active_sessions",
+        "subscription_upgrade_history",
+        "user_login_log",
+        "user_behavior_log",
+    ]:
+        try:
+            c.execute(
+                sql.SQL("DELETE FROM {} WHERE user_id IN ({})").format(
+                    sql.Identifier(table),
+                    id_sub,
+                )
+            )
+            if c.rowcount > 0:
+                print(f"  {table}: {c.rowcount} rows deleted")
+        except Exception as e:
+            conn.rollback()
+            print(f"  {table}: skipped ({e})")
+
+    for table in ["login_attempts", "user_lockouts"]:
+        try:
+            c.execute(
+                sql.SQL("DELETE FROM {} WHERE identifier IN ({})").format(
+                    sql.Identifier(table),
+                    name_sub,
+                )
+            )
+            if c.rowcount > 0:
+                print(f"  {table}: {c.rowcount} rows deleted")
+        except Exception as e:
+            conn.rollback()
+            print(f"  {table}: skipped ({e})")
+
+    try:
+        c.execute(
+            sql.SQL(
+                "DELETE FROM {} WHERE admin_id IN ({}) "
+                "OR target_user_id IN ({})"
+            ).format(
+                sql.Identifier("admin_action_log"),
+                id_sub,
+                id_sub,
+            )
+        )
+        if c.rowcount > 0:
+            print(f"  admin_action_log: {c.rowcount} rows deleted")
+    except Exception as e:
+        conn.rollback()
+        print(f"  admin_action_log: skipped ({e})")
+
+
+def _print_summary(c) -> int:
+    c.execute(
+        sql.SQL("SELECT COUNT(*) FROM {} WHERE {}").format(
+            sql.Identifier("users"),
+            sql.SQL(CONDITION),
+        )
+    )
+    remaining = c.fetchone()[0]
+    print(f"Remaining test users: {remaining}")
+
+    c.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier("users")))
+    total = c.fetchone()[0]
+    print(f"Total users in database: {total}")
+    return remaining
+
+
 def main():
     if not DB_CONFIG["password"]:
         print("ERROR: POSTGRES_PASSWORD environment variable must be set")
@@ -59,79 +158,10 @@ def main():
             return
 
         if not args.execute:
-            c.execute(
-                sql.SQL("SELECT id, username, role, is_test_user FROM {} WHERE {} ORDER BY id LIMIT 20").format(
-                    sql.Identifier("users"),
-                    sql.SQL(CONDITION),
-                )
-            )
-            print("\nSample (first 20):")
-            for row in c.fetchall():
-                print(f"  id={row[0]}, user={row[1]}, role={row[2]}, is_test={row[3]}")
-            remaining = count - min(count, 20)
-            if remaining > 0:
-                print(f"  ... and {remaining} more")
-            print("\nDry-run mode. Use --execute to delete.")
+            _print_dry_run_sample(c, count)
             return
 
-        id_sub = sql.SQL("SELECT id FROM {} WHERE {}").format(
-            sql.Identifier("users"),
-            sql.SQL(CONDITION),
-        )
-        name_sub = sql.SQL("SELECT username FROM {} WHERE {}").format(
-            sql.Identifier("users"),
-            sql.SQL(CONDITION),
-        )
-
-        for table in [
-            "products",
-            "logistics",
-            "payment_orders",
-            "active_sessions",
-            "subscription_upgrade_history",
-            "user_login_log",
-            "user_behavior_log",
-        ]:
-            try:
-                c.execute(
-                    sql.SQL("DELETE FROM {} WHERE user_id IN ({})").format(
-                        sql.Identifier(table),
-                        id_sub,
-                    )
-                )
-                if c.rowcount > 0:
-                    print(f"  {table}: {c.rowcount} rows deleted")
-            except Exception as e:
-                conn.rollback()
-                print(f"  {table}: skipped ({e})")
-
-        for table in ["login_attempts", "user_lockouts"]:
-            try:
-                c.execute(
-                    sql.SQL("DELETE FROM {} WHERE identifier IN ({})").format(
-                        sql.Identifier(table),
-                        name_sub,
-                    )
-                )
-                if c.rowcount > 0:
-                    print(f"  {table}: {c.rowcount} rows deleted")
-            except Exception as e:
-                conn.rollback()
-                print(f"  {table}: skipped ({e})")
-
-        try:
-            c.execute(
-                sql.SQL("DELETE FROM {} WHERE admin_id IN ({}) OR target_user_id IN ({})").format(
-                    sql.Identifier("admin_action_log"),
-                    id_sub,
-                    id_sub,
-                )
-            )
-            if c.rowcount > 0:
-                print(f"  admin_action_log: {c.rowcount} rows deleted")
-        except Exception as e:
-            conn.rollback()
-            print(f"  admin_action_log: skipped ({e})")
+        _delete_dependent_rows(c, conn)
 
         c.execute(
             sql.SQL("DELETE FROM {} WHERE {}").format(
@@ -141,21 +171,10 @@ def main():
         )
         deleted = c.rowcount
         conn.commit()
-        c.close()
         print(f"\nDeleted {deleted} test user(s).")
 
-        c.execute(
-            sql.SQL("SELECT COUNT(*) FROM {} WHERE {}").format(
-                sql.Identifier("users"),
-                sql.SQL(CONDITION),
-            )
-        )
-        remaining = c.fetchone()[0]
-        print(f"Remaining test users: {remaining}")
-
-        c.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier("users")))
-        total = c.fetchone()[0]
-        print(f"Total users in database: {total}")
+        remaining = _print_summary(c)
+        c.close()
 
     if remaining > 0:
         print("WARNING: Some test users were not deleted!")

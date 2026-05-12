@@ -100,7 +100,12 @@ def _install_pytest_asyncio_py313_loop_fallback() -> None:
     if getattr(pap, "_py313_loop_fallback_installed", False):
         return
 
-    original_get_loop = pap._get_event_loop_no_warn
+    original_get_loop = getattr(pap, "_get_event_loop_no_warn", None)
+    if original_get_loop is None:
+        # pytest-asyncio dropped this private API; shim no longer applicable.
+        # Mark installed so we don't re-attempt every import.
+        setattr(pap, "_py313_loop_fallback_installed", True)
+        return
     original_clean_loop = getattr(pap, "_provide_clean_event_loop", None)
     make_pytest_loop = getattr(pap, "_make_pytest_asyncio_loop", None)
 
@@ -127,8 +132,8 @@ def _install_pytest_asyncio_py313_loop_fallback() -> None:
 
     pap._get_event_loop_no_warn = _shim
     if original_clean_loop is not None:
-        pap._provide_clean_event_loop = _provide_clean_event_loop_and_rebind
-    pap._py313_loop_fallback_installed = True
+        setattr(pap, "_provide_clean_event_loop", _provide_clean_event_loop_and_rebind)
+    setattr(pap, "_py313_loop_fallback_installed", True)
 
 
 # Install at import time so the shim is active before any test fixture runs.

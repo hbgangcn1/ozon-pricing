@@ -5,14 +5,17 @@
 """
 
 import asyncio
-import logging.handlers
 import time
 import threading
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-from dataclasses import dataclass
 
-# 配置日志
+from payment_callback_models import (
+    PaymentAlert,
+    PaymentRetryRecord,
+    _alert_logger,
+)
+
 try:
     from logger_config import logger
 except ImportError:
@@ -24,44 +27,13 @@ except ImportError:
     )
     logger = logging.getLogger(__name__)
 
-# 告警日志使用 RotatingFileHandler 防止无限增长
-_alert_logger = logging.getLogger("payment_alerts")
-_alert_handler = logging.handlers.RotatingFileHandler(
-    "payment_alerts.log",
-    maxBytes=5 * 1024 * 1024,
-    backupCount=3,
-    encoding="utf-8",
-)
-_alert_handler.setFormatter(logging.Formatter("%(message)s"))
-_alert_logger.addHandler(_alert_handler)
-_alert_logger.setLevel(logging.INFO)
-_alert_logger.propagate = False
-
-
-@dataclass
-class PaymentRetryRecord:
-    """支付重试记录"""
-
-    order_id: str
-    retry_count: int
-    first_attempt_time: float
-    last_attempt_time: float
-    next_retry_time: float
-    error_message: Optional[str] = None
-    max_retries: int = 5
-
-
-@dataclass
-class PaymentAlert:
-    """支付告警记录"""
-
-    timestamp: float
-    alert_type: str  # 'queue_full', 'high_failure_rate', 'retry_exhausted'
-    level: str  # 'warning', 'critical'
-    message: str
-    stats: Dict[str, Any]
-    resolved: bool = False
-    resolved_at: Optional[float] = None
+__all__ = [
+    "PaymentAlert",
+    "PaymentRetryRecord",
+    "PaymentCallbackEnhanced",
+    "get_payment_callback_monitor",
+    "stop_payment_callback_monitor",
+]
 
 
 class PaymentCallbackEnhanced:
@@ -128,9 +100,18 @@ class PaymentCallbackEnhanced:
     @staticmethod
     def _run_payment_success_handler(order_id: str):
         """在当前后台线程中同步执行异步支付成功处理。"""
-        from payment_handler import PaymentHandler
+        from database import AsyncSessionLocal
+        from services.payment_service import PaymentService
 
-        asyncio.run(PaymentHandler.handle_payment_success(order_id))
+        async def _runner():
+            async with AsyncSessionLocal() as session:
+                try:
+                    await PaymentService(session).handle_payment_success(order_id)
+                except Exception:
+                    await session.rollback()
+                    raise
+
+        asyncio.run(_runner())
 
     def _reject_retry_queue_entry(
         self, order_id: str, error_message: Optional[str] = None
