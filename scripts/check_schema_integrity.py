@@ -47,7 +47,9 @@ EXPECTED_NOT_NULL: Dict[str, Set[str]] = {
     "users": {"id", "trial_used", "trial_started_at", "trial_expires_at", "updated_at"},
     "products": {"id", "user_id", "updated_at"},
     "logistics": {"id", "user_id", "disabled_by_overflow", "last_used_at", "updated_at"},
-    "orders": {"id", "user_id", "order_number", "created_at"},
+    # NOTE: 'orders' table does not exist in models, migrations, or production DB.
+    # The W13 audit (commit f7f7f3f4) erroneously added it. Do NOT re-add without
+    # a corresponding ORM model + alembic migration creating the table.
     "payment_orders": {"id", "order_id", "user_id", "amount", "description", "created_at"},
     "wechat_notify_audit_logs": {
         "id",

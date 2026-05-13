@@ -119,3 +119,38 @@ def test_run_checks_reports_missing_index(monkeypatch):
     failures = schema.run_checks(conn)
 
     assert any("ix_logistics_user_id_id_desc" in failure for failure in failures)
+
+
+def test_expected_not_null_tables_exist_in_orm_metadata():
+    import importlib
+    import pkgutil
+
+    import models
+
+    for module_info in pkgutil.iter_modules(models.__path__):
+        importlib.import_module(f"models.{module_info.name}")
+
+    orm_table_names = set(models.Base.metadata.tables.keys())
+
+    phantom = sorted(set(schema.EXPECTED_NOT_NULL.keys()) - orm_table_names)
+    assert phantom == [], (
+        f"EXPECTED_NOT_NULL contains phantom tables not in SQLAlchemy metadata: "
+        f"{phantom}. Add the ORM model + alembic migration first, or remove the entry."
+    )
+
+
+def test_expected_indexes_tables_exist_in_orm_metadata():
+    import importlib
+    import pkgutil
+
+    import models
+
+    for module_info in pkgutil.iter_modules(models.__path__):
+        importlib.import_module(f"models.{module_info.name}")
+
+    orm_table_names = set(models.Base.metadata.tables.keys())
+
+    phantom = sorted(set(schema.EXPECTED_INDEXES.keys()) - orm_table_names)
+    assert phantom == [], (
+        f"EXPECTED_INDEXES contains phantom tables not in SQLAlchemy metadata: {phantom}."
+    )
