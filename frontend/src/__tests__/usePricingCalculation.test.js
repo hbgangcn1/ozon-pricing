@@ -70,4 +70,56 @@ describe('usePricingCalculation commission gating', () => {
       expect(commissionCategoriesAPI.getAll).toHaveBeenCalledTimes(1)
     })
   })
+
+  it('skips all data fetches when no user is committed yet (auth gate)', async () => {
+    useAuthStore.setState({ user: null })
+
+    const { result } = renderHook(() => usePricingCalculation(null))
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(productsAPI.getAll).not.toHaveBeenCalled()
+    expect(commissionCategoriesAPI.getAll).not.toHaveBeenCalled()
+    expect(logisticsAPI.getAll).not.toHaveBeenCalled()
+    expect(result.current.commissionCategories).toEqual([])
+  })
+
+  it('refetches commission categories when user transitions from null to professional (post-login race fix)', async () => {
+    useAuthStore.setState({ user: null })
+
+    const { result, rerender } = renderHook(
+      ({ user }) => usePricingCalculation(user),
+      { initialProps: { user: null } },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(commissionCategoriesAPI.getAll).not.toHaveBeenCalled()
+
+    const adminUser = { id: 159043, role: 'admin', subscription_type: 'enterprise' }
+    useAuthStore.setState({ user: adminUser })
+    rerender({ user: adminUser })
+
+    await waitFor(() => {
+      expect(commissionCategoriesAPI.getAll).toHaveBeenCalledTimes(1)
+      expect(result.current.commissionCategories.length).toBe(1)
+    })
+  })
+
+  it('admin user with enterprise subscription receives commission categories on mount (original bug repro)', async () => {
+    useAuthStore.setState({
+      user: { id: 159043, role: 'admin', subscription_type: 'enterprise' },
+    })
+    commissionCategoriesAPI.getAll.mockResolvedValue([
+      { id: 3562, name: '日化用品', rfbs_tier1_rate: 0.05, rfbs_tier2_rate: 0.04, rfbs_tier3_rate: 0.03 },
+    ])
+
+    const adminUser = { id: 159043, role: 'admin', subscription_type: 'enterprise', user_type: 'enterprise' }
+    const { result } = renderHook(() => usePricingCalculation(adminUser))
+
+    await waitFor(() => {
+      expect(commissionCategoriesAPI.getAll).toHaveBeenCalledTimes(1)
+      expect(result.current.commissionCategories.length).toBe(1)
+    })
+    expect(result.current.commissionCategories[0].name).toBe('日化用品')
+  })
 })

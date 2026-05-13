@@ -63,22 +63,38 @@ export function usePricingCalculation(user) {
   }, [])
 
   useEffect(() => {
+    // Auth gate: do not fire requests until the auth store has committed a user.
+    // This prevents a race where the effect runs in the same React tick as
+    // setAuth() during login, sees user=null via the captured closure, and
+    // permanently locks commissionCategories to [] because the deps array
+    // had no user-derived key to retrigger it.
+    if (!user) return
+
     let cancelled = false
 
     const loadData = async () => {
       const canFetchCommission = useAuthStore.getState().hasProfessionalAccess()
-      try {
-        const [productData, commissionData] = await Promise.all([
-          productsAPI.getAll(),
-          canFetchCommission ? commissionCategoriesAPI.getAll() : Promise.resolve([]),
-        ])
+      // Use allSettled so one failing request (e.g. products 422) does not
+      // prevent the sibling (commission categories) from populating its state.
+      const [productResult, commissionResult] = await Promise.allSettled([
+        productsAPI.getAll(),
+        canFetchCommission ? commissionCategoriesAPI.getAll() : Promise.resolve([]),
+      ])
 
-        if (!cancelled) {
-          setProducts(Array.isArray(productData) ? productData : [])
-          setCommissionCategories(Array.isArray(commissionData) ? commissionData : [])
-        }
-      } catch {
-        // keep silent on initial load failures
+      if (cancelled) return
+
+      if (productResult.status === 'fulfilled') {
+        const data = productResult.value
+        setProducts(Array.isArray(data) ? data : [])
+      } else if (productResult.reason?.name !== 'CanceledError') {
+        console.warn('加载产品列表失败:', productResult.reason?.message || productResult.reason)
+      }
+
+      if (commissionResult.status === 'fulfilled') {
+        const data = commissionResult.value
+        setCommissionCategories(Array.isArray(data) ? data : [])
+      } else if (commissionResult.reason?.name !== 'CanceledError') {
+        console.warn('加载佣金分类失败:', commissionResult.reason?.message || commissionResult.reason)
       }
     }
 
@@ -86,7 +102,17 @@ export function usePricingCalculation(user) {
     return () => {
       cancelled = true
     }
-  }, [refreshCommissionCategories, refreshProducts])
+    // We intentionally depend on stable user fields only, not the user object
+    // identity, to avoid extra reruns when authStore replaces the reference
+    // without semantic change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    refreshCommissionCategories,
+    refreshProducts,
+    user?.id,
+    user?.subscription_type,
+    user?.role,
+  ])
 
   useEffect(() => {
     if (productListDialogOpen) {
@@ -95,6 +121,8 @@ export function usePricingCalculation(user) {
   }, [productListDialogOpen, refreshProducts])
 
   useEffect(() => {
+    if (!user) return
+
     let cancelled = false
 
     const checkLogistics = async () => {
@@ -115,7 +143,8 @@ export function usePricingCalculation(user) {
     return () => {
       cancelled = true
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   const refreshUserAfterCalculation = useCallback(async () => {
     if (!['free', 'monthly'].includes(user?.user_type)) return

@@ -164,7 +164,7 @@ export const logoutUser = () => {
 }
 
 export const productsAPI = {
-  getAll: (options = {}) => apiClient.get('/products', { params: { limit: 1000 }, ...options }),
+  getAll: (options = {}) => apiClient.get('/products', { params: { limit: 200 }, ...options }),
   getById: (id, options = {}) => apiClient.get(`/products/${id}`, options),
   create: (data, options = {}) => apiClient.post('/products', data, options),
   update: (id, data, options = {}) => apiClient.put(`/products/${id}`, data, options),

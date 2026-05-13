@@ -42,6 +42,8 @@ export default defineConfig({
         '**/auth/login.spec.js',
         '**/auth/register.spec.js',
         '**/auth.setup.js',
+        // race-condition repro 必须无 storageState,否则 user 已 hydrate 测不到 race
+        '**/pricing/commission-categories-race.spec.js',
       ],
     },
 
@@ -52,6 +54,7 @@ export default defineConfig({
       testMatch: [
         '**/auth/login.spec.js',
         '**/auth/register.spec.js',
+        '**/pricing/commission-categories-race.spec.js',
       ],
     },
   ],
