@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.dependencies import get_current_user_id
 from database import get_db
 from db.orders import get_user_orders
+from api.middleware.idempotency import idempotency_key_header
 
 router = APIRouter(prefix="/api/orders", tags=["订单"])
 
@@ -39,10 +40,11 @@ class OrderListResponse(BaseModel):
 @router.get("", response_model=OrderListResponse)
 async def get_orders(
     user_id: int = Depends(get_current_user_id),
+    idempotency_key: str | None = Depends(idempotency_key_header),
     status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
-    limit: Optional[int] = Query(None, ge=1, le=1000),
+    limit: Optional[int] = Query(None, ge=1, le=200),
     offset: Optional[int] = Query(None, ge=0),
     session: AsyncSession = Depends(get_db),
 ):

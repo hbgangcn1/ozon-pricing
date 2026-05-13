@@ -70,7 +70,19 @@ export default function PaymentQRDialog({
   const [orderId, setOrderId] = useState('')
   const [codeUrl, setCodeUrl] = useState('')
   const [countdown, setCountdown] = useState(7200)
-  const successTimeoutRef = useRef(null)
+  
+  const timersRef = useRef({
+    countdown: null,
+    success: null,
+  })
+
+  useEffect(() => {
+    const timers = timersRef.current
+    return () => {
+      if (timers.countdown) clearTimeout(timers.countdown)
+      if (timers.success) clearTimeout(timers.success)
+    }
+  }, [])
 
   const createOrder = useCallback(async (options = {}) => {
     setState('loading')
@@ -105,14 +117,17 @@ export default function PaymentQRDialog({
   }, [open, createOrder])
 
   useEffect(() => {
-    let timer
+    const timers = timersRef.current
+    if (timers.countdown) clearTimeout(timers.countdown)
+    
     if (state === 'scanning' && countdown > 0) {
-      timer = setTimeout(() => setCountdown(c => c - 1), 1000)
+      timers.countdown = setTimeout(() => setCountdown(c => c - 1), 1000)
     } else if (state === 'scanning' && countdown === 0) {
       setState('expired')
     }
+    
     return () => {
-      if (timer) clearTimeout(timer)
+      if (timers.countdown) clearTimeout(timers.countdown)
     }
   }, [state, countdown])
 
@@ -120,23 +135,16 @@ export default function PaymentQRDialog({
     if (res.trade_state === 'SUCCESS' || res.status === 'SUCCESS') {
       setState('success')
       onSuccess?.()
-      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
-      const timer = setTimeout(() => {
+      if (timersRef.current.success) clearTimeout(timersRef.current.success)
+      timersRef.current.success = setTimeout(() => {
         onOpenChange(false)
       }, 3000)
-      successTimeoutRef.current = timer
     } else if (res.trade_state === 'CLOSED') {
       setState('expired')
     }
   }, [onSuccess, onOpenChange])
 
   usePaymentPolling(orderId, state === 'scanning', handleStatusUpdate)
-
-  useEffect(() => {
-    return () => {
-      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
-    }
-  }, [])
 
   const handleOpenChange = (newOpen) => {
     if (!newOpen && state === 'scanning') {

@@ -169,3 +169,8 @@ class Logistics(Base):
         nullable=False,
         server_default=text("0"),
     )
+    updated_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("date_part('epoch'::text, now())"),
+    )

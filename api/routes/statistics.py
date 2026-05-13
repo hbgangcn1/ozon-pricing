@@ -12,7 +12,7 @@ from database import get_db
 from models.user import User
 from models.log import UserLoginLog, AdminActionLog
 from db.statistics import (
-    _parse_user_created_at,
+    count_new_users_today,
     count_paid_orders,
     count_total_users,
     count_users_by_type,
@@ -143,21 +143,7 @@ async def get_overview(
     total_revenue = _to_decimal_money(rev.get("total_revenue", 0))
 
     try:
-        today = datetime.now().date()
-        user_rows = (
-            await session.execute(
-                select(User.created_at).where(
-                    User.created_at.is_not(None),
-                    func.nullif(func.trim(User.created_at), "").is_not(None),
-                )
-            )
-        ).all()
-        new_users_today = sum(
-            1
-            for (created_at,) in user_rows
-            if (dt := _parse_user_created_at(created_at)) is not None
-            and dt.date() == today
-        )
+        new_users_today = await count_new_users_today(session)
     except Exception as e:
         logger.exception(f"查询今日新用户失败: {e}")
         new_users_today = 0

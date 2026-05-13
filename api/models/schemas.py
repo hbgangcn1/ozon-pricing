@@ -406,6 +406,43 @@ class ProductImportPreview(BaseModel):
     preview_rows: List[dict]
 
 
+class ProductImportItem(BaseModel):
+    """单条产品导入校验项。"""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    russian_name: Optional[str] = Field(None, max_length=200)
+    category: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    unit_price: Optional[DecimalField] = Field(None, ge=Decimal("0"))
+    weight_g: Optional[int] = Field(None, ge=0, le=1_000_000)
+    length_cm: Optional[int] = Field(None, ge=0, le=10_000)
+    width_cm: Optional[int] = Field(None, ge=0, le=10_000)
+    height_cm: Optional[int] = Field(None, ge=0, le=10_000)
+    is_cylinder: Optional[bool] = None
+    cylinder_diameter: Optional[float] = Field(None, ge=0)
+    cylinder_length: Optional[float] = Field(None, ge=0)
+    has_battery: Optional[bool] = None
+    battery_capacity_wh: Optional[float] = Field(None, ge=0)
+    has_msds: Optional[bool] = None
+    has_liquid: Optional[bool] = None
+    labeling_fee: Optional[DecimalField] = Field(None, ge=Decimal("0"))
+    shipping_fee: Optional[DecimalField] = Field(None, ge=Decimal("0"))
+    battery_capacity_mah: Optional[int] = Field(None, ge=0)
+    battery_voltage: Optional[float] = Field(None, ge=0)
+    commission_rate: Optional[DecimalField] = Field(None, ge=Decimal("0"), le=100)
+    commission_category_id: Optional[int] = Field(None, ge=1)
+    target_profit_margin: Optional[DecimalField] = Field(None, ge=Decimal("0"), le=100)
+    promotion_cost_rate: Optional[DecimalField] = Field(None, ge=Decimal("0"), le=100)
+    withdrawal_fee_rate: Optional[DecimalField] = Field(None, ge=Decimal("0"), le=100)
+    payment_processing_fee: Optional[DecimalField] = Field(None, ge=Decimal("0"), le=100)
+    return_rate: Optional[DecimalField] = Field(None, ge=Decimal("0"), le=100)
+    vat_rate: Optional[DecimalField] = Field(None, ge=Decimal("0"), le=100)
+
+    # 允许 Excel 解析后产生的额外列（用户在 column_mapping 之外的列），
+    # 但这些字段不会进入 ORM。
+    model_config = ConfigDict(extra="allow")
+
+
 class ProductImportConfirm(BaseModel):
     column_mapping: dict
     rows: List[dict]

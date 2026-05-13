@@ -46,7 +46,7 @@ async def test_health_check_endpoint():
 
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "healthy"
+    assert data["status"] in ("ok", "degraded")
 
 
 # ============================================================================
@@ -153,6 +153,30 @@ async def test_global_exception_handler_non_http_returns_500():
     assert response.status_code == 500
     assert "secret" not in response.json()["detail"]
     assert response.json()["detail"] == "Internal server error"
+
+
+@pytest.mark.asyncio
+async def test_global_exception_handler_hides_traceback_and_sql_details():
+    """Unhandled exceptions expose only generic detail + request_id."""
+    from fastapi import FastAPI
+    from api.main import global_exception_handler
+
+    test_app = FastAPI()
+    test_app.add_exception_handler(Exception, global_exception_handler)
+
+    @test_app.get("/sql-error")
+    async def error_endpoint():
+        raise RuntimeError("SELECT secret FROM users\nTraceback: internal path")
+
+    transport = ASGITransport(app=test_app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/sql-error", headers={"X-Request-ID": "req-123"})
+
+    assert response.status_code == 500
+    data = response.json()
+    assert data == {"detail": "Internal server error", "request_id": "req-123"}
+    assert "Traceback" not in response.text
+    assert "SELECT" not in response.text
 
 
 # ============================================================================
@@ -616,7 +640,6 @@ async def test_health_endpoint_not_rate_limited_as_endpoint():
     """Test that health endpoint works (though rate limiting applies)."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Health check should work
         response = await ac.get("/health")
         assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
+        assert response.json()["status"] in ("ok", "degraded")

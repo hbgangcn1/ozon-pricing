@@ -148,6 +148,24 @@ def get_fallback_usd_rate():
         return _quantize(_FALLBACK_USD_CNY_RATE, _RATE_PRECISION)
 
 
+async def async_get_fallback_exchange_rate():
+    try:
+        from exchange_service import async_get_fallback_exchange_rate as _get_rate
+
+        return _quantize(await _get_rate(), _RATE_PRECISION)
+    except ImportError:
+        return _quantize(_FALLBACK_RUB_CNY_RATE, _RATE_PRECISION)
+
+
+async def async_get_fallback_usd_rate():
+    try:
+        from exchange_service import async_get_fallback_usd_rate as _get_rate
+
+        return _quantize(await _get_rate(), _RATE_PRECISION)
+    except ImportError:
+        return _quantize(_FALLBACK_USD_CNY_RATE, _RATE_PRECISION)
+
+
 def build_breakdown(
     product,
     logistics_cost_cny,

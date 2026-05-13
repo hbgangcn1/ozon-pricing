@@ -128,7 +128,11 @@ class TestListLogistics:
             if created_ids:
                 _user_override(uid)
                 for created_id in created_ids:
-                    await client.delete(f"/api/logistics/{created_id}")
+                    item = await client.get(f"/api/logistics/{created_id}")
+                    await client.delete(
+                        f"/api/logistics/{created_id}",
+                        headers={"If-Match": item.headers["ETag"]},
+                    )
                 _clear_overrides()
 
     async def test_filters_by_type(self, client, test_user):
@@ -378,7 +382,11 @@ class TestCreateProduct:
             _clear_overrides()
             if created_id:
                 _user_override(uid)
-                await client.delete(f"/api/products/{created_id}")
+                item = await client.get(f"/api/products/{created_id}")
+                await client.delete(
+                    f"/api/products/{created_id}",
+                    headers={"If-Match": item.headers["ETag"]},
+                )
                 _clear_overrides()
 
 

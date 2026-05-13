@@ -6,6 +6,7 @@
 
 import sys
 import logging
+import os
 from typing import Optional
 from pathlib import Path
 
@@ -259,44 +260,55 @@ def configure_logger(
         )
         return base + "\n{exception}"
 
+    serialize_logs = os.getenv("LOG_FORMAT", "text").lower() == "json"
+
     # 控制台输出（开发环境）
     if enable_console:
-        loguru_logger.add(  # type: ignore
-            sys.stdout,
-            colorize=True,
-            format=format_log,
-            level=log_level,  # 使用传入的日志级别
-            enqueue=True,  # 异步写入，避免阻塞
-        )
+        kwargs = {
+            "level": log_level,
+            "enqueue": True,
+            "serialize": serialize_logs,
+        }
+        if not serialize_logs:
+            kwargs.update({"colorize": True, "format": format_log})
+        loguru_logger.add(sys.stdout, **kwargs)  # type: ignore
 
     # 文件输出（所有级别）（高优先级安全改进：关闭diagnose避免泄露敏感信息）
     if enable_file:
+        kwargs = {
+            "rotation": "100 MB",
+            "retention": "30 days",
+            "compression": "zip",
+            "encoding": "utf-8",
+            "level": log_level,
+            "enqueue": True,
+            "backtrace": True,
+            "diagnose": False,
+            "serialize": serialize_logs,
+        }
+        if not serialize_logs:
+            kwargs["format"] = format_log
         loguru_logger.add(  # type: ignore
-            f"{log_dir}/{app_name}_{{time:YYYY-MM-DD}}.log",
-            rotation="100 MB",  # 每100MB轮转
-            retention="30 days",  # 保留30天
-            compression="zip",  # 压缩旧日志
-            encoding="utf-8",
-            level=log_level,
-            format=format_log,
-            enqueue=True,
-            backtrace=True,  # 显示完整堆栈
-            diagnose=False,  # 关闭变量值显示，防止敏感信息泄露
+            f"{log_dir}/{app_name}_{{time:YYYY-MM-DD}}.log", **kwargs
         )
 
     # 错误日志单独文件（高优先级安全改进：关闭diagnose避免泄露敏感信息）
     if enable_file:
+        kwargs = {
+            "rotation": "100 MB",
+            "retention": "90 days",
+            "compression": "zip",
+            "encoding": "utf-8",
+            "level": "ERROR",
+            "enqueue": True,
+            "backtrace": True,
+            "diagnose": False,
+            "serialize": serialize_logs,
+        }
+        if not serialize_logs:
+            kwargs["format"] = format_log
         loguru_logger.add(  # type: ignore
-            f"{log_dir}/{app_name}_error_{{time:YYYY-MM-DD}}.log",
-            rotation="100 MB",  # 100MB轮转
-            retention="90 days",  # 错误日志保留90天
-            compression="zip",
-            encoding="utf-8",
-            level="ERROR",
-            format=format_log,
-            enqueue=True,
-            backtrace=True,
-            diagnose=False,  # 关闭变量值显示，防止敏感信息泄露
+            f"{log_dir}/{app_name}_error_{{time:YYYY-MM-DD}}.log", **kwargs
         )
 
     logger.info(f"日志系统初始化完成: {app_name}")

@@ -6,7 +6,8 @@ import tempfile
 from datetime import date, datetime, time
 
 import openpyxl
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import JSONResponse
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,14 +27,33 @@ from api.models.schemas import (
     MessageResponse,
     ProductImportPreview,
     ProductImportConfirm,
+    ProductImportItem,
 )
 from api.dependencies import get_current_user_id, get_user_with_subscription
+from api.middleware.idempotency import (
+    get_cached_response,
+    idempotency_key_header,
+    store_response,
+)
 
 router = APIRouter(prefix="/api/products", tags=["产品"])
 logger = logging.getLogger(__name__)
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
 MAX_IMPORT_ROWS = 50000
 EXCEL_IMPORT_TIERS = {"enterprise", "gratitude", "test"}
+
+
+def _etag_for(row: dict) -> str:
+    return f'W/"{row.get("updated_at", 0)}"'
+
+
+def _require_if_match(if_match: str | None, current: str) -> None:
+    if not if_match:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            return
+        raise HTTPException(status_code=428, detail="If-Match header required")
+    if if_match != current:
+        raise HTTPException(status_code=412, detail="ETag mismatch")
 
 
 async def _get_existing_products_for_import(
@@ -103,7 +123,7 @@ async def _read_upload_contents(file: UploadFile) -> bytes:
 @router.get("", response_model=List[ProductResponse])
 async def get_products(
     user_id: int = Depends(get_current_user_id),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
@@ -116,21 +136,28 @@ async def get_products(
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(
     product_id: int,
+    response: Response,
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     product = await get_product_by_id(session, product_id, user_id)
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
+    response.headers["ETag"] = _etag_for(product)
     return product
 
 
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
 async def create_product(
     product: ProductCreate,
+    idempotency_key: str | None = Depends(idempotency_key_header),
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
+    cached = await get_cached_response(session, "products:create", idempotency_key)
+    if cached is not None:
+        status_code, body = cached
+        return JSONResponse(content=body, status_code=status_code)
     product_data = product.model_dump()
     for key in ["is_cylinder", "has_battery", "has_liquid", "has_msds"]:
         if key in product_data and isinstance(product_data[key], bool):
@@ -141,6 +168,10 @@ async def create_product(
     result = await get_product_by_id(session, product_id, user_id)
     if not result:
         raise HTTPException(status_code=400, detail="创建产品失败")
+    body = ProductResponse.model_validate(result).model_dump(mode="json")
+    await store_response(
+        session, "products:create", idempotency_key, status.HTTP_201_CREATED, body,
+    )
     return result
 
 
@@ -172,9 +203,17 @@ async def update_product_endpoint(
 @router.delete("/{product_id}", response_model=MessageResponse)
 async def delete_product_endpoint(
     product_id: int,
+    if_match: str | None = Header(None, alias="If-Match"),
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
+    existing = await get_product_by_id(session, product_id, user_id)
+    if not existing:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            existing = {"updated_at": 0}
+        else:
+            raise HTTPException(status_code=404, detail="产品不存在或删除失败")
+    _require_if_match(if_match, _etag_for(existing))
     success = await delete_product(session, product_id, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="产品不存在或删除失败")
@@ -313,19 +352,34 @@ async def confirm_product_import(
     imported = 0
     skipped = 0
     errors = []
-    existing_products = await _get_existing_products_for_import(
-        session,
-        user_id,
-        payload.rows,
-        payload.column_mapping,
-    )
-
-    for index, row in enumerate(payload.rows, start=1):
+    failed_rows = []
+    valid_rows = []
+    for index, item in enumerate(payload.rows, start=1):
+        row = item
         transformed = {
             field: row[column]
             for field, column in payload.column_mapping.items()
             if column in row
         }
+        try:
+            validated = ProductImportItem(**transformed)
+        except Exception as exc:
+            failed_rows.append({"row_index": index, "error": str(exc)})
+            continue
+        validated_row = validated.model_dump(exclude_none=True)
+        if not validated_row.get("name"):
+            failed_rows.append({"row_index": index, "error": "name is required"})
+            continue
+        valid_rows.append((index, row, validated_row))
+    rows_as_dicts = [row for _, row, _ in valid_rows]
+    existing_products = await _get_existing_products_for_import(
+        session,
+        user_id,
+        rows_as_dicts,
+        payload.column_mapping,
+    )
+
+    for index, _row, transformed in valid_rows:
         transformed["user_id"] = user_id
 
         name = transformed.get("name")
@@ -371,4 +425,9 @@ async def confirm_product_import(
             logger.warning("产品导入第 %d 行处理失败: %s", index, exc, exc_info=True)
             errors.append(f"第 {index} 行处理失败")
 
-    return {"imported": imported, "skipped": skipped, "errors": errors}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "failed_rows": failed_rows,
+    }

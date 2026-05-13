@@ -156,8 +156,9 @@ class TestRootEndpoints:
         mock_engine.connect.return_value = mock_cm
         r = client.get("/health")
         assert r.status_code == 200
-        assert r.json()["status"] == "healthy"
-        assert r.json()["db_status"] == "ok"
+        body = r.json()
+        assert body["status"] in ("ok", "degraded")
+        assert body["db_ok"] is True
 
 
 class TestAuth:

@@ -28,21 +28,31 @@ function ExchangeRatePanel() {
   });
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const isMounted = React.useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const fetchRates = useCallback(async (signal) => {
     if (signal?.aborted) return;
     setLoading(true);
     try {
       const data = await apiClient.get('/exchange/rates', { signal });
+      if (!isMounted.current) return;
       if (!signal?.aborted) {
         setRates(data);
         setLastUpdated(new Date());
       }
     } catch (err) {
+      if (!isMounted.current) return;
       if (err?.name === 'CanceledError' || err?.message === 'canceled') return;
       // silently fail — rate widget is non-critical
     } finally {
-      if (!signal?.aborted) {
+      if (isMounted.current && !signal?.aborted) {
         setLoading(false);
       }
     }

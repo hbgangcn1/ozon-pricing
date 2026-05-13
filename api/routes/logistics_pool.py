@@ -5,7 +5,7 @@ import tempfile
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -101,7 +101,7 @@ class ActiveBody(BaseModel):
 
 
 class BatchAddBody(BaseModel):
-    ids: List[int]
+    ids: List[int] = Field(..., max_length=50)
 
 
 @router.get("")
@@ -110,7 +110,7 @@ async def list_logistics_pool(
     fulfillment_type: Optional[str] = None,
     destination: Optional[str] = None,
     fbp_service_level: Optional[str] = None,
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
@@ -243,8 +243,8 @@ async def batch_add_to_my_logistics(
 ):
     if not body.ids:
         raise HTTPException(status_code=400, detail="ids 不能为空")
-    if len(body.ids) > 200:
-        raise HTTPException(status_code=400, detail="单次最多添加 200 条")
+    if len(body.ids) > 50:
+        raise HTTPException(status_code=422, detail="单次最多添加 50 条")
     await _check_logistics_limit(session, user_id, len(body.ids))
     added = []
     not_found = []

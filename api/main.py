@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+import time
 import traceback
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,28 +55,49 @@ def _get_docs_config() -> dict:
     return {}
 
 
-def _check_redis_health() -> dict:
-    import time as _time
-
-    from redis_cache import REDIS_AVAILABLE, get_redis_client
-
+def _check_redis_ok() -> bool:
+    try:
+        from redis_cache import REDIS_AVAILABLE, get_redis_client
+    except Exception:
+        return False
     if not REDIS_AVAILABLE:
-        return {"redis_status": "not_configured"}
-
+        return False
     client = get_redis_client()
     if client is None:
-        return {"redis_status": "unavailable"}
+        return False
+    try:
+        client.ping()
+        return True
+    except Exception:
+        return False
 
-    start = _time.monotonic()
-    client.ping()
-    return {
-        "redis_status": "ok",
-        "redis_latency_ms": round((_time.monotonic() - start) * 1000, 1),
-    }
+
+def _check_wechat_cert_expiry_days():
+    try:
+        from cryptography import x509
+        from wechat_pay_v3_api import wechat_config
+    except Exception:
+        return None
+    try:
+        cert_path = getattr(wechat_config, "public_key_path", None)
+        if not cert_path or not os.path.exists(cert_path):
+            return None
+        with open(cert_path, "rb") as fh:
+            data = fh.read()
+        cert = x509.load_pem_x509_certificate(data)
+        if hasattr(cert, "not_valid_after_utc"):
+            not_after = cert.not_valid_after_utc
+        else:
+            not_after = cert.not_valid_after.replace(tzinfo=timezone.utc)
+        delta = not_after - datetime.now(timezone.utc)
+        return int(delta.total_seconds() // 86400)
+    except Exception:
+        return None
 
 
 _APP_ENV = _get_app_environment()
 _is_production = _APP_ENV == "production"
+_START_TIME = time.time()
 _CSP_POLICY = os.getenv(
     "CSP_POLICY",
     "default-src 'self'; script-src 'self'; style-src 'self' "
@@ -265,33 +288,55 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    import time as _time
+    from sqlalchemy import text
 
-    checks: dict = {"api": "ok"}
+    db_ok = False
     try:
-        from sqlalchemy import text
-
-        start = _time.monotonic()
         async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-        checks["db_status"] = "ok"
-        checks["db_latency_ms"] = round((_time.monotonic() - start) * 1000, 1)
+            await asyncio.wait_for(conn.execute(text("SELECT 1")), timeout=2.0)
+        db_ok = True
     except Exception:
-        checks["db_status"] = "error"
-        checks["db_error"] = "database connection failed"
         logger.warning("健康检查数据库连接失败", exc_info=True)
 
     try:
-        checks.update(await asyncio.to_thread(_check_redis_health))
+        redis_ok = await asyncio.wait_for(
+            asyncio.to_thread(_check_redis_ok), timeout=1.5
+        )
     except Exception:
-        checks["redis_status"] = "unavailable"
-        checks["redis_error"] = "service check failed"
-        logger.warning("健康检查Redis连接失败", exc_info=True)
+        redis_ok = False
 
-    redis_ok = checks.get("redis_status") in ("ok", "not_configured", "unavailable")
-    status = "healthy" if checks.get("db_status") == "ok" and redis_ok else "degraded"
-    code = 200 if status == "healthy" else 503
-    return JSONResponse(content={"status": status, **checks}, status_code=code)
+    try:
+        cert_days = await asyncio.wait_for(
+            asyncio.to_thread(_check_wechat_cert_expiry_days), timeout=1.0
+        )
+    except Exception:
+        cert_days = None
+    wechat_cert_ok = True
+
+    if not db_ok:
+        status = "down"
+        code = 503
+    elif cert_days is not None and cert_days < 30:
+        status = "degraded"
+        code = 200
+    elif not redis_ok:
+        status = "degraded"
+        code = 200
+    else:
+        status = "ok"
+        code = 200
+
+    body = {
+        "status": status,
+        "db_ok": db_ok,
+        "redis_ok": redis_ok,
+        "uptime_s": int(time.time() - _START_TIME),
+        "wechat_pay_cert_expires_in_days": cert_days,
+        "wechat_cert_days_left": cert_days,
+        "wechat_cert_ok": wechat_cert_ok,
+        "version": os.environ.get("GIT_SHA", "unknown"),
+    }
+    return JSONResponse(content=body, status_code=code)
 
 
 @app.exception_handler(Exception)
@@ -302,6 +347,8 @@ async def global_exception_handler(request: Request, exc: Exception):
             content={"detail": exc.detail},
         )
     request_id = getattr(request.state, "request_id", None)
+    if not request_id:
+        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
     # [API-W12-14] Always log full traceback server-side; never expose
     # internals to the client regardless of environment.
     logging.getLogger("api.error").error(

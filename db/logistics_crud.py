@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Optional, cast
 
 from sqlalchemy import select, func, delete as sa_delete
@@ -153,6 +154,7 @@ async def update_logistics(
     for key, value in _clean_fields(fields).items():
         if hasattr(record, key):
             setattr(record, key, value)
+    record.updated_at = int(time.time())
     return True
 
 

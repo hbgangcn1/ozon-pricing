@@ -106,6 +106,11 @@ class User(Base):
         nullable=False,
         server_default=text("''"),
     )
+    updated_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("date_part('epoch'::text, now())"),
+    )
 
     __table_args__ = (
         Index(

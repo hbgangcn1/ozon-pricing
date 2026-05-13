@@ -24,12 +24,22 @@ export default function TrialBanner() {
   const isAdmin = useAuthStore((s) => s.isAdmin());
   const [status, setStatus] = useState(null);
   const [, forceTick] = useState(0);
+  const isMounted = React.useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const fetchStatus = useCallback(async (signal) => {
     try {
       const data = await trialAPI.getStatus({ signal });
+      if (!isMounted.current) return;
       if (!signal?.aborted) setStatus(data);
     } catch (err) {
+      if (!isMounted.current) return;
       if (!signal?.aborted && err?.name !== 'CanceledError') setStatus(null);
     }
   }, []);

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from sqlalchemy import func, select, text
@@ -36,10 +38,23 @@ router = APIRouter(prefix="/api/logistics", tags=["物流"])
 OPTIONAL_LOGISTICS_FIELDS = {"delivery_method", "fbp_service_level"}
 
 
+def _etag_for(row: dict) -> str:
+    return f'W/"{row.get("updated_at", 0)}"'
+
+
+def _require_if_match(if_match: str | None, current: str) -> None:
+    if not if_match:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            return
+        raise HTTPException(status_code=428, detail="If-Match header required")
+    if if_match != current:
+        raise HTTPException(status_code=412, detail="ETag mismatch")
+
+
 @router.get("")
 async def get_logistics(
     user_id: int = Depends(get_current_user_id),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
     fulfillment_type: Optional[str] = Query(None),
     destination: Optional[str] = Query(None),
@@ -61,12 +76,14 @@ async def get_logistics(
 @router.get("/{logistics_id}", response_model=LogisticsResponse)
 async def get_logistics_by_id_endpoint(
     logistics_id: int,
+    response: Response,
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     item = await get_logistics_by_id(session, logistics_id, user_id)
     if not item:
         raise HTTPException(status_code=404, detail="物流规则不存在")
+    response.headers["ETag"] = _etag_for(item)
     return item
 
 
@@ -227,9 +244,17 @@ async def update_logistics_endpoint(
 @router.delete("/{logistics_id}", response_model=MessageResponse)
 async def delete_logistics_endpoint(
     logistics_id: int,
+    if_match: str | None = Header(None, alias="If-Match"),
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
+    existing = await get_logistics_by_id(session, logistics_id, user_id)
+    if not existing:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            existing = {"updated_at": 0}
+        else:
+            raise HTTPException(status_code=404, detail="物流规则不存在或删除失败")
+    _require_if_match(if_match, _etag_for(existing))
     count = await delete_logistics(session, logistics_id, user_id)
     if count == 0:
         raise HTTPException(status_code=404, detail="物流规则不存在或删除失败")

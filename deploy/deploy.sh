@@ -33,6 +33,9 @@ cd "$PROJECT_DIR" || error "无法进入项目目录 $PROJECT_DIR"
 # ===== 1. 预检 =====
 log "===== 第1步: 预检 ====="
 
+# 部署前环境变量强校验：fail-fast，避免缺失密钥/错误 DB URL 进入迁移或启动阶段。
+python3 scripts/validate_env.py || exit 1
+
 # 检查是否为 ozon 用户
 [ "$(whoami)" = "ozon" ] || error "请以 ozon 用户运行此脚本"
 
@@ -94,9 +97,7 @@ log "===== 第5步: 检查前端 ====="
 if [ -f "$PROJECT_DIR/frontend/dist/index.html" ]; then
     log "前端构建产物已就位 ✓"
 else
-    error "frontend/dist/index.html 不存在！请先在本地构建并上传:
-    本地: cd frontend && npm run build
-    上传: scp -r frontend/dist/ SSH_USER@SERVER_IP:$PROJECT_DIR/frontend/dist/"
+    error "frontend/dist/index.html missing; build frontend and upload dist before deploy"
 fi
 
 # 修复 scp 上传后可能继承自 Windows 的 700 目录权限,确保 nginx (www-data) 可读
@@ -185,35 +186,45 @@ log "===== 第11步: 健康检查 ====="
 
 # 检查后端 API
 RETRY=0
-MAX_RETRY=5
+MAX_RETRY=10
 while [ $RETRY -lt $MAX_RETRY ]; do
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8003/api/exchange/rates 2>/dev/null || echo "000")
+    HTTP_CODE=$(curl --max-time 10 -fsS -o /dev/null -w "%{http_code}" http://127.0.0.1:8003/health 2>/dev/null || echo "000")
     if [ "$HTTP_CODE" = "200" ]; then
-        log "后端 API 响应正常 (HTTP $HTTP_CODE) ✓"
+        log "后端健康端点响应正常 (HTTP $HTTP_CODE) ✓"
         break
     fi
     RETRY=$((RETRY + 1))
-    warn "后端未就绪 (HTTP $HTTP_CODE)，等待 3 秒... ($RETRY/$MAX_RETRY)"
-    sleep 3
+    warn "后端未就绪 (HTTP $HTTP_CODE)，等待 5 秒... ($RETRY/$MAX_RETRY)"
+    sleep 5
 done
 
 if [ $RETRY -eq $MAX_RETRY ]; then
+    warn "后端健康检查失败，输出 /var/log/cbprice/error.log 最后 50 行："
+    tail -50 /var/log/cbprice/error.log 2>/dev/null || true
     error "后端健康检查失败！建议运行: bash deploy/rollback.sh"
 fi
 
+if systemctl is-active --quiet fastapi-app.service; then
+    log "fastapi-app systemd 状态二次确认 active ✓"
+else
+    warn "健康端点通过后 fastapi-app 已非 active，输出错误日志最后 50 行："
+    tail -50 /var/log/cbprice/error.log 2>/dev/null || true
+    error "fastapi-app systemd 状态二次确认失败"
+fi
+
 # 检查 HTTPS（通过 nginx）
-HTTPS_CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://www.cbprice.cn/ 2>/dev/null || echo "000")
+HTTPS_CODE=$(curl --max-time 15 -fsSk -o /dev/null -w "%{http_code}" https://www.cbprice.cn/ 2>/dev/null || echo "000")
 if [ "$HTTPS_CODE" = "200" ]; then
     log "HTTPS 前端响应正常 (HTTP $HTTPS_CODE) ✓"
 else
-    warn "HTTPS 前端检查返回 HTTP $HTTPS_CODE（可能需要几秒钟）"
+    error "HTTPS 前端检查失败 (HTTP $HTTPS_CODE)"
 fi
 
-HTTPS_API=$(curl -sk -o /dev/null -w "%{http_code}" https://www.cbprice.cn/api/exchange/rates 2>/dev/null || echo "000")
+HTTPS_API=$(curl --max-time 15 -fsSk -o /dev/null -w "%{http_code}" https://www.cbprice.cn/api/exchange/rates 2>/dev/null || echo "000")
 if [ "$HTTPS_API" = "200" ]; then
     log "HTTPS API 代理正常 (HTTP $HTTPS_API) ✓"
 else
-    warn "HTTPS API 检查返回 HTTP $HTTPS_API"
+    error "HTTPS API 检查失败 (HTTP $HTTPS_API)"
 fi
 
 # ===== 11.1 安装 trial-check timer (cross-process-safe scheduler) =====

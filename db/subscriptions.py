@@ -119,6 +119,10 @@ async def _lock_user(session: AsyncSession, user_id: int) -> User | None:
     return result.scalar_one_or_none()
 
 
+async def _get_user(session: AsyncSession, user_id: int) -> User | None:
+    return await session.get(User, user_id)
+
+
 def _resolve_paid_expiry(user: User, duration_days: int, now: datetime | None) -> int:
     now_epoch = _utc_now_epoch(now)
     current_expires = user.subscription_expires
@@ -260,15 +264,21 @@ async def apply_subscription_change(
     billing_cycle: Optional[str] = None,
     subscription_expires: Optional[int] = None,
     source: str = "unknown",
+    locked_user: Optional[User] = None,
 ) -> ChangeResult:
     """ONLY allowed entry point for writing users.subscription_type.
 
     Steps (caller commits): noop / upgrade (restore_all_overflow) /
     downgrade (auto_trim) / same_tier. `source` is for audit logs.
     """
-    user = await _lock_user(session, user_id)
+    user = locked_user if locked_user is not None else await _get_user(session, user_id)
     if user is None:
         raise ValueError(f"user not found: id={user_id}")
+    locked_user_id = getattr(user, "id", user_id)
+    if not isinstance(locked_user_id, int):
+        locked_user_id = user_id
+    if locked_user_id != user_id:
+        raise ValueError("locked_user does not match user_id")
 
     old_plan = (user.subscription_type or "free").strip() or "free"
     new_plan_norm = (new_plan or "free").strip() or "free"
@@ -419,6 +429,10 @@ async def apply_paid_subscription(
     now: datetime | None = None,
     billing_cycle: Optional[str] = None,
 ) -> ChangeResult:
+    # Paid renewals need a row lock only while deriving the new expiry from the
+    # current subscription row. Non-paid/admin changes avoid FOR UPDATE so long
+    # transactions do not unnecessarily hold user-row locks around read-only
+    # planning queries or unrelated list endpoints.
     user = await _lock_user(session, user_id)
     if user is None:
         raise ValueError(f"user not found: id={user_id}")
@@ -453,6 +467,7 @@ async def apply_paid_subscription(
         billing_cycle=billing_cycle,
         subscription_expires=subscription_expires,
         source=source,
+        locked_user=user,
     )
     user.user_type = plan_code
     user.subscription_start = started_at

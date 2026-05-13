@@ -10,7 +10,7 @@ Groups are computed per transport type (land/air) independently:
 
 from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.logistics import Logistics
@@ -107,9 +107,22 @@ async def recalculate_priority_groups(
 
     groups = compute_priority_groups(items)
 
-    for record in records:
-        new_group = groups.get(record.id)
-        if new_group and record.priority_group != new_group:
-            record.priority_group = new_group
+    changed = {
+        record.id: new_group
+        for record in records
+        if (new_group := groups.get(record.id))
+        and record.priority_group != new_group
+    }
+    if not changed:
+        return
 
+    group_case = case(
+        *[(Logistics.id == record_id, group) for record_id, group in changed.items()],
+        else_=Logistics.priority_group,
+    )
+    await session.execute(
+        update(Logistics)
+        .where(Logistics.id.in_(changed.keys()))
+        .values(priority_group=group_case)
+    )
     await session.flush()

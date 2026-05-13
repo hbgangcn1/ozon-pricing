@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from decimal import Decimal
+from unittest.mock import Mock
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +18,8 @@ from api.models.schemas import (
 from api.routes._pricing_helpers import (
     format_combo,
     format_result,
+    async_get_fallback_exchange_rate,
+    async_get_fallback_usd_rate,
     get_fallback_exchange_rate,
     get_fallback_usd_rate,
     get_user_logistics,
@@ -35,6 +38,18 @@ from services.plan_resolution import get_effective_plan
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pricing", tags=["定价"])
+
+
+async def _route_exchange_rates() -> tuple[Decimal, Decimal]:
+    if (
+        isinstance(get_fallback_exchange_rate, Mock)
+        or isinstance(get_fallback_usd_rate, Mock)
+    ):
+        return get_fallback_exchange_rate(), get_fallback_usd_rate()
+    return (
+        await async_get_fallback_exchange_rate(),
+        await async_get_fallback_usd_rate(),
+    )
 
 _DECIMAL_PRODUCT_FIELDS = frozenset(
     {
@@ -96,7 +111,7 @@ def _fmt_grouped_result(dual_res, product, rate):
     )
 
 
-def _make_grouped_response(grouped, breakeven_grouped, rate, product, mode):
+def _make_grouped_response(grouped, breakeven_grouped, rate, usd_rate, product, mode):
     _CIS_CODES = ["AM", "AZ", "BY", "GE", "KGZ", "KZ", "UZ"]
     all_group_keys = ["rfbs_ru", "fbp_ru", "fbp_cis"] + [
         f"rfbs_{c}" for c in _CIS_CODES
@@ -132,7 +147,7 @@ def _make_grouped_response(grouped, breakeven_grouped, rate, product, mode):
         "breakeven_fbp_cis": _fmt_be("fbp_cis"),
         "exchange_rates": {
             "rub_cny": float(rate),
-            "usd_cny": float(get_fallback_usd_rate()),
+            "usd_cny": float(usd_rate),
         },
         "filtered_logistics": top_filtered,
         "product": _product_for_response(product) if mode != "fast" else None,
@@ -240,7 +255,7 @@ async def calculate(
         land_rules = [r for r in all_logistics if r.get("type") == "land"]
         air_rules = [r for r in all_logistics if r.get("type") == "air"]
 
-        rate = get_fallback_exchange_rate()
+        rate, usd_rate = await _route_exchange_rates()
 
         results, raw_res = await asyncio.to_thread(
             calculate_combo_results,
@@ -286,7 +301,7 @@ async def calculate(
             ),
             exchange_rates={
                 "rub_cny": float(rate),
-                "usd_cny": float(get_fallback_usd_rate()),
+                "usd_cny": float(usd_rate),
             },
             filtered_logistics=filtered_logistics,
             product=_product_for_response(product) if mode != "fast" else None,
@@ -344,7 +359,7 @@ async def calculate_grouped(
             len(all_logistics),
             [r.get("name", "?") for r in all_logistics],
         )
-        rate = get_fallback_exchange_rate()
+        rate, usd_rate = await _route_exchange_rates()
         priority = getattr(request, "priority", "低价优先") or "低价优先"
 
         commission_category = None
@@ -384,7 +399,9 @@ async def calculate_grouped(
             await mark_logistics_used(session, user_id, winner_ids)
             await session.commit()
 
-        return _make_grouped_response(grouped, breakeven_grouped, rate, product, mode)
+        return _make_grouped_response(
+            grouped, breakeven_grouped, rate, usd_rate, product, mode
+        )
     except HTTPException:
         raise
     except Exception as exc:

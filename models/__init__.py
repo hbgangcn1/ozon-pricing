@@ -32,6 +32,8 @@ from models.log import (  # noqa: E402, F401
 from models.cache import StatisticsCache  # noqa: E402, F401
 from models.password_reset_token import PasswordResetToken  # noqa: E402, F401
 from models.trial_overflow_window import TrialOverflowWindow  # noqa: E402, F401
+from models.idempotency import ApiIdempotencyKey  # noqa: E402, F401
+from models import perf_indexes as perf_indexes  # noqa: E402, F401
 
 __all__ = [
     "Base",
@@ -60,4 +62,5 @@ __all__ = [
     "StatisticsCache",
     "PasswordResetToken",
     "TrialOverflowWindow",
+    "ApiIdempotencyKey",
 ]

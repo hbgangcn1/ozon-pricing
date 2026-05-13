@@ -97,4 +97,36 @@ describe('Sidebar Component', () => {
     const activeLink = screen.getByText('物流管理').closest('a');
     expect(activeLink.className).toContain('border-primary');
   });
+
+  test('ExchangeRatePanel does not setState after unmount', async () => {
+    vi.useFakeTimers();
+    useAuthStore.mockReturnValue({ isAdmin: () => false });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let resolveSlowFetch;
+    apiClient.get.mockReturnValue(new Promise(resolve => { resolveSlowFetch = resolve; }));
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/pricing']}>
+        <Sidebar />
+      </MemoryRouter>
+    );
+
+    // Unmount before the API request completes
+    unmount();
+
+    // Now complete the API request
+    resolveSlowFetch({
+      'RUB/CNY': 0.1,
+      'CNY/RUB': 10,
+      'USD/CNY': 7,
+      'CNY/USD': 0.14,
+    });
+
+    await vi.runAllTimersAsync();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.stringContaining('unmounted component'));
+    consoleErrorSpy.mockRestore();
+    vi.useRealTimers();
+  });
 });

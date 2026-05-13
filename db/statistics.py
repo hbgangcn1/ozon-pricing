@@ -4,7 +4,7 @@ import time
 from datetime import UTC, datetime
 from typing import Optional
 
-from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.cache import StatisticsCache
@@ -228,6 +228,41 @@ async def get_dashboard_stats(session: AsyncSession) -> dict:
 async def count_total_users(session: AsyncSession) -> int:
     result = await session.scalar(select(func.count(User.id)))
     return result or 0
+
+
+async def count_new_users_today(
+    session: AsyncSession,
+    today: Optional[datetime] = None,
+) -> int:
+    """SQL-side aggregate of "new users created today" (PERF-W13-02).
+
+    Replaces the previous all-rows fetch + Python list-comprehension that
+    scanned the whole users table. Handles both legacy storage formats of
+    ``User.created_at`` (10-digit epoch string OR ``YYYY-MM-DD[ HH:MM:SS]``)
+    via PostgreSQL regex + ``to_timestamp`` coercion.
+    """
+    today_date = (today or datetime.now()).date()
+    today_str = today_date.strftime("%Y-%m-%d")
+    epoch_regex = r"^\d{10}$"
+    raw = text(
+        """
+        SELECT COUNT(*) FROM users
+        WHERE created_at IS NOT NULL
+          AND nullif(trim(created_at), '') IS NOT NULL
+          AND (
+            (created_at ~ :epoch_regex
+              AND to_timestamp(created_at::bigint)::date = :today_date)
+            OR (created_at !~ :epoch_regex
+              AND substring(trim(created_at) FROM 1 FOR 10) = :today_str)
+          )
+        """
+    ).bindparams(
+        epoch_regex=epoch_regex,
+        today_date=today_date,
+        today_str=today_str,
+    )
+    result = await session.scalar(raw)
+    return int(result or 0)
 
 
 async def count_users_by_type(session: AsyncSession) -> dict:

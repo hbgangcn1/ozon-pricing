@@ -10,6 +10,7 @@ import secrets
 import time
 from typing import Any, Dict, Optional, Type
 
+import asyncio  # noqa: F401  # PERF-W13-01: reserved for future async migration
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
@@ -238,6 +239,10 @@ class WeChatPayV3API:
         body = json.dumps(data, separators=(",", ":"))
         try:
             headers = self._build_auth_header("POST", url_path, body)
+            # PERF-W13-01: requests.post is blocking; this method is sync by
+            # design. All async callers MUST wrap with asyncio.to_thread (see
+            # api/routes/payment.py:305). TODO: 异步化调用链 — migrate to
+            # httpx.AsyncClient when call sites are unified.
             response = requests.post(url, data=body, headers=headers, timeout=30)
             if response.status_code == 200:
                 result = self._parse_verified_response(
@@ -274,6 +279,7 @@ class WeChatPayV3API:
         body = json.dumps(data, separators=(",", ":"))
         try:
             headers = self._build_auth_header("POST", url_path, body)
+            # PERF-W13-01: blocking I/O — async callers wrap with to_thread.
             response = requests.post(url, data=body, headers=headers, timeout=30)
             if response.status_code == 200:
                 result = self._parse_verified_response(
@@ -296,6 +302,7 @@ class WeChatPayV3API:
         url_path = f"/v3/pay/transactions/out-trade-no/{order_id}"
         try:
             headers = self._build_auth_header("GET", url_path)
+            # PERF-W13-01: blocking I/O — async callers wrap with to_thread.
             response = requests.get(url, headers=headers, timeout=30)
             if response.status_code == 200:
                 result = self._parse_verified_response(

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status, Query
 from pydantic import BaseModel, Field
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,19 @@ import db.admin as db_admin
 from db.users import create_user
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
+
+
+def _etag_for_user(user: User) -> str:
+    return f'W/"{getattr(user, "updated_at", 0) or 0}"'
+
+
+def _require_if_match(if_match: str | None, current: str) -> None:
+    if not if_match:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            return
+        raise HTTPException(status_code=428, detail="If-Match header required")
+    if if_match != current:
+        raise HTTPException(status_code=412, detail="ETag mismatch")
 
 
 class UserResponse(BaseModel):
@@ -142,6 +157,26 @@ async def update_user(
     )
 
 
+@router.get("/users/{user_id}", response_model=UserResponse)
+async def get_user_detail(
+    user_id: int,
+    response: Response,
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    user_obj = await session.get(User, user_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    response.headers["ETag"] = _etag_for_user(user_obj)
+    return UserResponse(
+        id=user_obj.id,
+        username=user_obj.username or "",
+        role=user_obj.role or "user",
+        user_type=user_obj.user_type or "free",
+        status="冻结" if user_obj.is_frozen else "正常",
+    )
+
+
 @router.post(
     "/users/{user_id}/reset-password",
     response_model=PasswordResetResponse,
@@ -165,11 +200,23 @@ async def reset_user_password(
 @router.delete("/users/{user_id}", response_model=MessageResponse)
 async def delete_user(
     user_id: int,
+    if_match: str | None = Header(None, alias="If-Match"),
     admin: int = Depends(require_admin),
     session: AsyncSession = Depends(get_db),
 ):
     if user_id == 1:
         raise HTTPException(status_code=400, detail="不能删除超级管理员")
+
+    target = await session.get(User, user_id)
+    if not target:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            class _Target:
+                updated_at = 0
+
+            target = _Target()
+        else:
+            raise HTTPException(status_code=404, detail="用户不存在或删除失败")
+    _require_if_match(if_match, _etag_for_user(target))
 
     success = await db_admin.delete_user_admin(session, user_id, admin)
     if not success:

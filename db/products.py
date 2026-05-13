@@ -1,8 +1,9 @@
 import logging
+import time
 from decimal import Decimal
 from typing import Any, Optional, cast
 
-from sqlalchemy import delete as sa_delete, select, update
+from sqlalchemy import case, delete as sa_delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.logistics import Logistics
@@ -229,6 +230,7 @@ async def update_product(
     for key, value in data.items():
         if key in allowed and hasattr(product, key):
             setattr(product, key, value)
+    product.updated_at = int(time.time())
     return True
 
 
@@ -336,17 +338,19 @@ async def calculate_and_update_priority_groups(
     air = [log for log in logistics if log["type"] == "air"]
     land_avgs = _calculate_group_averages(land)
     air_avgs = _calculate_group_averages(air)
+    group_by_id: dict[int, str] = {}
     for log in land:
-        group = _assign_priority_group(log, *land_avgs)
-        await session.execute(
-            update(Logistics)
-            .where(Logistics.id == log["id"])
-            .values(priority_group=group)
-        )
+        group_by_id[log["id"]] = _assign_priority_group(log, *land_avgs)
     for log in air:
-        group = _assign_priority_group(log, *air_avgs)
-        await session.execute(
-            update(Logistics)
-            .where(Logistics.id == log["id"])
-            .values(priority_group=group)
-        )
+        group_by_id[log["id"]] = _assign_priority_group(log, *air_avgs)
+    if not group_by_id:
+        return
+    group_case = case(
+        *[(Logistics.id == log_id, group) for log_id, group in group_by_id.items()],
+        else_=Logistics.priority_group,
+    )
+    await session.execute(
+        update(Logistics)
+        .where(Logistics.id.in_(group_by_id.keys()))
+        .values(priority_group=group_case)
+    )

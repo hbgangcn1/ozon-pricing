@@ -100,4 +100,34 @@ describe('TrialBanner', () => {
     });
     expect(trialAPI.getStatus).not.toHaveBeenCalled();
   });
+
+  it('does not setState after unmount on polling interval', async () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    
+    let resolveSlowFetch;
+    const slowFetchPromise = new Promise(resolve => { resolveSlowFetch = resolve; });
+    trialAPI.getStatus.mockReturnValue(slowFetchPromise);
+    
+    const { unmount } = render(<TrialBanner />);
+    
+    unmount();
+    
+    resolveSlowFetch({
+      eligible: true,
+      in_trial: false,
+      trial_used: false,
+      remaining_seconds: 0,
+      trial_expires_at: 0,
+    });
+    
+    await act(async () => {
+      await Promise.resolve(); // flush microtasks
+      vi.advanceTimersByTime(60_010);
+    });
+    
+    // Vitest will complain if setState is called after unmount, and consoleError will be called
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.stringContaining('unmounted component'));
+    consoleErrorSpy.mockRestore();
+  });
 });

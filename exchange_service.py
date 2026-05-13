@@ -3,6 +3,10 @@
 from decimal import Decimal
 
 from enhanced_exchange_service import *
+from exchange_async import (
+    async_get_fallback_exchange_rate,
+    async_get_fallback_usd_rate,
+)
 from pricing._pricing_helpers import get_wx_pay_fallback_rate
 
 # Provide fallback functions if not available

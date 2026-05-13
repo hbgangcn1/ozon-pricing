@@ -15,6 +15,7 @@ import db.statistics as statistics_db
 from db.statistics import (
     clear_all_statistics_cache,
     clear_expired_cache,
+    count_new_users_today,
     count_paid_orders,
     get_monthly_retention,
     get_monthly_revenue,
@@ -504,6 +505,115 @@ class TestCountTotalUsers:
         """count_total_users counts ALL users including admin; just verify int."""
         result = await count_total_users(db_session)
         assert result >= 0
+
+
+# ===========================================================================
+# count_new_users_today (PERF-W13-02 SQL-side aggregate)
+# ===========================================================================
+
+
+class TestCountNewUsersToday:
+    """Validates SQL-side daily-new-users aggregate replacing the prior
+    Python full-table scan. Must match a Python recount across mixed
+    epoch / ISO / blank created_at storage formats."""
+
+    async def test_counts_iso_format_today(self, db_session):
+        from datetime import datetime as _dt
+
+        anchor = _dt(2099, 6, 15, 12, 0, 0)
+        anchor_str = anchor.strftime("%Y-%m-%d %H:%M:%S")
+        worker = uuid.uuid4().hex[:8]
+        users = [
+            User(
+                username=f"new_today_iso_{worker}_{i}",
+                password="x",
+                role="user",
+                user_type="free",
+                subscription_type="free",
+                remaining_calculations=0,
+                created_at=anchor_str,
+                is_test_user=1,
+            )
+            for i in range(3)
+        ]
+        for u in users:
+            db_session.add(u)
+        await db_session.flush()
+
+        result = await count_new_users_today(db_session, today=anchor)
+        assert result == 3
+
+    async def test_counts_epoch_format_today(self, db_session):
+        from datetime import datetime as _dt
+
+        anchor = _dt(2099, 7, 20, 9, 30, 0)
+        epoch_str = str(int(anchor.timestamp()))
+        worker = uuid.uuid4().hex[:8]
+        users = [
+            User(
+                username=f"new_today_epoch_{worker}_{i}",
+                password="x",
+                role="user",
+                user_type="free",
+                subscription_type="free",
+                remaining_calculations=0,
+                created_at=epoch_str,
+                is_test_user=1,
+            )
+            for i in range(2)
+        ]
+        for u in users:
+            db_session.add(u)
+        await db_session.flush()
+
+        result = await count_new_users_today(db_session, today=anchor)
+        assert result == 2
+
+    async def test_excludes_other_days_and_blanks(self, db_session):
+        from datetime import datetime as _dt
+
+        anchor = _dt(2099, 8, 10, 0, 0, 0)
+        worker = uuid.uuid4().hex[:8]
+        db_session.add(User(
+            username=f"y_iso_{worker}",
+            password="x", role="user", user_type="free",
+            subscription_type="free", remaining_calculations=0,
+            created_at="2099-08-09 23:59:00",
+            is_test_user=1,
+        ))
+        yest = _dt(2099, 8, 9, 12, 0, 0)
+        db_session.add(User(
+            username=f"y_epoch_{worker}",
+            password="x", role="user", user_type="free",
+            subscription_type="free", remaining_calculations=0,
+            created_at=str(int(yest.timestamp())),
+            is_test_user=1,
+        ))
+        db_session.add(User(
+            username=f"blank_{worker}",
+            password="x", role="user", user_type="free",
+            subscription_type="free", remaining_calculations=0,
+            created_at="",
+            is_test_user=1,
+        ))
+        db_session.add(User(
+            username=f"today_iso_{worker}",
+            password="x", role="user", user_type="free",
+            subscription_type="free", remaining_calculations=0,
+            created_at="2099-08-10 03:21:00",
+            is_test_user=1,
+        ))
+        await db_session.flush()
+
+        result = await count_new_users_today(db_session, today=anchor)
+        assert result == 1
+
+    async def test_returns_zero_when_no_users_today(self, db_session):
+        from datetime import datetime as _dt
+
+        anchor = _dt(2199, 1, 1, 0, 0, 0)
+        result = await count_new_users_today(db_session, today=anchor)
+        assert result == 0
 
 
 # ===========================================================================

@@ -117,9 +117,9 @@ describe('CommissionCategoriesPage', () => {
     await waitFor(() => {
       expect(commissionCategoriesAPI.getAll).toHaveBeenCalledTimes(1);
     });
-    
-    // Check rendered categories
-    expect(screen.getByText('服装')).toBeInTheDocument();
+
+    // Check rendered categories (wait for async state update + render)
+    expect(await screen.findByText('服装')).toBeInTheDocument();
     expect(screen.getByText('8.00%')).toBeInTheDocument();
     expect(screen.getByText('电子产品')).toBeInTheDocument();
   });

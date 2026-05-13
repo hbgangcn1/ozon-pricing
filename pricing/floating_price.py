@@ -1,7 +1,7 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Tuple
 
-from ._constants import CONVERGENCE_THRESHOLD
+from ._constants import CONVERGENCE_THRESHOLD, RUB_CENT
 from .vat_utils import normalize_vat_to_fraction
 
 __all__ = ["calc_floating_price", "_get_filter_rates"]
@@ -71,7 +71,7 @@ def calc_floating_price(
         new_commission_rub = max(
             Decimal("15"),
             min(Decimal("200"), price_rub * Decimal("0.02")),
-        )
+        ).quantize(RUB_CENT, rounding=ROUND_HALF_UP)
         new_commission_fee = new_commission_rub * rate_input
         if payment_rate_input > 0:
             payment_by_rate = price_rub * payment_rate_input
@@ -87,7 +87,16 @@ def calc_floating_price(
     actual_payment_rub = (
         Decimal("10") if use_fixed_payment else price_rub * payment_rate_input
     )
-    commission_rub = commission_fee / rate_input if rate_input > 0 else Decimal("0")
+    if rate_input > 0:
+        commission_rub = (commission_fee / rate_input).quantize(
+            RUB_CENT, rounding=ROUND_HALF_UP
+        )
+    else:
+        commission_rub = Decimal("0")
+    if isinstance(actual_payment_rub, Decimal):
+        actual_payment_rub = actual_payment_rub.quantize(
+            RUB_CENT, rounding=ROUND_HALF_UP
+        )
     return (
         price,
         commission_rub,

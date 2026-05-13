@@ -31,6 +31,15 @@ RestartSec=5
 StartLimitBurst=3
 StartLimitIntervalSec=60
 
+# 资源限制：生产机约 3.6GB RAM / 2 vCPU。
+# MemoryMax=1500M 为 3 个 gunicorn worker 保留约 40% 内存，剩余约 60% 留给
+# PostgreSQL、nginx 与系统页缓存；CPUQuota=180% 避免应用打满双核导致 SSH/nginx
+# 无响应；TasksMax=512 足够 gunicorn worker、线程池与短生命周期子任务使用。
+# 不配置 WatchdogSec：gunicorn/uvicorn worker 不发送 sd_notify watchdog 心跳。
+MemoryMax=1500M
+CPUQuota=180%
+TasksMax=512
+
 # 安全加固
 NoNewPrivileges=true
 ProtectSystem=strict

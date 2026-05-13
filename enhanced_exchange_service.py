@@ -39,30 +39,6 @@ def update_exchange_rate_fallback(currency_pair, rate, source=""):
     pass
 
 
-# 尝试导入aiohttp用于异步请求（当前未使用，保留用于未来扩展）
-try:
-    import aiohttp  # pyright: ignore[reportUnusedImport]
-    import asyncio  # pyright: ignore[reportUnusedImport]
-
-    _aiohttp_available = True
-except ImportError:
-    _aiohttp_available = False
-    aiohttp = None
-    asyncio = None
-
-AIOHTTP_AVAILABLE = _aiohttp_available
-
-# 导入requests作为备用
-try:
-    import requests  # pyright: ignore[reportUnusedImport]
-
-    _requests_available = True
-except ImportError:
-    _requests_available = False
-    requests = None
-
-REQUESTS_AVAILABLE = _requests_available
-
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -173,6 +149,14 @@ class EnhancedExchangeRateService:
             logger.warning(f"从本地存储加载失败: {e}")
             return None
 
+    def get_cached_rate_data(self) -> Optional[ExchangeRateData]:
+        """Public cache-read hook for async single-flight wrapper."""
+        return self._load_from_local_storage()
+
+    def cache_rate_data(self, exchange_rate_data: ExchangeRateData) -> None:
+        """Public cache-write hook for async single-flight wrapper."""
+        self._save_to_local_storage(exchange_rate_data)
+
     @staticmethod
     def _get_best_rate(rates: List[ExchangeRateData]) -> ExchangeRateData:
         """选择最佳汇率"""
@@ -280,6 +264,14 @@ class EnhancedExchangeRateService:
         except Exception as e:
             logger.warning(f"从本地存储加载USD失败: {e}")
             return None
+
+    def get_cached_usd_rate_data(self) -> Optional[ExchangeRateData]:
+        """Public USD cache-read hook for async single-flight wrapper."""
+        return self._load_usd_from_local_storage()
+
+    def cache_usd_rate_data(self, exchange_rate_data: ExchangeRateData) -> None:
+        """Public USD cache-write hook for async single-flight wrapper."""
+        self._save_usd_to_local_storage(exchange_rate_data)
 
     def get_exchange_rate(self, use_cache: bool = True) -> ExchangeRateData:
         """获取汇率"""

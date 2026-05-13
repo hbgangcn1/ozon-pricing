@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import PaymentQRDialog from '../components/PaymentQRDialog'
 import { paymentAPI } from '../services/api'
 
@@ -98,5 +98,28 @@ describe('PaymentQRDialog', () => {
     render(<PaymentQRDialog {...defaultProps} onOpenChange={onOpenChange} />)
     fireEvent.click(screen.getByTestId('close-dialog'))
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('cleans up timers on unmount without warning', async () => {
+    vi.useFakeTimers()
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    
+    const { unmount } = render(<PaymentQRDialog {...defaultProps} />)
+    
+    await act(async () => {
+      await Promise.resolve()
+    })
+    
+    expect(screen.getByTestId('qrcode')).toBeInTheDocument()
+    
+    unmount()
+    
+    await act(async () => {
+      vi.advanceTimersByTime(5000)
+    })
+    
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.stringContaining('unmounted component'))
+    consoleErrorSpy.mockRestore()
+    vi.useRealTimers()
   })
 })

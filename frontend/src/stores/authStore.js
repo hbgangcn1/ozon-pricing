@@ -10,6 +10,15 @@ const initialSessionKicked = { open: false, reason: null }
 const REFRESH_THRESHOLD_SECONDS = 300
 let refreshPromise = null
 
+export const safeJsonParse = (str, fallback = null) => {
+  if (!str) return fallback;
+  try {
+    return JSON.parse(str);
+  } catch {
+    return fallback;
+  }
+};
+
 const normalizeSubscriptionType = (user) => {
   if (!user) return user
   return {
@@ -85,7 +94,10 @@ const buildAuthUserState = (user) => ({
 const clearAuthState = (set) => {
   clearPersistedAuth()
   resetLinkedStores()
-  set(buildClearedAuthState())
+  set((state) => ({
+    ...state,
+    ...buildClearedAuthState()
+  }))
 }
 
 export const useAuthStore = create((set, get) => ({
@@ -97,28 +109,30 @@ export const useAuthStore = create((set, get) => ({
   sessionKicked: initialSessionKicked,
   showSecurityDialog: false,
 
-  setCalcMode: (mode) => set({ calcMode: mode }),
-  setShowSecurityDialog: (open) => set({ showSecurityDialog: open }),
+  setCalcMode: (mode) => set((state) => ({ ...state, calcMode: mode })),
+  setShowSecurityDialog: (open) => set((state) => ({ ...state, showSecurityDialog: open })),
 
   initAuth: () => {
     const userStr = localStorage.getItem('api_user')
     const token = sessionStorage.getItem('api_token')
     if (userStr) {
-      try {
-        const user = normalizeSubscriptionType(JSON.parse(userStr))
-        set({
+      const parsed = safeJsonParse(userStr, null)
+      if (parsed) {
+        const user = normalizeSubscriptionType(parsed)
+        set((state) => ({
+          ...state,
           ...buildAuthUserState(user),
           token: token || null,
           isAuthenticated: true,
           isLoading: false,
           sessionKicked: initialSessionKicked,
-        })
-      } catch {
+        }))
+      } else {
         clearPersistedAuth()
-        set({ isLoading: false })
+        set((state) => ({ ...state, isLoading: false }))
       }
     } else {
-      set({ isLoading: false })
+      set((state) => ({ ...state, isLoading: false }))
     }
   },
 
@@ -126,33 +140,35 @@ export const useAuthStore = create((set, get) => ({
     const rawUser = authOrUser?.user ?? authOrUser
     const resolvedToken = authOrUser?.token ?? token
     const normalizedUser = normalizeSubscriptionType(rawUser)
+    
     persistNormalizedUser(normalizedUser)
     if (resolvedToken && import.meta.env.MODE !== 'test') {
       sessionStorage.setItem('api_token', resolvedToken)
     }
-    
     const tokenToSet = import.meta.env.MODE === 'test' ? null : (resolvedToken || null)
-    set({
+    
+    set((state) => ({
+      ...state,
       ...buildAuthUserState(normalizedUser),
       token: tokenToSet,
       isAuthenticated: true,
       sessionKicked: initialSessionKicked,
-    })
+    }))
   },
 
   setToken: (token) => {
     sessionStorage.setItem('api_token', token)
-    set({ token, isAuthenticated: true })
+    set((state) => ({ ...state, token, isAuthenticated: true }))
   },
 
   logout: () => {
     clearAuthState(set)
-    set({ showSecurityDialog: false })
   },
 
-  setSessionKicked: ({ reason }) => set({
+  setSessionKicked: ({ reason }) => set((state) => ({
+    ...state,
     sessionKicked: { open: true, reason: reason ?? null },
-  }),
+  })),
 
   clearSessionKicked: () => {
     clearAuthState(set)
@@ -161,14 +177,17 @@ export const useAuthStore = create((set, get) => ({
   setUser: (user) => {
     const normalizedUser = normalizeSubscriptionType(user)
     persistNormalizedUser(normalizedUser)
-    set(buildAuthUserState(normalizedUser))
+    set((state) => ({
+      ...state,
+      ...buildAuthUserState(normalizedUser)
+    }))
   },
 
   getTokenExpiry: () => {
     const { token } = get()
     if (!token) return null
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]))
+      const payload = safeJsonParse(atob(token.split('.')[1]), {})
       if (!payload.exp) return null
       const now = Math.floor(Date.now() / 1000)
       return payload.exp - now
@@ -189,7 +208,7 @@ export const useAuthStore = create((set, get) => ({
       .then((data) => {
         const newToken = data.access_token
         sessionStorage.setItem('api_token', newToken)
-        set({ token: newToken })
+        set((state) => ({ ...state, token: newToken }))
         return newToken
       })
       .finally(() => {

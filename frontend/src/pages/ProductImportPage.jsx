@@ -46,6 +46,20 @@ export default function ProductImportPage() {
     const file = e.target.files?.[0]
     if (!file) return
 
+    const MAX_SIZE = 50 * 1024 * 1024;
+    const ALLOWED_EXT = ['.xlsx', '.xls'];
+    const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0];
+    if (!ALLOWED_EXT.includes(ext)) {
+      toast.error('仅支持 .xlsx / .xls 文件');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > MAX_SIZE) {
+      toast.error('文件大小不能超过 50MB');
+      e.target.value = '';
+      return;
+    }
+
     const formData = new FormData()
     formData.append('file', file)
 

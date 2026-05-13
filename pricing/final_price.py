@@ -78,7 +78,16 @@ def calc_final_commission(
     actual_payment_rub = (
         Decimal("10") if use_fixed_payment else price_rub * payment_rate_input
     )
-    commission_rub = commission_fee / rate_input if rate_input > 0 else Decimal("0")
+    if rate_input > 0:
+        commission_rub = (commission_fee / rate_input).quantize(
+            RUB_CENT, rounding=ROUND_HALF_UP
+        )
+    else:
+        commission_rub = Decimal("0")
+    if isinstance(actual_payment_rub, Decimal):
+        actual_payment_rub = actual_payment_rub.quantize(
+            RUB_CENT, rounding=ROUND_HALF_UP
+        )
     return (
         price,
         commission_rub,
@@ -253,7 +262,7 @@ def _calc_numerator_denom(
         + final_vat_rate
     )
     if commission_in_num:
-        numerator += actual_commission * rate
+        numerator += actual_commission_rounded * rate
     else:
         denom_deductions += Decimal("0.02")
     if payment_in_num:

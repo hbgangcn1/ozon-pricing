@@ -282,7 +282,7 @@ describe('ProductImportPage', () => {
     
     // Go to step 3
     const input = document.querySelector('input[type="file"]');
-    fireEvent.change(input, { target: { files: [new File([''], 'file')] } });
+    fireEvent.change(input, { target: { files: [new File([''], 'file.xlsx')] } });
     await waitFor(() => expect(screen.getByText('开始导入')).toBeInTheDocument());
     fireEvent.click(screen.getByText('开始导入'));
     await waitFor(() => expect(screen.getByText('继续导入')).toBeInTheDocument());

@@ -178,17 +178,16 @@ async def test_batch_add_empty_ids_400(http_client):
 
 
 # ---------------------------------------------------------------------------
-# Test D: over 200 ids → 400
+# Test D: over 50 ids → 422
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_batch_add_over_limit_400(http_client):
+async def test_batch_add_over_limit_422(http_client):
     resp = await http_client.post(
         "/api/logistics-pool/batch-add-to-my-logistics",
-        json={"ids": list(range(1, 202))},
+        json={"ids": list(range(1, 52))},
     )
-    assert resp.status_code == 400
-    assert "单次最多添加 200 条" in resp.json()["detail"]
+    assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
