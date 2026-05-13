@@ -230,4 +230,46 @@ describe('LogisticsPoolPage', () => {
       expect(toast.error).toHaveBeenCalledWith('添加失败，可能已经存在');
     });
   });
+
+  it('does NOT show error toast when API returns empty array', async () => {
+    logisticsPoolAPI.getAll.mockResolvedValue([]);
+
+    render(<LogisticsPoolPage />);
+
+    await waitFor(() => {
+      expect(logisticsPoolAPI.getAll).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText('暂无物流数据')).toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('passes limit=1000 to logisticsPoolAPI.getAll', async () => {
+    render(<LogisticsPoolPage />);
+
+    await waitFor(() => {
+      expect(logisticsPoolAPI.getAll).toHaveBeenCalledTimes(1);
+    });
+
+    expect(logisticsPoolAPI.getAll).toHaveBeenCalledWith(
+      { limit: 1000 },
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
+  it('swallows AbortError without showing toast', async () => {
+    const abortError = new Error('canceled');
+    abortError.name = 'CanceledError';
+    logisticsPoolAPI.getAll.mockRejectedValue(abortError);
+
+    render(<LogisticsPoolPage />);
+
+    await waitFor(() => {
+      expect(logisticsPoolAPI.getAll).toHaveBeenCalledTimes(1);
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(toast.error).not.toHaveBeenCalled();
+  });
 });

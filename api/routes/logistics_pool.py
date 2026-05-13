@@ -110,7 +110,10 @@ async def list_logistics_pool(
     fulfillment_type: Optional[str] = None,
     destination: Optional[str] = None,
     fbp_service_level: Optional[str] = None,
-    limit: int = Query(100, ge=1, le=200),
+    # NOTE: le=1000 is a temporary ceiling; real pagination tracked in
+    # OpenSpec change "fix-logistics-pool-empty-toast" 未来工作 段。
+    # 池行数接近 1000 前必须改为 cursor/offset 真分页。
+    limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
