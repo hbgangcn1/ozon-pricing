@@ -11,7 +11,7 @@ import logging
 import threading
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, cast
 
 # 导入缓存服务
 try:
@@ -54,7 +54,7 @@ AIOHTTP_AVAILABLE = _aiohttp_available
 
 # 导入requests作为备用
 try:
-    import requests
+    import requests  # pyright: ignore[reportUnusedImport]
 
     _requests_available = True
 except ImportError:
@@ -89,6 +89,14 @@ class EnhancedExchangeRateService:
 
     _Q4 = Decimal("0.0001")
     _Q6 = Decimal("0.000001")
+
+    @staticmethod
+    def _average_rates(rates: List[ExchangeRateData]) -> Decimal:
+        total = sum((Decimal(str(rate.rate)) for rate in rates), Decimal("0"))
+        return (total / Decimal(len(rates))).quantize(
+            EnhancedExchangeRateService._Q6,
+            rounding=ROUND_HALF_UP,
+        )
 
     def __init__(self, cache_ttl: int = 3600):
         self.cache_ttl = cache_ttl
@@ -186,12 +194,10 @@ class EnhancedExchangeRateService:
                 r for r in rates if r.source != ExchangeRateSource.LOCAL_FALLBACK
             ]
             if non_fallback_rates:
-                avg_rate = round(
-                    sum(r.rate for r in non_fallback_rates) / len(non_fallback_rates), 4
-                )
+                avg_rate = EnhancedExchangeRateService._average_rates(non_fallback_rates)
                 return ExchangeRateData(
                     source=ExchangeRateSource.LOCAL_FALLBACK,
-                    rate=avg_rate,
+                    rate=cast(float, avg_rate),
                     timestamp=time.time(),
                     currency_pair="RUB/CNY",
                     confidence=0.7,
@@ -221,12 +227,10 @@ class EnhancedExchangeRateService:
                 r for r in rates if r.source != ExchangeRateSource.LOCAL_FALLBACK_USD
             ]
             if non_fallback_rates:
-                avg_rate = round(
-                    sum(r.rate for r in non_fallback_rates) / len(non_fallback_rates), 4
-                )
+                avg_rate = EnhancedExchangeRateService._average_rates(non_fallback_rates)
                 return ExchangeRateData(
                     source=ExchangeRateSource.LOCAL_FALLBACK_USD,
-                    rate=avg_rate,
+                    rate=cast(float, avg_rate),
                     timestamp=time.time(),
                     currency_pair="USD/CNY",
                     confidence=0.7,
@@ -313,7 +317,7 @@ class EnhancedExchangeRateService:
             best_rate = EnhancedExchangeRateService._get_best_rate(rates)
 
             if CACHE_AVAILABLE and cache_exchange_rate is not None:
-                cache_exchange_rate(best_rate.rate, self.cache_ttl)
+                cache_exchange_rate(float(best_rate.rate), self.cache_ttl)
 
             self._save_to_local_storage(best_rate)
 

@@ -1,4 +1,5 @@
 import os
+import uuid
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -40,6 +41,7 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(
 )
 TOKEN_TYPE_ACCESS = "access"
 TOKEN_TYPE_REFRESH = "refresh"
+_REVOKED_REFRESH_JTIS: set[str] = set()
 
 
 def _get_secret_key() -> str:
@@ -89,6 +91,7 @@ def create_access_token(
         "username": username,
         "role": role,
         "type": TOKEN_TYPE_ACCESS,
+        "token_type": TOKEN_TYPE_ACCESS,
         "iss": ISSUER,
         "aud": AUDIENCE,
         "iat": now,
@@ -116,6 +119,7 @@ def create_access_token_from_payload(
         "username": payload["username"],
         "role": payload["role"],
         "type": TOKEN_TYPE_ACCESS,
+        "token_type": TOKEN_TYPE_ACCESS,
         "iss": ISSUER,
         "aud": AUDIENCE,
         "iat": now,
@@ -142,7 +146,9 @@ def create_refresh_token(
     payload = {
         "sub": str(user_id),
         "sid": sid,
+        "jti": uuid.uuid4().hex,
         "type": TOKEN_TYPE_REFRESH,
+        "token_type": TOKEN_TYPE_REFRESH,
         "iss": ISSUER,
         "aud": AUDIENCE,
         "iat": now,
@@ -163,7 +169,8 @@ def decode_access_token(token: str) -> dict:
             options={"require": ["exp", "iat", "iss", "aud"]},
         )
         # 拒绝把 refresh token 当 access token 用（防 token 类型混淆攻击）
-        if payload.get("type") == TOKEN_TYPE_REFRESH:
+        payload_type = payload.get("token_type") or payload.get("type")
+        if payload_type == TOKEN_TYPE_REFRESH:
             raise TokenInvalidError("Refresh token 不能用作 access token")
         if payload.get("purpose") == "password_reset":
             raise TokenInvalidError("Password reset token 不能用作 access token")
@@ -180,6 +187,12 @@ def _decode_access_token_unsafe_for_testing(token: str) -> dict:
     解码 access token，不验证 exp。
     Raises TokenInvalidError。
     """
+    if not (
+        os.environ.get("E2E_TEST") == "1"
+        or os.environ.get("LOGISTICS_TESTING") == "1"
+        or os.environ.get("PYTEST_CURRENT_TEST")
+    ):
+        raise RuntimeError("decode_token_unsafe must NOT be used outside testing")
     try:
         payload = jwt.decode(
             token,
@@ -189,13 +202,17 @@ def _decode_access_token_unsafe_for_testing(token: str) -> dict:
             issuer=ISSUER,
             options={"verify_exp": False, "require": ["iat", "iss", "aud"]},
         )
-        if payload.get("type") == TOKEN_TYPE_REFRESH:
+        payload_type = payload.get("token_type") or payload.get("type")
+        if payload_type == TOKEN_TYPE_REFRESH:
             raise TokenInvalidError("Refresh token 不能用作 access token")
         if payload.get("purpose") == "password_reset":
             raise TokenInvalidError("Password reset token 不能用作 access token")
         return payload
     except jwt.InvalidTokenError as e:
         raise TokenInvalidError(f"Token 无效: {e}")
+
+
+decode_token_unsafe_for_testing = _decode_access_token_unsafe_for_testing
 
 
 def decode_password_reset_token(token: str) -> dict:
@@ -207,7 +224,8 @@ def decode_password_reset_token(token: str) -> dict:
     except jwt.InvalidTokenError as e:
         raise TokenInvalidError(f"Token 无效: {e}")
 
-    if payload.get("type") == TOKEN_TYPE_REFRESH:
+    payload_type = payload.get("token_type") or payload.get("type")
+    if payload_type == TOKEN_TYPE_REFRESH:
         raise TokenInvalidError("Refresh token 不能用作 password reset token")
     if payload.get("purpose") != "password_reset":
         raise TokenInvalidError("Token 不是 password reset 类型")
@@ -229,13 +247,28 @@ def decode_refresh_token(token: str) -> dict:
         raise TokenExpiredError("Refresh token 已过期")
     except jwt.InvalidTokenError as e:
         raise TokenInvalidError(f"Refresh token 无效: {e}")
-    if payload.get("type") != TOKEN_TYPE_REFRESH:
+    payload_type = payload.get("token_type") or payload.get("type")
+    if payload_type != TOKEN_TYPE_REFRESH:
         raise TokenInvalidError("Token 不是 refresh 类型")
     if not payload.get("sid"):
         raise TokenInvalidError("Refresh token 缺少 sid 字段")
     if payload.get("sub") is None:
         raise TokenInvalidError("Refresh token 缺少 sub 字段")
+    jti = payload.get("jti")
+    if jti in _REVOKED_REFRESH_JTIS:
+        raise TokenInvalidError("Refresh token 已撤销")
     return payload
+
+
+def revoke_refresh_token_jti(jti: object) -> None:
+    """Add a refresh-token jti to the in-process deny set.
+
+    [SEC-W12R2-03] Minimal rotation guard. TODO: persist refresh-token jti
+    issuance/revocation in PostgreSQL or Redis so revocation survives process
+    restarts and works across gunicorn workers.
+    """
+    if isinstance(jti, str) and jti:
+        _REVOKED_REFRESH_JTIS.add(jti)
 
 
 def get_user_id_from_token(token: str) -> int:

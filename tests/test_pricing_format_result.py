@@ -125,7 +125,11 @@ def test_precise_calculate_endpoint_keeps_zero_price_result_available(
     mock_calc.side_effect = lambda *_args, **_kwargs: _result(0)
 
     mock_session = AsyncMock()
-    mock_session.get.return_value = MagicMock(user_type="enterprise")
+    mock_session.get.return_value = MagicMock(
+        subscription_type="enterprise",
+        subscription_expires=None,
+        trial_expires_at=0,
+    )
     app.dependency_overrides[get_db] = _db_override(mock_session)
 
     response = client.post(

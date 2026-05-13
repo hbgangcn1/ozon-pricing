@@ -197,97 +197,105 @@ async def calculate(
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
-    mode = request.mode
+    try:  # [API-W12-01]
+        mode = request.mode
 
-    if mode == "precise":
-        user = await session.get(User, user_id)
-        if user and get_effective_plan(user) in ("free", "efficiency"):
+        if mode == "precise":
+            user = await session.get(User, user_id)
+            if user and get_effective_plan(user) in ("free", "efficiency"):
+                raise HTTPException(
+                    status_code=403, detail="免费版和效率版用户不能使用精准模式"
+                )
+
+        allowed = await decrement_user_calculations(session, user_id)
+        if not allowed:
             raise HTTPException(
-                status_code=403, detail="免费版和效率版用户不能使用精准模式"
+                status_code=403, detail="今日计算次数已用完，请明天再来或升级套餐"
             )
 
-    allowed = await decrement_user_calculations(session, user_id)
-    if not allowed:
-        raise HTTPException(
-            status_code=403, detail="今日计算次数已用完，请明天再来或升级套餐"
-        )
-
-    if mode == "fast":
-        product = request.product_data or {}
-    else:
-        if request.product_data:
-            product = request.product_data
-        elif request.product_id:
-            product = await get_product_by_id(session, request.product_id, user_id)
-            if not product:
-                raise HTTPException(status_code=404, detail="产品不存在")
+        if mode == "fast":
+            product = request.product_data or {}
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="请提供产品数据或选择已有产品",
-            )
+            if request.product_data:
+                product = request.product_data
+            elif request.product_id:
+                product = await get_product_by_id(session, request.product_id, user_id)
+                if not product:
+                    raise HTTPException(status_code=404, detail="产品不存在")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="请提供产品数据或选择已有产品",
+                )
 
-    product = _ensure_decimal_fields(product)
+        product = _ensure_decimal_fields(product)
 
-    all_logistics = await get_user_logistics(session, user_id)
-    logger.info(
-        "用户 %s 加载了 %d 条物流: %s",
-        user_id,
-        len(all_logistics),
-        [r.get("name", "?") for r in all_logistics],
-    )
-    land_rules = [r for r in all_logistics if r.get("type") == "land"]
-    air_rules = [r for r in all_logistics if r.get("type") == "air"]
+        all_logistics = await get_user_logistics(session, user_id)
+        logger.info(
+            "用户 %s 加载了 %d 条物流: %s",
+            user_id,
+            len(all_logistics),
+            [r.get("name", "?") for r in all_logistics],
+        )
+        land_rules = [r for r in all_logistics if r.get("type") == "land"]
+        air_rules = [r for r in all_logistics if r.get("type") == "air"]
 
-    rate = get_fallback_exchange_rate()
+        rate = get_fallback_exchange_rate()
 
-    results, raw_res = await asyncio.to_thread(
-        calculate_combo_results,
-        product,
-        mode,
-        land_rules,
-        air_rules,
-        rate,
-    )
-
-    breakeven_results = None
-    if mode == "precise":
-        breakeven_product = dict(product)
-        breakeven_product["target_profit_margin"] = Decimal("0")
-        breakeven_results, _ = await asyncio.to_thread(
+        results, raw_res = await asyncio.to_thread(
             calculate_combo_results,
-            breakeven_product,
+            product,
             mode,
             land_rules,
             air_rules,
             rate,
         )
 
-    all_res = raw_res.get("低价优先", {})
-    filtered_logistics = all_res.get("filtered_logistics", {"land": [], "air": []})
+        breakeven_results = None
+        if mode == "precise":
+            breakeven_product = dict(product)
+            breakeven_product["target_profit_margin"] = Decimal("0")
+            breakeven_results, _ = await asyncio.to_thread(
+                calculate_combo_results,
+                breakeven_product,
+                mode,
+                land_rules,
+                air_rules,
+                rate,
+            )
 
-    winner_ids = _collect_winner_ids_from_res_dict(raw_res)
-    if winner_ids:
-        await mark_logistics_used(session, user_id, winner_ids)
-        await session.commit()
+        all_res = raw_res.get("低价优先", {})
+        filtered_logistics = all_res.get("filtered_logistics", {"land": [], "air": []})
 
-    return PricingResponse(
-        calculation_mode=mode,
-        price_priority=format_combo(results["低价优先"]),
-        speed_priority=format_combo(results["速度优先"]),
-        breakeven_price_priority=(
-            format_combo(breakeven_results["低价优先"]) if breakeven_results else None
-        ),
-        breakeven_speed_priority=(
-            format_combo(breakeven_results["速度优先"]) if breakeven_results else None
-        ),
-        exchange_rates={
-            "rub_cny": float(rate),
-            "usd_cny": float(get_fallback_usd_rate()),
-        },
-        filtered_logistics=filtered_logistics,
-        product=_product_for_response(product) if mode != "fast" else None,
-    )
+        winner_ids = _collect_winner_ids_from_res_dict(raw_res)
+        if winner_ids:
+            await mark_logistics_used(session, user_id, winner_ids)
+            await session.commit()
+
+        return PricingResponse(
+            calculation_mode=mode,
+            price_priority=format_combo(results["低价优先"]),
+            speed_priority=format_combo(results["速度优先"]),
+            breakeven_price_priority=(
+                format_combo(breakeven_results["低价优先"])
+                if breakeven_results else None
+            ),
+            breakeven_speed_priority=(
+                format_combo(breakeven_results["速度优先"])
+                if breakeven_results else None
+            ),
+            exchange_rates={
+                "rub_cny": float(rate),
+                "usd_cny": float(get_fallback_usd_rate()),
+            },
+            filtered_logistics=filtered_logistics,
+            product=_product_for_response(product) if mode != "fast" else None,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("pricing calculate failed: %s", exc)
+        raise HTTPException(status_code=500, detail="计算失败，请稍后重试") from exc
 
 
 @router.post("/calculate-grouped", response_model=PricingGroupedResponse)
@@ -296,83 +304,89 @@ async def calculate_grouped(
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
-    mode = request.mode
+    try:  # [API-W12-01]
+        mode = request.mode
 
-    if mode == "precise":
-        user = await session.get(User, user_id)
-        if user and get_effective_plan(user) in ("free", "efficiency"):
+        if mode == "precise":
+            user = await session.get(User, user_id)
+            if user and get_effective_plan(user) in ("free", "efficiency"):
+                raise HTTPException(
+                    status_code=403, detail="免费版和效率版用户不能使用精准模式"
+                )
+
+        allowed = await decrement_user_calculations(session, user_id)
+        if not allowed:
             raise HTTPException(
-                status_code=403, detail="免费版和效率版用户不能使用精准模式"
+                status_code=403, detail="今日计算次数已用完，请明天再来或升级套餐"
             )
 
-    allowed = await decrement_user_calculations(session, user_id)
-    if not allowed:
-        raise HTTPException(
-            status_code=403, detail="今日计算次数已用完，请明天再来或升级套餐"
-        )
-
-    if mode == "fast":
-        product = request.product_data or {}
-    else:
-        if request.product_data:
-            product = request.product_data
-        elif request.product_id:
-            product = await get_product_by_id(session, request.product_id, user_id)
-            if not product:
-                raise HTTPException(status_code=404, detail="产品不存在")
+        if mode == "fast":
+            product = request.product_data or {}
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="请提供产品数据或选择已有产品",
-            )
+            if request.product_data:
+                product = request.product_data
+            elif request.product_id:
+                product = await get_product_by_id(session, request.product_id, user_id)
+                if not product:
+                    raise HTTPException(status_code=404, detail="产品不存在")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="请提供产品数据或选择已有产品",
+                )
 
-    product = _ensure_decimal_fields(product)
+        product = _ensure_decimal_fields(product)
 
-    all_logistics = await get_user_logistics(session, user_id)
-    logger.info(
-        "用户 %s (grouped) 加载了 %d 条物流: %s",
-        user_id,
-        len(all_logistics),
-        [r.get("name", "?") for r in all_logistics],
-    )
-    rate = get_fallback_exchange_rate()
-    priority = getattr(request, "priority", "低价优先") or "低价优先"
+        all_logistics = await get_user_logistics(session, user_id)
+        logger.info(
+            "用户 %s (grouped) 加载了 %d 条物流: %s",
+            user_id,
+            len(all_logistics),
+            [r.get("name", "?") for r in all_logistics],
+        )
+        rate = get_fallback_exchange_rate()
+        priority = getattr(request, "priority", "低价优先") or "低价优先"
 
-    commission_category = None
-    if mode == "precise":
-        cat_id = product.get("commission_category_id")
-        if cat_id:
-            commission_category = await fetch_commission_category(
-                int(cat_id),
-                session,
-                user_id=user_id,
-            )
+        commission_category = None
+        if mode == "precise":
+            cat_id = product.get("commission_category_id")
+            if cat_id:
+                commission_category = await fetch_commission_category(
+                    int(cat_id),
+                    session,
+                    user_id=user_id,
+                )
 
-    grouped = await asyncio.to_thread(
-        calculate_pricing_grouped,
-        product,
-        all_logistics,
-        mode=mode,
-        priority=priority,
-        commission_category=commission_category,
-    )
-
-    breakeven_grouped: dict[str, Any] | None = None
-    if mode == "precise":
-        breakeven_product = dict(product)
-        breakeven_product["target_profit_margin"] = Decimal("0")
-        breakeven_grouped = await asyncio.to_thread(
+        grouped = await asyncio.to_thread(
             calculate_pricing_grouped,
-            breakeven_product,
+            product,
             all_logistics,
             mode=mode,
             priority=priority,
             commission_category=commission_category,
         )
 
-    winner_ids = _collect_winner_ids_from_grouped(grouped)
-    if winner_ids:
-        await mark_logistics_used(session, user_id, winner_ids)
-        await session.commit()
+        breakeven_grouped: dict[str, Any] | None = None
+        if mode == "precise":
+            breakeven_product = dict(product)
+            breakeven_product["target_profit_margin"] = Decimal("0")
+            breakeven_grouped = await asyncio.to_thread(
+                calculate_pricing_grouped,
+                breakeven_product,
+                all_logistics,
+                mode=mode,
+                priority=priority,
+                commission_category=commission_category,
+            )
 
-    return _make_grouped_response(grouped, breakeven_grouped, rate, product, mode)
+        winner_ids = _collect_winner_ids_from_grouped(grouped)
+        if winner_ids:
+            await mark_logistics_used(session, user_id, winner_ids)
+            await session.commit()
+
+        return _make_grouped_response(grouped, breakeven_grouped, rate, product, mode)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("pricing calculate_grouped failed: %s", exc)
+        raise HTTPException(status_code=500, detail="计算失败，请稍后重试") from exc

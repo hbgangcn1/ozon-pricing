@@ -63,7 +63,7 @@ describe('Sidebar Component', () => {
       </MemoryRouter>
     );
     
-    expect(apiClient.get).toHaveBeenCalledWith('/exchange/rates');
+    expect(apiClient.get).toHaveBeenCalledWith('/exchange/rates', expect.any(Object));
     
     const rateText = await screen.findByText('RUB/CNY');
     expect(rateText).toBeInTheDocument();

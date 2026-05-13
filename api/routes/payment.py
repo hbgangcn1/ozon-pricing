@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -33,13 +32,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/payments", tags=["payment"])
 WECHAT_NOTIFY_ACK = {"code": "SUCCESS", "message": "OK"}
 MAX_AUDIT_RAW_BODY_LENGTH = 8192
-
-
-def _is_production() -> bool:
-    app_env = os.getenv("APP_ENV") or os.getenv("ENVIRONMENT")
-    if app_env:
-        return app_env.lower() == "production"
-    return os.getenv("PRODUCTION_MODE", "").lower() == "true"
 
 
 def _is_wechat_response_signature_error(exc: Exception) -> bool:
@@ -125,6 +117,38 @@ def _parse_raw_notify_identifiers(body: bytes) -> tuple[str | None, str | None]:
     return _safe_identifier(out_trade_no), _safe_identifier(transaction_id)
 
 
+def _client_ip(request: Request) -> str | None:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()[:64]
+    client = request.client
+    if client is None:
+        return None
+    return client.host[:64]
+
+
+def _log_signature_failure(request: Request, body: bytes, exc: Exception) -> None:
+    out_trade_no, transaction_id = _parse_raw_notify_identifiers(body)
+    # [SEC-W12-03] Structured monitoring for signature/parse failures.
+    logger.error(
+        "wechat notify signature verification failed",
+        exc_info=True,
+        extra={
+            "event": "payment_signature_failure",
+            "ip": _client_ip(request),
+            "out_trade_no": out_trade_no,
+            "transaction_id": transaction_id,
+        },
+    )
+
+
+def _wechat_fail_response(status_code: int, reason: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"code": "FAIL", "message": reason},
+    )
+
+
 def _safe_identifier(value: object) -> str | None:
     if value is None:
         return None
@@ -152,6 +176,25 @@ async def _write_notify_audit_log(
         )
     )
     await session.flush()
+
+
+def _wechat_headers_for_signature(request: Request) -> dict[str, str]:
+    # [SEC-W12R2-01] Starlette Headers is case-insensitive, but a plain
+    # dict(request.headers) lowercases keys and breaks legacy signature code
+    # expecting Wechatpay-* names. Extract through Headers.get() instead.
+    names = (
+        "Wechatpay-Timestamp",
+        "Wechatpay-Nonce",
+        "Wechatpay-Signature",
+        "Wechatpay-Serial",
+    )
+    return {name: request.headers.get(name, "") for name in names}
+
+
+def _notify_failure_status(exc: Exception) -> int:
+    if _is_wechat_pay_signature_error(exc):
+        return 401
+    return 500
 
 
 def _extract_wechat_success_fields(data: dict) -> tuple[str, str, int, str]:
@@ -301,44 +344,42 @@ async def payment_notify(
 ):
     body = await request.body()
     if not _wechat_available or wechat_pay_v3 is None:
-        is_prod = _is_production()
-        allow_success = not is_prod or os.getenv("E2E_TEST") == "1"
-        response_code = "SUCCESS" if allow_success else "FAIL"
-        response_message = (
-            "OK"
-            if allow_success
-            else "微信支付模块不可用 (生产环境拒绝 ACK 以触发微信重试)"
-        )
+        response_message = "微信支付模块不可用"
+        # [SEC-W12R2-02] Missing/invalid WeChat config must FAIL so WeChat
+        # retries paid callbacks instead of silently dropping entitlements.
         await _write_notify_audit_log(
             session,
             body=body,
             verified=False,
-            response_code=response_code,
+            response_code="FAIL",
             response_message=response_message,
         )
-        if allow_success:
-            logger.warning("微信支付模块不可用，通知仅审计并返回成功确认")
-            return _success_ack()
-        logger.error("微信支付模块不可用，生产环境返回 503 触发微信重试")
-        return JSONResponse(
-            status_code=503,
-            content={"code": "FAIL", "message": "微信支付模块不可用"},
-        )
+        logger.error("微信支付模块不可用，返回 FAIL 触发微信重试")
+        return _wechat_fail_response(500, response_message)
 
     payload = None
     verified = True
     try:
         payload = await asyncio.to_thread(
             wechat_pay_v3.process_notify,
-            dict(request.headers),
+            _wechat_headers_for_signature(request),
             body,
         )
     except Exception as exc:
+        # [SEC-W12R2-02] Signature/decryption/config failures must FAIL so
+        # WeChat retries. SUCCESS is reserved for processed/idempotent orders.
         verified = False
-        if _is_wechat_pay_signature_error(exc):
-            logger.warning("微信支付通知签名验证失败，仅审计并返回成功确认")
-        else:
-            logger.warning("微信支付通知解析异常，仅审计并返回成功确认", exc_info=True)
+        _log_signature_failure(request, body, exc)
+        response_message = str(exc) or "notify verification failed"
+        await _write_notify_audit_log(
+            session,
+            body=body,
+            verified=False,
+            response_code="FAIL",
+            response_message=response_message,
+        )
+        return _wechat_fail_response(_notify_failure_status(exc), response_message)
+
     await _write_notify_audit_log(
         session,
         body=body,

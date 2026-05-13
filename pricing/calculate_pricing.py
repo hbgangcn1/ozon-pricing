@@ -1,6 +1,8 @@
 # pyright: reportPrivateUsage=false, reportUnusedImport=false
 from decimal import Decimal
 import logging
+from collections.abc import Callable
+from .vat_utils import normalize_vat_to_fraction
 from .cost_filter import cost_and_filter
 from .select_best import select_best_by_priority, add_unselected
 from ._pricing_helpers import (
@@ -17,6 +19,15 @@ from ._pricing_helpers import (
 )  # pyright: ignore[reportPrivateUsage]
 
 logger = logging.getLogger(__name__)
+
+
+def _notify_progress(progress_callback: Callable[[], None] | None) -> None:
+    if progress_callback is None:
+        return
+    try:
+        progress_callback()
+    except Exception:
+        logger.warning("SSE progress callback failed", exc_info=True)
 
 
 def _run_filters(
@@ -356,6 +367,9 @@ def _run_calculation(
     priority,
     filtered_logistics,
 ):
+    product = dict(product.items()) if hasattr(product, "items") else product
+    # [PRC-W12R2-01] Normalize VAT once at the pricing pipeline boundary.
+    product["vat_rate"] = normalize_vat_to_fraction(product.get("vat_rate", Decimal("0")))
     unit_price = _to_decimal(product.get("unit_price") or Decimal("0"))
     labeling_fee = _to_decimal(product.get("labeling_fee") or Decimal("0"))
     shipping_fee = _to_decimal(product.get("shipping_fee") or Decimal("0"))
@@ -380,15 +394,18 @@ def calculate_pricing(
     air_logistics: list,
     mode: str = "fast",
     priority: str = "低价优先",
+    progress_callback: Callable[[], None] | None = None,
 ) -> dict:
     filtered_logistics = {"land": [], "air": []}
     try:
+        _notify_progress(progress_callback)
         if product is None or land_logistics is None or air_logistics is None:
             return _empty_result(filtered_logistics)
         if not hasattr(product, "get"):
             product.get("test")
         if _is_empty(land_logistics) and _is_empty(air_logistics):
             return _empty_result(filtered_logistics)
+        _notify_progress(progress_callback)
         result = _run_calculation(
             product,
             land_logistics,
@@ -402,13 +419,14 @@ def calculate_pricing(
             land_logistics,
             air_logistics,
         )
+        _notify_progress(progress_callback)
         return result
     except ZeroDivisionError:
         raise
     except AttributeError:
         raise
-    except (ValueError, TypeError, KeyError) as e:
-        logger.error("计算定价时发生错误: %s", e, exc_info=True)
+    except (ValueError, TypeError, KeyError) as exc:
+        logger.warning("计算定价时发生可恢复错误: %s", exc, exc_info=True)
         return _error_result(product)
 
 

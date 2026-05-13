@@ -165,6 +165,11 @@ function SubscriptionPage() {
     return limit === -1 ? '无限' : `${limit}个`
   }, [])
 
+  const checkIsCurrentPlan = useCallback((planCode) => {
+    const activePlanCode = currentPlan?.plan_code || user?.subscription_type || user?.user_type || 'free'
+    return activePlanCode === planCode || (user?.role === 'admin' && planCode === 'free')
+  }, [currentPlan, user])
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold font-headline tracking-tight text-text-primary">
@@ -254,8 +259,7 @@ function SubscriptionPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
           {plans.map((plan) => {
-          const activePlanCode = currentPlan?.plan_code || user?.subscription_type || user?.user_type || 'free'
-          const isCurrentPlan = activePlanCode === plan.code || (user?.role === 'admin' && plan.code === 'free')
+          const isCurrentPlan = checkIsCurrentPlan(plan.code)
           return (
             <Card 
               key={plan.code} 

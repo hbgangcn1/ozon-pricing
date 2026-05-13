@@ -2,6 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Tuple
 
 from ._constants import CONVERGENCE_THRESHOLD, RUB_CENT
+from .vat_utils import normalize_vat_to_fraction
 
 
 def calc_final_commission(
@@ -103,7 +104,8 @@ def _get_final_rates(product):
         product.get("payment_processing_fee", Decimal("0"))
     )
     final_return_rate = _to_decimal(product.get("return_rate", Decimal("0")))
-    final_vat_rate = _to_decimal(product.get("vat_rate", Decimal("0")))
+    # [PRC-W12R2-01] VAT is normalized through the canonical helper only.
+    final_vat_rate = normalize_vat_to_fraction(product.get("vat_rate", Decimal("0")))
     if final_target_margin >= 1:
         final_target_margin /= 100
     if final_promotion_rate >= 1:
@@ -116,8 +118,6 @@ def _get_final_rates(product):
         final_payment_rate /= 100
     if final_return_rate >= 1:
         final_return_rate /= 100
-    if final_vat_rate >= 1:
-        final_vat_rate /= 100
     return (
         final_target_margin,
         final_promotion_rate,

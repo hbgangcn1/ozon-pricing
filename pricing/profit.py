@@ -1,5 +1,11 @@
 from decimal import Decimal
+import logging
 from typing import Optional, Tuple
+
+from .vat_utils import normalize_vat_to_fraction
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_profit_rates(product):
@@ -15,7 +21,8 @@ def _get_profit_rates(product):
         product.get("payment_processing_fee", Decimal("0"))
     )
     return_rate = _to_decimal(product.get("return_rate", Decimal("0")))
-    vat_rate = _to_decimal(product.get("vat_rate", Decimal("0")))
+    # [PRC-W12R2-01] VAT is normalized through the canonical helper only.
+    vat_rate = normalize_vat_to_fraction(product.get("vat_rate", Decimal("0")))
     if target_margin >= 1:
         target_margin /= 100
     if promotion_rate >= 1:
@@ -130,6 +137,17 @@ def _pricing_mode_has_numerator_commission(pricing_mode: Optional[str]) -> bool:
     return False
 
 
+def _calculate_profit_margin(
+    expected_profit: Decimal,
+    denominator: Decimal,
+    label: str,
+) -> Decimal:
+    if denominator == Decimal("0"):
+        logger.warning("%s利润率分母为0，利润率按0处理", label)
+        return Decimal("0")
+    return expected_profit / denominator * Decimal("100")
+
+
 def calc_profit(
     price: Decimal,
     cost: Decimal,
@@ -173,9 +191,7 @@ def calc_profit(
         revenue_deductions += payment_rate
     actual_revenue = price * (1 - revenue_deductions)
     expected_profit = actual_revenue - total_cost
-    profit_margin = (
-        expected_profit / price * Decimal("100") if price > 0 else Decimal("0")
-    )
+    profit_margin = _calculate_profit_margin(expected_profit, price, label)
     _append_profit_debug(
         debug_list,
         label,

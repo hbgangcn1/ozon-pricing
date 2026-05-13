@@ -33,19 +33,19 @@ function LoginPage() {
   }, [reason]);
 
   useEffect(() => {
-    let cancelled = false;
-    settingsAPI.get()
+    const controller = new AbortController();
+    settingsAPI.get({ signal: controller.signal })
       .then(data => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setOpenRegistration(data.open_registration !== false);
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setOpenRegistration(true);
         }
       });
-    return () => { cancelled = true; };
+    return () => controller.abort();
   }, []);
 
   const {

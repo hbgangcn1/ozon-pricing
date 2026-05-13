@@ -66,7 +66,7 @@ def _mock_auth_dependencies(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _allow_testserver_origin(monkeypatch):
-    monkeypatch.setattr(dependencies, "_ALLOWED_ORIGINS", {"http://testserver"})
+    monkeypatch.setenv("ALLOWED_ORIGINS", "http://testserver")
 
 
 @pytest.fixture(autouse=True)
@@ -81,6 +81,16 @@ def _reset_username_check_limiter():
     username_check_limiter.reset()
     recover_start_limiter.reset()
     recover_verify_limiter.reset()
+
+
+@pytest.fixture(autouse=True)
+def _preserve_username_limiter_ip_test_isolation(monkeypatch):
+    from api.routes.auth import login as auth_login
+
+    def _test_client_ip(request):
+        return request.headers.get("X-Forwarded-For", "testclient").split(",")[0].strip()
+
+    monkeypatch.setattr(auth_login, "get_username_check_client_ip", _test_client_ip)
 
 
 def _logistics_row():

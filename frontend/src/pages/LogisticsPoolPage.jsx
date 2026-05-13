@@ -79,12 +79,12 @@ export default function LogisticsPoolPage() {
     const loadLogistics = async () => {
       setIsLoading(true)
       try {
-        const data = await logisticsPoolAPI.getAll({ limit: 1000 })
+        const data = await logisticsPoolAPI.getAll({ limit: 1000 }, { signal: controller.signal })
         if (!controller.signal.aborted) {
           setLogistics(Array.isArray(data) ? data : (data?.items || []))
         }
       } catch (error) {
-        if (!controller.signal.aborted && error?.response?.status !== 404) {
+        if (!controller.signal.aborted && error?.name !== 'CanceledError' && error?.response?.status !== 404) {
           toast.error('获取物流池数据失败')
         }
       } finally {

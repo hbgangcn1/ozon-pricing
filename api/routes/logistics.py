@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -79,10 +80,18 @@ async def create_logistics_endpoint(
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
     if getattr(user, "role", None) != "admin":
-        await session.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_key)"),
-            {"lock_key": user_id},
-        )
+        await session.execute(text("SET LOCAL lock_timeout = '5s'"))
+        try:
+            # [API-W12-03] Bound PostgreSQL advisory-lock waits per request.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                {"lock_key": user_id},
+            )
+        except (OperationalError, DBAPIError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="资源繁忙，请稍后重试",
+            ) from exc
         effective_limit = await get_effective_logistics_limit(session, user)
         if effective_limit >= 0:
             active_count = await count_user_active_rules(session, user_id)

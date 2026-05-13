@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.schemas import BreakdownItem, PricingComboResult, PricingResultItem
 from models.logistics import Logistics
+from pricing.vat_utils import normalize_vat_to_fraction
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,8 @@ def build_breakdown(
     withdrawal_rate = to_rate(product.get("withdrawal_fee_rate", 0))
     payment_rate = to_rate(product.get("payment_processing_fee", 0))
     return_rate = to_rate(product.get("return_rate", 0))
-    vat_rate = to_rate(product.get("vat_rate", 0))
+    # [PRC-W12R2-01] VAT is normalized through the canonical helper only.
+    vat_rate = normalize_vat_to_fraction(product.get("vat_rate", 0))
 
     price_cny_decimal = _to_decimal(price_cny)
     promotion_cny = _quantize(price_cny_decimal * promotion_rate, _MONEY_PRECISION)

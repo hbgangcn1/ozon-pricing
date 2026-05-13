@@ -112,7 +112,7 @@ def _process_one_logistic(
         + commission_rate
         + withdrawal_rate
         + return_rate
-        + vat_rate
+        + vat_rate  # [PRC-W12R2-01] Already normalized by _get_filter_rates.
     )
     if commission_in_numerator:
         numerator += actual_commission * rate

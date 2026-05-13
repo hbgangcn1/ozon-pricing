@@ -9,6 +9,7 @@ import os
 import threading
 import time
 import logging
+from decimal import Decimal
 from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -56,7 +57,7 @@ class ExchangeRateData:
     """汇率数据结构"""
 
     source: ExchangeRateSource
-    rate: float
+    rate: Decimal | float
     timestamp: float
     currency_pair: str
     confidence: float = 1.0  # 置信度 0-1

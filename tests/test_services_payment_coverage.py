@@ -170,10 +170,24 @@ async def test_apply_wechat_payment_success_happy_path(monkeypatch):
     user = _user()
     session.get.return_value = user
     service = PaymentService(session)
+    from datetime import datetime, timezone
+    fixed_dt = datetime.fromtimestamp(1_700_000_000, timezone.utc)
+    monkeypatch.setattr(payment_service, "_utc_now", lambda: fixed_dt)
     monkeypatch.setattr(payment_service.time, "time", lambda: 1_700_000_000)
+
+    captured = {}
+
+    async def _fake_apply(sess, user_id, plan_code, **kwargs):
+        captured["plan_code"] = plan_code
+        captured["kwargs"] = kwargs
+        user.user_type = plan_code
+        user.subscription_type = plan_code
+        user.subscription_start = kwargs.get("started_at")
+        user.remaining_calculations = -1
+        return {"ok": True}
+
     monkeypatch.setattr(
-        "db.subscriptions.apply_subscription_change",
-        AsyncMock(return_value={"ok": True}),
+        "services.payment_service.apply_paid_subscription", _fake_apply
     )
 
     result = await service.apply_wechat_payment_success(
@@ -201,16 +215,38 @@ async def test_handle_payment_success_happy_path(monkeypatch):
     session.get.return_value = user
     service = PaymentService(session)
     monkeypatch.setattr(payment_service.time, "time", lambda: 1_700_001_000)
-    from db import subscriptions as _subs
-    from services import overflow_service as _ovf
-    monkeypatch.setattr(_subs, "get_plan_by_code", AsyncMock(return_value=None))
-    monkeypatch.setattr(_subs, "_count_active_rules", AsyncMock(return_value=0))
-    monkeypatch.setattr(_ovf, "restore_all_overflow", AsyncMock(return_value=0))
+    from datetime import datetime, timezone
+    fixed_dt = datetime.fromtimestamp(1_700_001_000, timezone.utc)
+    monkeypatch.setattr(payment_service, "_utc_now", lambda: fixed_dt)
+
+    captured = {}
+
+    async def _fake_apply(sess, user_id, plan_code, **kwargs):
+        captured["user_id"] = user_id
+        captured["plan_code"] = plan_code
+        captured["kwargs"] = kwargs
+        user.subscription_type = plan_code
+        user.user_type = plan_code
+        user.subscription_start = kwargs.get("started_at")
+        user.subscription_expires = (
+            kwargs.get("started_at") + kwargs.get("duration_days") * 86400
+        )
+        user.remaining_calculations = -1
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "services.payment_service.apply_paid_subscription", _fake_apply
+    )
 
     await service.handle_payment_success("ord-1")
 
     assert order.status == "SUCCESS"
     assert order.updated_at == 1_700_001_000
+    assert captured["plan_code"] == "professional"
+    assert captured["user_id"] == order.user_id
+    assert captured["kwargs"]["source"] == "payment_success"
+    assert captured["kwargs"]["duration_days"] == 30
+    assert captured["kwargs"]["started_at"] == 1_700_001_000
     assert user.subscription_type == "professional"
     assert user.user_type == "professional"
     assert user.subscription_start == 1_700_001_000

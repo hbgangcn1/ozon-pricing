@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from database import run_migrations, engine
 from api.routes import (
@@ -31,12 +32,18 @@ from api.middleware.rate_limit import RateLimitMiddleware
 logger = logging.getLogger(__name__)
 
 
+def _is_testing_environment() -> bool:
+    return bool(os.getenv("PYTEST_CURRENT_TEST") or os.getenv("E2E_TEST"))
+
+
 def _get_app_environment() -> str:
     app_env = os.getenv("APP_ENV") or os.getenv("ENVIRONMENT")
     if app_env:
         return app_env.lower()
     if os.getenv("PRODUCTION_MODE", "").lower() == "true":
         return "production"
+    if _is_testing_environment():
+        return "testing"
     return "development"
 
 
@@ -79,7 +86,28 @@ _PERMISSIONS_POLICY = (
     "camera=(), microphone=(), geolocation=(), payment=(), usb=(), "
     "magnetometer=(), gyroscope=(), accelerometer=()"
 )
-_HSTS_POLICY = "max-age=63072000; includeSubDomains; preload"
+_HSTS_POLICY = "max-age=31536000; includeSubDomains"
+_MAX_BODY_BYTES = int(os.getenv("LOGISTICS_MAX_BODY_BYTES", str(10 * 1024 * 1024)))
+
+
+class RequestBodySizeLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_body_bytes: int) -> None:
+        super().__init__(app)
+        self.max_body_bytes = max_body_bytes
+
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                body_size = int(content_length)
+            except ValueError:
+                body_size = 0
+            if body_size > self.max_body_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large"},
+                )
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -185,6 +213,9 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
 )
 
+# [SEC-W12-14] Reject oversized requests before body parsing.
+app.add_middleware(RequestBodySizeLimitMiddleware, max_body_bytes=_MAX_BODY_BYTES)
+
 _skip_rate_limit = not _is_production and os.getenv("E2E_TEST")
 if not _skip_rate_limit:
     app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
@@ -217,13 +248,13 @@ async def add_request_id(request: Request, call_next):
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
+    # [SEC-W12-06] Baseline browser response hardening headers.
+    response.headers["Strict-Transport-Security"] = _HSTS_POLICY
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = _CSP_POLICY
     response.headers["Permissions-Policy"] = _PERMISSIONS_POLICY
-    if _is_production:
-        response.headers["Strict-Transport-Security"] = _HSTS_POLICY
     return response
 
 
@@ -271,6 +302,8 @@ async def global_exception_handler(request: Request, exc: Exception):
             content={"detail": exc.detail},
         )
     request_id = getattr(request.state, "request_id", None)
+    # [API-W12-14] Always log full traceback server-side; never expose
+    # internals to the client regardless of environment.
     logging.getLogger("api.error").error(
         "Unhandled %s at %s %s (request_id=%s):\n%s",
         type(exc).__name__,

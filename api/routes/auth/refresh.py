@@ -9,9 +9,8 @@ from db.sessions_crud import get_session, update_session_activity
 from models.user import User
 from security.tokens import (
     create_access_token,
-    create_access_token_from_payload,
     create_refresh_token,
-    decode_access_token,
+    revoke_refresh_token_jti,
     TokenExpiredError,
     TokenInvalidError,
 )
@@ -65,9 +64,10 @@ async def refresh_token(
         extra_claims={"sid": sid},
     )
     new_refresh_token = create_refresh_token(user_id=user.id, sid=sid)
+    revoke_refresh_token_jti(payload.get("jti"))
     body = RefreshResponse(access_token=access_token)
     response = JSONResponse(content=body.model_dump())
-    set_token_cookie(response, access_token, new_refresh_token)
+    set_token_cookie(response, request, access_token, new_refresh_token)
     return response
 
 
@@ -76,37 +76,35 @@ async def refresh_access_token_bearer(
     request: Request,
     session: AsyncSession = Depends(get_db),
 ):
-    """Proactive access token refresh via Bearer auth (no CSRF).
+    """Refresh access token via HttpOnly refresh-token cookie only.
 
-    Frontend calls this when token is near expiry (< 5 min remaining).
-    Decodes the Bearer token, verifies user exists and not frozen, then
-    issues a fresh access token.
+    [SEC-W12R2-03] Access/Bearer tokens are intentionally ignored here:
+    only a refresh token with type="refresh" from the refresh_token cookie can
+    mint new credentials, and every successful use rotates the refresh token.
     """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    refresh_token_value = request.cookies.get("refresh_token")
+    if not refresh_token_value:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="缺少或无效的 Bearer token",
+            detail="缺少刷新令牌",
         )
-    token = auth_header[7:]
 
     try:
-        payload = decode_access_token(token)
+        payload = decode_refresh_cookie(refresh_token_value)
     except (TokenExpiredError, TokenInvalidError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token 无效或已过期",
+            detail="刷新令牌无效或已过期",
         )
     user_id = int(payload["sub"])
-    sid = payload.get("sid")
+    sid = payload["sid"]
 
-    if sid:
-        session_row = await get_session(session, sid)
-        if not session_row or not session_row.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="会话无效或已失效",
-            )
+    session_row = await get_session(session, sid)
+    if not session_row or not session_row.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="会话无效或已失效",
+        )
 
     user = await session.get(User, user_id)
     if not user or bool(user.is_frozen):
@@ -115,7 +113,17 @@ async def refresh_access_token_bearer(
             detail="用户不存在或已冻结",
         )
 
-    if sid:
-        await update_session_activity(session, sid, time.time())
-    access_token = create_access_token_from_payload(payload)
-    return JSONResponse(content=RefreshResponse(access_token=access_token).model_dump())
+    await update_session_activity(session, sid, time.time())
+    username, role = normalize_user_identity(user)
+    access_token = create_access_token(
+        user_id=user.id,
+        username=username,
+        role=role,
+        extra_claims={"sid": sid},
+    )
+    new_refresh_token = create_refresh_token(user_id=user.id, sid=sid)
+    revoke_refresh_token_jti(payload.get("jti"))
+    body = RefreshResponse(access_token=access_token)
+    response = JSONResponse(content=body.model_dump())
+    set_token_cookie(response, request, access_token, new_refresh_token)
+    return response

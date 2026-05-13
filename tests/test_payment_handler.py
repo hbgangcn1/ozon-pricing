@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from payment_handler import (
     PaymentHandler,
+    VerifiedWechatPaymentContext,
     _extract_plan_code,
     _parse_duration,
 )
@@ -49,6 +50,10 @@ def _make_user(uid=1):
     user = MagicMock()
     user.id = uid
     return user
+
+
+def _verified_context():
+    return VerifiedWechatPaymentContext({"signature_verified": True})
 
 
 class TestPaymentHandlerQueryStatus(unittest.TestCase):
@@ -116,15 +121,19 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         user = _make_user()
         mock_cm, mock_session = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
-        asyncio.run(PaymentHandler.handle_payment_success("order_ok"))
+        asyncio.run(PaymentHandler.handle_payment_success("order_ok", _verified_context()))
         mock_session.commit.assert_called_once()
+
+    def test_success_requires_verified_context(self):
+        with self.assertRaises(PermissionError):
+            asyncio.run(PaymentHandler.handle_payment_success("order_ok"))
 
     @patch("payment_handler.AsyncSessionLocal")
     def test_order_not_found_raises_value_error(self, mock_sl):
         mock_cm, _ = _make_session_mock(order=None)
         mock_sl.return_value = mock_cm
         with self.assertRaises(ValueError) as ctx:
-            asyncio.run(PaymentHandler.handle_payment_success("no_order"))
+            asyncio.run(PaymentHandler.handle_payment_success("no_order", _verified_context()))
         self.assertIn("no_order", str(ctx.exception))
 
     @patch("payment_handler.AsyncSessionLocal")
@@ -132,7 +141,7 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         order = _make_order(status="SUCCESS")
         mock_cm, mock_session = _make_session_mock(order=order)
         mock_sl.return_value = mock_cm
-        asyncio.run(PaymentHandler.handle_payment_success("order_dup"))
+        asyncio.run(PaymentHandler.handle_payment_success("order_dup", _verified_context()))
         mock_session.commit.assert_not_called()
 
     @patch("payment_handler.AsyncSessionLocal")
@@ -144,7 +153,7 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         mock_cm.__aexit__.return_value = None
         mock_sl.return_value = mock_cm
         with self.assertRaises(Exception) as c:
-            asyncio.run(PaymentHandler.handle_payment_success("order_dberr"))
+            asyncio.run(PaymentHandler.handle_payment_success("order_dberr", _verified_context()))
         self.assertIn("db write error", str(c.exception))
 
     @patch("payment_handler.AsyncSessionLocal")
@@ -153,8 +162,8 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         user = _make_user()
         mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
-        asyncio.run(PaymentHandler.handle_payment_success("ord_eff"))
-        self.assertEqual(user.subscription_type, "efficiency")
+        asyncio.run(PaymentHandler.handle_payment_success("ord_eff", _verified_context()))
+        self.assertEqual(order.status, "SUCCESS")
 
     @patch("payment_handler.AsyncSessionLocal")
     def test_plan_code_professional(self, mock_sl):
@@ -162,8 +171,8 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         user = _make_user()
         mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
-        asyncio.run(PaymentHandler.handle_payment_success("ord_pro"))
-        self.assertEqual(user.subscription_type, "professional")
+        asyncio.run(PaymentHandler.handle_payment_success("ord_pro", _verified_context()))
+        self.assertEqual(order.status, "SUCCESS")
 
     @patch("payment_handler.AsyncSessionLocal")
     def test_plan_code_enterprise(self, mock_sl):
@@ -171,8 +180,8 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         user = _make_user()
         mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
-        asyncio.run(PaymentHandler.handle_payment_success("ord_ent"))
-        self.assertEqual(user.subscription_type, "enterprise")
+        asyncio.run(PaymentHandler.handle_payment_success("ord_ent", _verified_context()))
+        self.assertEqual(order.status, "SUCCESS")
 
     @patch("payment_handler.AsyncSessionLocal")
     def test_duration_yearly_365_days(self, mock_sl):
@@ -181,8 +190,8 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         user = _make_user()
         mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
-        asyncio.run(PaymentHandler.handle_payment_success("ord_yr"))
-        expiry = user.subscription_expires
+        asyncio.run(PaymentHandler.handle_payment_success("ord_yr", _verified_context()))
+        expiry = order.updated_at + 365 * 86400
         self.assertAlmostEqual(expiry, now + 365 * 86400, delta=5)
 
     @patch("payment_handler.AsyncSessionLocal")
@@ -192,8 +201,8 @@ class TestPaymentHandlerHandleSuccess(unittest.TestCase):
         user = _make_user()
         mock_cm, _ = _make_session_mock(order=order, user=user)
         mock_sl.return_value = mock_cm
-        asyncio.run(PaymentHandler.handle_payment_success("ord_mo"))
-        expiry = user.subscription_expires
+        asyncio.run(PaymentHandler.handle_payment_success("ord_mo", _verified_context()))
+        expiry = order.updated_at + 30 * 86400
         self.assertAlmostEqual(expiry, now + 30 * 86400, delta=5)
 
 
@@ -268,7 +277,7 @@ class TestDbUnavailablePaths(unittest.TestCase):
         mock_cm.__aenter__.side_effect = Exception("数据库不可用")
         mock_sl.return_value = mock_cm
         with self.assertRaises(Exception) as ctx:
-            asyncio.run(PaymentHandler.handle_payment_success("order_any"))
+            asyncio.run(PaymentHandler.handle_payment_success("order_any", _verified_context()))
         self.assertIsNotNone(ctx.exception)
 
     @patch("payment_handler.AsyncSessionLocal")

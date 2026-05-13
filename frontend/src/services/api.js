@@ -33,7 +33,7 @@ function clearAuthForRedirect() {
   useAuthStore.getState().logout()
   if (import.meta.env.MODE === 'test') {
     localStorage.removeItem('api_user')
-    localStorage.removeItem('api_token')
+    sessionStorage.removeItem('api_token')
   }
 }
 
@@ -143,25 +143,19 @@ apiClient.interceptors.response.use(
 )
 
 export const authAPI = {
-  login: (username, password) =>
-    apiClient.post('/auth/login', { username, password }),
-  logout: () => apiClient.post('/auth/logout'),
-  getMe: () => apiClient.get('/auth/me'),
-  refreshAccess: () => apiClient.post('/auth/refresh-access'),
-  setSecurityQuestion: (question, answer) => apiClient.post('/auth/security-question', { question, answer }),
-  changePassword: (data) => apiClient.post('/auth/change-password', data, { auth401Mode: 'local' }),
-  register: (data) => apiClient.post('/auth/register', data),
-  loginAs: (username, password) =>
-    apiClient.post('/auth/login', { username, password }),
-  checkUsername: (username) =>
-    apiClient.get('/auth/check-username', { params: { username } }),
-  getSecurityQuestions: () => apiClient.get('/auth/security-questions'),
-  startRecovery: (username) =>
-    apiClient.post('/auth/recover/start', { username }),
-  verifySecurity: (username, answer) =>
-    apiClient.post('/auth/recover/verify', { username, answer }),
-  resetPassword: (reset_token, new_password) =>
-    apiClient.post('/auth/recover/reset', { reset_token, new_password }),
+  login: (username, password, options = {}) => apiClient.post('/auth/login', { username, password }, options),
+  logout: (options = {}) => apiClient.post('/auth/logout', null, options),
+  getMe: (options = {}) => apiClient.get('/auth/me', options),
+  refreshAccess: (options = {}) => apiClient.post('/auth/refresh-access', null, options),
+  setSecurityQuestion: (question, answer, options = {}) => apiClient.post('/auth/security-question', { question, answer }, options),
+  changePassword: (data, options = {}) => apiClient.post('/auth/change-password', data, { auth401Mode: 'local', ...options }),
+  register: (data, options = {}) => apiClient.post('/auth/register', data, options),
+  loginAs: (username, password, options = {}) => apiClient.post('/auth/login', { username, password }, options),
+  checkUsername: (username, options = {}) => apiClient.get('/auth/check-username', { params: { username }, ...options }),
+  getSecurityQuestions: (options = {}) => apiClient.get('/auth/security-questions', options),
+  startRecovery: (username, options = {}) => apiClient.post('/auth/recover/start', { username }, options),
+  verifySecurity: (username, answer, options = {}) => apiClient.post('/auth/recover/verify', { username, answer }, options),
+  resetPassword: (reset_token, new_password, options = {}) => apiClient.post('/auth/recover/reset', { reset_token, new_password }, options),
 }
 
 export const logoutUser = () => {
@@ -170,152 +164,117 @@ export const logoutUser = () => {
 }
 
 export const productsAPI = {
-  getAll: () => apiClient.get('/products', { params: { limit: 1000 } }),
-  getById: (id) => apiClient.get(`/products/${id}`),
-  create: (data) => apiClient.post('/products', data),
-  update: (id, data) => apiClient.put(`/products/${id}`, data),
-  delete: (id) => apiClient.delete(`/products/${id}`),
+  getAll: (options = {}) => apiClient.get('/products', { params: { limit: 1000 }, ...options }),
+  getById: (id, options = {}) => apiClient.get(`/products/${id}`, options),
+  create: (data, options = {}) => apiClient.post('/products', data, options),
+  update: (id, data, options = {}) => apiClient.put(`/products/${id}`, data, options),
+  delete: (id, options = {}) => apiClient.delete(`/products/${id}`, options),
 }
 
 export const logisticsAPI = {
-  getAll: (params) => apiClient.get('/logistics', { params }),
-  getById: (id) => apiClient.get(`/logistics/${id}`),
-  create: (data) => apiClient.post('/logistics', data),
-  update: (id, data) => apiClient.put(`/logistics/${id}`, data),
-  delete: (id) => apiClient.delete(`/logistics/${id}`),
-  batchDelete: (ids) => apiClient.post('/logistics/batch-delete', ids),
-  toggleTransport: (id) => apiClient.patch(`/logistics/${id}/toggle-transport`),
+  getAll: (params, options = {}) => apiClient.get('/logistics', { params, ...options }),
+  getById: (id, options = {}) => apiClient.get(`/logistics/${id}`, options),
+  create: (data, options = {}) => apiClient.post('/logistics', data, options),
+  update: (id, data, options = {}) => apiClient.put(`/logistics/${id}`, data, options),
+  delete: (id, options = {}) => apiClient.delete(`/logistics/${id}`, options),
+  batchDelete: (ids, options = {}) => apiClient.post('/logistics/batch-delete', ids, options),
+  toggleTransport: (id, options = {}) => apiClient.patch(`/logistics/${id}/toggle-transport`, null, options),
 }
 
 export const pricingAPI = {
-  calculate: (productId, mode, productData) =>
-    apiClient.post('/pricing/calculate', {
-      product_id: productId,
-      product_data: productData,
-      mode: mode,
-    }),
-  calculateGrouped: (productId, mode, productData) =>
-    apiClient.post('/pricing/calculate-grouped', {
-      product_id: productId,
-      product_data: productData,
-      mode: mode,
-    }),
+  calculate: (productId, mode, productData, options = {}) => apiClient.post('/pricing/calculate', { product_id: productId, product_data: productData, mode: mode }, options),
+  calculateGrouped: (productId, mode, productData, options = {}) => apiClient.post('/pricing/calculate-grouped', { product_id: productId, product_data: productData, mode: mode }, options),
 }
 
 export const subscriptionsAPI = {
-  getPlans: () => apiClient.get('/subscriptions/plans'),
-  getCurrent: () => apiClient.get('/subscriptions/current'),
+  getPlans: (options = {}) => apiClient.get('/subscriptions/plans', options),
+  getCurrent: (options = {}) => apiClient.get('/subscriptions/current', options),
 }
 
 // Priority 3: documents non-obvious endpoint contract for OpenSpec change add-pro-trial-overflow
 // (claim is one-shot 7-day Pro trial; status drives banner + expired modal).
 export const trialAPI = {
-  claim: () => apiClient.post('/subscriptions/trial/claim'),
-  getStatus: () => apiClient.get('/subscriptions/trial/status'),
+  claim: (options = {}) => apiClient.post('/subscriptions/trial/claim', null, options),
+  getStatus: (options = {}) => apiClient.get('/subscriptions/trial/status', options),
 }
 
 // Priority 3: documents non-obvious endpoint contract for OpenSpec change add-pro-trial-overflow
 // (reselect consumes the open 48h window; status drives the auto-popup modal).
 export const overflowAPI = {
-  reselect: (keepIds) => apiClient.post('/logistics/overflow/reselect', { keep_ids: keepIds }),
-  getStatus: () => apiClient.get('/logistics/overflow/status'),
+  reselect: (keepIds, options = {}) => apiClient.post('/logistics/overflow/reselect', { keep_ids: keepIds }, options),
+  getStatus: (options = {}) => apiClient.get('/logistics/overflow/status', options),
 }
 
 export const plansAPI = {
-  getAll: (activeOnly = false) => apiClient.get('/subscriptions/plans', { params: { active_only: activeOnly } }),
-  create: (data) => apiClient.post('/subscriptions/plans', data),
-  update: (id, data) => apiClient.put(`/subscriptions/plans/${id}`, data),
-  delete: (id) => apiClient.delete(`/subscriptions/plans/${id}`),
-  toggleActive: (id) => apiClient.patch(`/subscriptions/plans/${id}/toggle`),
+  getAll: (activeOnly = false, options = {}) => apiClient.get('/subscriptions/plans', { params: { active_only: activeOnly }, ...options }),
+  create: (data, options = {}) => apiClient.post('/subscriptions/plans', data, options),
+  update: (id, data, options = {}) => apiClient.put(`/subscriptions/plans/${id}`, data, options),
+  delete: (id, options = {}) => apiClient.delete(`/subscriptions/plans/${id}`, options),
+  toggleActive: (id, options = {}) => apiClient.patch(`/subscriptions/plans/${id}/toggle`, null, options),
 }
 
 export const ordersAPI = {
-  getAll: (params = {}) => apiClient.get('/orders', { params }),
+  getAll: (params = {}, options = {}) => apiClient.get('/orders', { params, ...options }),
 }
 
 export const paymentAPI = {
-  createOrder: (data) => apiClient.post('/payments/create', data),
-  getStatus: (orderId) => apiClient.get(`/payments/${orderId}/status`),
+  createOrder: (data, options = {}) => apiClient.post('/payments/create', data, options),
+  getStatus: (orderId, options = {}) => apiClient.get(`/payments/${orderId}/status`, options),
 }
 
 export const adminAPI = {
-  getUsers: (page = 1, pageSize = 20, keyword = '') =>
-    apiClient.get('/admin/users', { params: { page, page_size: pageSize, keyword } }),
-  createUser: (data) => apiClient.post('/admin/users', data),
-  updateUser: (id, data) => apiClient.put(`/admin/users/${id}`, data),
-  resetPassword: (id) => apiClient.post(`/admin/users/${id}/reset-password`),
-  deleteUser: (id) => apiClient.delete(`/admin/users/${id}`),
-  getPlans: () => apiClient.get('/subscriptions/plans'),
-  updatePlan: (id, data) => apiClient.put(`/admin/plans/${id}`, data),
-  extendSubscription: (id, days) => apiClient.post(`/admin/users/${id}/subscription/extend`, { days }),
-  adjustCalculations: (id, delta) => apiClient.post(`/admin/users/${id}/calculations/adjust`, { delta }),
-  setUserType: (id, userType) => apiClient.post(`/admin/users/${id}/type`, { user_type: userType }),
+  getUsers: (page = 1, pageSize = 20, keyword = '', options = {}) => apiClient.get('/admin/users', { params: { page, page_size: pageSize, keyword }, ...options }),
+  createUser: (data, options = {}) => apiClient.post('/admin/users', data, options),
+  updateUser: (id, data, options = {}) => apiClient.put(`/admin/users/${id}`, data, options),
+  resetPassword: (id, options = {}) => apiClient.post(`/admin/users/${id}/reset-password`, null, options),
+  deleteUser: (id, options = {}) => apiClient.delete(`/admin/users/${id}`, options),
+  getPlans: (options = {}) => apiClient.get('/subscriptions/plans', options),
+  updatePlan: (id, data, options = {}) => apiClient.put(`/admin/plans/${id}`, data, options),
+  extendSubscription: (id, days, options = {}) => apiClient.post(`/admin/users/${id}/subscription/extend`, { days }, options),
+  adjustCalculations: (id, delta, options = {}) => apiClient.post(`/admin/users/${id}/calculations/adjust`, { delta }, options),
+  setUserType: (id, userType, options = {}) => apiClient.post(`/admin/users/${id}/type`, { user_type: userType }, options),
 }
 
 export const settingsAPI = {
-  get: () => apiClient.get('/settings'),
-  updateOpenRegistration: (enabled) => apiClient.put('/settings/open-registration', null, { params: { enabled } }),
-  getBackups: () => apiClient.get('/settings/backups'),
-  createBackup: () => apiClient.post('/settings/backup'),
-  getBackupSettings: () => apiClient.get('/settings/backup/settings'),
-  updateBackupSettings: (data) => apiClient.put('/settings/backup/settings', data),
-  getBackupStats: () => apiClient.get('/settings/backup/stats'),
-  deleteBackup: (filename) => apiClient.delete(`/settings/backup/${filename}`),
-  restoreBackup: (filename, createSnapshot = true) =>
-    apiClient.post(`/settings/backup/${filename}/restore`, { create_snapshot: createSnapshot }),
-  downloadBackup: (filename) =>
-    apiClient.get(`/settings/backup/${filename}/download`, { responseType: 'blob' }),
+  get: (options = {}) => apiClient.get('/settings', options),
+  updateOpenRegistration: (enabled, options = {}) => apiClient.put('/settings/open-registration', null, { params: { enabled }, ...options }),
+  getBackups: (options = {}) => apiClient.get('/settings/backups', options),
+  createBackup: (options = {}) => apiClient.post('/settings/backup', null, options),
+  getBackupSettings: (options = {}) => apiClient.get('/settings/backup/settings', options),
+  updateBackupSettings: (data, options = {}) => apiClient.put('/settings/backup/settings', data, options),
+  getBackupStats: (options = {}) => apiClient.get('/settings/backup/stats', options),
+  deleteBackup: (filename, options = {}) => apiClient.delete(`/settings/backup/${filename}`, options),
+  restoreBackup: (filename, createSnapshot = true, options = {}) => apiClient.post(`/settings/backup/${filename}/restore`, { create_snapshot: createSnapshot }, options),
+  downloadBackup: (filename, options = {}) => apiClient.get(`/settings/backup/${filename}/download`, { responseType: 'blob', ...options }),
 }
 
 export const statisticsAPI = {
-  getOverview: () => apiClient.get('/statistics/overview'),
-  getRetention: () => apiClient.get('/statistics/retention'),
-  getRevenue: (months = 12) => apiClient.get('/statistics/revenue', { params: { months } }),
-  getLoginLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '') =>
-    apiClient.get('/statistics/login-logs', {
-      params: {
-        page,
-        page_size: pageSize,
-        search: search || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-      },
-    }),
-  getAdminLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '') =>
-    apiClient.get('/statistics/admin-logs', {
-      params: {
-        page,
-        page_size: pageSize,
-        search: search || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-      },
-    }),
-  getActiveUsers: () => apiClient.get('/statistics/active-users'),
+  getOverview: (options = {}) => apiClient.get('/statistics/overview', options),
+  getRetention: (options = {}) => apiClient.get('/statistics/retention', options),
+  getRevenue: (months = 12, options = {}) => apiClient.get('/statistics/revenue', { params: { months }, ...options }),
+  getLoginLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '', options = {}) => apiClient.get('/statistics/login-logs', { params: { page, page_size: pageSize, search: search || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }, ...options }),
+  getAdminLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '', options = {}) => apiClient.get('/statistics/admin-logs', { params: { page, page_size: pageSize, search: search || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }, ...options }),
+  getActiveUsers: (options = {}) => apiClient.get('/statistics/active-users', options),
 }
 
 export const commissionCategoriesAPI = {
-  getAll: () => apiClient.get('/commission-categories'),
-  create: (data) => apiClient.post('/commission-categories', data),
-  update: (id, data) => apiClient.patch(`/commission-categories/${id}`, data),
-  delete: (id) => apiClient.delete(`/commission-categories/${id}`),
+  getAll: (options = {}) => apiClient.get('/commission-categories', options),
+  create: (data, options = {}) => apiClient.post('/commission-categories', data, options),
+  update: (id, data, options = {}) => apiClient.patch(`/commission-categories/${id}`, data, options),
+  delete: (id, options = {}) => apiClient.delete(`/commission-categories/${id}`, options),
 }
 
 export const logisticsPoolAPI = {
-  getAll: (params) => apiClient.get('/logistics-pool', { params }),
-  importXlsx: (formData) => apiClient.post('/logistics-pool/import', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
-  addToMyLogistics: (id) => apiClient.post(`/logistics-pool/${id}/add-to-my-logistics`),
-  batchAddToMyLogistics: (ids) => apiClient.post('/logistics-pool/batch-add-to-my-logistics', { ids }),
-  deleteAll: () => apiClient.delete('/logistics-pool/all'),
+  getAll: (params, options = {}) => apiClient.get('/logistics-pool', { params, ...options }),
+  importXlsx: (formData, options = {}) => apiClient.post('/logistics-pool/import', formData, { headers: { 'Content-Type': 'multipart/form-data' }, ...options }),
+  addToMyLogistics: (id, options = {}) => apiClient.post(`/logistics-pool/${id}/add-to-my-logistics`, null, options),
+  batchAddToMyLogistics: (ids, options = {}) => apiClient.post('/logistics-pool/batch-add-to-my-logistics', { ids }, options),
+  deleteAll: (options = {}) => apiClient.delete('/logistics-pool/all', options),
 }
 
 export const productImportAPI = {
-  preview: (formData) => apiClient.post('/products/import/preview', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
-  confirm: (data) => apiClient.post('/products/import/confirm', data),
+  preview: (formData, options = {}) => apiClient.post('/products/import/preview', formData, { headers: { 'Content-Type': 'multipart/form-data' }, ...options }),
+  confirm: (data, options = {}) => apiClient.post('/products/import/confirm', data, options),
 }
 
 export default apiClient

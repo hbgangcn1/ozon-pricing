@@ -25,20 +25,24 @@ export default function TrialBanner() {
   const [status, setStatus] = useState(null);
   const [, forceTick] = useState(0);
 
-  const fetchStatus = useCallback(async () => {
+  const fetchStatus = useCallback(async (signal) => {
     try {
-      const data = await trialAPI.getStatus();
-      setStatus(data);
-    } catch (_) {
-      setStatus(null);
+      const data = await trialAPI.getStatus({ signal });
+      if (!signal?.aborted) setStatus(data);
+    } catch (err) {
+      if (!signal?.aborted && err?.name !== 'CanceledError') setStatus(null);
     }
   }, []);
 
   useEffect(() => {
     if (isAdmin) return undefined;
-    fetchStatus();
-    const id = setInterval(fetchStatus, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    const controller = new AbortController();
+    fetchStatus(controller.signal);
+    const id = setInterval(() => fetchStatus(controller.signal), POLL_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(id);
+    };
   }, [fetchStatus, isAdmin]);
 
   if (isAdmin) return null;

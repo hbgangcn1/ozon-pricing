@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from api import dependencies
 from api.main import app
@@ -56,7 +56,13 @@ async def test_current_falls_back_to_free_when_plan_missing(client, test_user):
     )
 
     class _Session:
-        pass
+        async def get(self, model, pk):
+            return MagicMock(
+                subscription_type="enterprise",
+                subscription_expires=None,
+                trial_expires_at=0,
+                user_type="enterprise",
+            )
 
     app.dependency_overrides[get_db] = _override_db(_Session())
     with patch(

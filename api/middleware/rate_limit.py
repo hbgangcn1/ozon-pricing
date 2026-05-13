@@ -4,8 +4,11 @@ import time
 from collections import defaultdict
 from typing import Dict, List
 
-from fastapi import Request, HTTPException
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from api.dependencies import get_request_ip
 
 logger = logging.getLogger(__name__)
 
@@ -28,31 +31,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         app,
         max_requests: int = 100,
         window_seconds: int = 60,
-        trusted_proxies: set[str] | None = None,
     ):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests: Dict[str, List[float]] = defaultdict(list)
-        # trust-proxy gate：仅当 peer_ip 来自此集合才信任 X-Real-IP / X-Forwarded-For。
-        # nginx 反代生产 peer_ip 永远 = 127.0.0.1；testclient 用于单元测试。
-        self.trusted_proxies: set[str] = trusted_proxies or {
-            "127.0.0.1",
-            "::1",
-            "testclient",
-        }
         self._is_production = os.environ.get("PRODUCTION_MODE", "").lower() == "true"
 
     def _get_client_ip(self, request: Request) -> str:
-        peer_ip = request.client.host if request.client else "unknown"
-        if peer_ip in self.trusted_proxies:
-            real_ip = request.headers.get("X-Real-IP")
-            if real_ip:
-                return real_ip.strip()
-            forwarded_for = request.headers.get("X-Forwarded-For")
-            if forwarded_for:
-                return forwarded_for.split(",")[0].strip()
-        return peer_ip
+        return get_request_ip(request)
 
     def _check_rate_limit_redis(self, client_ip: str, redis_client) -> bool:
         key = f"{_RATE_LIMIT_PREFIX}{client_ip}"
@@ -98,6 +85,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         client_ip = self._get_client_ip(request)
+        retry_after_seconds = self.window_seconds
 
         if not self._is_production and client_ip in self._LOCALHOST_IPS:
             return await call_next(request)
@@ -113,7 +101,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             allowed = self._check_rate_limit_memory(client_ip)
 
         if not allowed:
-            raise HTTPException(status_code=429, detail="Too many requests")
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "请求过于频繁"},
+                headers={"Retry-After": str(retry_after_seconds)},
+            )
 
         response = await call_next(request)
         return response

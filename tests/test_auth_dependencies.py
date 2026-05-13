@@ -31,6 +31,7 @@ def _make_user(
     trial_started_at=0,
     trial_expires_at=0,
     trial_plan_at_start="",
+    subscription_expires=None,
 ):
     user = MagicMock()
     user.id = user_id
@@ -44,6 +45,7 @@ def _make_user(
     user.trial_started_at = trial_started_at
     user.trial_expires_at = trial_expires_at
     user.trial_plan_at_start = trial_plan_at_start
+    user.subscription_expires = subscription_expires
     return user
 
 
@@ -197,6 +199,7 @@ class TestGetUserWithSubscription:
             role="admin",
             user_type="permanent",
             subscription_type="enterprise",
+            subscription_expires=None,
             remaining_calculations=500,
         )
         result = await get_user_with_subscription(

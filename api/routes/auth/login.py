@@ -97,7 +97,7 @@ async def login(
         ),
     )
     response = JSONResponse(content=body.model_dump())
-    set_token_cookie(response, access_token, refresh_token)
+    set_token_cookie(response, request, access_token, refresh_token)
     return response
 
 
@@ -214,7 +214,7 @@ async def register(
         ),
     )
     response = JSONResponse(content=body.model_dump())
-    set_token_cookie(response, access_token, refresh_token)
+    set_token_cookie(response, request, access_token, refresh_token)
     return response
 
 
@@ -242,5 +242,5 @@ async def logout(
     response = JSONResponse(
         content=MessageResponse(message="登出成功").model_dump(),
     )
-    clear_token_cookies(response)
+    clear_token_cookies(response, request)
     return response

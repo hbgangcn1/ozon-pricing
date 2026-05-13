@@ -27,16 +27,13 @@ from api.models.schemas import (
     ProductImportPreview,
     ProductImportConfirm,
 )
-from api.dependencies import (
-    EXCEL_ALLOWED_TIERS,
-    get_current_user_id,
-    get_user_with_subscription,
-)
+from api.dependencies import get_current_user_id, get_user_with_subscription
 
 router = APIRouter(prefix="/api/products", tags=["产品"])
 logger = logging.getLogger(__name__)
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
 MAX_IMPORT_ROWS = 50000
+EXCEL_IMPORT_TIERS = {"enterprise", "gratitude", "test"}
 
 
 async def _get_existing_products_for_import(
@@ -65,7 +62,7 @@ def _ensure_excel_access(user: dict) -> int:
     if user.get("role") == "admin":
         return user["id"]
     subscription_type = user.get("subscription_type") or "free"
-    if subscription_type not in EXCEL_ALLOWED_TIERS:
+    if subscription_type not in EXCEL_IMPORT_TIERS:
         raise HTTPException(
             status_code=403,
             detail="此功能需要企业版或更高订阅等级",

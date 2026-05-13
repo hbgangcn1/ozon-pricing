@@ -20,7 +20,7 @@ const normalizeSubscriptionType = (user) => {
 
 const clearPersistedAuth = () => {
   localStorage.removeItem('api_user')
-  localStorage.removeItem('api_token')
+  sessionStorage.removeItem('api_token')
 }
 
 const resetLinkedStores = () => {
@@ -102,7 +102,7 @@ export const useAuthStore = create((set, get) => ({
 
   initAuth: () => {
     const userStr = localStorage.getItem('api_user')
-    const token = localStorage.getItem('api_token')
+    const token = sessionStorage.getItem('api_token')
     if (userStr) {
       try {
         const user = normalizeSubscriptionType(JSON.parse(userStr))
@@ -128,7 +128,7 @@ export const useAuthStore = create((set, get) => ({
     const normalizedUser = normalizeSubscriptionType(rawUser)
     persistNormalizedUser(normalizedUser)
     if (resolvedToken && import.meta.env.MODE !== 'test') {
-      localStorage.setItem('api_token', resolvedToken)
+      sessionStorage.setItem('api_token', resolvedToken)
     }
     
     const tokenToSet = import.meta.env.MODE === 'test' ? null : (resolvedToken || null)
@@ -141,7 +141,7 @@ export const useAuthStore = create((set, get) => ({
   },
 
   setToken: (token) => {
-    localStorage.setItem('api_token', token)
+    sessionStorage.setItem('api_token', token)
     set({ token, isAuthenticated: true })
   },
 
@@ -188,7 +188,7 @@ export const useAuthStore = create((set, get) => ({
     refreshPromise = authAPI.refreshAccess()
       .then((data) => {
         const newToken = data.access_token
-        localStorage.setItem('api_token', newToken)
+        sessionStorage.setItem('api_token', newToken)
         set({ token: newToken })
         return newToken
       })

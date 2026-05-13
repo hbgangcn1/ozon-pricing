@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import Tuple
 
 from ._constants import CONVERGENCE_THRESHOLD
+from .vat_utils import normalize_vat_to_fraction
 
 __all__ = ["calc_floating_price", "_get_filter_rates"]
 
@@ -109,7 +110,8 @@ def _get_filter_rates(product_dict):
     withdrawal_rate = _normalize_rate(withdrawal_rate)
     payment_rate = _normalize_rate(payment_rate)
     return_rate = _normalize_rate(return_rate)
-    vat_rate = _normalize_rate(vat_rate)
+    # [PRC-W12R2-01] VAT is normalized through the canonical helper only.
+    vat_rate = normalize_vat_to_fraction(vat_rate)
     return (
         target_margin,
         promotion_rate,

@@ -1,18 +1,19 @@
-"""Tests for POST /auth/refresh-access endpoint (Bearer-token proactive refresh)."""
+"""Tests for POST /api/auth/refresh-access refresh-cookie contract."""
 
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-os.environ.setdefault("ALLOWED_ORIGINS", "http://testserver")
+from datetime import timedelta
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from api.main import app
-from security.tokens import create_access_token, decode_access_token
+from db.sessions_crud import insert_session
+from models.session import ActiveSession
 from models.user import User
+from security.tokens import (
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+)
 
 
 @pytest.fixture
@@ -40,61 +41,92 @@ async def frozen_user(db_session):
     db_session.add(user)
     await db_session.flush()
     await db_session.commit()
-    user_id = user.id
-    yield {"id": user_id, "username": "frozen_test_user"}
+    yield {"id": user.id, "username": "frozen_test_user"}
     await db_session.rollback()
+
+
+async def _insert_active_session(db_session, user_id: int, sid: str) -> None:
+    await insert_session(
+        db_session,
+        session_id=sid,
+        user_id=user_id,
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+        now=1.0,
+    )
+    await db_session.commit()
+
+
+def _set_refresh_cookie(client: AsyncClient, token: str) -> None:
+    client.cookies.set("refresh_token", token, path="/")
 
 
 class TestRefreshAccessEndpoint:
     @pytest.mark.asyncio
-    async def test_missing_bearer_token_returns_401(self, client):
+    async def test_missing_refresh_cookie_returns_401(self, client):
         response = await client.post("/api/auth/refresh-access")
+
         assert response.status_code == 401
-        assert "Bearer" in response.json()["detail"]
+        assert "刷新令牌" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_invalid_bearer_token_format_returns_401(self, client):
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": "NotBearer sometoken"},
-        )
-        assert response.status_code == 401
-
-    @pytest.mark.asyncio
-    async def test_nonexistent_user_returns_401(self, client):
-        token = create_access_token(user_id=999999, username="ghost", role="user")
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert response.status_code == 401
-        assert "不存在" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_frozen_user_returns_401(self, client, frozen_user):
-        token = create_access_token(
-            user_id=frozen_user["id"],
-            username=frozen_user["username"],
-            role="user",
-        )
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert response.status_code == 401
-        assert "冻结" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_successful_refresh_returns_new_token(self, client, test_user):
+    async def test_bearer_access_token_without_cookie_returns_401(self, client, test_user):
         token = create_access_token(
             user_id=test_user["id"],
             username=test_user["username"],
             role="user",
         )
+
         response = await client.post(
             "/api/auth/refresh-access",
             headers={"Authorization": f"Bearer {token}"},
         )
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_access_token_in_refresh_cookie_returns_401(self, client, test_user):
+        token = create_access_token(
+            user_id=test_user["id"],
+            username=test_user["username"],
+            role="user",
+        )
+        _set_refresh_cookie(client, token)
+
+        response = await client.post("/api/auth/refresh-access")
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_user_returns_401(self, client, db_session):
+        sid = "refresh-nonexistent-user"
+        await _insert_active_session(db_session, 999999, sid)
+        _set_refresh_cookie(client, create_refresh_token(user_id=999999, sid=sid))
+
+        response = await client.post("/api/auth/refresh-access")
+
+        assert response.status_code == 401
+        assert "不存在" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_frozen_user_returns_401(self, client, frozen_user, db_session):
+        sid = "refresh-frozen-user"
+        await _insert_active_session(db_session, frozen_user["id"], sid)
+        _set_refresh_cookie(client, create_refresh_token(user_id=frozen_user["id"], sid=sid))
+
+        response = await client.post("/api/auth/refresh-access")
+
+        assert response.status_code == 401
+        assert "冻结" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_successful_refresh_returns_new_token(self, client, test_user, db_session):
+        sid = "refresh-successful"
+        await _insert_active_session(db_session, test_user["id"], sid)
+        _set_refresh_cookie(client, create_refresh_token(user_id=test_user["id"], sid=sid))
+
+        response = await client.post("/api/auth/refresh-access")
+
         assert response.status_code == 200
         data = response.json()
         assert "access_token" in data
@@ -104,176 +136,62 @@ class TestRefreshAccessEndpoint:
         assert new_payload["sub"] == str(test_user["id"])
         assert new_payload["username"] == test_user["username"]
         assert new_payload["role"] == "user"
+        assert new_payload["sid"] == sid
+        assert response.cookies.get("refresh_token") is not None
 
     @pytest.mark.asyncio
-    async def test_refreshed_token_is_different_from_original(self, client, test_user):
-        import time
-        token = create_access_token(
+    async def test_expired_refresh_cookie_returns_401(self, client, test_user, db_session):
+        sid = "refresh-expired"
+        await _insert_active_session(db_session, test_user["id"], sid)
+        token = create_refresh_token(
             user_id=test_user["id"],
-            username=test_user["username"],
-            role="user",
-        )
-        time.sleep(1.1)
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["access_token"] != token
-
-    @pytest.mark.asyncio
-    async def test_invalid_token_returns_401(self, client, test_user):
-        """Tampered signature must trigger TokenInvalidError → 401 (W8/W9 fix)."""
-        token = create_access_token(
-            user_id=test_user["id"],
-            username=test_user["username"],
-            role="user",
-        )
-        parts = token.split(".")
-        assert len(parts) == 3
-        tampered = f"{parts[0]}.{parts[1]}.invalidsignaturepayload"
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {tampered}"},
-        )
-        assert response.status_code == 401
-        assert "无效" in response.json()["detail"] or "过期" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_expired_token_returns_401_proactive_refresh(self, client, test_user):
-        from datetime import timedelta
-
-        token = create_access_token(
-            user_id=test_user["id"],
-            username=test_user["username"],
-            role="user",
+            sid=sid,
             expires_delta=timedelta(seconds=-1),
         )
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        _set_refresh_cookie(client, token)
+
+        response = await client.post("/api/auth/refresh-access")
+
         assert response.status_code == 401
-        assert "过期" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_new_token_has_correct_expiry(self, client, test_user):
-        from security.tokens import ACCESS_TOKEN_EXPIRE_SECONDS
+    async def test_admin_user_can_refresh(self, client, test_admin, db_session):
+        sid = "refresh-admin"
+        await _insert_active_session(db_session, test_admin["id"], sid)
+        _set_refresh_cookie(client, create_refresh_token(user_id=test_admin["id"], sid=sid))
 
-        token = create_access_token(
-            user_id=test_user["id"],
-            username=test_user["username"],
-            role="user",
-        )
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert response.status_code == 200
-        import time
-        time.sleep(0.1)
-        data = response.json()
-        new_payload = decode_access_token(data["access_token"])
-        ttl = new_payload["exp"] - new_payload["iat"]
-        assert ttl == ACCESS_TOKEN_EXPIRE_SECONDS
+        response = await client.post("/api/auth/refresh-access")
 
-    @pytest.mark.asyncio
-    async def test_admin_user_can_refresh(self, client, test_admin):
-        token = create_access_token(
-            user_id=test_admin["id"],
-            username=test_admin["username"],
-            role="admin",
-        )
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
         assert response.status_code == 200
-        data = response.json()
-        new_payload = decode_access_token(data["access_token"])
+        new_payload = decode_access_token(response.json()["access_token"])
         assert new_payload["role"] == "admin"
 
     @pytest.mark.asyncio
     async def test_inactive_session_with_sid_returns_401(
-        self, client, test_user, db_session
+        self,
+        client,
+        test_user,
+        db_session,
     ):
-        from uuid import uuid4
-        from db.sessions_crud import insert_session
-        from models.session import ActiveSession
-
-        sid = f"refresh-inactive-{uuid4().hex}"
-        await insert_session(
-            db_session,
-            session_id=sid,
-            user_id=test_user["id"],
-            ip_address="127.0.0.1",
-            user_agent="pytest",
-            now=1.0,
-        )
+        sid = "refresh-inactive"
+        await _insert_active_session(db_session, test_user["id"], sid)
         session_row = await db_session.get(ActiveSession, sid)
         session_row.is_active = False
         session_row.inactive_reason = "logout"
         await db_session.commit()
+        _set_refresh_cookie(client, create_refresh_token(user_id=test_user["id"], sid=sid))
 
-        token = create_access_token(
-            user_id=test_user["id"],
-            username=test_user["username"],
-            role="user",
-            extra_claims={"sid": sid},
-        )
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        response = await client.post("/api/auth/refresh-access")
+
         assert response.status_code == 401
         assert "会话" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_active_session_with_sid_succeeds(
-        self, client, test_user, db_session
-    ):
-        from uuid import uuid4
-        from db.sessions_crud import insert_session
-
-        sid = f"refresh-active-{uuid4().hex}"
-        await insert_session(
-            db_session,
-            session_id=sid,
-            user_id=test_user["id"],
-            ip_address="127.0.0.1",
-            user_agent="pytest",
-            now=1.0,
-        )
-        await db_session.commit()
-
-        token = create_access_token(
-            user_id=test_user["id"],
-            username=test_user["username"],
-            role="user",
-            extra_claims={"sid": sid},
-        )
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert response.status_code == 200
-        new_payload = decode_access_token(response.json()["access_token"])
-        assert new_payload["sid"] == sid
-
-    @pytest.mark.asyncio
     async def test_missing_session_with_sid_returns_401(self, client, test_user):
-        from uuid import uuid4
+        token = create_refresh_token(user_id=test_user["id"], sid="refresh-missing")
+        _set_refresh_cookie(client, token)
 
-        token = create_access_token(
-            user_id=test_user["id"],
-            username=test_user["username"],
-            role="user",
-            extra_claims={"sid": f"refresh-missing-{uuid4().hex}"},
-        )
-        response = await client.post(
-            "/api/auth/refresh-access",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        response = await client.post("/api/auth/refresh-access")
+
         assert response.status_code == 401
         assert "会话" in response.json()["detail"]

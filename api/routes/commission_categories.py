@@ -5,23 +5,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import (
-    COMMISSION_ALLOWED_TIERS,
-    get_user_with_subscription,
-)
+from api.dependencies import get_user_with_subscription
 from api.models.schemas import MessageResponse
 from database import get_db
 from db.commission_categories import create, get_all, get_by_id, soft_delete, update
 from services.plan_resolution import get_effective_plan
 
 router = APIRouter(prefix="/api/commission-categories", tags=["佣金类目"])
+COMMISSION_EDIT_TIERS = {"professional", "enterprise", "gratitude", "test"}
 
 
 def _ensure_commission_access(user: dict) -> int:
     if user.get("role") == "admin":
         return user["id"]
     effective_plan = get_effective_plan(SimpleNamespace(**user))
-    if effective_plan not in COMMISSION_ALLOWED_TIERS:
+    if effective_plan not in COMMISSION_EDIT_TIERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="当前方案暂不支持此功能",

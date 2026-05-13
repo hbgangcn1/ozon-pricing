@@ -81,7 +81,7 @@ async def test_invalid_signature_writes_audit_log_with_verified_false(
     audit_client,
 ):
     """签名失败：process_notify 抛 WeChatPayError，必须写一行 verified=False
-    审计日志，response_code=SUCCESS（阻止微信重试风暴），raw_body 持久化，
+    审计日志，response_code=FAIL（触发微信重试），raw_body 持久化，
     out_trade_no/transaction_id 从 raw body 解析提取。
     """
     client, mock_svc = audit_client
@@ -103,9 +103,11 @@ async def test_invalid_signature_writes_audit_log_with_verified_false(
         headers=SIGNED_NOTIFY_HEADERS,
     )
 
-    # ACK SUCCESS 阻止微信重试
-    assert resp.status_code == 200
-    assert resp.json() == {"code": "SUCCESS", "message": "OK"}
+    assert resp.status_code == 401
+    assert resp.json() == {
+        "code": "FAIL",
+        "message": "signature verification failed",
+    }
 
     # 业务侧不能扣款
     mock_svc.apply_wechat_payment_success.assert_not_awaited()
@@ -118,8 +120,8 @@ async def test_invalid_signature_writes_audit_log_with_verified_false(
     assert audit.signature_verified is False, "签名失败时 verified 必须为 False"
     assert audit.out_trade_no == "audit_bad_sig_ord_001"
     assert audit.transaction_id == "wx_tx_bad_sig_001"
-    assert audit.response_code == "SUCCESS"
-    assert audit.response_message == "OK"
+    assert audit.response_code == "FAIL"
+    assert audit.response_message == "signature verification failed"
 
     # raw_body 必须完整持久化（验签失败也保留原始报文供取证）
     assert audit.raw_body, "raw_body 不能为空"
@@ -214,8 +216,8 @@ async def test_signature_verification_exception_audits_as_unverified(
         headers=SIGNED_NOTIFY_HEADERS,
     )
 
-    # 异常被吞，仍 ACK SUCCESS 防止微信重试风暴
-    assert resp.status_code == 200
+    assert resp.status_code == 500
+    assert resp.json() == {"code": "FAIL", "message": "signature lib crashed"}
     mock_svc.apply_wechat_payment_success.assert_not_awaited()
 
     rows = await _fetch_audit_rows(db_session, "audit_exc_ord_001")
@@ -224,4 +226,6 @@ async def test_signature_verification_exception_audits_as_unverified(
     assert audit.signature_verified is False
     assert audit.out_trade_no == "audit_exc_ord_001"
     assert audit.transaction_id == "wx_tx_exc_001"
+    assert audit.response_code == "FAIL"
+    assert audit.response_message == "signature lib crashed"
     assert json.loads(audit.raw_body) == body

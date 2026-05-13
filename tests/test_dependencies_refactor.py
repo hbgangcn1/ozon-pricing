@@ -25,6 +25,7 @@ def _make_user(
     role="user",
     user_type="free",
     subscription_type: Optional[str] = "free",
+    subscription_expires=None,
     remaining_calculations=10,
     is_frozen=0,
 ):
@@ -34,6 +35,7 @@ def _make_user(
     user.role = role
     user.user_type = user_type
     user.subscription_type = subscription_type
+    user.subscription_expires = subscription_expires
     user.remaining_calculations = remaining_calculations
     user.is_frozen = is_frozen
     return user
@@ -182,7 +184,7 @@ class TestGetCurrentUser:
             username="bob",
             role="user",
             user_type="free",
-            subscription_type="pro",
+            subscription_type="professional",
             remaining_calculations=5,
         )
 
@@ -191,7 +193,7 @@ class TestGetCurrentUser:
         result = await get_current_user(_make_request(), _make_api_key("token"), AsyncMock())
         assert result["id"] == 10
         assert result["username"] == "bob"
-        assert result["subscription_type"] == "pro"
+        assert result["subscription_type"] == "professional"
         assert result["remaining_calculations"] == 5
 
     @patch("api.dependencies._get_user", new_callable=AsyncMock)

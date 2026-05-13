@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
@@ -10,12 +11,14 @@ import { toast } from 'sonner'
 function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
   const timeoutRef = useRef(null)
   const isMountedRef = useRef(true)
+  const abortControllerRef = useRef(null)
 
   const poll = useCallback(async (currentDelay = 3000) => {
     if (!isPolling || !orderId || !isMountedRef.current) return
 
     try {
-      const res = await paymentAPI.getStatus(orderId)
+      const signal = abortControllerRef.current?.signal
+      const res = await paymentAPI.getStatus(orderId, signal ? { signal } : {})
       
       if (!isMountedRef.current) return
       onStatusUpdate(res)
@@ -24,7 +27,8 @@ function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
         return
       }
     } catch (error) {
-      // intentionally empty - polling continues on error
+      if (error?.name === 'CanceledError' || axios.isCancel(error)) return
+      // polling continues on error
     }
 
     if (!isMountedRef.current) return
@@ -35,6 +39,7 @@ function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
   useEffect(() => {
     isMountedRef.current = true
     if (isPolling && orderId) {
+      abortControllerRef.current = new AbortController()
       timeoutRef.current = setTimeout(() => poll(3000), 3000)
     }
 
@@ -42,6 +47,10 @@ function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
       isMountedRef.current = false
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current)
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
       }
     }
   }, [isPolling, orderId, poll])
@@ -61,8 +70,9 @@ export default function PaymentQRDialog({
   const [orderId, setOrderId] = useState('')
   const [codeUrl, setCodeUrl] = useState('')
   const [countdown, setCountdown] = useState(7200)
+  const successTimeoutRef = useRef(null)
 
-  const createOrder = useCallback(async () => {
+  const createOrder = useCallback(async (options = {}) => {
     setState('loading')
     setCountdown(7200)
     try {
@@ -70,11 +80,12 @@ export default function PaymentQRDialog({
         plan_code: planCode,
         billing_cycle: billingCycle,
         amount
-      })
+      }, options)
       setOrderId(res.order_id)
       setCodeUrl(res.code_url)
       setState('scanning')
     } catch (error) {
+      if (error?.name === 'CanceledError' || axios.isCancel(error)) return;
       toast.error(error?.response?.data?.message || error?.response?.data?.error || '创建订单失败')
       setState('expired')
     }
@@ -82,7 +93,9 @@ export default function PaymentQRDialog({
 
   useEffect(() => {
     if (open) {
-      createOrder()
+      const ac = new AbortController()
+      createOrder({ signal: ac.signal })
+      return () => ac.abort()
     } else {
       setState('loading')
       setOrderId('')
@@ -107,15 +120,23 @@ export default function PaymentQRDialog({
     if (res.trade_state === 'SUCCESS' || res.status === 'SUCCESS') {
       setState('success')
       onSuccess?.()
-      setTimeout(() => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
+      const timer = setTimeout(() => {
         onOpenChange(false)
       }, 3000)
+      successTimeoutRef.current = timer
     } else if (res.trade_state === 'CLOSED') {
       setState('expired')
     }
   }, [onSuccess, onOpenChange])
 
   usePaymentPolling(orderId, state === 'scanning', handleStatusUpdate)
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
+    }
+  }, [])
 
   const handleOpenChange = (newOpen) => {
     if (!newOpen && state === 'scanning') {

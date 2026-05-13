@@ -54,6 +54,25 @@ class TestPaymentServiceInit:
 
 
 class TestHandlePaymentSuccess:
+    @pytest.fixture(autouse=True)
+    def _patch_apply_paid(self, monkeypatch):
+        async def _fake_apply(session, user_id, plan_code, **kwargs):
+            user = await session.get(None, user_id)
+            if user is None:
+                return MagicMock()
+            duration_days = kwargs.get("duration_days", 30)
+            started_at = kwargs.get("started_at", int(time.time()))
+            user.subscription_type = plan_code
+            user.user_type = plan_code
+            user.subscription_start = started_at
+            user.subscription_expires = started_at + duration_days * 86400
+            user.remaining_calculations = -1
+            return MagicMock()
+
+        monkeypatch.setattr(
+            "services.payment_service.apply_paid_subscription", _fake_apply
+        )
+
     @pytest.mark.asyncio
     async def test_updates_order_and_user_subscription(self):
         session = _mock_session()
@@ -291,7 +310,7 @@ class TestFunnelSourceTagging:
             captured["source"] = kwargs.get("source")
             captured["plan_code"] = plan_code
             captured["user_id"] = user_id
-            captured["subscription_expires"] = kwargs.get("subscription_expires")
+            captured["duration_days"] = kwargs.get("duration_days")
             captured["started_at"] = kwargs.get("started_at")
             return MagicMock()
 
@@ -312,7 +331,8 @@ class TestFunnelSourceTagging:
         assert captured["plan_code"] == "efficiency"
         assert captured["user_id"] == 1
         assert captured["started_at"] is not None
-        assert captured["subscription_expires"] > captured["started_at"]
+        assert captured["duration_days"] is not None
+        assert captured["duration_days"] > 0
 
     @pytest.mark.asyncio
     async def test_wechat_notify_uses_source_wechat_notify(self, monkeypatch):

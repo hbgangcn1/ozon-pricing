@@ -17,6 +17,7 @@ from db.plans import (
     update_plan,
 )
 from db.subscriptions import get_user_subscription_info
+from db.subscriptions import get_effective_tier
 from models.user import User
 from services.trial_service import claim_trial, get_trial_status
 
@@ -151,7 +152,10 @@ async def get_current_subscription(
     if not info:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    plan_code = info.get("subscription_type") or info.get("user_type") or "free"
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    plan_code = get_effective_tier(user)
     try:
         plan = await get_plan_by_code(session, plan_code)
     except Exception as e:

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 import time
 import uuid
 from typing import Literal, Optional
@@ -42,6 +43,10 @@ def _parse_duration(duration: str) -> int:
     if "\u6708" in text or "month" in text:
         return 30
     return 30
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _redact_txid(transaction_id: Optional[str]) -> str:
@@ -121,10 +126,10 @@ class PaymentService:
                 f"user not found: {order.user_id}"
             )
 
-        current_time = int(time.time())
+        current_dt = _utc_now()
+        current_time = int(current_dt.timestamp())
         plan_code = _extract_plan_code(order.description or "")
         duration_days = _parse_duration(order.duration or "\u6708")
-        expiry = current_time + duration_days * 86400
         order.status = "SUCCESS"
         order.wechat_transaction_id = transaction_id
         order.updated_at = current_time
@@ -133,8 +138,9 @@ class PaymentService:
             self._session,
             user.id,
             plan_code,
-            subscription_expires=expiry,
+            duration_days=duration_days,
             started_at=current_time,
+            now=current_dt,
             source="wechat_notify",
         )
         logger.info(
@@ -184,10 +190,10 @@ class PaymentService:
             logger.info("订单已处理，跳过: %s", order_id)
             return
 
-        current_time = int(time.time())
+        current_dt = _utc_now()
+        current_time = int(current_dt.timestamp())
         plan_code = _extract_plan_code(order.description or "")
         duration_days = _parse_duration(order.duration or "\u6708")
-        expiry = current_time + duration_days * 86400
 
         user = await self._session.get(User, order.user_id)
         if not user:
@@ -199,13 +205,16 @@ class PaymentService:
             self._session,
             order.user_id,
             plan_code,
-            subscription_expires=expiry,
+            duration_days=duration_days,
             started_at=current_time,
+            now=current_dt,
             source="payment_success",
         )
         await self._session.commit()
+        refreshed = await self._session.get(User, order.user_id)
+        expiry = refreshed.subscription_expires if refreshed else None
         logger.info(
-            "支付成功: order=%s user=%d plan=%s expires=%d",
+            "支付成功: order=%s user=%s plan=%s expires=%s",
             order_id, order.user_id, plan_code, expiry,
         )
 

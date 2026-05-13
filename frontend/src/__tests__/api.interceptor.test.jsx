@@ -105,8 +105,8 @@ describe('api interceptor session handling', () => {
   })
 
   it('falls back to legacy logout and toast flow for string detail 401', async () => {
-    localStorage.setItem('api_user', 'user')
-    localStorage.setItem('api_token', 'token')
+      localStorage.setItem('api_user', 'user')
+      sessionStorage.setItem('api_token', 'token')
     await loadApiModule()
     const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
     mocks.mockRefreshToken.mockRejectedValue({
@@ -134,8 +134,8 @@ describe('api interceptor session handling', () => {
   })
 
   it('does NOT refresh, redirect, or toast on 401 when auth401Mode=local', async () => {
-    localStorage.setItem('api_user', 'user')
-    localStorage.setItem('api_token', 'token')
+      localStorage.setItem('api_user', 'user')
+      sessionStorage.setItem('api_token', 'token')
     await loadApiModule()
     const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
 

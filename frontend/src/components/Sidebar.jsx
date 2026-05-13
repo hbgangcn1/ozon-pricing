@@ -33,12 +33,13 @@ function ExchangeRatePanel() {
     if (signal?.aborted) return;
     setLoading(true);
     try {
-      const data = await apiClient.get('/exchange/rates');
+      const data = await apiClient.get('/exchange/rates', { signal });
       if (!signal?.aborted) {
         setRates(data);
         setLastUpdated(new Date());
       }
-    } catch {
+    } catch (err) {
+      if (err?.name === 'CanceledError' || err?.message === 'canceled') return;
       // silently fail — rate widget is non-critical
     } finally {
       if (!signal?.aborted) {

@@ -58,6 +58,7 @@
 | B30 | ✅ | `api/routes/logistics_pool.py`, `logger_config.py`, `tests/test_api_logistics_pool_batch_add.py`, `tests/test_logger_intercept.py`, `tests/test_routes_logistics_pool.py` | 公共物流池"全部添加到我的物流"返回 "Internal server error" — 根因: `batch_add_to_my_logistics` (line 233) 用 `session.begin_nested()` + 手动 `await savepoint.commit()`，async SQLAlchemy 触发 `AsyncContextNotStarted` 异常；同时 `logger_config.format_log` 缺 `{exception}` 模板变量导致 traceback 不落盘 — 已修复 (OpenSpec change `fix-logistics-pool-batch-add-savepoint`): (1) batch + 单条路由改用 `async with session.begin_nested():` 上下文管理器 (2) batch 加 scoped except `(IntegrityError, DataError, StatementError, DBAPIError)`，`connection_invalidated` re-raise，AttributeError 等程序错误透传到 500 (3) `format_log` 末尾追加 `\n{exception}` (4) 测试 21/21 PASS (8 batch + 1 logger + 12 routes)，curl 三场景全 PASS (用户原 9 项 bug 场景 added=9 errors=0)，Playwright manual QA 1 passed + 3 截图 (73/78/77KB) (5) 已知 pre-existing pytest-xdist asyncio race 与本 change 无关，应作为独立 change 处理 |
 | B29 | ✅ | `api/routes/statistics.py` | 统计页面 `GET /api/statistics/overview` 报 `DatetimeFieldOverflowError` — 根因: `User.created_at` 和 `User.last_login` 存储为 epoch 字符串(如"1775470954")，但 SQL 查询对其直接 `func.date()` 或 `.cast(DateTime)` 转换失败 — 已修复: (1) `new_users_today` 改为 Python 侧安全解析 (复用 `db/statistics.py._parse_user_created_at`) (2) `_last_login_expr()` 改为 `CASE WHEN ~ '^\d+$' THEN to_timestamp(::float) ELSE NULL END` 安全转换 — 测试: 1610 passed, 0 failed |
 | B31 | ✅ | `services/trial_service.py`, `frontend/src/components/TrialBanner.jsx`, `tests/test_trial_service.py`, `frontend/src/__tests__/TrialBanner.test.jsx`, `frontend/src/__tests__/AppLayout.test.jsx` | admin 账号登录后顶部错误显示"专业版试用中"TrialBanner — 根因: `get_trial_status` 仅按 `trial_expires_at > now` 判定 in_trial，admin 账户若曾领取试用或被脚本写入 trial 字段也会被判为试用中；前端 TrialBanner 也未对 admin 角色做豁免 — 已修复 (commit `0945b2ee`，dual-layer 防御): (1) `services/trial_service.py:get_trial_status` 顶部判 `user.role.lower() == 'admin'` 直接返回 inert `TrialStatus(全 False/0)`，不影响 `is_in_trial` 等其它依赖 (2) `frontend/src/components/TrialBanner.jsx` 用 `useAuthStore(s => s.isAdmin())` selector 守卫，`useEffect` 内 admin 早返跳过 polling，render admin 返 null (3) 后端测试 `_U` 加 role 字段 + 2 个 admin 测试，前端补 TrialBanner admin null 测试 + AppLayout 3 处 mock 补 `isAdmin: () => false` — 测试: 后端 trial 35/35 + 前端 vitest 393/393 (50 files) PASS，flake8 + ESLint clean，npm run build 成功，scp dist + 生产 deploy.sh 健康检查全 200 ✓ |
+| SEC-W12R2-05 | ✅ | `api/dependencies.py`, `api/middleware/rate_limit.py`, `api/routes/auth/helpers.py`, `.env.example`, `tests/test_get_request_ip_w12r2.py` | 生产 nginx 反代下 IP 限流误用 `127.0.0.1` 导致全站共享锁定 — 已实现可信代理 X-Forwarded-For 解析：`TRUSTED_PROXY_IPS` CIDR 白名单 + `TRUST_FORWARDED_FOR` 环境开关，直连 peer 必须位于可信 CIDR 才信任 XFF，并按 right-to-left 返回首个非可信 IP；异常链路回退 `request.client.host`；全局限流与登录/用户名/找回限流统一走 `get_request_ip()`；测试覆盖 IPv4/IPv6/多代理/畸形 XFF。验证：flake8 clean，LSP clean，目标测试 20/20 PASS；全量回归因本地残留 postgres-owned `test_qa_smoke` schema 干扰 test schema 初始化，非本变更失败。 |
 | MEM-1 | ✅ | `payment_callback_enhanced.py` | 重试队列新增 90% 水位背压：超过 9000 条提前拒绝并触发告警，保留 10000 上限兜底 |
 | MEM-2 | ✅ | `postgres_backup_service.py` | 自动备份停止时线程 join 超时从 10s 提升到 30s |
 | MEM-3 | ✅ | `exchange_service_providers.py` | 共享 requests.Session 统一经 `_session_lock` 保护；所有 `session.request()`/`get()` 调用改为锁内执行 |
@@ -704,6 +705,23 @@ frontend/tests/
 | 20.3 | ✅ | 汇率服务 — `exchange_service.py`, `enhanced_exchange_service.py` 全量 Decimal |
 | 20.4 | ✅ | Pricing 核心 — `pricing/*.py` 所有 10 个模块全量 Decimal 运算 |
 | 20.5 | ✅ | API 层 — `api/routes/pricing.py` 入口 `_ensure_decimal_fields` + 出口 `_product_for_response`；`api/routes/exchange.py` 除法修复 |
+
+### W12 Wave 1: agent-W1-C 定价异常处理 ✅
+
+### W12R2: 订阅续费与过期权限修复 ✅
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| PRC-W12R2-02 | ✅ | `db/subscriptions.py` 付费续费路径加 `with_for_update()` 行锁，并按 `max(now_utc, current_expires_at_utc) + duration_days` 计算新到期时间，避免提前续费吞掉剩余天数 |
+| PRC-W12R2-03 | ✅ | `db/subscriptions.py:get_effective_tier()` 作为订阅等级单一读取真相源；过期付费用户按 free 处理且不在读路径改库，`api/dependencies.py` / `services/plan_resolution.py` / `/api/subscriptions/current` 改用有效等级 |
+| 验证 | ⚠️ | 新增 W12R2 测试 7/7 pass；订阅/定价/支付定向 166/166 pass；flake8 与 LSP clean；全量 `pytest tests/ -q --tb=short -x` 命中既有并行隔离不稳定失败（`test_db_users.py::test_verify_user_by_email`, `test_db_sessions_crud.py::test_get_session_with_user_found`），与本次订阅改动无关 |
+
+| 任务 | 状态 | 描述 |
+|------|------|------|
+| W1-C.1 | ✅ | `api/routes/pricing.py` — `/calculate` 与 `/calculate-grouped` 增加顶层异常兜底，内部异常统一记录日志并返回清洗后的 500 文案 |
+| W1-C.2 | ✅ | `pricing/calculate_pricing.py` — 新增 SSE progress callback 防护，callback 异常仅 warning 记录并继续计算 |
+| W1-C.3 | ✅ | `pricing/calculate_pricing.py` — 可恢复计算异常改为显式异常类型 + `logger.warning(..., exc_info=True)`，保留原有计算语义 |
+| W1-C.4 | ✅ | `tests/test_pricing_routes_error_handling.py` — 覆盖两个路由清洗 500 与 SSE callback 异常后继续计算 |
 | 20.6 | ✅ | 测试全量更新 — 所有 mock 数据从 float 改为 Decimal，断言对齐 |
 | 20.7 | ✅ | E2E 验证 — Products, Logistics, Statistics, CommissionCategories, Pricing, Exchange 全部 API 返回 JSON number ✅ |
 

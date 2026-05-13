@@ -247,7 +247,7 @@ describe('api.js', () => {
       mocks.mockApiInstance.post.mockResolvedValue({ access_token: 'fresh-token', token_type: 'bearer' })
 
       await expect(authAPI.refreshAccess()).resolves.toEqual({ access_token: 'fresh-token', token_type: 'bearer' })
-      expect(mocks.mockApiInstance.post).toHaveBeenCalledWith('/auth/refresh-access')
+      expect(mocks.mockApiInstance.post).toHaveBeenCalledWith('/auth/refresh-access', null, {})
     })
 
     it('setSecurityQuestion posts question and answer', async () => {
@@ -255,7 +255,7 @@ describe('api.js', () => {
       mocks.mockApiInstance.post.mockResolvedValue({ success: true, message: 'ok' })
 
       await expect(authAPI.setSecurityQuestion('pet', 'fluffy')).resolves.toEqual({ success: true, message: 'ok' })
-      expect(mocks.mockApiInstance.post).toHaveBeenCalledWith('/auth/security-question', { question: 'pet', answer: 'fluffy' })
+      expect(mocks.mockApiInstance.post).toHaveBeenCalledWith('/auth/security-question', { question: 'pet', answer: 'fluffy' }, {})
     })
   })
 })

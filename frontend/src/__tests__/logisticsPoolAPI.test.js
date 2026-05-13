@@ -40,7 +40,7 @@ describe('logisticsPoolAPI', () => {
 
       await logisticsPoolAPI.deleteAll()
 
-      expect(mockDelete).toHaveBeenCalledWith('/logistics-pool/all')
+      expect(mockDelete).toHaveBeenCalledWith('/logistics-pool/all', {})
     })
 
     it('correctly propagates successful response', async () => {
@@ -105,7 +105,9 @@ describe('logisticsPoolAPI', () => {
       await logisticsPoolAPI.addToMyLogistics(42)
 
       expect(mockPost).toHaveBeenCalledWith(
-        '/logistics-pool/42/add-to-my-logistics'
+        '/logistics-pool/42/add-to-my-logistics',
+        null,
+        {}
       )
     })
   })
@@ -118,7 +120,8 @@ describe('logisticsPoolAPI', () => {
 
       expect(mockPost).toHaveBeenCalledWith(
         '/logistics-pool/batch-add-to-my-logistics',
-        { ids: [10, 11] }
+        { ids: [10, 11] },
+        {}
       )
     })
 

@@ -125,10 +125,27 @@ class TestSubscriptions:
             "remaining_calculations": 999,
         }
         mock_plan.return_value = {"calc_limit": -1, "logistics_limit": 999}
-        r = client.get(
-            "/api/subscriptions/current",
-            headers={"Authorization": "Bearer faketoken"},
-        )
+
+        class _Session:
+            async def get(self, model, pk):
+                return MagicMock(
+                    subscription_type="enterprise",
+                    subscription_expires=None,
+                    trial_expires_at=0,
+                    user_type="enterprise",
+                )
+
+        async def _get_db_override():
+            yield _Session()
+
+        app.dependency_overrides[get_db] = _get_db_override
+        try:
+            r = client.get(
+                "/api/subscriptions/current",
+                headers={"Authorization": "Bearer faketoken"},
+            )
+        finally:
+            app.dependency_overrides.pop(get_db, None)
         assert r.status_code == 200
         assert r.json()["plan_code"] == "enterprise"
 

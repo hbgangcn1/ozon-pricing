@@ -9,12 +9,22 @@ vi.mock('../services/api', () => ({
 }))
 
 describe('authStore.js', () => {
-  const initialState = useAuthStore.getState()
-
   beforeEach(() => {
-    useAuthStore.setState(initialState, true)
     localStorage.clear()
+    sessionStorage.clear()
+    // Clear mock call history (singleton mocks accumulate calls across tests,
+    // breaking toHaveBeenCalledTimes assertions like the dedupe test).
     vi.clearAllMocks()
+    // Reset zustand store to true defaults (singleton survives across tests)
+    useAuthStore.setState({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: true,
+      calcMode: 'fast',
+      sessionKicked: { open: false, reason: null },
+      showSecurityDialog: false,
+    })
   })
 
   describe('Initial state', () => {
@@ -83,8 +93,8 @@ describe('authStore.js', () => {
         trial_expires_at: 0,
         trial_plan_at_start: '',
       }
-      expect(localStorage.getItem('api_token')).toBeNull()
-      expect(JSON.parse(localStorage.getItem('api_user'))).toEqual(persistedUser)
+    expect(sessionStorage.getItem('api_token')).toBeNull()
+    expect(JSON.parse(localStorage.getItem('api_user'))).toEqual(persistedUser)
     })
 
     it('syncs security dialog from login user flag', () => {
@@ -121,10 +131,9 @@ describe('authStore.js', () => {
     it('syncs state and localStorage', () => {
       useAuthStore.getState().setToken('refreshed-token')
 
-      expect(useAuthStore.getState().token).toBe('refreshed-token')
-      expect(useAuthStore.getState().isAuthenticated).toBe(true)
-      expect(localStorage.getItem('api_token')).toBe('refreshed-token')
-    })
+    expect(useAuthStore.getState().token).toBe('refreshed-token')
+    expect(sessionStorage.getItem('api_token')).toBe('refreshed-token')
+  })
   })
 
   describe('logout()', () => {
@@ -359,10 +368,9 @@ describe('authStore.js', () => {
       const result = await useAuthStore.getState().refreshToken()
 
       expect(result).toBe(newToken)
-      expect(useAuthStore.getState().token).toBe(newToken)
-      expect(localStorage.getItem('api_token')).toBe(newToken)
-      expect(authAPI.refreshAccess).toHaveBeenCalledOnce()
-    })
+        expect(useAuthStore.getState().token).toBe(newToken)
+        expect(sessionStorage.getItem('api_token')).toBe(newToken)
+      })
 
     it('deduplicates concurrent refreshToken calls', async () => {
       const now = Math.floor(Date.now() / 1000)

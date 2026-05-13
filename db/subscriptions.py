@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from sqlalchemy import select, func
@@ -32,6 +33,7 @@ __all__ = [
     "apply_paid_subscription",
     "apply_subscription_change",
     "check_user_subscription_status",
+    "get_effective_tier",
     "decrement_user_calculations",
     "get_user_subscription_info",
     "reset_free_users_daily_calculations",
@@ -79,6 +81,70 @@ _FALLBACK_LIMITS = {
     "gratitude": -1,
 }
 
+PAID_TIERS = {"efficiency", "professional", "enterprise", "gratitude", "test"}
+
+
+def _utc_now_epoch(now: datetime | None = None) -> int:
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return int(now.astimezone(timezone.utc).timestamp())
+
+
+def get_effective_tier(user, now: datetime | None = None) -> str:
+    """Return the effective subscription tier without mutating the DB.
+
+    [PRC-W12R2-03] Expired paid rows are treated as free for feature gates.
+    TODO: add a separate scheduled job to lazy-downgrade expired paid rows.
+    """
+    tier = (getattr(user, "subscription_type", None) or "free").strip() or "free"
+    if tier not in PAID_TIERS:
+        return "free"
+    expires_at = getattr(user, "subscription_expires", None)
+    if expires_at is None:
+        return tier
+    try:
+        expires_epoch = int(expires_at)
+    except (TypeError, ValueError):
+        return "free"
+    if expires_epoch > _utc_now_epoch(now):
+        return tier
+    return "free"
+
+
+async def _lock_user(session: AsyncSession, user_id: int) -> User | None:
+    stmt = select(User).where(User.id == user_id).with_for_update()
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+def _resolve_paid_expiry(user: User, duration_days: int, now: datetime | None) -> int:
+    now_epoch = _utc_now_epoch(now)
+    current_expires = user.subscription_expires
+    base_epoch = now_epoch
+    if current_expires is not None:
+        try:
+            base_epoch = max(now_epoch, int(current_expires))
+        except (TypeError, ValueError):
+            base_epoch = now_epoch
+    return base_epoch + duration_days * 86400
+
+
+def _duration_days_from_expiry(
+    subscription_expires: Optional[int],
+    started_at: Optional[int],
+    now: datetime | None,
+) -> Optional[int]:
+    if subscription_expires is None:
+        return None
+    base_epoch = started_at if started_at is not None else _utc_now_epoch(now)
+    seconds = int(subscription_expires) - int(base_epoch)
+    if seconds <= 0:
+        return None
+    days, remainder = divmod(seconds, 86400)
+    return max(1, days + (1 if remainder else 0))
+
 
 async def _resolve_plan_limit(session: AsyncSession, plan_code: str) -> int:
     plan = await get_plan_by_code(session, plan_code)
@@ -117,7 +183,7 @@ async def _apply_noop_change(
     active_count = await _count_active_rules(session, user_id)
     new_limit = await _resolve_plan_limit(session, new_plan_norm)
     logger.info(
-        "subscription_change noop: user=%d plan=%s source=%s",
+        "subscription_change noop: user=%s plan=%s source=%s",
         user_id, new_plan_norm, source,
     )
     return ChangeResult(
@@ -143,7 +209,7 @@ async def _apply_upgrade_change(
         session, user_id, reason="upgraded",
     )
     logger.info(
-        "subscription_change upgrade: user=%d %s→%s restored=%d source=%s",
+        "subscription_change upgrade: user=%s %s→%s restored=%s source=%s",
         user_id, old_plan, new_plan_norm, restored, source,
     )
     return ChangeResult(
@@ -170,8 +236,8 @@ async def _apply_downgrade_change(
         session, user_id, new_limit,
     )
     logger.info(
-        "subscription_change downgrade: user=%d %s→%s trimmed=%d "
-        "window=%d source=%s",
+        "subscription_change downgrade: user=%s %s→%s trimmed=%s "
+        "window=%s source=%s",
         user_id, old_plan, new_plan_norm, trim.trimmed_count,
         trim.window_id, source,
     )
@@ -200,7 +266,7 @@ async def apply_subscription_change(
     Steps (caller commits): noop / upgrade (restore_all_overflow) /
     downgrade (auto_trim) / same_tier. `source` is for audit logs.
     """
-    user = await session.get(User, user_id)
+    user = await _lock_user(session, user_id)
     if user is None:
         raise ValueError(f"user not found: id={user_id}")
 
@@ -346,11 +412,40 @@ async def apply_paid_subscription(
     user_id: int,
     plan_code: str,
     *,
-    subscription_expires: int,
-    started_at: int,
     source: str,
+    subscription_expires: Optional[int] = None,
+    duration_days: Optional[int] = None,
+    started_at: Optional[int] = None,
+    now: datetime | None = None,
     billing_cycle: Optional[str] = None,
 ) -> ChangeResult:
+    user = await _lock_user(session, user_id)
+    if user is None:
+        raise ValueError(f"user not found: id={user_id}")
+    effective_now = now
+    if effective_now is None and started_at is not None:
+        effective_now = datetime.fromtimestamp(started_at, timezone.utc)
+    if duration_days is None:
+        duration_days = _duration_days_from_expiry(
+            subscription_expires, started_at, effective_now,
+        )
+    if duration_days is not None:
+        # [PRC-W12R2-02] Renew from max(now, current expiry) so early renewal
+        # preserves unused days; the locked row prevents concurrent lost updates.
+        subscription_expires = _resolve_paid_expiry(user, duration_days, effective_now)
+    elif subscription_expires is not None:
+        subscription_expires = _resolve_paid_expiry(
+            user,
+            _duration_days_from_expiry(
+                subscription_expires, started_at, effective_now,
+            ) or 0,
+            effective_now,
+        )
+    if subscription_expires is None:
+        raise ValueError("subscription_expires or duration_days is required")
+    if started_at is None:
+        started_at = _utc_now_epoch(effective_now)
+
     result = await apply_subscription_change(
         session,
         user_id,
@@ -359,9 +454,7 @@ async def apply_paid_subscription(
         subscription_expires=subscription_expires,
         source=source,
     )
-    user = await session.get(User, user_id)
-    if user is not None:
-        user.user_type = plan_code
-        user.subscription_start = started_at
-        user.remaining_calculations = -1
+    user.user_type = plan_code
+    user.subscription_start = started_at
+    user.remaining_calculations = -1
     return result

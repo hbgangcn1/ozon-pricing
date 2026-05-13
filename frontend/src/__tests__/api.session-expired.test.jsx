@@ -78,7 +78,7 @@ describe('api session expired flow', () => {
     await loadApiModule()
     const resErrorInterceptor = mocks.mockResponseUse.mock.calls[0][1]
     localStorage.setItem('api_user', 'user')
-    localStorage.setItem('api_token', 'token')
+    sessionStorage.setItem('api_token', 'token')
     mocks.mockRefreshToken.mockRejectedValue({ response: { status: 401 } })
 
     const originalError = {

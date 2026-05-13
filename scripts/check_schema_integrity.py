@@ -42,6 +42,7 @@ EXPECTED_CHECK_VALUES: Dict[str, Dict[str, Set[str]]] = {
     },
     "trial_overflow_window": {
         "ck_trial_overflow_window_close_reason": {
+            "''",
             "expired",
             "upgraded",
             "reselected",

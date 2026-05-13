@@ -35,7 +35,7 @@ app.dependency_overrides[dependencies.get_current_user] = lambda: MOCK_USER
 
 @pytest.fixture(autouse=True)
 def _allow_testserver_origin(monkeypatch):
-    monkeypatch.setattr(dependencies, "_ALLOWED_ORIGINS", {"http://testserver"})
+    monkeypatch.setenv("ALLOWED_ORIGINS", "http://testserver")
 
 
 @pytest.fixture(autouse=True)

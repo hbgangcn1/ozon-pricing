@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -126,6 +127,7 @@ class TestCalculateEndpointPreciseMode:
 
         mock_user = MagicMock()
         mock_user.subscription_type = "enterprise"
+        mock_user.subscription_expires = int(time.time()) + 365 * 86400
         mock_user.trial_expires_at = 0
 
         mock_session = AsyncMock()
@@ -504,8 +506,10 @@ class TestCalculateBreakevenResponses:
             scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         )
         mock_session.get.return_value = MagicMock(
-            subscription_type="enterprise", trial_expires_at=0
-        )
+                    subscription_type="enterprise",
+                    subscription_expires=int(time.time()) + 365 * 86400,
+                    trial_expires_at=0,
+                )
 
         app.dependency_overrides[get_db] = _db_override(mock_session)
         try:
@@ -575,8 +579,10 @@ class TestCalculateBreakevenResponses:
 
         mock_session = AsyncMock()
         mock_session.get.return_value = MagicMock(
-            subscription_type="enterprise", trial_expires_at=0
-        )
+                    subscription_type="enterprise",
+                    subscription_expires=int(time.time()) + 365 * 86400,
+                    trial_expires_at=0,
+                )
 
         app.dependency_overrides[get_db] = _db_override(mock_session)
         try:

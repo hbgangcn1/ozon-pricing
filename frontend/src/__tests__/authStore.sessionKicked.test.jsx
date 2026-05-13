@@ -27,7 +27,7 @@ describe('authStore sessionKicked', () => {
       sessionKicked: { open: true, reason: 'kicked_by_new_login' },
     })
     localStorage.setItem('api_user', JSON.stringify({ id: 1, username: 'demo' }))
-    localStorage.setItem('api_token', 'token')
+    sessionStorage.setItem('api_token', 'token')
 
     useAuthStore.getState().clearSessionKicked()
 
@@ -37,6 +37,6 @@ describe('authStore sessionKicked', () => {
     expect(state.isAuthenticated).toBe(false)
     expect(state.sessionKicked).toEqual({ open: false, reason: null })
     expect(localStorage.getItem('api_user')).toBeNull()
-    expect(localStorage.getItem('api_token')).toBeNull()
+    expect(sessionStorage.getItem('api_token')).toBeNull()
   })
 })

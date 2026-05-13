@@ -3,14 +3,21 @@
 支付处理模块
 为物流支付系统提供核心支付处理功能
 """
-import time
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, NewType
 
 from database import AsyncSessionLocal
 from services.payment_service import PaymentService
 
 logger = logging.getLogger(__name__)
+VerifiedWechatPaymentContext = NewType("VerifiedWechatPaymentContext", dict[str, Any])
+
+__all__ = [
+    "PaymentHandler",
+    "VerifiedWechatPaymentContext",
+    "_extract_plan_code",
+    "_parse_duration",
+]
 
 try:
     from wechat_pay_v3_api import wechat_pay_v3
@@ -77,7 +84,15 @@ class PaymentHandler:
             }
 
     @staticmethod
-    async def handle_payment_success(order_id: str) -> None:
+    async def handle_payment_success(
+        order_id: str,
+        verified_context: VerifiedWechatPaymentContext | None = None,
+    ) -> None:
+        # [SEC-W12R2-08] Legacy entitlement grant is unsafe unless the caller
+        # proves WeChat signature verification already happened. The live
+        # callback path uses PaymentService.apply_wechat_payment_success().
+        if verified_context is None:
+            raise PermissionError("verified WeChat signature context required")
         logger.warning(
             "payment_handler.PaymentHandler is deprecated; "
             "use services.payment_service.PaymentService instead"

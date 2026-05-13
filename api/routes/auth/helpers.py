@@ -7,10 +7,8 @@ from types import ModuleType
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.dependencies import get_request_ip
 from api.routes.auth_support import get_request_user_agent
-
-
-_TRUSTED_RATE_LIMIT_PROXIES = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
 def auth_module() -> ModuleType:
@@ -32,20 +30,8 @@ def validate_password(password: str) -> bool:
     return True
 
 
-def get_request_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
 def get_username_check_client_ip(request: Request) -> str:
-    client_ip = get_request_ip(request)
-    if client_ip in _TRUSTED_RATE_LIMIT_PROXIES:
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-    return client_ip
+    return get_request_ip(request)
 
 
 async def issue_auth_tokens(

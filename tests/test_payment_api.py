@@ -421,15 +421,18 @@ class TestPaymentNotify:
             headers=SIGNED_NOTIFY_HEADERS,
         )
 
-        assert resp.status_code == 200
-        assert resp.json() == {"code": "SUCCESS", "message": "OK"}
+        assert resp.status_code == 401
+        assert resp.json() == {
+            "code": "FAIL",
+            "message": "signature verification failed",
+        }
         mock_svc.apply_wechat_payment_success.assert_not_awaited()
         audit = mock_session.add.call_args.args[0]
         assert audit.out_trade_no == "test_notify_bad_sig_ord"
         assert audit.transaction_id == "wx_tx_bad_sig"
         assert audit.signature_verified is False
-        assert audit.response_code == "SUCCESS"
-        assert audit.response_message == "OK"
+        assert audit.response_code == "FAIL"
+        assert audit.response_message == "signature verification failed"
         mock_session.flush.assert_awaited()
 
     @patch("api.routes.payment.wechat_pay_v3")
@@ -462,38 +465,36 @@ class TestPaymentNotify:
             json={},
             headers=SIGNED_NOTIFY_HEADERS,
         )
-        assert resp.status_code == 200
-        assert resp.json() == {"code": "SUCCESS", "message": "OK"}
-
-    @patch("api.routes.payment._wechat_available", False)
-    def test_wechat_unavailable_in_production_returns_503(self, _setup_overrides):
-        with patch("api.routes.payment._is_production", return_value=True):
-            with patch.dict(os.environ, {"E2E_TEST": ""}, clear=False):
-                os.environ.pop("E2E_TEST", None)
-                resp = client.post(
-                    "/api/payments/notify",
-                    json={"out_trade_no": "prod_notify_ord"},
-                    headers=SIGNED_NOTIFY_HEADERS,
-                )
-
-        assert resp.status_code == 503
+        assert resp.status_code == 500
         assert resp.json() == {"code": "FAIL", "message": "微信支付模块不可用"}
 
     @patch("api.routes.payment._wechat_available", False)
-    def test_wechat_unavailable_in_production_allows_e2e_success(
+    def test_wechat_unavailable_in_production_returns_500(self, _setup_overrides):
+        with patch.dict(os.environ, {"E2E_TEST": ""}, clear=False):
+            os.environ.pop("E2E_TEST", None)
+            resp = client.post(
+                "/api/payments/notify",
+                json={"out_trade_no": "prod_notify_ord"},
+                headers=SIGNED_NOTIFY_HEADERS,
+            )
+
+        assert resp.status_code == 500
+        assert resp.json() == {"code": "FAIL", "message": "微信支付模块不可用"}
+
+    @patch("api.routes.payment._wechat_available", False)
+    def test_wechat_unavailable_e2e_still_returns_fail(
         self,
         _setup_overrides,
     ):
-        with patch("api.routes.payment._is_production", return_value=True):
-            with patch.dict(os.environ, {"E2E_TEST": "1"}, clear=False):
-                resp = client.post(
-                    "/api/payments/notify",
-                    json={"out_trade_no": "e2e_notify_ord"},
-                    headers=SIGNED_NOTIFY_HEADERS,
-                )
+        with patch.dict(os.environ, {"E2E_TEST": "1"}, clear=False):
+            resp = client.post(
+                "/api/payments/notify",
+                json={"out_trade_no": "e2e_notify_ord"},
+                headers=SIGNED_NOTIFY_HEADERS,
+            )
 
-        assert resp.status_code == 200
-        assert resp.json() == {"code": "SUCCESS", "message": "OK"}
+        assert resp.status_code == 500
+        assert resp.json() == {"code": "FAIL", "message": "微信支付模块不可用"}
 
     @patch("api.routes.payment.wechat_pay_v3")
     @patch("api.routes.payment._wechat_available", True)

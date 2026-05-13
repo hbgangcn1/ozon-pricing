@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.plans import get_plan_by_code
+from db.subscriptions import get_effective_tier
 from models.logistics import Logistics
 
 
@@ -52,8 +53,7 @@ def get_effective_plan(user) -> str:
     """
     if is_in_trial(user):
         return "professional"
-    plan = getattr(user, "subscription_type", None) or "free"
-    return plan
+    return get_effective_tier(user)
 
 
 async def get_effective_logistics_limit(
