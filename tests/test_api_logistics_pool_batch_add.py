@@ -178,16 +178,23 @@ async def test_batch_add_empty_ids_400(http_client):
 
 
 # ---------------------------------------------------------------------------
-# Test D: over 50 ids → 422
+# Test D: 51 ids regression guard — must NOT 422 anymore
+# (boundary moved 50 → 200 by change fix-logistics-pool-batch-add-blackscreen)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_batch_add_over_limit_422(http_client):
-    resp = await http_client.post(
-        "/api/logistics-pool/batch-add-to-my-logistics",
-        json={"ids": list(range(1, 52))},
-    )
-    assert resp.status_code == 422
+async def test_batch_add_51_ids_no_longer_422(http_client):
+    pool_ids = await _seed_pool_rows(51)
+    try:
+        resp = await http_client.post(
+            "/api/logistics-pool/batch-add-to-my-logistics",
+            json={"ids": pool_ids},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["added"] == 51
+    finally:
+        await _delete_pool_rows(pool_ids)
 
 
 # ---------------------------------------------------------------------------

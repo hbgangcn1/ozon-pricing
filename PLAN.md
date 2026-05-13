@@ -1084,3 +1084,24 @@ Wave 3 final QA gate (full repo, post-Batch 2+3):
 
 L1 (test-only flake8) was already absorbed during prior cleanup; the cap is now 0 violations across the whole tree.
 
+
+---
+
+## OpenSpec Change: fix-logistics-pool-batch-add-blackscreen (2026-05-13)
+
+**Status**: ready-for-archive (apply phase complete; awaiting openspec archive)
+
+**Summary**: Fixed LogisticsPoolPage "全部添加到我的物流" black-screen. Root cause was triple-bug: (1) BATCH_SIZE=200 vs backend Field max_length=50 → 422 array detail; (2) sonner toast received array → React error #31; (3) <Toaster> outside ErrorBoundary → fallback could not render → black screen.
+
+**Fixes**:
+- Backend: dropped Pydantic max_length=50, kept handler-level 400 string-detail check at >200; aligned with spec line 16.
+- Frontend: shared `getApiErrorMessage` helper; rewrote batch handler with sequential 200-chunk loop and partial-success quota semantics; moved `<Toaster>` inside `<ErrorBoundary>`.
+
+**Verification**:
+- Backend: 17/17 new boundary + handler tests; full suite 2478 passed / 3 pre-existing failures in `test_e2e_volume_modes.py` (unrelated).
+- Frontend: 27/27 vitest across 3 suites (api-error 11, LogisticsPoolPage 10, batch 6).
+- E2E (Playwright MCP): admin login → /logistics-pool → all-select 160 → batch-add → POST 200 with `added:160` → page intact, 0 console errors. Screenshots: `./logistics-pool-before-batch-add.png`, `./logistics-pool-batch-success.png`.
+- Lint: flake8 + ESLint + Pylance/Pyright all clean.
+- `openspec validate fix-logistics-pool-batch-add-blackscreen --strict` passes.
+
+**Scope note (task 7.3)**: pool currently holds 160 rows < spec hypothetical 408. Single-batch covers end-to-end render path; multi-batch loop is exhaustively covered by 6/6 vitest mocks (3-batch all-success, mid-loop 403 stop, mid-loop network error, 422 array-detail regression guard). No data fabricated to inflate to 408.

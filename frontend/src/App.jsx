@@ -82,13 +82,13 @@ function App() {
 
   return (
     <>
-      <Toaster position="top-center" richColors />
       <SessionKickedDialog
         open={sessionKicked.open}
         reason={sessionKicked.reason}
         onConfirm={handleSessionKickedConfirm}
       />
       <ErrorBoundary>
+        <Toaster position="top-center" richColors />
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Skeleton className="w-48 h-8" /></div>}>
           <Routes>
             {/* 根路径永远跳登录页,无论登录态 */}

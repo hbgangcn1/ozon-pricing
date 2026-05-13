@@ -11,6 +11,9 @@ import { VirtualTable } from '../components/ui/virtual-table'
 import { logisticsPoolAPI } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { DESTINATION_LABEL_MAP } from './logistics/logisticsConstants'
+import { getApiErrorMessage } from '@/lib/api-error'
+
+export const BATCH_SIZE = 200
 
 export default function LogisticsPoolPage() {
   const [logistics, setLogistics] = useState([])
@@ -70,7 +73,7 @@ export default function LogisticsPoolPage() {
     } catch (error) {
       if (signal?.aborted) return
       if (error?.name === 'CanceledError' || error?.name === 'AbortError') return
-      toast.error('获取物流池数据失败')
+      toast.error(getApiErrorMessage(error, '获取物流池数据失败'))
     } finally {
       if (!signal?.aborted) setIsLoading(false)
     }
@@ -95,8 +98,7 @@ export default function LogisticsPoolPage() {
       toast.success('导入成功')
       fetchLogistics()
     } catch (error) {
-      const msg = error?.response?.data?.detail || '导入失败，请检查文件格式'
-      toast.error(msg)
+      toast.error(getApiErrorMessage(error, '导入失败，请检查文件格式'))
     } finally {
       setIsImporting(false)
       if (fileInputRef.current) {
@@ -113,7 +115,7 @@ export default function LogisticsPoolPage() {
       fetchLogistics()
       setDeleteAllOpen(false)
     } catch (error) {
-      toast.error(error?.response?.data?.detail || '删除失败')
+      toast.error(getApiErrorMessage(error, '删除失败'))
     } finally {
       setIsDeleting(false)
     }
@@ -125,7 +127,7 @@ export default function LogisticsPoolPage() {
       await logisticsPoolAPI.addToMyLogistics(id)
       toast.success('已成功添加到我的物流')
     } catch (error) {
-      toast.error('添加失败，可能已经存在')
+      toast.error(getApiErrorMessage(error, '添加失败，可能已经存在'))
     } finally {
       setAddingId(null)
     }
@@ -158,38 +160,53 @@ export default function LogisticsPoolPage() {
   const handleBatchAddToMyLogistics = async () => {
     if (selectedIds.size === 0) return
     setIsBatchAdding(true)
-    try {
-      const allIds = Array.from(selectedIds)
-      const BATCH_SIZE = 200
-      let totalAdded = 0
-      let totalNotFound = 0
-      let totalErrors = 0
 
-      for (let i = 0; i < allIds.length; i += BATCH_SIZE) {
-        const batch = allIds.slice(i, i + BATCH_SIZE)
+    const allIds = Array.from(selectedIds)
+    let addedTotal = 0
+    let untriedIds = []
+    let quotaRejected = false
+    let networkError = false
+    let lastError = null
+
+    for (let i = 0; i < allIds.length; i += BATCH_SIZE) {
+      const batch = allIds.slice(i, i + BATCH_SIZE)
+      try {
         const result = await logisticsPoolAPI.batchAddToMyLogistics(batch)
         const data = result?.data || result
-        totalAdded += data?.added || 0
-        totalNotFound += data?.not_found?.length || 0
-        totalErrors += data?.errors?.length || 0
+        addedTotal += data?.added || 0
+      } catch (error) {
+        lastError = error
+        const status = error?.response?.status
+        if (status === 403) {
+          quotaRejected = true
+        } else {
+          networkError = true
+        }
+        untriedIds = allIds.slice(i)
+        break
       }
-
-      if (totalErrors > 0) {
-        toast.error(
-          `部分添加失败：成功 ${totalAdded} 条，失败 ${totalErrors} 条${totalNotFound > 0 ? `，${totalNotFound} 条未找到` : ''}`,
-          { description: '失败的条目可能是已存在或数据重复的物流规则' }
-        )
-      } else if (totalNotFound > 0) {
-        toast.success(`已添加 ${totalAdded} 条，${totalNotFound} 条未找到`)
-      } else {
-        toast.success(`已成功添加 ${totalAdded} 条到我的物流`)
-      }
-      setSelectedIds(new Set())
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || '批量添加失败')
-    } finally {
-      setIsBatchAdding(false)
     }
+
+    const total = allIds.length
+    if (addedTotal === total && !quotaRejected && !networkError) {
+      toast.success(`已成功添加 ${addedTotal} 条到我的物流`)
+    } else if (quotaRejected && addedTotal > 0) {
+      toast.warning(`已添加 ${addedTotal} 条，剩余 ${untriedIds.length} 条因物流规则上限未添加`)
+    } else if (quotaRejected) {
+      toast.error(getApiErrorMessage(lastError, '已达到物流规则上限'))
+    } else if (networkError && addedTotal > 0) {
+      toast.warning(`已添加 ${addedTotal} 条，剩余 ${untriedIds.length} 条因网络错误未添加`)
+    } else if (networkError) {
+      toast.error(getApiErrorMessage(lastError, '批量添加失败'))
+    }
+
+    try {
+      await fetchLogistics()
+    } catch (_refreshErr) {
+      void _refreshErr
+    }
+    setSelectedIds(new Set(untriedIds))
+    setIsBatchAdding(false)
   }
 
   const columns = useMemo(() => [
