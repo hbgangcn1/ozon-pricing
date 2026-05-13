@@ -17,6 +17,9 @@ PROJECT_DIR="/var/www/ozon-pricing"
 VENV="$PROJECT_DIR/venv"
 LOG_DIR="/var/log/cbprice"
 NGINX_CONF="/etc/nginx/sites-enabled/cbprice.cn"
+# nginx 备份目录: /etc/nginx/sites-enabled/ 之外, 否则 nginx 会把 .bak.* 当作活跃站点配置
+# 加载,导致 limit_req_zone 重复定义 emergency 错误 (历史教训 2026-05-13)
+NGINX_BACKUP_DIR="/var/backups/cbprice-nginx"
 BACKUP_TAG="pre-deploy-$(date +%Y%m%d-%H%M%S)"
 
 RED='\033[0;31m'
@@ -62,8 +65,9 @@ log "已创建备份标签: $BACKUP_TAG"
 
 # 备份当前 nginx 配置
 if [ -f "$NGINX_CONF" ]; then
-    sudo cp "$NGINX_CONF" "${NGINX_CONF}.bak.$(date +%Y%m%d)"
-    log "已备份 nginx 配置"
+    sudo mkdir -p "$NGINX_BACKUP_DIR"
+    sudo cp "$NGINX_CONF" "$NGINX_BACKUP_DIR/cbprice.cn.bak.$(date +%Y%m%d-%H%M%S)"
+    log "已备份 nginx 配置到 $NGINX_BACKUP_DIR"
 fi
 
 # ===== 3. 拉取最新代码 =====
@@ -164,8 +168,11 @@ if sudo nginx -t 2>&1; then
 else
     # nginx 配置有误，恢复备份
     warn "nginx 配置验证失败！恢复旧配置..."
-    sudo cp "${NGINX_CONF}.bak.$(date +%Y%m%d)" "$NGINX_CONF"
-    sudo systemctl reload nginx
+    LATEST_BAK=$(ls -t "$NGINX_BACKUP_DIR"/cbprice.cn.bak.* 2>/dev/null | head -1)
+    if [ -n "$LATEST_BAK" ]; then
+        sudo cp "$LATEST_BAK" "$NGINX_CONF"
+        sudo systemctl reload nginx
+    fi
     error "nginx 配置有误，已恢复旧配置。请检查 deploy/nginx-cbprice.conf"
 fi
 
