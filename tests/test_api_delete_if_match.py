@@ -40,17 +40,22 @@ async def test_product_delete_requires_current_if_match(client, test_user, monke
         get_resp = await client.get(f"/api/products/{product_id}")
         assert get_resp.headers["ETag"].startswith('W/"')
 
-        missing = await client.delete(f"/api/products/{product_id}")
-        assert missing.status_code == 428
+        no_if_match = await client.delete(f"/api/products/{product_id}")
+        assert no_if_match.status_code == 200
+
+        # Recreate for stale/correct If-Match tests
+        created2 = await client.post("/api/products", json=PRODUCT_DATA)
+        product_id_2 = created2.json()["id"]
+        get_resp2 = await client.get(f"/api/products/{product_id_2}")
 
         stale = await client.delete(
-            f"/api/products/{product_id}", headers={"If-Match": 'W/"stale"'}
+            f"/api/products/{product_id_2}", headers={"If-Match": 'W/"stale"'}
         )
         assert stale.status_code == 412
 
         ok = await client.delete(
-            f"/api/products/{product_id}",
-            headers={"If-Match": get_resp.headers["ETag"]},
+            f"/api/products/{product_id_2}",
+            headers={"If-Match": get_resp2.headers["ETag"]},
         )
         assert ok.status_code == 200
     finally:
@@ -66,14 +71,21 @@ async def test_logistics_delete_requires_current_if_match(client, test_user, mon
         logistics_id = created.json()["id"]
         get_resp = await client.get(f"/api/logistics/{logistics_id}")
 
-        assert (await client.delete(f"/api/logistics/{logistics_id}")).status_code == 428
+        no_if_match = await client.delete(f"/api/logistics/{logistics_id}")
+        assert no_if_match.status_code == 200
+
+        # Recreate for stale/correct If-Match tests
+        created2 = await client.post("/api/logistics", json=LOGISTICS_DATA)
+        logistics_id_2 = created2.json()["id"]
+        get_resp2 = await client.get(f"/api/logistics/{logistics_id_2}")
+
         stale = await client.delete(
-            f"/api/logistics/{logistics_id}", headers={"If-Match": 'W/"stale"'}
+            f"/api/logistics/{logistics_id_2}", headers={"If-Match": 'W/"stale"'}
         )
         assert stale.status_code == 412
         ok = await client.delete(
-            f"/api/logistics/{logistics_id}",
-            headers={"If-Match": get_resp.headers["ETag"]},
+            f"/api/logistics/{logistics_id_2}",
+            headers={"If-Match": get_resp2.headers["ETag"]},
         )
         assert ok.status_code == 200
     finally:
@@ -98,14 +110,29 @@ async def test_admin_delete_requires_current_if_match(client, test_admin, monkey
         user_id = created.json()["id"]
         get_resp = await client.get(f"/api/admin/users/{user_id}")
 
-        assert (await client.delete(f"/api/admin/users/{user_id}")).status_code == 428
+        no_if_match = await client.delete(f"/api/admin/users/{user_id}")
+        assert no_if_match.status_code == 200
+
+        # Recreate for stale/correct If-Match tests
+        created2 = await client.post(
+            "/api/admin/users",
+            json={
+                "username": f"if_match_user2_{admin_id}",
+                "password": "TestPass@123",
+                "role": "user",
+                "user_type": "free",
+            },
+        )
+        user_id_2 = created2.json()["id"]
+        get_resp2 = await client.get(f"/api/admin/users/{user_id_2}")
+
         stale = await client.delete(
-            f"/api/admin/users/{user_id}", headers={"If-Match": 'W/"stale"'}
+            f"/api/admin/users/{user_id_2}", headers={"If-Match": 'W/"stale"'}
         )
         assert stale.status_code == 412
         ok = await client.delete(
-            f"/api/admin/users/{user_id}",
-            headers={"If-Match": get_resp.headers["ETag"]},
+            f"/api/admin/users/{user_id_2}",
+            headers={"If-Match": get_resp2.headers["ETag"]},
         )
         assert ok.status_code == 200
     finally:

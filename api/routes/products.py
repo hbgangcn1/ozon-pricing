@@ -213,7 +213,8 @@ async def delete_product_endpoint(
             existing = {"updated_at": 0}
         else:
             raise HTTPException(status_code=404, detail="产品不存在或删除失败")
-    _require_if_match(if_match, _etag_for(existing))
+    if if_match is not None:
+        _require_if_match(if_match, _etag_for(existing))
     success = await delete_product(session, product_id, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="产品不存在或删除失败")

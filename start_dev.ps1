@@ -143,18 +143,76 @@ function Stop-ProcessTree {
     }
 }
 
+# ── 等待端口就绪 + 按端口监控存活 ──────────────────────────────
+# 不能用 $backendProcess.HasExited / $frontendProcess.HasExited 判活：
+#   - uvicorn --reload 在 Windows 上是 reloader 父进程 + worker 子进程结构，
+#     Start-Process 拿到的是 reloader 句柄，它启动后会很快 detach/exit。
+#   - cmd /c npm run dev 同理：cmd.exe 启动 npm 后立刻退出，留下孙子 node.exe。
+# 正确做法：按端口 8003/3001 的 LISTENING 状态判定服务存活。
+function Test-PortListening {
+    param([int]$Port)
+    $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    return [bool]$conn
+}
+
+function Get-PortOwnerPids {
+    param([int]$Port)
+    $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    if (-not $conns) { return @() }
+    return @($conns | Select-Object -ExpandProperty OwningProcess -Unique)
+}
+
+function Stop-PortTree {
+    param([int]$Port)
+    $ownerPids = Get-PortOwnerPids -Port $Port
+    foreach ($ownerId in $ownerPids) {
+        $live = Get-Process -Id $ownerId -ErrorAction SilentlyContinue
+        if (-not $live) { continue }
+        try {
+            Write-Host "  关闭端口 $Port — $($live.ProcessName) (PID: $ownerId)" -ForegroundColor DarkYellow
+            taskkill /PID $ownerId /T /F 2>$null | Out-Null
+        } catch {}
+    }
+}
+
+# 等待端口就绪（最多 30s）
+Write-Host ''
+Write-Host '等待服务就绪...' -ForegroundColor Gray
+$backendUp = $false
+$frontendUp = $false
+for ($i = 0; $i -lt 60; $i++) {
+    if (-not $backendUp -and (Test-PortListening -Port 8003)) {
+        $backendUp = $true
+        Write-Host '  [OK] 后端 8003 已监听' -ForegroundColor Green
+    }
+    if (-not $frontendUp -and (Test-PortListening -Port 3001)) {
+        $frontendUp = $true
+        Write-Host '  [OK] 前端 3001 已监听' -ForegroundColor Green
+    }
+    if ($backendUp -and $frontendUp) { break }
+    Start-Sleep -Milliseconds 500
+}
+if (-not $backendUp)  { Write-Warning '后端 8003 在 30s 内未监听，请检查后端窗口是否报错。' }
+if (-not $frontendUp) { Write-Warning '前端 3001 在 30s 内未监听，请检查前端窗口是否报错。' }
+
 try {
-    # 轮询检测进程状态
+    # 按端口轮询：只要其中一个端口不再监听即认为服务挂了
     while ($true) {
-        if ($backendProcess.HasExited -and $frontendProcess.HasExited) {
-            Write-Host '后端和前端进程均已退出。' -ForegroundColor Yellow
+        $bAlive = Test-PortListening -Port 8003
+        $fAlive = Test-PortListening -Port 3001
+        if (-not $bAlive -and -not $fAlive) {
+            Write-Host '后端和前端端口均已释放（服务退出）。' -ForegroundColor Yellow
             break
         }
-        Start-Sleep -Seconds 1
+        Start-Sleep -Seconds 2
     }
 }
 finally {
     Write-Host '正在关闭开发环境...' -ForegroundColor Yellow
+    # 按端口关，覆盖所有 reloader/worker/cmd/node 子进程
+    Stop-PortTree -Port 8003
+    Stop-PortTree -Port 3001
+    # 兜底：原始 launcher 句柄（如果还活着）
     foreach ($proc in @($backendProcess, $frontendProcess)) {
         if ($proc -and -not $proc.HasExited) {
             Stop-ProcessTree -ParentId $proc.Id

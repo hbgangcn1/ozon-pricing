@@ -11,6 +11,7 @@
 
 import os
 from dotenv import load_dotenv
+from loguru import logger
 from wechat_pay_config import WeChatPayConfig
 load_dotenv(override=True)
 
@@ -38,10 +39,10 @@ class ProductionWeChatConfig(WeChatPayConfig):
 
         self._validate_config()
 
-        print("🌐 使用生产环境配置")
-        print(f"📡 域名: {self.domain}")
-        print(f"🔔 回调地址: {self.notify_url}")
-        print(f"🏠 返回地址: {self.return_url}")
+        logger.info("使用生产环境配置")
+        logger.info(f"域名: {self.domain}")
+        logger.info(f"回调地址: {self.notify_url}")
+        logger.info(f"返回地址: {self.return_url}")
 
     def _validate_config(self):
         """验证配置完整性"""
@@ -61,8 +62,8 @@ class ProductionWeChatConfig(WeChatPayConfig):
                 missing_configs.append(env_name)
 
         if missing_configs:
-            print(f"⚠️ 警告: 以下环境变量未设置: {', '.join(missing_configs)}")
-            print("请在生产服务器上设置这些环境变量")
+            logger.warning(f"以下环境变量未设置: {', '.join(missing_configs)}")
+            logger.warning("请在生产服务器上设置这些环境变量")
 
     @property
     def api_base_url(self) -> str:

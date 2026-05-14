@@ -165,7 +165,7 @@ def _calculate_fast(client: httpx.Client, product_data: dict) -> dict:
 
 
 def _deactivate_all_logistics(client: httpx.Client) -> list[int]:
-    resp = client.get("/api/logistics", params={"limit": 1000})
+    resp = client.get("/api/logistics", params={"limit": 200})
     data = _assert_ok(resp, 200)
     items = data["items"]
     deactivated_ids = []
@@ -231,7 +231,7 @@ def test_add_pool_record_to_my_logistics_transfers_volume_fields(
         add_data = _assert_ok(add_response, 200)
         created_logistics_id = add_data["id"]
 
-        logistics_response = api_client.get("/api/logistics", params={"limit": 1000})
+        logistics_response = api_client.get("/api/logistics", params={"limit": 200})
         logistics_data = _assert_ok(logistics_response, 200)
         logistics_items = logistics_data["items"]
         created_item = next(

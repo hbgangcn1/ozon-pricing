@@ -216,7 +216,8 @@ async def delete_user(
             target = _Target()
         else:
             raise HTTPException(status_code=404, detail="用户不存在或删除失败")
-    _require_if_match(if_match, _etag_for_user(target))
+    if if_match is not None:
+        _require_if_match(if_match, _etag_for_user(target))
 
     success = await db_admin.delete_user_admin(session, user_id, admin)
     if not success:

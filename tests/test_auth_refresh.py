@@ -195,3 +195,65 @@ class TestRefreshAccessEndpoint:
 
         assert response.status_code == 401
         assert "会话" in response.json()["detail"]
+
+
+class TestRefreshEndpoint:
+    @pytest.fixture(autouse=True)
+    def _bypass_csrf(self):
+        from unittest.mock import patch
+        with patch("api.routes.auth.refresh.validate_cookie_csrf"):
+            yield
+
+    @pytest.mark.asyncio
+    async def test_missing_refresh_cookie_returns_401(self, client):
+        response = await client.post("/api/auth/refresh")
+        assert response.status_code == 401
+        assert "刷新令牌" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_successful_refresh_returns_new_token(self, client, test_user, db_session):
+        sid = "refresh-success"
+        await _insert_active_session(db_session, test_user["id"], sid)
+        _set_refresh_cookie(client, create_refresh_token(user_id=test_user["id"], sid=sid))
+
+        response = await client.post("/api/auth/refresh")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert response.cookies.get("refresh_token") is not None
+
+    @pytest.mark.asyncio
+    async def test_inactive_session_returns_401(self, client, test_user, db_session):
+        sid = "refresh-inactive-main"
+        await _insert_active_session(db_session, test_user["id"], sid)
+        session_row = await db_session.get(ActiveSession, sid)
+        session_row.is_active = False
+        await db_session.commit()
+        _set_refresh_cookie(client, create_refresh_token(user_id=test_user["id"], sid=sid))
+
+        response = await client.post("/api/auth/refresh")
+
+        assert response.status_code == 401
+        assert "会话" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_frozen_user_returns_401(self, client, frozen_user, db_session):
+        sid = "refresh-frozen-main"
+        await _insert_active_session(db_session, frozen_user["id"], sid)
+        _set_refresh_cookie(client, create_refresh_token(user_id=frozen_user["id"], sid=sid))
+
+        response = await client.post("/api/auth/refresh")
+
+        assert response.status_code == 401
+        assert "失效" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_user_returns_401(self, client, db_session):
+        sid = "refresh-nonexist-main"
+        await _insert_active_session(db_session, 999998, sid)
+        _set_refresh_cookie(client, create_refresh_token(user_id=999998, sid=sid))
+
+        response = await client.post("/api/auth/refresh")
+
+        assert response.status_code == 401

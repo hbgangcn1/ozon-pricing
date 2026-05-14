@@ -254,7 +254,8 @@ async def delete_logistics_endpoint(
             existing = {"updated_at": 0}
         else:
             raise HTTPException(status_code=404, detail="物流规则不存在或删除失败")
-    _require_if_match(if_match, _etag_for(existing))
+    if if_match is not None:
+        _require_if_match(if_match, _etag_for(existing))
     count = await delete_logistics(session, logistics_id, user_id)
     if count == 0:
         raise HTTPException(status_code=404, detail="物流规则不存在或删除失败")
