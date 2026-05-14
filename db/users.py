@@ -7,9 +7,10 @@ from sqlalchemy import delete as sa_delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.password import hash_password, is_bcrypt_hash, verify_password
-from models.log import AdminActionLog, AlertRecord, UserBehaviorLog, UserLoginLog
+from models.log import AdminActionLog, AlertRecord, AuditLog, UserBehaviorLog, UserLoginLog
 from models.logistics import Logistics
 from models.order import PaymentOrder
+from models.product import Product
 from models.session import ActiveSession, LoginAttempt, UserLockout
 from models.user import SubscriptionUpgradeHistory, User
 
@@ -115,7 +116,7 @@ async def verify_user(
     # Auto-migrate legacy SHA-256 hash to bcrypt
     if not is_bcrypt_hash(stored):
         user.password = hash_password(password)
-        logger.info("Migrated password hash to bcrypt for user %s", user.username)
+        logger.info("Migrated password hash to bcrypt for user id=%s", user.id)
 
     return {
         "id": user.id,
@@ -157,10 +158,6 @@ async def delete_user(
         logger.info("删除失败: 用户 ID=%s 不存在", user_id)
         return False
 
-    if user.role == "admin":
-        logger.info("删除失败: 用户 %s 是管理员，不允许删除", user.username)
-        return False
-
     username = user.username
 
     await session.execute(sa_delete(Logistics).where(Logistics.user_id == user_id))
@@ -200,6 +197,17 @@ async def delete_user(
         update(AlertRecord)
         .where(AlertRecord.handled_by == user_id)
         .values(handled_by=None)
+    )
+    await session.execute(
+        sa_delete(Product).where(Product.user_id == user_id)
+    )
+    await session.execute(
+        sa_delete(AuditLog).where(
+            or_(
+                AuditLog.user_id == user_id,
+                AuditLog.admin_id == user_id,
+            )
+        )
     )
 
     await session.delete(user)

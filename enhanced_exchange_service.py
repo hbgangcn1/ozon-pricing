@@ -107,6 +107,8 @@ class EnhancedExchangeRateService:
             USDLocalFallbackProvider(),
         ]
 
+    _MAX_LOCAL_STORAGE_BYTES = 1024 * 1024  # 1 MB
+
     def _save_to_local_storage(self, exchange_rate_data: ExchangeRateData):
         """保存到本地存储"""
         try:
@@ -118,9 +120,13 @@ class EnhancedExchangeRateService:
                 "confidence": exchange_rate_data.confidence,
                 "saved_at": time.time(),
             }
+            raw = json.dumps(storage_data, ensure_ascii=False, indent=2)
+            if len(raw.encode("utf-8")) > self._MAX_LOCAL_STORAGE_BYTES:
+                logger.warning("汇率本地缓存数据超过大小限制，跳过写入")
+                return
 
             with open(self.local_storage_file, "w", encoding="utf-8") as f:
-                json.dump(storage_data, f, ensure_ascii=False, indent=2)
+                f.write(raw)
 
         except Exception as e:
             logger.warning(f"保存到本地存储失败: {e}")

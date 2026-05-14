@@ -436,9 +436,26 @@ async def test_delete_user_not_found(db_session):
     assert result is False
 
 
-async def test_delete_user_admin_blocked(db_session, test_admin):
-    result = await delete_user(db_session, test_admin["id"])
-    assert result is False
+async def test_delete_user_admin_can_be_deleted(db_session, test_admin):
+    from models.user import User
+
+    tmp_admin = User(
+        username=f"tmp_adm_{int(time.time() * 1000)}",
+        password="hashed",
+        role="admin",
+        user_type="free",
+        subscription_type="free",
+        remaining_calculations=10,
+        created_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        is_test_user=1,
+    )
+    db_session.add(tmp_admin)
+    await db_session.flush()
+    await db_session.commit()
+    tmp_id = tmp_admin.id
+
+    result = await delete_user(db_session, tmp_id)
+    assert result is True
 
 
 async def test_delete_user_cleans_alert_record(db_session):

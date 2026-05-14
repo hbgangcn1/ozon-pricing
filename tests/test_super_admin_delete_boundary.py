@@ -3,14 +3,12 @@
 
 注意：当前 codebase 没有 `is_super_admin` 字段。
 "超级管理员" = `users.id == 1`（在 `api/routes/admin.py` 中硬编码）。
-所有 `role == 'admin'` 的用户在 `db.admin.delete_user_admin` 中
-被一律拒绝删除（视为对管理员账号的整体保护）。
+仅 `users.id == 1` 被保护，其他 `role == 'admin'` 的用户可以被删除。
 
 本测试针对实际存在的权限边界进行覆盖：
   1. 普通 admin 试图删除 super-admin (id=1)  → 400 "不能删除超级管理员"
   2. super-admin (id=1) 删除普通 user        → 200 删除成功
-  3. 任何 admin 试图删除另一名 admin         → 404 (db 层拒绝，等价于
-     "保留至少 1 个 admin 账号"的最弱边界保护)
+  3. 任何 admin 删除另一名 admin (非 id=1)  → 200 删除成功
 
 夹具：使用 `app.dependency_overrides[require_admin]` 注入调用者身份，
 DB 走真实 PostgreSQL（worker schema 隔离）。
@@ -198,31 +196,24 @@ async def test_super_admin_can_delete_normal_user(
 
 
 @pytest.mark.asyncio
-async def test_cannot_delete_last_super_admin_via_admin_protection(
+async def test_admin_can_delete_another_admin(
     normal_admin,
     second_admin,
     http_client,
 ):
-    """任意 admin 删除另一名 admin 必须被拒绝。
+    """普通 admin 可以删除另一名 admin（非 id=1）。
 
-    当前 codebase 中"超级管理员"概念退化为 id==1 唯一存在，
-    因此"至少保留一个 super-admin"的最弱不变量等价于
-    "不能从 db 删除任何 admin 角色用户"。
-    `db.admin.delete_user_admin` 在 user.role=='admin' 时返回 False，
-    route 层将其映射为 404 "用户不存在或删除失败"。
-
-    本测试断言：第二个 admin 也不能被普通 admin 删除（保护管理员群体）。
+    仅 users.id==1 被路由层保护，其他 admin 可被正常删除。
     """
     _override_admin(normal_admin["id"])
     target_id = second_admin["id"]
     resp = await http_client.delete(f"/api/admin/users/{target_id}")
-    # db 层拒绝 admin 删除 → route 层 404；若未来加入显式 409 也接受
-    assert resp.status_code in (404, 409, 400), (
-        f"admin 用户删除必须被拒绝，实际 {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"admin 删除另一名 admin 应成功，实际 {resp.status_code}: {resp.text}"
     )
+    assert resp.json().get("message") == "删除成功"
 
-    # 验证目标 admin 仍然存在
+    # 验证目标 admin 确已被删除
     async with AsyncSessionLocal() as session:
-        still = await session.get(User, target_id)
-        assert still is not None, "被拒绝删除的 admin 必须仍存在"
-        assert still.role == "admin"
+        gone = await session.get(User, target_id)
+        assert gone is None, "已被删除的 admin 必须不存在"

@@ -152,8 +152,10 @@ def _calc_stats(candidates, best_log, best_cost):
         mn = log_dict.get("min_days", 0)
         mx = log_dict.get("max_days", 0)
         all_times.append((mn + mx) / 2)
-    avg_cost = sum(all_costs) / len(all_costs) if all_costs else 0
-    avg_time = sum(all_times) / len(all_times) if all_times else 0
+    valid_costs = [c for c in all_costs if c is not None]
+    valid_times = [t for t in all_times if t is not None]
+    avg_cost = sum(valid_costs) / len(valid_costs) if valid_costs else 0
+    avg_time = sum(valid_times) / len(valid_times) if valid_times else 0
     cost_saving = (
         ((avg_cost - best_cost) / avg_cost * 100) if best_cost and avg_cost > 0 else 0
     )

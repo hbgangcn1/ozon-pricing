@@ -64,7 +64,6 @@ async function switchToPreciseModeAndOpenCommissionDropdown(page) {
   } catch (e) {
     // 若已经在 dropdown 打开前发出 → 不会再触发,继续走断言
     // 但仍记录,便于诊断
-    // eslint-disable-next-line no-console
     console.warn('[diag] waitForResponse(/commission-categories) timed out:', e.message);
   }
 

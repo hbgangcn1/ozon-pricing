@@ -2,6 +2,7 @@ import json
 import logging
 import time
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import delete as sa_delete, func, select, text
@@ -176,11 +177,15 @@ async def _get_revenue_stats_orm(
             PaymentOrder.created_at >= month_start,
         ),
     )
+
+    def _cents_to_yuan(cents):
+        return float(Decimal(str(cents or 0)) / Decimal("100"))
+
     return {
-        "total_revenue": round((total or 0) / 100.0, 2),
-        "revenue_today": round((today_rev or 0) / 100.0, 2),
-        "revenue_yesterday": round((yest_rev or 0) / 100.0, 2),
-        "revenue_month": round((month_rev or 0) / 100.0, 2),
+        "total_revenue": _cents_to_yuan(total),
+        "revenue_today": _cents_to_yuan(today_rev),
+        "revenue_yesterday": _cents_to_yuan(yest_rev),
+        "revenue_month": _cents_to_yuan(month_rev),
     }
 
 
@@ -382,10 +387,10 @@ async def get_monthly_revenue(
     if not rows:
         return []
 
-    totals: dict[str, float] = {}
+    totals: dict[str, Decimal] = {}
     for amount, created_at in rows:
         month_label = _month_start(datetime.fromtimestamp(created_at)).strftime("%Y-%m")
-        totals[month_label] = totals.get(month_label, 0.0) + amount / 100.0
+        totals[month_label] = totals.get(month_label, Decimal("0")) + Decimal(str(amount)) / Decimal("100")
 
     month_labels = [
         _shift_month(earliest_month, offset).strftime("%Y-%m")
@@ -394,7 +399,7 @@ async def get_monthly_revenue(
     return [
         {
             "month": label,
-            "revenue": round(totals.get(label, 0.0), 2),
+            "revenue": float(totals.get(label, Decimal("0"))),
         }
         for label in month_labels
     ]

@@ -153,7 +153,7 @@ def create_all_in_schema(schema_name: str) -> None:
     try:
         with sync_engine.begin() as conn:
             conn.execute(text(f'SET search_path TO "{schema_name}"'))
-            Base.metadata.create_all(bind=conn, checkfirst=False)
+            Base.metadata.create_all(bind=conn, checkfirst=True)
     finally:
         sync_engine.dispose()
 

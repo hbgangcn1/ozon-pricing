@@ -19,6 +19,7 @@ from api.models.schemas import (
 from api.middleware.login_limiter import login_limiter
 from api.middleware.username_check_limiter import username_check_limiter
 from api.routes.auth_support import clear_token_cookies, set_token_cookie
+from db.logging_utils import log_user_login
 from logger_config import logger
 
 from ._router import router
@@ -67,9 +68,17 @@ async def login(
         user["username"],
         client_ip,
     )
-    if await auth.reset_user_daily_calculations(session, user["id"]):
-        await session.commit()
+    await auth.reset_user_daily_calculations(session, user["id"])
     refreshed_user = await auth.get_user_by_id(session, user["id"])
+    if refreshed_user:
+        refreshed_user.last_login = str(int(time.time()))
+        await log_user_login(
+            session=session,
+            user_id=user["id"],
+            ip_address=client_ip,
+            user_agent=request.headers.get("user-agent", ""),
+        )
+        await session.commit()
     access_token, refresh_token = await issue_auth_tokens(
         session=session,
         request=request,
@@ -238,7 +247,7 @@ async def logout(
                 reason="manual_logout",
             )
         except (auth.TokenExpiredError, auth.TokenInvalidError):
-            pass
+            logger.debug("Logout: refresh token decode failed, continuing")
     response = JSONResponse(
         content=MessageResponse(message="登出成功").model_dump(),
     )

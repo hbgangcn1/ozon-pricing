@@ -504,11 +504,27 @@ class TestDeleteUserAdmin:
         result = await delete_user_admin(db_session, 999999999, test_admin["id"])
         assert result is False
 
-    async def test_admin_cannot_be_deleted(self, db_session, test_admin):
+    async def test_admin_can_be_deleted(self, db_session, test_admin):
         from db.admin import delete_user_admin
+        from models.user import User
 
-        result = await delete_user_admin(db_session, test_admin["id"], test_admin["id"])
-        assert result is False
+        tmp_admin = User(
+            username=f"tmp_admin_del_{int(time.time() * 1000)}",
+            password="hashed",
+            role="admin",
+            user_type="free",
+            subscription_type="free",
+            remaining_calculations=10,
+            created_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+            is_test_user=1,
+        )
+        db_session.add(tmp_admin)
+        await db_session.flush()
+        await db_session.commit()
+        tmp_id = tmp_admin.id
+
+        result = await delete_user_admin(db_session, tmp_id, test_admin["id"])
+        assert result is True
 
     async def test_success_deletes_user(self, db_session, test_admin):
         from db.admin import delete_user_admin

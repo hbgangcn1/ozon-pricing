@@ -15,7 +15,7 @@ from db.users import create_user
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
 
 
-def _etag_for_user(user: User) -> str:
+def _etag_for_user(user) -> str:
     return f'W/"{getattr(user, "updated_at", 0) or 0}"'
 
 

@@ -41,7 +41,17 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(
 )
 TOKEN_TYPE_ACCESS = "access"
 TOKEN_TYPE_REFRESH = "refresh"
-_REVOKED_REFRESH_JTIS: set[str] = set()
+_REVOKED_REFRESH_JTIS: dict[str, float] = {}
+
+
+def _revoked_jtis_cleanup() -> None:
+    """Remove expired entries from the in-memory revoked-jti map."""
+    cutoff = datetime.now(timezone.utc).timestamp() - (
+        REFRESH_TOKEN_EXPIRE_DAYS * 86400 + 3600
+    )
+    stale = [jti for jti, ts in _REVOKED_REFRESH_JTIS.items() if ts < cutoff]
+    for jti in stale:
+        _REVOKED_REFRESH_JTIS.pop(jti, None)
 
 
 def _get_secret_key() -> str:
@@ -261,14 +271,9 @@ def decode_refresh_token(token: str) -> dict:
 
 
 def revoke_refresh_token_jti(jti: object) -> None:
-    """Add a refresh-token jti to the in-process deny set.
-
-    [SEC-W12R2-03] Minimal rotation guard. TODO: persist refresh-token jti
-    issuance/revocation in PostgreSQL or Redis so revocation survives process
-    restarts and works across gunicorn workers.
-    """
     if isinstance(jti, str) and jti:
-        _REVOKED_REFRESH_JTIS.add(jti)
+        _revoked_jtis_cleanup()
+        _REVOKED_REFRESH_JTIS[jti] = datetime.now(timezone.utc).timestamp()
 
 
 def get_user_id_from_token(token: str) -> int:

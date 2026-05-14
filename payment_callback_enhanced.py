@@ -149,6 +149,12 @@ class PaymentCallbackEnhanced:
     ) -> Dict[str, Any]:
         """添加订单到重试队列"""
         with self.retry_lock:
+            current_time = time.time()
+            self.retry_queue = [
+                r for r in self.retry_queue
+                if current_time - (r.enqueued_at or r.first_attempt_time)
+                <= self.RETRY_QUEUE_TTL_SECONDS
+            ]
             existing = next(
                 (r for r in self.retry_queue if r.order_id == order_id), None
             )

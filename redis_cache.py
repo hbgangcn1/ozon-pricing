@@ -35,7 +35,7 @@ REDIS_AVAILABLE = _redis_available
 _redis_client: Optional[Any] = None
 _redis_init_failed: bool = False  # 标记Redis是否初始化失败，避免反复超时重试
 _redis_fail_time: float = 0.0  # 失败时间戳
-_REDIS_RETRY_INTERVAL = 300  # 失败后 300 秒才重试
+_REDIS_RETRY_INTERVAL = 60  # 失败后 60 秒重试（更积极恢复）
 _redis_lock = threading.Lock()  # 保护初始化的线程锁
 
 # 缓存配置

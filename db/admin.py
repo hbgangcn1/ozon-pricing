@@ -272,10 +272,6 @@ async def delete_user_admin(
     user = await session.get(User, user_id)
     if not user:
         return False
-    if user.role == "admin":
-        logger.info("删除失败: 不允许删除管理员账号及其数据")
-        return False
-
     username = user.username or f"ID:{user_id}"
     from db.users import delete_user
 

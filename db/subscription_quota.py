@@ -2,7 +2,7 @@ import logging
 import math
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,7 +131,10 @@ def check_test_status(user_info, user_type):
         }
     try:
         first_login_date = datetime.fromisoformat(first_login)
-        days_elapsed = (datetime.now() - first_login_date).days
+        if first_login_date.tzinfo is None:
+            days_elapsed = (datetime.now() - first_login_date).days
+        else:
+            days_elapsed = (datetime.now(timezone.utc) - first_login_date).days
         remaining_days = 7 - days_elapsed
         if remaining_days <= 0:
             return {

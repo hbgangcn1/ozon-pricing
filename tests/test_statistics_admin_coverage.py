@@ -38,9 +38,9 @@ class TestStatisticsErrorPaths:
 
     @pytest.mark.asyncio
     async def test_parse_date_filter_invalid_format(self, client, admin_token):
+        client.cookies.set("access_token", admin_token)
         response = await client.get(
             "/api/statistics/login-logs?date_from=invalid",
-            cookies={"access_token": admin_token},
         )
         assert response.status_code == 400
         assert "日期格式" in response.json()["detail"]
@@ -49,10 +49,10 @@ class TestStatisticsErrorPaths:
     async def test_overview_new_users_exception_fallback(self, client, admin_token):
         from api.routes import statistics as stats_mod
 
+        client.cookies.set("access_token", admin_token)
         with patch.object(stats_mod, "count_new_users_today", new=AsyncMock(side_effect=RuntimeError("db down"))):
             response = await client.get(
                 "/api/statistics/overview",
-                cookies={"access_token": admin_token},
             )
 
         assert response.status_code == 200
@@ -73,35 +73,35 @@ class TestAdminErrorPaths:
 
     @pytest.mark.asyncio
     async def test_get_user_detail_not_found(self, client, admin_token):
+        client.cookies.set("access_token", admin_token)
         response = await client.get(
             "/api/admin/users/999999",
-            cookies={"access_token": admin_token},
         )
         assert response.status_code == 404
         assert "用户不存在" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_delete_super_admin_blocked(self, client, admin_token):
+        client.cookies.set("access_token", admin_token)
         response = await client.delete(
             "/api/admin/users/1",
-            cookies={"access_token": admin_token},
         )
         assert response.status_code == 400
         assert "超级管理员" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_delete_user_not_found(self, client, admin_token):
+        client.cookies.set("access_token", admin_token)
         response = await client.delete(
             "/api/admin/users/999999",
-            cookies={"access_token": admin_token},
         )
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_reset_password_user_not_found(self, client, admin_token):
+        client.cookies.set("access_token", admin_token)
         response = await client.post(
             "/api/admin/users/999999/reset-password",
-            cookies={"access_token": admin_token},
         )
         assert response.status_code == 404
         assert "用户不存在" in response.json()["detail"]

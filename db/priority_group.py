@@ -39,6 +39,8 @@ def _compute_for_type(items: list[dict]) -> dict[int, str]:
         return result
 
     n = len(valid)
+    if n == 0:
+        return result
     avg_min = sum(it["min_days"] for it in valid) / n
     avg_max = sum(it["max_days"] for it in valid) / n
     avg_avg = sum((it["min_days"] + it["max_days"]) / 2 for it in valid) / n

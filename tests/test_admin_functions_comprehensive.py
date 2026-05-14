@@ -589,8 +589,8 @@ class TestDeleteUserAdmin:
             user = await session.get(User, user_id)
             assert user is None
 
-    async def test_delete_user_admin_protect_admin(self, clean_db):
-        """测试保护管理员账号
+    async def test_delete_user_admin_can_delete_admin(self, clean_db):
+        """测试管理员可以删除其他管理员账号
         clean_db 参数是 pytest fixture，会自动清理测试数据
         """
         sfx = _suffix()
@@ -598,17 +598,17 @@ class TestDeleteUserAdmin:
         async with AsyncSessionLocal() as session:
             admin_id = await create_user(
                 session,
-                f"admin_protect_{sfx}",
+                f"admin_del_{sfx}",
                 "Admin123!@#Test",
                 role="admin",
-                email=f"admin_protect_{sfx}@test.com",
+                email=f"admin_del_{sfx}@test.com",
                 is_test_user=True,
             )
             await session.commit()
 
             if admin_id is None:
-                pytest.fail(f"Failed to create admin user: admin_protect_{sfx}")
+                pytest.fail(f"Failed to create admin user: admin_del_{sfx}")
 
             result = await delete_user_admin(session, admin_id, admin_id)
 
-        assert result is False
+        assert result is True
