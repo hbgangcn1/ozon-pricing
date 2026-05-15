@@ -99,6 +99,7 @@ node_modules/
 !AUDIT_REPORT.md
 !SHIP_READINESS.md
 !openspec/**/*.md
+!frontend/src/最终用户协议.md
 !LICENSE
 
 # 项目特定文件
