@@ -165,6 +165,13 @@ function SubscriptionPage() {
     return limit === -1 ? '无限' : `${limit}个`
   }, [])
 
+  const formatDateTime = useCallback((timestamp) => {
+    if (!timestamp || timestamp <= 0) return ''
+    const date = new Date(timestamp * 1000)
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  }, [])
+
   const checkIsCurrentPlan = useCallback((planCode) => {
     const activePlanCode = currentPlan?.plan_code || user?.subscription_type || user?.user_type || 'free'
     return activePlanCode === planCode || (user?.role === 'admin' && planCode === 'free')
@@ -206,8 +213,15 @@ function SubscriptionPage() {
                 <span>计算次数: <strong className="text-text-primary">{user?.role === 'admin' ? '无限次' : getCalcLimitText(currentPlan?.calc_limit || -1)}</strong></span>
                 <span>物流模板: <strong className="text-text-primary">{getLogisticsLimitText(currentPlan?.logistics_limit || 1)}</strong></span>
               </div>
+              {currentPlan?.expired_at && (
+                <div className="text-sm text-text-secondary mb-2">
+                  到期时间: <strong className="text-text-primary">{formatDateTime(Number(currentPlan.expired_at))}</strong>
+                </div>
+              )}
               <div className="flex gap-2">
-                <Badge variant="outline" className="border-status-success/30 text-status-success">永久有效</Badge>
+                {!currentPlan?.expired_at && (
+                  <Badge variant="outline" className="border-status-success/30 text-status-success">永久有效</Badge>
+                )}
                 <Badge variant="outline" className="border-primary/30 text-primary-dim">计算次数无限</Badge>
               </div>
             </div>

@@ -116,6 +116,34 @@ describe('SubscriptionPage', () => {
     })
   })
 
+  it('shows expiry time for paid subscription', async () => {
+    subscriptionsAPI.getCurrent.mockResolvedValue({
+      plan_code: 'efficiency',
+      calc_limit: 50,
+      logistics_limit: 3,
+      expired_at: '1893456000',
+    })
+    render(<SubscriptionPage />)
+    await waitFor(() => {
+      expect(screen.getByText(/到期时间:/)).toBeInTheDocument()
+      expect(screen.getByText('2030-01-01 08:00:00')).toBeInTheDocument()
+    })
+  })
+
+  it('does not show expiry time for free plan', async () => {
+    subscriptionsAPI.getCurrent.mockResolvedValue({
+      plan_code: 'free',
+      calc_limit: -1,
+      logistics_limit: 1,
+      expired_at: null,
+    })
+    render(<SubscriptionPage />)
+    await waitFor(() => {
+      expect(screen.queryByText(/到期时间:/)).not.toBeInTheDocument()
+      expect(screen.getByText('永久有效')).toBeInTheDocument()
+    })
+  })
+
   it('enterprise shows "开发中……" text instead of button', async () => {
     render(<SubscriptionPage />)
     await waitFor(() => {
