@@ -40,18 +40,18 @@
 
 ## 6. 部署上线
 
-- [ ] 6.1 `git add` + `git commit` 描述根因 + 修复 + 测试覆盖
-- [ ] 6.2 `git push origin main`
-- [ ] 6.3 SSH 拉代码:`ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && git pull origin main 2>&1 | tail -5'`
-- [ ] 6.4 后台启动 deploy:`ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && nohup bash deploy/deploy.sh > /tmp/deploy.log 2>&1 < /dev/null & disown; echo started'`
-- [ ] 6.5 `Start-Sleep -Seconds 30` 后跟日志:`ssh SSH_USER@SERVER_IP 'tail -30 /tmp/deploy.log'`,确认 deploy.sh 11 步全部通过
+- [x] 6.1 `git add` + `git commit` 描述根因 + 修复 + 测试覆盖
+- [x] 6.2 `git push origin main`
+- [x] 6.3 SSH 拉代码:`ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && git pull origin main 2>&1 | tail -5'`
+- [x] 6.4 后台启动 deploy:`ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && nohup bash deploy/deploy.sh > /tmp/deploy.log 2>&1 < /dev/null & disown; echo started'`
+- [x] 6.5 `Start-Sleep -Seconds 30` 后跟日志:`ssh SSH_USER@SERVER_IP 'tail -30 /tmp/deploy.log'`,确认 deploy.sh 11 步全部通过
 
 ## 7. 线上回归
 
-- [ ] 7.1 公网健康:`(Invoke-WebRequest https://www.cbprice.cn/api/exchange/rates -TimeoutSec 10).StatusCode` = 200
-- [ ] 7.2 浏览器登录 https://www.cbprice.cn admin → 精准定价 → 佣金类目下拉含"日化用品"截图
-- [ ] 7.3 强刷 + 重新登录场景重测,确认无回归
+- [x] 7.1 公网健康:`(Invoke-WebRequest https://www.cbprice.cn/api/exchange/rates -TimeoutSec 10).StatusCode` = 200
+- [x] 7.2 浏览器登录 https://www.cbprice.cn admin → 精准定价 → 佣金类目下拉含"日化用品"截图
+- [x] 7.3 强刷 + 重新登录场景重测,确认无回归
 
 ## 8. 凭据维护
 
-- [ ] 8.1 更新 `.sisyphus/credentials.local.md` admin user_id 字段为 `159043`
+- [x] 8.1 更新 `.sisyphus/credentials.local.md` admin user_id 字段为 `159043`
