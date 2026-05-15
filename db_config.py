@@ -64,13 +64,12 @@ if CONNECTION_POOL_MAX < CONNECTION_POOL_SIZE:
     )
 _pool_overflow = CONNECTION_POOL_MAX - CONNECTION_POOL_SIZE
 if CONNECTION_POOL_SIZE + _pool_overflow > 30:
-    logging.getLogger(__name__).warning(
+    logging.getLogger(__name__).debug(
         "DB pool per-worker budget is high: pool_size=%s, max_overflow=%s, "
-        "per_worker_total=%s; with 3 gunicorn workers this approximates %s total connections",
+        "per_worker_total=%s",
         CONNECTION_POOL_SIZE,
         _pool_overflow,
         CONNECTION_POOL_SIZE + _pool_overflow,
-        (CONNECTION_POOL_SIZE + _pool_overflow) * 3,
     )
 
 

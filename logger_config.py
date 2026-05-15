@@ -135,6 +135,63 @@ class SensitiveFormatter:
             flags=re.IGNORECASE,
         )
 
+        # 脱敏数据库密码模式（POSTGRES_PASSWORD=xxx）
+        message = re.sub(
+            r"(POSTGRES_PASSWORD)\s*[:=]\s*[^\s,;}\]]+",
+            r"\1=****",
+            message,
+            flags=re.IGNORECASE,
+        )
+
+        # 脱敏密钥模式（JWT_SECRET_KEY=xxx, SESSION_HMAC_SECRET=xxx）
+        message = re.sub(
+            r"(JWT_SECRET_KEY|SESSION_HMAC_SECRET)\s*[:=]\s*[^\s,;}\]]+",
+            r"\1=****",
+            message,
+            flags=re.IGNORECASE,
+        )
+
+        # 脱敏微信支付密钥模式（WECHAT_API_V3_KEY=xxx）
+        message = re.sub(
+            r"(WECHAT_API_V3_KEY)\s*[:=]\s*[^\s,;}\]]+",
+            r"\1=****",
+            message,
+            flags=re.IGNORECASE,
+        )
+
+        # 脱敏数据库连接 URL 中的密码（postgresql://user:password@host）
+        message = re.sub(
+            r"(postgresql://[^:]+):([^@]+)@",
+            r"\1:****@",
+            message,
+            flags=re.IGNORECASE,
+        )
+
+        # 脱敏密钥在自然语言中的泄露（无 = 分隔的情况）
+        # 例: "the jwt secret key is abcdef123", "session_hmac_secret is xyz"
+        # Pattern 1: 下划线格式密钥名 + 连接器 + 值
+        message = re.sub(
+            r"(\b(?:jwt_secret_key|session_hmac_secret|wechat_api_v3_key|postgres_password))\s+(?:is|equals|=|:|为)\s+([A-Za-z0-9!@#$%^&*()_+=/-]+)",
+            r"\1 ****",
+            message,
+            flags=re.IGNORECASE,
+        )
+        # Pattern 2: 空格分隔的自然语言 + 连接器 + 值
+        message = re.sub(
+            r"(\b(?:jwt secret key|session hmac secret|wechat api v3 key|postgres password))\s+(?:is|equals|=|:|为)\s+([A-Za-z0-9!@#$%^&*()_+=/-]+)",
+            r"\1 ****",
+            message,
+            flags=re.IGNORECASE,
+        )
+
+        # 脱敏 Authorization Bearer token
+        message = re.sub(
+            r"(Authorization\s*[:=]\s*Bearer\s+)([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*|[A-Za-z0-9_-]+)",
+            r"\1****",
+            message,
+            flags=re.IGNORECASE,
+        )
+
         # 脱敏支付金额模式（金额=xxx, amount=xxx, 支付金额=xxx等）
         # 增强：匹配更多金额格式（包括分单位）
         amount_pattern = (

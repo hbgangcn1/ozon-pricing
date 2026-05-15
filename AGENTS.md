@@ -222,6 +222,34 @@ ssh SSH_USER@SERVER_IP 'cd /var/www/ozon-pricing && bash deploy/rollback.sh pre-
 ### 通信语言
 - 中文
 
+### 安全编码 — 日志与敏感信息（必须遵守）
+
+> 历史教训：生产环境 `.env` 内容曾通过日志 / SSH stdout 泄露，包含 `JWT_SECRET_KEY`、`SESSION_HMAC_SECRET`、`WECHAT_API_V3_KEY`、`POSTGRES_PASSWORD` 等核心凭证。
+
+**禁止事项**
+- ❌ `print(os.environ)`、`logger.info(os.environ)` 或任何形式的完整环境变量输出
+- ❌ `logger.info(get_db_url())` — `get_db_url()` 返回的 URL 含明文数据库密码，禁止直接打印
+- ❌ `logger.info(f"Config: {JWT_SECRET_KEY}")` — 禁止打印任何密钥、密码、token 的值
+- ❌ 通过 SSH 将生产 `.env` 完整内容回传本地（如需查单个字段，只回传目标值）
+
+**必须事项**
+- ✅ 所有日志消息必须先经过 `SensitiveFormatter.sanitize_message()` 处理后再输出
+- ✅ 如需在日志中记录数据库连接状态，使用 `get_db_url_masked()`（或手动脱敏密码部分）
+- ✅ 新增密钥类环境变量时，同步在 `logger_config.py` 的 `sanitize_message()` 中加脱敏规则
+- ✅ 代码审查时必须检查：是否有新增的 `print` / `logger.xxx` 调用涉及敏感配置
+
+**脱敏覆盖清单（`logger_config.py`）**
+以下模式必须被 `sanitize_message()` 自动脱敏：
+- `password` / `pwd` / `passwd` / `POSTGRES_PASSWORD`
+- `JWT_SECRET_KEY` / `SESSION_HMAC_SECRET`
+- `WECHAT_API_V3_KEY`
+- 数据库连接 URL 中的密码部分（`postgresql://user:****@host`）
+- `transaction_id` / `order_id` / `user_id` / `amount` / `phone` / `email` / `card`
+
+**生产服务器操作安全**
+- SSH 查询数据库时，优先使用 `psql -f query.sql` 或服务器端 Python 脚本，避免将 `.env` 完整内容带回本地
+- 查询结果如需回传，只回传必要的非敏感字段（如 `created_at`、`username`）
+
 ### skill_mcp 工具调用规约（必须遵守，防止 "missing operation" 错误）
 
 > ⚠️ **历史教训**：subagent 调用 `skill_mcp` 时只传 `mcp_name`，缺操作字段，导致工具拒绝并报 "missing operation"。
