@@ -32,15 +32,15 @@ function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
     }
 
     if (!isMountedRef.current) return
-    const nextDelay = Math.min(currentDelay * 2, 30000)
-    timeoutRef.current = setTimeout(() => poll(nextDelay), nextDelay)
+      const nextDelay = 1500
+      timeoutRef.current = setTimeout(() => poll(nextDelay), nextDelay)
   }, [orderId, isPolling, onStatusUpdate])
 
   useEffect(() => {
     isMountedRef.current = true
     if (isPolling && orderId) {
       abortControllerRef.current = new AbortController()
-      timeoutRef.current = setTimeout(() => poll(3000), 3000)
+      timeoutRef.current = setTimeout(() => poll(1500), 1000)
     }
 
     return () => {
@@ -138,7 +138,7 @@ export default function PaymentQRDialog({
       if (timersRef.current.success) clearTimeout(timersRef.current.success)
       timersRef.current.success = setTimeout(() => {
         onOpenChange(false)
-      }, 3000)
+      }, 500)
     } else if (res.trade_state === 'CLOSED') {
       setState('expired')
     }
