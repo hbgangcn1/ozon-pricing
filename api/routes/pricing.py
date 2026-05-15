@@ -217,7 +217,7 @@ async def calculate(
 
         if mode == "precise":
             user = await session.get(User, user_id)
-            if user and get_effective_plan(user) in ("free", "efficiency"):
+            if user and user.role != "admin" and get_effective_plan(user) in ("free", "efficiency"):
                 raise HTTPException(
                     status_code=403, detail="免费版和效率版用户不能使用精准模式"
                 )
@@ -324,7 +324,7 @@ async def calculate_grouped(
 
         if mode == "precise":
             user = await session.get(User, user_id)
-            if user and get_effective_plan(user) in ("free", "efficiency"):
+            if user and user.role != "admin" and get_effective_plan(user) in ("free", "efficiency"):
                 raise HTTPException(
                     status_code=403, detail="免费版和效率版用户不能使用精准模式"
                 )
