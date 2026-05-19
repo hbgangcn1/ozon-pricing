@@ -155,7 +155,7 @@ async def test_unknown_user_returns_false(db_session):
 
 
 @pytest.mark.asyncio
-async def test_unknown_user_type_returns_false(db_session, test_user):
+async def test_unknown_user_type_fallback_to_free(db_session, test_user):
     uid = test_user["id"]
     await _set_user(db_session, uid, role="user",
                     subscription_type="some_unknown_plan", remaining=5)
@@ -163,9 +163,11 @@ async def test_unknown_user_type_returns_false(db_session, test_user):
     ok = await decrement_user_calculations(db_session, uid)
     await db_session.commit()
 
-    assert ok is False
-    user = await db_session.get(User, uid)
-    assert user.remaining_calculations == 5
+    assert ok is True
+    fresh = await db_session.execute(
+        select(User.remaining_calculations).where(User.id == uid)
+    )
+    assert fresh.scalar_one() == 4
 
 
 @pytest.mark.asyncio

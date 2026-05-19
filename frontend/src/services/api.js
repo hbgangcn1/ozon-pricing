@@ -255,6 +255,7 @@ export const statisticsAPI = {
   getLoginLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '', options = {}) => apiClient.get('/statistics/login-logs', { params: { page, page_size: pageSize, search: search || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }, ...options }),
   getAdminLogs: (page = 1, pageSize = 20, search = '', dateFrom = '', dateTo = '', options = {}) => apiClient.get('/statistics/admin-logs', { params: { page, page_size: pageSize, search: search || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }, ...options }),
   getActiveUsers: (options = {}) => apiClient.get('/statistics/active-users', options),
+  getOrders: (page = 1, pageSize = 20, search = '', status = '', dateFrom = '', dateTo = '', options = {}) => apiClient.get('/statistics/orders', { params: { page, page_size: pageSize, search: search || undefined, status: status || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }, ...options }),
 }
 
 export const commissionCategoriesAPI = {

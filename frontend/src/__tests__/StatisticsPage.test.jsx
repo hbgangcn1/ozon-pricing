@@ -13,6 +13,7 @@ const statisticsAPI = {
   getLoginLogs: vi.fn(),
   getAdminLogs: vi.fn(),
   getActiveUsers: vi.fn(),
+  getOrders: vi.fn(),
 }
 
 vi.mock('lucide-react', () => ({
@@ -93,6 +94,24 @@ vi.mock('../components/ui/progress', () => ({
   Progress: ({ value, className }) => <div className={className} data-progress={value} />,
 }))
 
+vi.mock('../components/ui/select', () => ({
+  Select: ({ children, value, onValueChange }) => (
+    <div data-select-value={value}>
+      {children}
+      <select data-testid="mock-select" value={value} onChange={(e) => onValueChange(e.target.value)}>
+        <option value="all">全部</option>
+        <option value="PENDING">PENDING</option>
+        <option value="SUCCESS">SUCCESS</option>
+        <option value="FAILED">FAILED</option>
+      </select>
+    </div>
+  ),
+  SelectTrigger: ({ children }) => <div>{children}</div>,
+  SelectContent: ({ children }) => <div>{children}</div>,
+  SelectItem: ({ children, value }) => <div data-value={value}>{children}</div>,
+  SelectValue: ({ placeholder }) => <span>{placeholder}</span>,
+}))
+
 const overviewPayload = {
   total_users: 42,
   active_users: 18,
@@ -152,6 +171,22 @@ const adminPayload = {
   page_size: 20,
 }
 
+const ordersPayload = {
+  items: [
+    {
+      order_id: 'ORD_001',
+      username: 'robert',
+      amount: 99.0,
+      order_type: 'professional',
+      status: 'SUCCESS',
+      created_at: '1778000000',
+    },
+  ],
+  total: 5,
+  page: 1,
+  page_size: 20,
+}
+
 function setupApiMocks() {
   statisticsAPI.getOverview.mockResolvedValue(overviewPayload)
   statisticsAPI.getRetention.mockResolvedValue(retentionPayload)
@@ -159,6 +194,7 @@ function setupApiMocks() {
   statisticsAPI.getLoginLogs.mockResolvedValue(loginPayload)
   statisticsAPI.getAdminLogs.mockResolvedValue(adminPayload)
   statisticsAPI.getActiveUsers.mockResolvedValue(activePayload)
+  statisticsAPI.getOrders.mockResolvedValue(ordersPayload)
 }
 
 describe('StatisticsPage', async () => {
@@ -190,7 +226,7 @@ describe('StatisticsPage', async () => {
     })
   })
 
-  it('renders all six tabs', () => {
+  it('renders all seven tabs', () => {
     render(<StatisticsPage />)
 
     expect(screen.getByRole('tab', { name: '总览' })).toBeInTheDocument()
@@ -199,6 +235,7 @@ describe('StatisticsPage', async () => {
     expect(screen.getByRole('tab', { name: '充值与收入' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '操作日志' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '登录记录' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '订单记录' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: '异常监控' })).not.toBeInTheDocument()
   })
 
@@ -329,5 +366,61 @@ describe('StatisticsPage', async () => {
     clickSpy.mockRestore()
     appendSpy.mockRestore()
     removeSpy.mockRestore()
+  })
+
+  it('renders orders tab with table columns and data', async () => {
+    render(<StatisticsPage />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '订单记录' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('columnheader', { name: '订单号' })).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: '用户名' })).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: '金额' })).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: '套餐类型' })).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: '状态' })).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: '创建时间' })).toBeInTheDocument()
+      expect(screen.getByText('ORD_001')).toBeInTheDocument()
+      expect(screen.getByText('robert')).toBeInTheDocument()
+      expect(screen.getByText('共 5 条')).toBeInTheDocument()
+    })
+  })
+
+  it('passes search text to orders API after debounce', async () => {
+    render(<StatisticsPage />)
+
+    await waitFor(() => {
+      expect(statisticsAPI.getOrders).toHaveBeenCalledWith(1, 20, '', '', '', '')
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: '订单记录' }))
+    fireEvent.change(screen.getByPlaceholderText('搜索用户/订单号'), {
+      target: { value: 'robert' },
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 400))
+    })
+
+    await waitFor(() => {
+      expect(statisticsAPI.getOrders).toHaveBeenLastCalledWith(1, 20, 'robert', '', '', '')
+    })
+  })
+
+  it('passes status filter to orders API', async () => {
+    render(<StatisticsPage />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '订单记录' }))
+
+    await waitFor(() => {
+      expect(statisticsAPI.getOrders).toHaveBeenCalled()
+    })
+
+    const select = screen.getByTestId('mock-select')
+    fireEvent.change(select, { target: { value: 'SUCCESS' } })
+
+    await waitFor(() => {
+      expect(statisticsAPI.getOrders).toHaveBeenLastCalledWith(1, 20, '', 'SUCCESS', '', '')
+    })
   })
 })

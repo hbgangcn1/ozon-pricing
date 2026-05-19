@@ -32,19 +32,13 @@ async def decrement_user_calculations(
         user_role = getattr(user, "role", None)
         if user_role == "admin":
             return True
-        user_type_raw = (
-            getattr(user, "subscription_type", None)
-            or getattr(user, "user_type", None)
-            or ""
-        )
-        if not isinstance(user_type_raw, str):
-            return True
-        user_type = user_type_raw.strip()
+        from services.plan_resolution import get_effective_plan
+        effective_plan = get_effective_plan(user)
     except Exception:
         logger.warning("获取用户信息失败，跳过计算次数扣减", exc_info=True)
         return True
 
-    if user_type in [
+    if effective_plan in [
         "admin",
         "permanent",
         "enterprise",
@@ -55,7 +49,7 @@ async def decrement_user_calculations(
     ]:
         return True
 
-    if user_type in ("free", "monthly"):
+    if effective_plan in ("free", "monthly"):
         try:
             result = await session.execute(
                 update(User)
@@ -97,6 +91,9 @@ async def reset_user_daily_calculations(
     try:
         user = await session.get(User, user_id)
         if not user:
+            return False
+        from services.plan_resolution import is_in_trial
+        if is_in_trial(user):
             return False
 
         plan_lookup = _patched_get_plan_by_code()

@@ -20,6 +20,7 @@ from db.statistics import (
     get_monthly_revenue,
     get_revenue_stats,
 )
+from db.orders import get_all_orders
 from api.models.schemas import DecimalField
 from api.dependencies import require_admin
 
@@ -83,6 +84,22 @@ class LoginLogPage(BaseModel):
 
 class AdminLogPage(BaseModel):
     items: List[AdminLog]
+    total: int
+    page: int
+    page_size: int
+
+
+class OrderItem(BaseModel):
+    order_id: str
+    username: str
+    amount: float
+    order_type: str
+    status: str
+    created_at: str
+
+
+class OrderPage(BaseModel):
+    items: List[OrderItem]
     total: int
     page: int
     page_size: int
@@ -379,3 +396,36 @@ async def get_active_users(
         "trend_daily": _format_trend(daily, yesterday_daily),
         "trend_weekly": _format_trend(weekly, last_week_weekly),
     }
+
+
+@router.get("/orders", response_model=OrderPage)
+async def get_orders(
+    admin: int = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str = Query("", max_length=100),
+    status: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+):
+    start_ts = _parse_date_filter(date_from)
+    end_ts = _parse_date_filter(date_to, end_of_day=True)
+
+    data = await get_all_orders(
+        session,
+        page=page,
+        page_size=page_size,
+        search=search,
+        status=status,
+        date_from=start_ts,
+        date_to=end_ts,
+    )
+
+    items = [OrderItem(**row) for row in data["orders"]]
+    return OrderPage(
+        items=items,
+        total=data["total"],
+        page=page,
+        page_size=page_size,
+    )

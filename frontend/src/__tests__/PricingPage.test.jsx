@@ -33,7 +33,11 @@ vi.mock('../services/api', () => ({
 }));
 
 vi.mock('../stores/authStore', () => {
-  const useAuthStore = vi.fn()
+  const useAuthStore = vi.fn(() => ({
+    user: null,
+    hasProfessionalAccess: () => false,
+    isInTrial: () => false,
+  }))
   useAuthStore.getState = vi.fn(() => ({
     hasProfessionalAccess: () => true,
     setUser: vi.fn(),
@@ -255,10 +259,9 @@ describe('PricingPage', () => {
     </MemoryRouter>
   );
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useAuthStore.mockReturnValue({ user: mockUser });
-    useAuthStore.getState.mockReturnValue({
+beforeEach(() => {
+useAuthStore.mockReturnValue({ user: mockUser, hasProfessionalAccess: () => false, isInTrial: () => false });
+useAuthStore.getState.mockReturnValue({
       hasProfessionalAccess: () => true,
       setUser: vi.fn(),
     });
@@ -358,8 +361,8 @@ describe('PricingPage', () => {
   });
 
   it('shows precise mode disabled label for free users', () => {
-    useAuthStore.mockReturnValue({ user: { ...mockUser, user_type: 'free' } });
-    useAuthStore.getState.mockReturnValue({
+useAuthStore.mockReturnValue({ user: { ...mockUser, user_type: 'free' }, hasProfessionalAccess: () => false, isInTrial: () => false });
+useAuthStore.getState.mockReturnValue({
       hasProfessionalAccess: () => false,
       setUser: vi.fn(),
     });
@@ -368,7 +371,7 @@ describe('PricingPage', () => {
   });
 
   it('shows precise mode enabled label for professional users', () => {
-    useAuthStore.mockReturnValue({ user: { ...mockUser, user_type: 'professional' } });
+    useAuthStore.mockReturnValue({ user: { ...mockUser, user_type: 'professional' }, hasProfessionalAccess: () => true, isInTrial: () => false });
     renderPage();
     expect(screen.getByText('精准模式')).toBeInTheDocument();
   });
@@ -471,7 +474,7 @@ describe('PricingPage', () => {
 
   it('includes commission_category_id when creating a product in precise mode', async () => {
     const mockUser = { id: 1, username: 'testuser', role: 'user', user_type: 'professional' };
-    useAuthStore.mockReturnValue({ user: mockUser });
+    useAuthStore.mockReturnValue({ user: mockUser, hasProfessionalAccess: () => false, isInTrial: () => false });
     productsAPI.create.mockResolvedValue({ id: 100, name: '佣金类目测试', commission_category_id: null });
 
     renderPage();
@@ -496,7 +499,7 @@ describe('PricingPage', () => {
 
   it('loads products with commission_category_id from API', async () => {
     const mockUser = { id: 1, username: 'testuser', role: 'user', user_type: 'professional' };
-    useAuthStore.mockReturnValue({ user: mockUser });
+    useAuthStore.mockReturnValue({ user: mockUser, hasProfessionalAccess: () => false, isInTrial: () => false });
     productsAPI.getAll.mockResolvedValue([
       {
         id: 1,

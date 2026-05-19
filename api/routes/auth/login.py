@@ -212,7 +212,7 @@ async def register(
             role="user",
             user_type="free",
             subscription_type="free",
-            remaining_calculations=-1,
+            remaining_calculations=10,
             has_security_question=bool(
                 user_data.security_question and user_data.security_answer
             ),

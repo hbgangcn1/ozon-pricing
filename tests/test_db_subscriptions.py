@@ -523,13 +523,22 @@ async def test_decrement_monthly_user_zero_remaining(db_session, test_user):
     assert await decrement_user_calculations(db_session, test_user["id"]) is False
 
 
-async def test_decrement_unknown_type_returns_false(db_session, test_user):
+async def test_decrement_unknown_type_fallback_to_free(db_session, test_user):
+    from sqlalchemy import select
+    from models.user import User
+
     await update_user_subscription(
         db_session,
         test_user["id"],
         {"subscription_type": "unknown_xyz", "user_type": "unknown_xyz"},
     )
-    assert await decrement_user_calculations(db_session, test_user["id"]) is False
+    ok = await decrement_user_calculations(db_session, test_user["id"])
+    await db_session.commit()
+    assert ok is True
+    fresh = await db_session.execute(
+        select(User.remaining_calculations).where(User.id == test_user["id"])
+    )
+    assert fresh.scalar_one() == 9
 
 
 async def test_reset_free_users_returns_int(db_session):

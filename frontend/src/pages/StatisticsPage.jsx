@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Badge } from '../components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '../components/ui/select'
 import { Progress } from '../components/ui/progress'
 import { statisticsAPI } from '../services/api'
 
@@ -110,17 +111,25 @@ function StatisticsPage() {
   const [loginDateTo, setLoginDateTo] = useState('')
   const [adminDateFrom, setAdminDateFrom] = useState('')
   const [adminDateTo, setAdminDateTo] = useState('')
+  const [ordersPage, setOrdersPage] = useState(emptyPage)
+  const [orderPage, setOrderPage] = useState(1)
+  const [orderSearchInput, setOrderSearchInput] = useState('')
+  const [orderSearch, setOrderSearch] = useState('')
+  const [orderStatus, setOrderStatus] = useState('')
+  const [orderDateFrom, setOrderDateFrom] = useState('')
+  const [orderDateTo, setOrderDateTo] = useState('')
 
   const fetchData = useCallback(async (signal) => {
     setLoading(true)
     try {
-      const [overviewRes, retentionRes, revenueRes, loginRes, adminRes, activeRes] = await Promise.all([
+      const [overviewRes, retentionRes, revenueRes, loginRes, adminRes, activeRes, ordersRes] = await Promise.all([
         statisticsAPI.getOverview(),
         statisticsAPI.getRetention(),
         statisticsAPI.getRevenue(),
         statisticsAPI.getLoginLogs(loginPage, PAGE_SIZE, loginSearch, loginDateFrom, loginDateTo),
         statisticsAPI.getAdminLogs(adminPage, PAGE_SIZE, adminSearch, adminDateFrom, adminDateTo),
         statisticsAPI.getActiveUsers(),
+        statisticsAPI.getOrders(orderPage, PAGE_SIZE, orderSearch, orderStatus, orderDateFrom, orderDateTo),
       ])
 
       if (!signal?.aborted) {
@@ -130,6 +139,7 @@ function StatisticsPage() {
         setLoginLogsPage(loginRes)
         setAdminLogsPage(adminRes)
         setActiveData(activeRes)
+        setOrdersPage(ordersRes)
       }
     } catch {
       // initial load failure is handled by existing empty-state UI
@@ -138,7 +148,7 @@ function StatisticsPage() {
         setLoading(false)
       }
     }
-  }, [adminDateFrom, adminDateTo, adminPage, adminSearch, loginDateFrom, loginDateTo, loginPage, loginSearch])
+  }, [adminDateFrom, adminDateTo, adminPage, adminSearch, loginDateFrom, loginDateTo, loginPage, loginSearch, orderDateFrom, orderDateTo, orderPage, orderSearch, orderStatus])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -159,6 +169,15 @@ function StatisticsPage() {
   }, [adminSearchInput])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setOrderSearch(orderSearchInput.trim())
+      setOrderPage(1)
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [orderSearchInput])
+
+  useEffect(() => {
     const controller = new AbortController()
 
     void fetchData(controller.signal)
@@ -167,6 +186,7 @@ function StatisticsPage() {
 
   const loginLogs = useMemo(() => loginLogsPage.items ?? [], [loginLogsPage.items])
   const adminLogs = useMemo(() => adminLogsPage.items ?? [], [adminLogsPage.items])
+  const orders = useMemo(() => ordersPage.items ?? [], [ordersPage.items])
 
   const handleLoginExport = useCallback(() => {
     downloadCsv(
@@ -213,6 +233,7 @@ function StatisticsPage() {
           <TabsTrigger value="revenue">充值与收入</TabsTrigger>
           <TabsTrigger value="logs">操作日志</TabsTrigger>
           <TabsTrigger value="loginLogs">登录记录</TabsTrigger>
+          <TabsTrigger value="orders">订单记录</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -469,6 +490,82 @@ function StatisticsPage() {
                   pageSize={loginLogsPage.page_size}
                   total={loginLogsPage.total}
                   onPageChange={setLoginPage}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="orders">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <CardTitle>订单记录</CardTitle>
+                <div className="flex flex-col md:flex-row gap-2">
+                  <div className="relative w-full md:w-48">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+                    <Input
+                      placeholder="搜索用户/订单号"
+                      className="pl-10 transition-all duration-200"
+                      value={orderSearchInput}
+                      onChange={(e) => setOrderSearchInput(e.target.value)}
+                    />
+                  </div>
+                  <Select value={orderStatus} onValueChange={(v) => { setOrderStatus(v); setOrderPage(1) }}>
+                    <SelectTrigger className="w-full md:w-32">
+                      <SelectValue placeholder="全部状态" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部</SelectItem>
+                      <SelectItem value="PENDING">PENDING</SelectItem>
+                      <SelectItem value="SUCCESS">SUCCESS</SelectItem>
+                      <SelectItem value="FAILED">FAILED</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input type="date" value={orderDateFrom} onChange={(e) => { setOrderDateFrom(e.target.value); setOrderPage(1) }} />
+                  <Input type="date" value={orderDateTo} onChange={(e) => { setOrderDateTo(e.target.value); setOrderPage(1) }} />
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-40">订单号</TableHead>
+                    <TableHead className="w-32">用户名</TableHead>
+                    <TableHead className="w-24">金额</TableHead>
+                    <TableHead className="w-32">套餐类型</TableHead>
+                    <TableHead className="w-24">状态</TableHead>
+                    <TableHead className="w-48">创建时间</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orders.map((order) => (
+                    <TableRow key={order.order_id}>
+                      <TableCell className="font-medium font-mono text-sm">{order.order_id}</TableCell>
+                      <TableCell>{order.username}</TableCell>
+                      <TableCell>¥{Number(order.amount).toFixed(2)}</TableCell>
+                      <TableCell>{order.order_type}</TableCell>
+                      <TableCell>
+                        <Badge variant={order.status === 'SUCCESS' ? 'default' : order.status === 'FAILED' ? 'destructive' : 'secondary'}>
+                          {order.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-text-secondary">
+                        {order.created_at ? new Date(Number(order.created_at) * 1000).toLocaleString('zh-CN') : ''}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-surface-high">
+                <p className="text-sm text-text-secondary">共 {ordersPage.total} 条</p>
+                <PaginationControls
+                  page={ordersPage.page}
+                  pageSize={ordersPage.page_size}
+                  total={ordersPage.total}
+                  onPageChange={setOrderPage}
                 />
               </div>
             </CardContent>

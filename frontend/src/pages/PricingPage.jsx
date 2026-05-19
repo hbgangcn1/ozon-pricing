@@ -7,10 +7,24 @@ import PricingResultPanel from './pricing/PricingResultPanel'
 import { usePricingCalculation } from './pricing/usePricingCalculation'
 
 export default function PricingPage() {
-  const { user } = useAuthStore()
+  const { user, hasProfessionalAccess, isInTrial } = useAuthStore()
   const pricing = usePricingCalculation(user)
-  const isPreciseDisabled = user?.user_type === 'free' || user?.user_type === 'efficiency'
+  const inTrial = isInTrial()
+  const hasProAccess = hasProfessionalAccess()
+
+  const isPreciseDisabled = (user?.user_type === 'free' || user?.user_type === 'efficiency') && !inTrial
   const preciseLabel = isPreciseDisabled ? '精准模式（限专业版/企业版）' : '精准模式'
+
+  const isLimitedCalcTier = !hasProAccess
+    && user?.subscription_type !== 'efficiency'
+    && user?.user_type !== 'efficiency'
+
+  const remainingCalcText = (() => {
+    const rc = user?.remaining_calculations
+    if (rc > 0) return `剩余 ${rc} 次计算`
+    if (rc === 0) return '今日计算次数已用完，请明天再来或升级套餐'
+    return '剩余 10 次计算'
+  })()
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -29,9 +43,9 @@ export default function PricingPage() {
         </div>
       )}
 
-      {['free', 'monthly'].includes(user?.user_type) && (
+      {isLimitedCalcTier && (
         <div className="text-xs text-muted-foreground text-center mb-2">
-          剩余 {user?.remaining_calculations ?? 0} 次计算
+          {remainingCalcText}
         </div>
       )}
 

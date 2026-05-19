@@ -63,6 +63,7 @@
 | MEM-2 | ✅ | `postgres_backup_service.py` | 自动备份停止时线程 join 超时从 10s 提升到 30s |
 | MEM-3 | ✅ | `exchange_service_providers.py` | 共享 requests.Session 统一经 `_session_lock` 保护；所有 `session.request()`/`get()` 调用改为锁内执行 |
 | DB-6 | ✅ | `db_config.py`, `database.py` | 连接池预算与 3-worker 关系已文档化；启动时若单 worker `pool_size + max_overflow` > 30 记录 warning |
+| B32 | ✅ | `db/subscription_quota.py` | 免费版用户领取7天专业版试用后，计算定价仍被限制在10次 — 根因: `decrement_user_calculations()` 仅读取 `subscription_type`（试用期间仍为 `"free"`），完全不检查 `trial_expires_at`；`reset_user_daily_calculations()` 也未识别试用状态 — 已修复: (1) `decrement_user_calculations` 改用 `get_effective_plan(user)` 判断有效套餐，试用期间视为 `"professional"` 放行 (2) `reset_user_daily_calculations` 增加 `is_in_trial(user)` 检查，试用中跳过重置 (3) 新增 `tests/test_subscription_quota_trial.py` 5 个测试覆盖试用中/过期/真实 professional 场景 (4) 全量回归 2573 passed, 4 skipped, 0 failed |
 
 ---
 
