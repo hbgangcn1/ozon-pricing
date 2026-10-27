@@ -20,7 +20,6 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const UserManagementPage = lazy(() => import('./pages/UserManagementPage'))
 const PlanManagementPage = lazy(() => import('./pages/PlanManagementPage'))
 const StatisticsPage = lazy(() => import('./pages/StatisticsPage'))
-const AboutPage = lazy(() => import('./pages/AboutPage'))
 const CommissionCategoriesPage = lazy(() => import('./pages/CommissionCategoriesPage'))
 const LogisticsPoolPage = lazy(() => import('./pages/LogisticsPoolPage'))
 const ProductImportPage = lazy(() => import('./pages/ProductImportPage'))
@@ -144,7 +143,6 @@ function App() {
                   </AdminRoute>
                 }
               />
-              <Route path="/about" element={<AboutPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

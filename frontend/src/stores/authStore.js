@@ -3,7 +3,7 @@ import { useProductStore } from './productStore'
 import { useLogisticsStore } from './logisticsStore'
 import { authAPI } from '../services/api'
 
-const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment', '/about']
+const userPages = ['/pricing', '/logistics', '/account', '/subscription', '/payment']
 const PROFESSIONAL_TIERS = ['professional', 'enterprise', 'gratitude', 'test']
 const ENTERPRISE_TIERS = ['enterprise', 'gratitude', 'test']
 const initialSessionKicked = { open: false, reason: null }

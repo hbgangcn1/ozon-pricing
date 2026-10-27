@@ -37,7 +37,6 @@ vi.mock('../pages/SettingsPage', () => ({ default: () => <div data-testid="page-
 vi.mock('../pages/UserManagementPage', () => ({ default: () => <div data-testid="page-users">users</div> }))
 vi.mock('../pages/PlanManagementPage', () => ({ default: () => <div data-testid="page-plans">plans</div> }))
 vi.mock('../pages/StatisticsPage', () => ({ default: () => <div data-testid="page-statistics">statistics</div> }))
-vi.mock('../pages/AboutPage', () => ({ default: () => <div data-testid="page-about">about</div> }))
 vi.mock('../pages/CommissionCategoriesPage', () => ({ default: () => <div data-testid="page-commission-categories">commission categories</div> }))
 vi.mock('../pages/LogisticsPoolPage', () => ({ default: () => <div data-testid="page-logistics-pool">logistics pool</div> }))
 vi.mock('../pages/ProductImportPage', () => ({ default: () => <div data-testid="page-product-import">product import</div> }))

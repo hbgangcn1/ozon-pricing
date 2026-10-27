@@ -7,11 +7,6 @@ import { Eye, EyeOff, Package, Loader2, AlertCircle, Check, X } from 'lucide-rea
 import { toast } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
 import { authAPI, settingsAPI } from '../services/api';
-import eulaContent from '../最终用户协议.md?raw';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import { Checkbox } from '../components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import PasswordStrengthIndicator from '../components/PasswordStrengthIndicator';
 
 const registerSchema = z.object({
@@ -41,8 +36,6 @@ function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [agreedToEULA, setAgreedToEULA] = useState(false);
-  const [eulaDialogOpen, setEulaDialogOpen] = useState(false);
   const [openRegistration, setOpenRegistration] = useState(null);
   const [securityQuestions, setSecurityQuestions] = useState(securityQuestionsFallback);
 
@@ -116,10 +109,6 @@ function RegisterPage() {
   }, [usernameValue]);
 
   const onSubmit = async (data) => {
-    if (!agreedToEULA) {
-      toast.error('请阅读并同意最终用户协议');
-      return;
-    }
     if (usernameStatus.state === 'taken') {
       toast.error(usernameStatus.reason || '用户名已被占用');
       return;
@@ -345,25 +334,6 @@ function RegisterPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
-            <Checkbox
-              checked={agreedToEULA}
-              onCheckedChange={(checked) => setAgreedToEULA(!!checked)}
-              className="text-text-secondary"
-              data-testid="eula-checkbox"
-            />
-            <span className="text-text-secondary text-sm">
-              我已阅读并同意
-              <button
-                type="button"
-                onClick={() => setEulaDialogOpen(true)}
-                className="text-primary hover:text-primary-dim ml-1 transition-colors font-medium"
-              >
-                《最终用户协议》
-              </button>
-            </span>
-          </div>
-
           <button
             type="submit"
             disabled={loading}
@@ -387,19 +357,6 @@ function RegisterPage() {
           </div>
         </form>
       </div>
-
-      <Dialog open={eulaDialogOpen} onOpenChange={setEulaDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-surface border-surface-highest">
-          <DialogHeader>
-            <DialogTitle className="text-text-primary font-headline">最终用户协议</DialogTitle>
-          </DialogHeader>
-          <style>{`.eula-content p { margin-bottom: 16px; } .eula-content h1 { margin: 20px 0 12px; font-size: 1.1em; font-weight: 700; } .eula-content h2 { margin: 20px 0 10px; font-size: 1em; font-weight: 700; } .eula-content h3 { margin: 16px 0 8px; font-size: 0.95em; font-weight: 600; } .eula-content ul, .eula-content ol { margin: 12px 0; padding-left: 24px; } .eula-content li { margin-bottom: 6px; }`}</style>
-          <div
-            className="eula-content text-text-secondary text-sm leading-relaxed mt-4 max-w-none"
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(eulaContent)) }}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

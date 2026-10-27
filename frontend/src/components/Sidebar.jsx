@@ -10,7 +10,6 @@ import {
   Users, 
   Gift, 
   BarChart3, 
-  Info,
   RefreshCw,
   Upload,
   FolderOpen
@@ -116,7 +115,6 @@ const menuItems = [
   { path: '/users', icon: Users, label: '用户管理', adminOnly: true },
   { path: '/plans', icon: Gift, label: '方案管理', adminOnly: true },
   { path: '/statistics', icon: BarChart3, label: '数据统计', adminOnly: true },
-  { path: '/about', icon: Info, label: '关于系统', adminOnly: false },
 ];
 
 export default function Sidebar({ mobileMenuOpen, setMobileMenuOpen }) {

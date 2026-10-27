@@ -47,32 +47,6 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('../最终用户协议.md?raw', () => ({ default: '# EULA Content' }));
-
-vi.mock('marked', () => ({
-  marked: {
-    parse: vi.fn(() => '<h1>EULA Content</h1>'),
-  },
-}));
-
-vi.mock('../components/ui/checkbox', () => ({
-  Checkbox: ({ checked, onCheckedChange, className }) => (
-    <input
-      type="checkbox"
-      checked={checked}
-      onChange={(e) => onCheckedChange(e.target.checked)}
-      className={className}
-      data-testid="eula-checkbox"
-    />
-  ),
-}));
-
-vi.mock('../components/ui/dialog', () => ({
-  Dialog: ({ children, open }) => (open ? <div data-testid="dialog">{children}</div> : null),
-  DialogContent: ({ children }) => <div>{children}</div>,
-  DialogHeader: ({ children }) => <div>{children}</div>,
-  DialogTitle: ({ children }) => <h2>{children}</h2>,
-}));
 
 describe('RegisterPage', () => {
   const mockSetAuth = vi.fn();
@@ -148,36 +122,6 @@ describe('RegisterPage', () => {
     });
   });
 
-  it('shows error when EULA not agreed', async () => {
-    renderComponent();
-    fireEvent.change(screen.getByPlaceholderText(/请输入用户名/), { target: { value: 'validuser' } });
-    fireEvent.change(screen.getByPlaceholderText(/13位以上/), { target: { value: 'ValidPassword123!' } });
-    fireEvent.change(screen.getByPlaceholderText(/请再次输入密码/), { target: { value: 'ValidPassword123!' } });
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
-    fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
-    
-    fireEvent.click(screen.getByRole('button', { name: '注册' }));
-    
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('请阅读并同意最终用户协议');
-    });
-  });
-
-  it('EULA checkbox and dialog interaction', async () => {
-    renderComponent();
-    
-    expect(screen.queryByTestId('dialog')).not.toBeInTheDocument();
-    
-    fireEvent.click(screen.getByText('《最终用户协议》'));
-    expect(screen.getByTestId('dialog')).toBeInTheDocument();
-    expect(screen.getByText('最终用户协议')).toBeInTheDocument();
-    
-    const checkbox = screen.getByTestId('eula-checkbox');
-    expect(checkbox.checked).toBe(false);
-    fireEvent.click(checkbox);
-    expect(checkbox.checked).toBe(true);
-  });
-
   it('calls authAPI.register and setAuth + navigates on success', async () => {
     renderComponent();
     
@@ -190,8 +134,6 @@ describe('RegisterPage', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
     fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
     
-    const checkbox = screen.getByTestId('eula-checkbox');
-    fireEvent.click(checkbox);
 
     fireEvent.click(screen.getByRole('button', { name: '注册' }));
 
@@ -219,8 +161,6 @@ describe('RegisterPage', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
     fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
     
-    const checkbox = screen.getByTestId('eula-checkbox');
-    fireEvent.click(checkbox);
 
     fireEvent.click(screen.getByRole('button', { name: '注册' }));
 
@@ -274,7 +214,6 @@ describe('RegisterPage', () => {
     fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), {
       target: { value: 'answer' },
     });
-    fireEvent.click(screen.getByTestId('eula-checkbox'));
 
     fireEvent.click(screen.getByRole('button', { name: '注册' }));
 
@@ -317,8 +256,6 @@ describe('RegisterPage', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '您母亲的姓氏是什么？' } });
     fireEvent.change(screen.getByPlaceholderText(/请输入安全答案/), { target: { value: 'answer' } });
     
-    const checkbox = screen.getByTestId('eula-checkbox');
-    fireEvent.click(checkbox);
 
     fireEvent.click(screen.getByRole('button', { name: '注册' }));
 
