@@ -13,7 +13,7 @@ function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
   const isMountedRef = useRef(true)
   const abortControllerRef = useRef(null)
 
-  const poll = useCallback(async (currentDelay = 3000) => {
+  const poll = useCallback(async () => {
     if (!isPolling || !orderId || !isMountedRef.current) return
 
     try {
@@ -33,14 +33,14 @@ function usePaymentPolling(orderId, isPolling, onStatusUpdate) {
 
     if (!isMountedRef.current) return
       const nextDelay = 1500
-      timeoutRef.current = setTimeout(() => poll(nextDelay), nextDelay)
+      timeoutRef.current = setTimeout(() => poll(), nextDelay)
   }, [orderId, isPolling, onStatusUpdate])
 
   useEffect(() => {
     isMountedRef.current = true
     if (isPolling && orderId) {
       abortControllerRef.current = new AbortController()
-      timeoutRef.current = setTimeout(() => poll(1500), 1000)
+      timeoutRef.current = setTimeout(() => poll(), 1000)
     }
 
     return () => {
