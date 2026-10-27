@@ -388,35 +388,6 @@ function RegisterPage() {
         </form>
       </div>
 
-      {/* 备案信息 */}
-      <div className="flex justify-center items-center space-x-6 mt-6 opacity-60 hover:opacity-100 transition-opacity duration-300 pb-4">
-        <div className="text-xs text-text-secondary">
-          <a
-            href="https://beian.miit.gov.cn/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-text-primary transition-colors"
-          >
-            ICP备案号：粤ICP备2025471825号-1
-          </a>
-        </div>
-        <div className="text-xs text-text-secondary flex items-center">
-          <img
-            src="/PSB Filing Icon.png"
-            alt="公安备案图标"
-            className="inline-block w-4 h-4 align-middle mr-1.5 opacity-80"
-          />
-          <a
-            href="https://beian.mps.gov.cn/#/query/webSearch"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-text-primary transition-colors"
-          >
-            粤公网安备44030002008086号
-          </a>
-        </div>
-      </div>
-
       <Dialog open={eulaDialogOpen} onOpenChange={setEulaDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-surface border-surface-highest">
           <DialogHeader>
