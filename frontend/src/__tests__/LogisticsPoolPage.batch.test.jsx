@@ -63,6 +63,9 @@ vi.mock('../components/ui/checkbox', () => ({
 }));
 
 vi.mock('../components/ui/virtual-table', () => ({
+  // 真实 VirtualTable 只渲染可视窗口（不是全部 408 行）。这里同样只渲染一批，
+  // 否则 jsdom 每轮要挂 4000+ DOM 节点 → 单用例耗时 10-15s，正好卡在 15s 超时线上，
+  // 出现"单独跑 5/6 挂、全量跑 1 挂"的时序 flaky（2026-10-28 实测定位）。
   VirtualTable: ({ items, columns }) => (
     <table>
       <thead>
@@ -73,7 +76,7 @@ vi.mock('../components/ui/virtual-table', () => ({
         </tr>
       </thead>
       <tbody>
-        {items.map((item, index) => (
+        {items.slice(0, 20).map((item, index) => (
           <tr key={item.id ?? index}>
             {columns.map((column) => (
               <td key={column.key}>{column.render(item, index)}</td>
