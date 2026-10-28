@@ -2,6 +2,9 @@
 
 基于 FastAPI + React 的现代化跨境电商物流定价管理系统，提供产品管理、物流规则配置、智能定价计算、数据统计、订阅管理等功能。
 
+> **状态**：原运营实例 `cbprice.cn` 已停止运营，本仓库以**代码存档 + 可复用部署脚手架**的形式公开。
+> 代码可自由复用（见 `LICENSE`）；自建教程见 [`deploy/README.md`](deploy/README.md)。
+
 ## 快速启动
 
 ### 方法一：使用批处理脚本（推荐）
@@ -82,9 +85,9 @@ start_dev.bat
 - **sonner** — 通知提示
 
 ### 测试
-- **pytest** — 后端测试（183 个测试文件）
-- **Vitest** + **Testing Library** — 前端单元测试（58 个测试文件）
-- **Playwright** — 前端 E2E 测试（33 个 spec）
+- **pytest** — 后端测试（123 个测试文件）
+- **Vitest** + **Testing Library** — 前端单元测试（50 个测试文件）
+- **Playwright** — 前端 E2E 测试
 
 ## 数据库配置
 
@@ -227,7 +230,7 @@ logistics/
 │   ├── tests/                       # Playwright E2E 测试
 │   ├── vite.config.js
 │   └── vitest.config.js
-├── tests/                           # 后端 pytest 测试（183 个文件）
+├── tests/                           # 后端 pytest 测试（123 个文件）
 ├── scripts/                         # 脚本工具
 ├── database.py                      # 数据库连接与会话管理
 ├── logic.py                         # 业务逻辑
@@ -257,19 +260,25 @@ logistics/
 
 ## 部署
 
-### 生产环境启动
+> **现状说明**：本项目原运营实例 `cbprice.cn` 已停止运营，仓库以「代码存档 + 可复用部署脚手架」的形式公开。
+> 想自己部一套，请直接看 **[`deploy/README.md`](deploy/README.md)** —— 里面有完整的自部署步骤、需要替换的配置项、
+> 回滚流程和踩过的坑。`deploy/` 下所有路径/域名都支持环境变量覆盖，不需要改源码。
+
+### 一键部署（Linux 服务器）
 
 ```bash
-# Windows
-start_production.bat
-
-# Linux
-./start_production_gunicorn.sh
+cd /srv/your-app && git pull
+bash deploy/deploy.sh          # 11 步：预检→备份→拉代码→装依赖→迁移→校验→装服务→装 nginx→启动→健康检查
+bash deploy/rollback.sh        # 回滚到最新 pre-deploy-* tag
 ```
 
-### 回滚
+### 历史脚本（仅作参考，新部署请用上面的 deploy/）
 
 ```bash
+# Windows（早期）
+start_production.bat
+# Linux（早期）
+./start_production_gunicorn.sh
 ./rollback_production.sh
 ```
 

@@ -13,10 +13,12 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/var/www/ozon-pricing"
+# 与 deploy.sh 保持同一套可覆盖变量（换机器/换域名不用改脚本）
+PROJECT_DIR="${PROJECT_DIR:-/var/www/ozon-pricing-private}"
 VENV="$PROJECT_DIR/venv"
-NGINX_CONF="/etc/nginx/sites-enabled/cbprice.cn"
-NGINX_BACKUP_DIR="/var/backups/cbprice-nginx"
+NGINX_CONF="${NGINX_CONF:-/etc/nginx/sites-enabled/cbprice.cn}"
+NGINX_BACKUP_DIR="${NGINX_BACKUP_DIR:-/var/backups/cbprice-nginx}"
+NGINX_BAK_PREFIX="$(basename "$NGINX_CONF").bak"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -144,7 +146,7 @@ if [ "$AUTO_SCHEMA_ROLLBACK" -ne 1 ] && [ -z "$RESTORE_SNAPSHOT" ]; then
 fi
 
 log "===== 恢复 nginx 配置 ====="
-LATEST_BAK=$(ls -t "$NGINX_BACKUP_DIR"/cbprice.cn.bak.* 2>/dev/null | head -1)
+LATEST_BAK=$(ls -t "$NGINX_BACKUP_DIR/$NGINX_BAK_PREFIX".* 2>/dev/null | head -1)
 if [ -n "$LATEST_BAK" ]; then
     sudo cp "$LATEST_BAK" "$NGINX_CONF"
     sudo nginx -t && sudo systemctl reload nginx

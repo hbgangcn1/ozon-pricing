@@ -1,3 +1,7 @@
+# 使用前请替换部署目录与运行用户（原作者实例：/var/www/ozon-pricing-private，用户 ozon）：
+#   sed -i 's#/var/www/ozon-pricing-private#/srv/your-app#g; s/^User=ozon/User=www-data/; s/^Group=ozon/Group=www-data/' fastapi-app.service
+# 数据库 unit 里写的是 postgresql@12-main.service，你的 PG 版本/实例名不同请一并改。
+
 [Unit]
 Description=CBPrice FastAPI Application (cbprice.cn)
 After=network.target postgresql@12-main.service
@@ -5,16 +9,16 @@ Requires=postgresql@12-main.service
 
 [Service]
 Type=exec
-User=SSH_USER
-Group=SSH_USER
-WorkingDirectory=/var/www/ozon-pricing
-EnvironmentFile=/var/www/ozon-pricing/.env
+User=ozon
+Group=ozon
+WorkingDirectory=/var/www/ozon-pricing-private
+EnvironmentFile=/var/www/ozon-pricing-private/.env
 Environment=PRODUCTION_MODE=true
 
 # Gunicorn + Uvicorn workers
 # 3 workers 适合 2 CPU / 3.6GB RAM 的服务器
 # 绑定 127.0.0.1 — 仅通过 nginx 反向代理访问
-ExecStart=/var/www/ozon-pricing/venv/bin/gunicorn api.main:app \
+ExecStart=/var/www/ozon-pricing-private/venv/bin/gunicorn api.main:app \
     -k uvicorn.workers.UvicornWorker \
     -w 3 \
     -b 127.0.0.1:8003 \
@@ -44,7 +48,7 @@ TasksMax=512
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/www/ozon-pricing /var/log/cbprice
+ReadWritePaths=/var/www/ozon-pricing-private /var/log/cbprice
 PrivateTmp=true
 
 # 日志

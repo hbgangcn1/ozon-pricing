@@ -1,3 +1,6 @@
+# 使用前请替换部署目录与运行用户（同 fastapi-app.service）：
+#   sed -i 's#/var/www/ozon-pricing-private#/srv/your-app#g; s/^User=ozon/User=www-data/; s/^Group=ozon/Group=www-data/' trial-check.service
+
 [Unit]
 Description=CBPrice trial expiry + overflow window scheduler (one-shot)
 After=network.target postgresql@12-main.service
@@ -5,17 +8,17 @@ Requires=postgresql@12-main.service
 
 [Service]
 Type=oneshot
-User=SSH_USER
-Group=SSH_USER
-WorkingDirectory=/var/www/ozon-pricing
-EnvironmentFile=/var/www/ozon-pricing/.env
+User=ozon
+Group=ozon
+WorkingDirectory=/var/www/ozon-pricing-private
+EnvironmentFile=/var/www/ozon-pricing-private/.env
 Environment=PRODUCTION_MODE=true
-ExecStart=/var/www/ozon-pricing/venv/bin/python -m scripts.trial_check --once
+ExecStart=/var/www/ozon-pricing-private/venv/bin/python -m scripts.trial_check --once
 
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/www/ozon-pricing /var/log/cbprice
+ReadWritePaths=/var/www/ozon-pricing-private /var/log/cbprice
 PrivateTmp=true
 
 StandardOutput=journal

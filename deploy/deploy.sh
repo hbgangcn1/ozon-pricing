@@ -1,25 +1,36 @@
 #!/bin/bash
 # ==========================================================
-# CBPrice 生产部署脚本
+# 物流定价系统 生产部署脚本（11 步，可复用）
 # 在服务器上运行: bash deploy/deploy.sh
+#
+# 说明：原实例 cbprice.cn 已停止运营；本脚本连同 deploy/ 下其它文件作为**通用部署脚手架**保留。
+#       所有路径/域名都能用环境变量覆盖，默认值只是原作者实例的值，例如：
+#         PROJECT_DIR=/srv/myapp SITE_URL=https://example.com NGINX_CONF=/etc/nginx/sites-enabled/myapp.conf \
+#           bash deploy/deploy.sh
+#       完整自部署说明见 deploy/README.md。
 #
 # 前置条件:
 #   1. 本地已构建前端: cd frontend && npm run build
-#   2. 已将 frontend/dist/ 上传到服务器:
-#      scp -r frontend/dist/ SSH_USER@SERVER_IP:/var/www/ozon-pricing/frontend/dist/
+#   2. 已将 frontend/dist/ 上传到服务器（或在服务器上构建）:
+#      scp -r frontend/dist/ <user>@<host>:/var/www/<your-app>/frontend/dist/
 #   3. .env 已配置好所有必需的环境变量
 # ==========================================================
 
 set -euo pipefail
 
 # ===== 配置 =====
-PROJECT_DIR="/var/www/ozon-pricing"
+# 以下全部可用环境变量覆盖（换机器/换域名不用改脚本），默认值=原作者实例
+PROJECT_DIR="${PROJECT_DIR:-/var/www/ozon-pricing-private}"
 VENV="$PROJECT_DIR/venv"
-LOG_DIR="/var/log/cbprice"
-NGINX_CONF="/etc/nginx/sites-enabled/cbprice.cn"
+LOG_DIR="${LOG_DIR:-/var/log/cbprice}"
+NGINX_CONF="${NGINX_CONF:-/etc/nginx/sites-enabled/cbprice.cn}"
 # nginx 备份目录: /etc/nginx/sites-enabled/ 之外, 否则 nginx 会把 .bak.* 当作活跃站点配置
 # 加载,导致 limit_req_zone 重复定义 emergency 错误 (历史教训 2026-05-13)
-NGINX_BACKUP_DIR="/var/backups/cbprice-nginx"
+NGINX_BACKUP_DIR="${NGINX_BACKUP_DIR:-/var/backups/cbprice-nginx}"
+# 站点地址（第 11 步 HTTPS 健康检查用）
+SITE_URL="${SITE_URL:-https://www.cbprice.cn}"
+# nginx 备份文件名前缀：派生自实际配置文件名，换域名无需改这里
+NGINX_BAK_PREFIX="$(basename "$NGINX_CONF").bak"
 BACKUP_TAG="pre-deploy-$(date +%Y%m%d-%H%M%S)"
 
 RED='\033[0;31m'
@@ -66,7 +77,7 @@ log "已创建备份标签: $BACKUP_TAG"
 # 备份当前 nginx 配置
 if [ -f "$NGINX_CONF" ]; then
     sudo mkdir -p "$NGINX_BACKUP_DIR"
-    sudo cp "$NGINX_CONF" "$NGINX_BACKUP_DIR/cbprice.cn.bak.$(date +%Y%m%d-%H%M%S)"
+    sudo cp "$NGINX_CONF" "$NGINX_BACKUP_DIR/$NGINX_BAK_PREFIX.$(date +%Y%m%d-%H%M%S)"
     log "已备份 nginx 配置到 $NGINX_BACKUP_DIR"
 fi
 
@@ -168,7 +179,7 @@ if sudo nginx -t 2>&1; then
 else
     # nginx 配置有误，恢复备份
     warn "nginx 配置验证失败！恢复旧配置..."
-    LATEST_BAK=$(ls -t "$NGINX_BACKUP_DIR"/cbprice.cn.bak.* 2>/dev/null | head -1)
+    LATEST_BAK=$(ls -t "$NGINX_BACKUP_DIR/$NGINX_BAK_PREFIX".* 2>/dev/null | head -1)
     if [ -n "$LATEST_BAK" ]; then
         sudo cp "$LATEST_BAK" "$NGINX_CONF"
         sudo systemctl reload nginx
@@ -220,14 +231,14 @@ else
 fi
 
 # 检查 HTTPS（通过 nginx）
-HTTPS_CODE=$(curl --max-time 15 -fsSk -o /dev/null -w "%{http_code}" https://www.cbprice.cn/ 2>/dev/null || echo "000")
+HTTPS_CODE=$(curl --max-time 15 -fsSk -o /dev/null -w "%{http_code}" "$SITE_URL/" 2>/dev/null || echo "000")
 if [ "$HTTPS_CODE" = "200" ]; then
     log "HTTPS 前端响应正常 (HTTP $HTTPS_CODE) ✓"
 else
     error "HTTPS 前端检查失败 (HTTP $HTTPS_CODE)"
 fi
 
-HTTPS_API=$(curl --max-time 15 -fsSk -o /dev/null -w "%{http_code}" https://www.cbprice.cn/api/exchange/rates 2>/dev/null || echo "000")
+HTTPS_API=$(curl --max-time 15 -fsSk -o /dev/null -w "%{http_code}" "$SITE_URL/api/exchange/rates" 2>/dev/null || echo "000")
 if [ "$HTTPS_API" = "200" ]; then
     log "HTTPS API 代理正常 (HTTP $HTTPS_API) ✓"
 else

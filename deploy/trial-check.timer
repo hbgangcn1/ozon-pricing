@@ -1,3 +1,5 @@
+# 每小时触发 trial-check.service；装好后 systemctl enable --now trial-check.timer
+
 [Unit]
 Description=Hourly trigger for CBPrice trial-check.service
 Requires=trial-check.service
